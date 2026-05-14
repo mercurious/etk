@@ -90,3 +90,7 @@ The Emulation Tuning Kit (ETK) is a performance-optimization and telemetry suite
 - Phase 12: Develop native Rocknix ETK app for utilities (Tools or carousel UI)
 - Phase 13: Develop shader sharing and shader swarming features per device/per game serial
 
+# Easy Install Guide (FULL Kit)
+1. Create a local `~/etk` for the kit's extracted code
+1. Edit `scripts/env.sh` so `RIG_IP` and `RIG_SSH` match your device's IP address found in `Rocknix START button` > `Network Settings` > `IP ADDRESS`
+1. Run `./install.sh` to flash your device with the ETK
