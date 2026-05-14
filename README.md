@@ -1,19 +1,21 @@
 # The Emulation Tuning Kit
-- A custom Rocknix rig to enable PS3 Emulation on ARM64 Retrogaming Handhelds by brute-force optimization and advanced telematics
+- A custom Rocknix middleware rig to enable PS3 Emulation on ARM64 Retrogaming Handhelds by brute-force optimization, thermal and shader protection, shader cache management and advanced in-game telematics
 - The Kit currently includes:
 1. Hardware and driver tunings for maximum performance
+1. Smart thermal protection to safely overdrive the device during shader harvesting
 1. Optimized emulator game configurations tuned to the device hardware
-1. Sample pre-compiled device and game specific shader set 
+1. Automatic shader backup from your device to computer to share with other ETK users
 1. Customized in-game overlay with ETK telematics with MangoHUD
 1. Customized gamepad ETK commands to trigger performance and cooldown modes
 1. Pit wall remote terminal screen to monitor and control device rig
 1. Advanced crash recovery and analytics
-1. Automatic and manual thermal throttling
 1. Install, configure, repair, and uninstall the kit remotely from a computer
-1. Automatically backup your shader archives from your device to computer
-1. FULL installation for initial shader harvesting and tuning, LITE installation for saturated shader sets, RAW for stress testing
+1. Multi-Installation Options: FULL installation for initial shader harvesting and tuning, LITE installation for saturated shader sets with thermal protection only, RAW for stress testing without shader and thermal protections
+1. Sample pre-compiled shader set
 
 # ETK Project Structure
+- `AI_MANIFEST.md`: System Manual and Immutable Laws of ETK Development for AI
+- `README.md`: You are reading it now.
 - `install.sh`: Flashes the ETK onto your handheld from a computer
 - `uninstall.sh`: Removes the ETK from your handheld from a computer
 - `/bin`:
@@ -28,27 +30,21 @@
   - `commander.sh`: Pit Wall central unit with remote terminal DDU UI
   - `env.sh`: Establishes pit and race environment
   - `mango_bridge.sh`: Manages live telemetry and overlay display
+  - `probe.sh`: Provides error logs
+  - `agnostify.sh`: One-time use migration/cleanup utility for deprecation.
 -  `/vault`: Large archive of Vulkan precompiled shader bins 
+
 
 # ETK System Requirements
 - **System:** Retroid Pocket Flip 2 (SM8250)
-- **OS:** ROCKNIX (Nightly Build: 20260511)
+- **OS:** ROCKNIX (Nightly Build: 20260513)
+- **Driver** MESA Turnip 260.1.0
 - **Target:** Gran Turismo 5 Prologue (RPCS3)
 - **Shell:** BusyBox v1.36.1
 - **Custom Overlay:** MangoHUD
 
 # ETK Concept Brief
-The Emulation Tuning Kit (ETK) is a performance-optimization and telemetry suite designed to achieve the "impossible": **Native 720p PS3 Emulation on ARM Handhelds.** The core user experience is a **"Mining Meta-Game":** The driver performs "Harvesting Runs" at 50% resolution to bank shaders into a permanent Vault. A live gear-shift allows the driver to watch a custom MangoHUD overlay and pull over to downshift to PIT mode (thermal cooling) from RACE (overdrive) which prevents crashes while overtaxing the Flip 2. A similar “clutched” command triggers a shader dump. Once the Vault is saturated, the driver shifts to upscaled mode (Native 720p), utilizing the banked shaders to bypass real-time compilation stutters. Once an unknowable shader saturation is achieved, discovered only through trial and error, the thermal demand is successfully mitigated and near console quality becomes achievable upscaled, as races can be won, and the game saves and credit accruals can prove the system is gradually working. The team behind this project is also known to rest the Flip 2 on an ice pack or put it in the refrigerator during PPU compiling. Coded with Gemini, this project is about a massive cluster of GPUs tuning a lonely Adreno with open source tools running on a pocket Rocknix box to make the whole data center proud. It’s like Mazda winning Le Mans with the rotary 787B in real-life by doing thermal efficiency differently. 
-
-# Current Features 
-- Local repository (macOS) rsync, install and uninstall tools
-- Private GitHub at https://github.com/mercurious/etk
-- Remote DDU (Driver Data Unit) terminal window with hotkey commands including robust crash recovery tool, thermal “shift” UI, shader dump tools, probes, logs, etc.
-- Large GT5P compiled shader vault (650MB+)
-- Customized MangoHUD implementation for on-board DDU live telemetry and pit coaching
-- Unique Shader dump UI
-- Highly optimized RSCP3 GT5P config file
-- Deep system enhancements and integrations
+The Emulation Tuning Kit (ETK) is a performance-optimization and telemetry suite designed to achieve the previously "impossible": **Native 720p PS3 Emulation on ARM Handhelds.** The core user experience is a **"Mining Meta-Game":** The driver performs "Harvesting Runs" to bank shaders into a permanent shader Vault. A gamepad button gear-shift allows the driver to watch a custom MangoHUD overlay and pull over (hit pause) to downshift to PIT mode (thermal cooling) from RACE (overdrive) which prevents crashes while overtaxing the Flip 2. Subsequent races use banked shaders to bypass real-time compilation stutters. Once shader saturation is achieved, and a complete set perfectly compiled for the device and game serial can be easily shared with another ETK user with the same device and game, saving them hours of shader compute and labor.
 
 # Warnings and Recommendations
 - Requires the patience and dedication of race car drivers. You will crash. But you will also win races that could otherwise not even be played. ETK doesn't magically make your device run PS3 emulation, it only gives it a fighting chance with professional grade tools and system tunings.
@@ -90,38 +86,3 @@ The Emulation Tuning Kit (ETK) is a performance-optimization and telemetry suite
 - Phase 12: Develop native Rocknix ETK app for utilities (Tools or carousel UI)
 - Phase 13: Develop shader sharing and shader swarming features per device/per game serial
 
-# External Assets
-- [Download](https://drive.google.com/drive/folders/1u-Q92-v0PLur2GsAvfe-_afgYUINreTq) Archival Dependent Rocknix Build (nightly-20260511)
-- [Download](https://drive.google.com/drive/folders/1d_efusVz_TBBnxW6urAgDicwSQbUWVkk?usp=drive_link) a Starter Set of Shaders for GT5P (NPUA87005) for Retroid Pocket Flip2 (SM8250) only
-
-# Quick Install Instructions for Pros
-1. Setup the correct Rocknix nightly build boot
-1. Download ETK and setup `config/rsyncd.config` with correct local paths and `scripts/env.sh` with correct device and computer IP addresses
-1. Extract shaders into correct vault folder.
-1. Run ./install.sh
-
-# Full Installation Instructions for Brave Newbies (work-in-progress)
-1. Flash a new SD card and install the correct nightly build (instructions)
-1. Launch Rocknix and press `Start` -> `Network` -> Connect to your WiFi and note your IP address
-1. Use SMB in macOS Finder or Windows File Explorer or an SFTP client to access your `/storage/roms/` folder on your SD card through your handheld to install games
-1. Copy your .pkg/.rap files to `/storage/roms/temp` and create text files with .psn extension containing only game serial number and put in /storage/roms/ps3
-1. On your new Rocknix boot go to `Tools` -> `Start RPSC3`
-1. Copy your .iso files to `/storage/roms/ps3`
-1. In RPSC3 (plugging in a mouse helps a lot) choose `File` and `Install package` and select the .pkg file. Repeat for the .rap file. No need to check boxes to install desktop shortcuts. You can go to `File` and `Exit` out of RPSC3. You should only need a mouse to install a .pkg file using this method from here on out.
-1. Setup your local deployment tools (local folder and terminal window)
-1. Download the ETK and extract into local working folder
-1. Edit `config/rsyncd.config` with your local dev paths in a text editor
-1. Edit `scripts/env.sh` with your device IP addresses in a text editor 
-1. Extract starter shaders into `vault/SM8250/NPUA80075/`
-1. Set up secure handshake between computer and device
-1. Run this command to enable installer `chmod +x TK`
-1. Type `./install.sh` to set up your device and you will only need that command again to update or repair your ETK from here
-1. Launch GT5P and you will notice that the PPU modules will recompile several times when you boot the game and each time it will get better and better and will eventually be skipped when the game is fully tuned to your device. By pre-installing pre-compiled shaders you are skipping the in-game processing freeing up substantial overhead to render the game.
-
-# ETK Install Modes
-Feature,FULL (Tuning),LITE (Competition),RAW (Stress)
-Thermal Governor,Active (Dynamic),Active (Dynamic),Off (Hard Max)
-Vault Harvester,Enabled,Disabled,Disabled
-Cache Injection,Active at boot,Active at boot,Manual only
-MangoHUD Bridge,Full Details,Compact Layout,Disabled
-Stealth Support,Yes (Auto-hide),Yes (Auto-hide),N/A
