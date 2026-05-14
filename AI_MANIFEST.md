@@ -1,6 +1,6 @@
 # ETK (EMULATOR TOOLKIT) MISSION MANIFEST
 **TARGET HARDWARE:** Retroid Pocket Flip 2 (SM8250)
-**TARGET OS:** Rocknix (Read-Only Root, BusyBox Environment) specific nightly build
+**TARGET OS:** Rocknix (Read-Only Root, BusyBox Environment) specific nightly build 20260513 with MESA Turnip 260.1.0
 **CORE PHILOSOPHY:** Defeat Rocknix's filesystem limitations using a hybrid Persistent/Volatile architecture to enable high-performance PS3 emulation.
 
 ## THE IMMUTABLE LAWS (CRITICAL)
@@ -9,6 +9,12 @@
 3. **SYMLINK SANCTITY:** The shader cache is a dynamic symlink: `/storage/.cache/mesa_shader_cache` -> `$VAULT_DIR`. Never use `rsync` on the live cache.
 4. **AGNOSTIC IDENTITY:** The `TARGET_ID` must always be dynamic. It is sniffed from the active RPCS3 process via `pgrep` and `PARAM.SFO`.
 5. **NO GNU-ISMS:** Rocknix uses **BusyBox**. Assume GNU-specific flags (`--long-options`, `grep -P`, `find -printf`) will fail. Use POSIX-compliant syntax only.
+
+## ROCKNIX ARCHITECTURE (THE BOOT CHAIN)
+1. **THE REBOOT WIPE:** Rocknix vaporizes `/dev/shm` on every reboot. Background processes must rebuild `$SHM_DIR` instantly upon execution.
+2. **NO ROOT SYSTEMD:** Do NOT attempt to write to `/etc/systemd/system/`. Do NOT use `mount -o remount,rw /` to brute-force the root partition. The OS will reject it.
+3. **PERSISTENCE VECTOR:** All custom systemd services MUST be written to `/storage/.config/system.d/` (Note the dot, not systemd). Rocknix natively maps this directory at boot. Use `systemctl enable /storage/.config/system.d/etk.service` to ensure absolute path resolution.4. 
+4. **AUTOSTART LIMITATIONS:** Do NOT use `/storage/.config/autostart.sh` for backend/daemon execution. It is tied to the Wayland/EmulationStation UI load sequence and causes race conditions with MangoHud.
 
 ## BUSYBOX LIMITATIONS & PITFALLS
 * **DU:** Use `du -k` (KB) or `du -m` (MB). BusyBox `du` often lacks `-h` (human-readable) or behaves inconsistently with it.
@@ -50,3 +56,17 @@
 - **HUD FORMAT**: `mango_bridge.sh` MUST use the atomic `echo > file.tmp && mv file.tmp file` pattern.
 - **STRING ARCHITECTURE**: Do NOT add configuration keys like `custom_text_center=` inside the `live_stat.txt` file; keep the string raw for external parsing.
 - **PATHING**: All background daemons (Bridge, Vault, Thermal) must be invoked using absolute paths via `$ETK_ROOT` to ensure reliability across reboots.
+
+## ARCH: install.sh must remain Tier-Aware.
+
+## VARIABLE: ETK_BUILD_TYPE (defined in env.sh) controls the execution of thermal_d.sh and mango_bridge.sh.
+
+## CLEANUP: Moving from FULL to LITE must trigger the Sentry to kill active HUD/Thermal processes.
+
+## UI ARCHITECTURE: commander.sh MUST maintain a split-pane layout. Top pane = Live Telemetry. Bottom pane = Raw Forensic Text. Do not consolidate into a single "Mode."
+
+## FORENSIC INTEGRITY: probe.sh MUST use strings when reading any file from /storage or /dev/shm to prevent terminal corruption during binary floods.
+
+## COPY-PASTE OPTIMIZATION: The bottom pane of the Pit Wall terminal MUST remain free of ANSI color codes or borders within the data content to facilitate seamless copying into Gemini chat.
+
+## IMMUTABLE COMMENTS: Any script update MUST include a "GEMINI IMMUTABLE RULE" block in the header to inform subsequent models of structural constraints.

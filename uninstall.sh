@@ -47,6 +47,8 @@ ssh $RIG_SSH << 'EOF'
     echo -e ">>> Removing System Files..."
     rm -f /storage/.config/system.d/etk.service
     rm -f /storage/.config/custom_scripts/01-etk-startup.sh
+    rm -f /storage/.config/MangoHud/MangoHud.conf
+    # Note: Rocknix will auto-regenerate the default config on next boot
 EOF
 
 # Local directory cleanup

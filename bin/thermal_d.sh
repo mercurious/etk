@@ -1,11 +1,12 @@
 #!/bin/bash
 # ==========================================================
-# ETK PHASE 7.5: THERMAL GOVERNOR (v12.1.0 - ANCHOR MERGE)
+# ETK PHASE 13.5: THERMAL GOVERNOR (v13.1.0 - SILENT PRODUCER)
 # ==========================================================
 # ARCHITECTURE: Proactive GPU Clearing & Hard CPU Anchoring
 # HARDWARE: SM8250 (Adreno 650 / Policies 4 & 7)
-# MERGE LOG: Integrated "Anchor" PIT mode to clear GPU ring 
-# buffers and force rapid thermal recovery before stress points.
+# MERGE LOG: 
+# - SILENT PRODUCER: Relinquished $LIVE_STAT to mango_bridge.sh
+# - Writes telemetry to $SHM_DIR/thermal_stat to stop HUD flicker
 # ==========================================================
 
 source /storage/games-internal/roms/etk/scripts/env.sh
@@ -37,7 +38,21 @@ while true; do
         fi
     fi
 
-    # 5. GOVERNOR & GPU SYNC (The "Anchor" Logic)
+    # 5. CONTINUOUS THERMAL BROADCAST (For mango_bridge.sh)
+    # Replaces direct LIVE_STAT writes to prevent HUD flicker/race conditions
+    if [ "$TEMP" -ge "$RACE_THRESHOLD" ]; then
+        echo "OVERHEAT" > "$SHM_DIR/thermal_stat"
+    elif [ "$TEMP" -ge "$ALARM_TEMP" ]; then
+        echo "HOT" > "$SHM_DIR/thermal_stat"
+    else
+        if [ "$CURRENT_MODE" == "RACE" ]; then
+            echo "NOMINAL" > "$SHM_DIR/thermal_stat"
+        else
+            echo "ANCHOR" > "$SHM_DIR/thermal_stat"
+        fi
+    fi
+
+    # 6. GOVERNOR & GPU SYNC (The "Anchor" Logic)
     if [ "$CURRENT_MODE" != "$LAST_MODE" ]; then
         if [ "$CURRENT_MODE" == "RACE" ]; then
             # UPSHIFT: Full Performance
@@ -49,7 +64,7 @@ while true; do
             # GPU: Set to high-performance profile
             echo "performance" > /sys/class/kgsl/kgsl-3d0/devfreq/governor 2>/dev/null
             
-            echo "FULL NOMINAL" > "$LIVE_STAT"
+            # [LIVE_STAT output removed - Handled by Bridge]
         else
             # DOWNSHIFT: The "Heavy Pit" Anchor
             # 1. Clear RAM pressure and ring buffers
@@ -67,7 +82,7 @@ while true; do
             # 4. VBLANK MOMENTARY STALL (Optional: clears HUD flicker)
             # echo 1 > /sys/class/graphics/fb0/blank 2>/dev/null && sleep 0.1 && echo 0 > /sys/class/graphics/fb0/blank 2>/dev/null
             
-            echo "ANCHOR ACTIVE" > "$LIVE_STAT"
+            # [LIVE_STAT output removed - Handled by Bridge]
         fi
         LAST_MODE="$CURRENT_MODE"
     fi

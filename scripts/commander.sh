@@ -1,96 +1,116 @@
 #!/bin/bash
 # ==========================================================
-# ETK PHASE 13: COMMANDER (v13.1.0 - TIERED AUDIT)
+# ETK PHASE 13.5: COMMANDER (v13.5.8 - GHOST HUNTING)
 # ==========================================================
-# MERGE LOG: 
-# - UI Auto-Scaling based on ETK_BUILD_TYPE
-# - Disables Vault [V] key in LITE/RAW modes
-# - Preserved Nuclear Recovery and Forensic Datalog
+# GEMINI IMMUTABLE RULE: 
+# 1. CHARACTER RESET: MUST echo -ne "\033(B" in every UI loop.
+# 2. ANTI-DRIFT: Use \033[K (Erase to Line End) to prevent UI ghosting.
+# 3. SPLIT-PANE: Top is Live Telemetry, Bottom is Raw Forensic Datalog.
+# 4. GHOST HUNT: Probe and Analysis scrapes are DISABLED to stop binary floods.
 # ==========================================================
-
 source /storage/games-internal/roms/etk/scripts/env.sh
+
+# Terminal Cleanup
 stty -echoctl
 echo -ne "\033[2J" 
 
-M_FILE="$MODE_FILE"
-Q_FILE="$CMD_QUEUE"
-
-# Start the input daemon ONLY in FULL mode
-if [ "$ETK_BUILD_TYPE" == "FULL" ]; then
-    pkill -f input_d.py 2>/dev/null
-    python3 "$ETK_ROOT/bin/input_d.py" > /dev/null 2>&1 &
-fi
-
+# Patched and repatched
+nuclear_recovery() {
+    echo -e "\n\033[31m[!] INITIATING NUCLEAR RECOVERY...\033[0m"
+    
+    # 1. Break the GPU Deadlock by killing the emulator
+    killall -9 rpcs3 2>/dev/null
+    killall -9 AppRun.wrapped 2>/dev/null
+    
+    # 2. Kill worker daemons ONLY (Leave etk_guardian alive to respawn them)
+    pkill -9 -f "mango_bridge.sh" 2>/dev/null
+    pkill -9 -f "vault_d.sh" 2>/dev/null
+    pkill -9 -f "thermal_d.sh" 2>/dev/null
+    
+    rm -f "$SHM_DIR"/*
+    echo "IDLE" > "$ID_FILE"
+    echo -e "\033[32m[+] RECOVERY COMPLETE. EMULATOR TERMINATED.\033[0m"
+    sleep 2
+}
 run_diagnostics() {
-    echo -ne "\n\033[33m[*] COMPILING DATALOG... \033[0m"
-    bash "$PROBE_SCRIPT"
-    echo -e "\033[32mDONE\033[0m"
-    echo -e "\033[36mANALYSIS:\033[0m $(cat $LAST_ANALYSIS 2>/dev/null || echo "Nominal")"
+    # --- PROBE DISABLED: GHOST HUNTING MODE ---
+    # To restore: Uncomment the lines below.
+    # echo -ne "\n\033[33m[*] COMPILING DATALOG... \033[0m"
+    # bash "$PROBE_SCRIPT"
+    # echo -e "\033[32mDONE\033[0m"
+    # echo -e "\033[36mANALYSIS:\033[0m $(cat $LAST_ANALYSIS 2>/dev/null | tr -cd '[:print:]' || echo 'Nominal')"
+    
+    echo -e "\n\033[31m[!] DIAGNOSTICS OFFLINE: Binary flood protection active.\033[0m"
     sleep 2
 }
 
-nuclear_recovery() {
-    echo -e "\n\033[31m[!] CRASH DETECTED: CAPTURING TELEMETRY [!]\033[0m"
-    run_diagnostics 
-    pkill -9 -f rpcs3 2>/dev/null
-    echo "schedutil" > /sys/devices/system/cpu/cpufreq/policy4/scaling_governor 2>/dev/null
-    echo "schedutil" > /sys/devices/system/cpu/cpufreq/policy7/scaling_governor 2>/dev/null
-    sleep 1
-}
-
 while true; do
-    # 1. DATA AGGREGATION
-    read -r T_RAW < /sys/class/thermal/thermal_zone14/temp 2>/dev/null || T_RAW="0"
+    # 1. REFRESH TELEMETRY (BusyBox Optimized)
+    T_RAW=$(cat /sys/class/thermal/thermal_zone14/temp 2>/dev/null || echo "0")
     TEMP=$((T_RAW / 1000))
-    CUR_MODE=$(cat "$M_FILE" 2>/dev/null || echo "UNK")
-    V_SIZE=$(cat "$SHM_DIR/vault_size.txt" 2>/dev/null || echo "0")
-    RAM_FREE=$(free -m | awk '/Mem:/ {print $4}')
-    ANALYSIS_SNIP=$(cat "$LAST_ANALYSIS" 2>/dev/null | cut -c 1-30 || echo "Waiting...")
+    LOAD=$(cat /proc/loadavg | cut -d' ' -f1)
+    V_COUNT=$(cat "$VAULT_COUNT" 2>/dev/null || echo "0")
+    CUR_ID=$(cat "$ID_FILE" 2>/dev/null || echo "IDLE")
 
-    echo -ne "\033[H"
+	# --- ANALYSIS SCRAPE SEVERED FOR TERMINAL STABILITY ---
+	ANALYSIS_SNIP="FORENSICS ROUTED TO /storage/etk_crash_report.log"    
     
-    # 2. TIERED DDU RENDERING
-    echo "=================================================="
-    echo " ETK PROJECT v13.1.0 | MODE: $ETK_BUILD_TYPE | STATUS: $CUR_MODE"
-    echo "=================================================="
+    # 2. RENDER PIT WALL (TOP PANE)
+    echo -ne "\033[H"      # Reset cursor to top
+    echo -ne "\033(B"      # Mandatory Character Set Reset
     
-    if [ "$ETK_BUILD_TYPE" == "RAW" ]; then
-        echo " TELEMETRY : ${TEMP}°C      | RAM FREE: ${RAM_FREE}MB"
-        echo "--------------------------------------------------"
-        echo " [D] DATALOG | [Q] QUIT"
-    elif [ "$ETK_BUILD_TYPE" == "LITE" ]; then
-        echo " TELEMETRY : ${TEMP}°C      | RAM FREE: ${RAM_FREE}MB"
-        echo " ANALYTICS : ${ANALYSIS_SNIP}..."
-        echo "--------------------------------------------------"
-        echo " [S] SHIFT | [R] RECOVERY | [D] DATALOG | [Q] QUIT"
-    else
-        # FULL SUITE
-        echo " TELEMETRY : ${TEMP}°C      | RAM FREE: ${RAM_FREE}MB"
-        echo " VAULT     : ${V_SIZE} MB    | ANALYTICS : ${ANALYSIS_SNIP}..."
-        echo "--------------------------------------------------"
-        echo " [S] SHIFT | [V] VAULT | [R] RECOVERY | [D] DATALOG | [Q] QUIT"
-    fi
-    echo "=================================================="
+    echo -e "\033[36m==================================================\033[K"
+    echo -e " \033[1mETK PIT WALL v13.5\033[0m          ID: \033[33m$CUR_ID\033[0m\033[K"
+    echo -e "\033[36m==================================================\033[K"
+    echo -e " CORE TEMP : ${TEMP}°C      | LOAD: ${LOAD}\033[K"
+    echo -e " VAULT     : ${V_COUNT} items  | MODE: ${ETK_BUILD_TYPE}\033[K"
+    echo -e " ANALYSIS  : ${ANALYSIS_SNIP}\033[K"
+    echo -e "\033[36m--------------------------------------------------\033[K"
+    echo -e " [S] SHIFT | [R] RECOVERY | [D] DATALOG | [Q] QUIT\033[K"
+    echo -e "\033[36m==================================================\033[K"
 
-    # 3. COMMAND HANDLING
-    if [ -s "$Q_FILE" ]; then
-        while IFS= read -r QUEUED_CMD; do
-            case "$QUEUED_CMD" in
-                "RECOVERY") nuclear_recovery ;;
-                "PIT")      echo -n "PIT" > "$M_FILE" ;;
-                "RACE")     echo -n "RACE" > "$M_FILE" ;;
-                "VAULT")    [ "$ETK_BUILD_TYPE" == "FULL" ] && $ETK_ROOT/bin/vault_d.sh dump & ;;
-            esac
-        done < "$Q_FILE"
-        > "$Q_FILE" 
+# 3. COMMAND HANDLING
+    
+    # A. Process external IPC commands (Sent by input_d.py via gamepad)
+    if [ -f "$CMD_QUEUE" ] && [ -s "$CMD_QUEUE" ]; then
+        # Read the first command
+        read -r EXT_CMD < "$CMD_QUEUE"
+        # Clear the queue safely for BusyBox
+        > "$CMD_QUEUE"
+        
+        case "$EXT_CMD" in
+            "RECOVERY") 
+                nuclear_recovery 
+                ;;
+            "VAULT") 
+                # Placeholder for D-Pad right action
+                ;;
+        esac
     fi
 
+    # B. Process local keyboard input (1-second timeout allows the UI to refresh)
     read -t 1 -n 1 -s KEY
     case "$KEY" in
-        [sS]) [ "$CUR_MODE" == "PIT" ] && echo -n "RACE" > "$M_FILE" || echo -n "PIT" > "$M_FILE" ;;
-        [vV]) [ "$ETK_BUILD_TYPE" == "FULL" ] && $ETK_ROOT/bin/vault_d.sh dump & ;;
-        [rR]) nuclear_recovery ;;
-        [dD]) run_diagnostics ;;
-        [qQ]) echo -e "\nExiting Commander..."; stty echo; exit 0 ;;
+        q|Q)
+            echo -e "\n\033[32m[+] EXITING PIT WALL. TERMINAL STATE RESTORED.\033[0m"
+            stty echoctl  # Restore the terminal setting altered at script start
+            echo -ne "\033(B" # Final character set reset
+            exit 0
+            ;;
+        r|R)
+            nuclear_recovery
+            ;;
+        d|D)
+            run_diagnostics
+            ;;
+        s|S)
+            # Toggle Thermal Intent Mode
+            CUR_MODE=$(cat "$MODE_FILE" 2>/dev/null || echo "PIT")
+            if [ "$CUR_MODE" == "PIT" ]; then
+                echo "RACE" > "$MODE_FILE"
+            else
+                echo "PIT" > "$MODE_FILE"
+            fi
+            ;;
     esac
 done

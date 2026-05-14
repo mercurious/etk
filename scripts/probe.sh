@@ -1,24 +1,40 @@
 #!/bin/bash
-# ETK FORENSICS PROBE v13.0 (Smart Analytics)
+# ==========================================================
+# ETK PHASE 13.5: PROBE (v13.5.6 - LEAD SHIELD MERGE)
+# ==========================================================
 source /storage/games-internal/roms/etk/scripts/env.sh
 
 {
-  echo "--- ETK DATALOG: $(date) ---"
+  echo "=== [ ETK DEEP PROBE: $(date) ] ==="
+  echo "ID: $TARGET_ID | MODE: $ETK_BUILD_TYPE"
   
-  # Search for system stressors or panics
-  DIAG_SUMMARY=$(dmesg | grep -iE "oom|killed|panic|adreno|turnip" | tail -n 1)
-  [ -z "$DIAG_SUMMARY" ] && DIAG_SUMMARY="System nominal. No driver faults detected."
+  echo -e "\n[1] GPU ARCHITECTURE (DRM/FREEDRENO)"
+  if [ -d "/sys/class/devfreq/3d00000.gpu" ]; then
+    echo "Governor: $(cat /sys/class/devfreq/3d00000.gpu/governor 2>/dev/null)"
+    echo "Cur Freq: $(cat /sys/class/devfreq/3d00000.gpu/cur_freq 2>/dev/null) Hz"
+  fi
 
-  echo -e "\n[1] MEMORY STATE"
+  echo -e "\n[2] KERNEL FAULT ANALYSIS"
+  # strings + tr filter = Lead Shield
+  dmesg | strings | grep -iE "adreno|turnip|fence|timeout|msm_dpu|panic|oom" | tail -n 25
+
+  echo -e "\n[3] SYMLINK VERIFICATION"
+  ls -ld /storage/.cache/mesa_shader_cache
+
+  echo -e "\n[4] MEMORY PRESSURE"
   free -m
   
-  echo -e "\n[2] KERNEL TRACE"
-  dmesg | tail -n 20
+  # Patched
+  echo -e "\n[5] RPCS3 INTERNAL ERROR LOG"
   
-  echo -e "\n[3] RPCS3 LOG TAIL"
-  RPCS3_LOG=$(find /storage/.cache/rpcs3 /storage/.config/rpcs3 -name "RPCS3.log*" 2>/dev/null | head -n 1)
-  [ -n "$RPCS3_LOG" ] && tail -n 15 "$RPCS3_LOG" || echo "Log Missing"
-} > "$CRASH_LOG" 2>&1
+  strings /storage/.config/rpcs3/rpcs3.log 2>/dev/null | tail -n 20
 
-# Output for the Commander UI to scrape
-echo "$DIAG_SUMMARY" > "$LAST_ANALYSIS"
+} | tr -cd "[:print:]\n" > "$CRASH_LOG" 2>&1
+
+# Disabled to stop binary floods in human terminal display
+# Scrape for the Commander UI summary
+# DIAG_SUMMARY=$(tail -n 5 "$CRASH_LOG" | grep -iE "timeout|panic|oom" | tail -n 1)
+
+# REVISED FORENSIC SUMMARY
+# Ensure the summary itself is sanitized before it hits the disk
+## echo "$DIAG_SUMMARY" | tr -cd "[:print:]" > "$LAST_ANALYSIS"

@@ -1,41 +1,51 @@
 #!/bin/bash
 # ==========================================================
-# ETK PHASE 13: HUD BRIDGE (RECOVERY MODE)
+# ETK PHASE 13.5: HUD BRIDGE (v13.1.1 - REBOOT SURVIVOR)
 # ==========================================================
 source /storage/games-internal/roms/etk/scripts/env.sh
 
+# 0. SHM REBOOT SEEDING
+# Immediately recreate the volatile file so MangoHud doesn't crash on boot race conditions
 mkdir -p "$SHM_DIR" 2>/dev/null
+echo "INITIALIZING" > "$LIVE_STAT"
 
 while true; do
-    # 1. IDENTIFICATION (Re-source to catch TARGET_ID from env.sh)
+    # 1. IDENTIFICATION (Re-source to catch TARGET_ID shifts)
     source /storage/games-internal/roms/etk/scripts/env.sh
     V_DIR="$VAULT_DIR"
     
-    # 2. RAW SENSING & THERMAL
-    T_RAW=$(cat /sys/class/thermal/thermal_zone14/temp 2>/dev/null || echo "0")
-    TEMP=$((T_RAW / 1000))
-    MODE=$(cat "$MODE_FILE" 2>/dev/null || echo "$DEFAULT_MODE")
-    
-    T_STAT="OK"
-    if [ "$TEMP" -ge "$RACE_THRESHOLD" ]; then T_STAT="OVERHEAT"; elif [ "$TEMP" -ge "$ALARM_TEMP" ]; then T_STAT="WARNING"; fi
+    # 2. CONSUME THERMAL STATE (Produced by thermal_d.sh)
+    # Fallback to 'WAIT' if the Governor hasn't posted yet
+    T_STAT=$(cat "$SHM_DIR/thermal_stat" 2>/dev/null || echo "WAIT")
 
-    # 3. PERFORMANCE METRICS
-    LOAD=$(cat /proc/loadavg | awk '{print $1}')
+    # 3. PERFORMANCE METRICS (BusyBox Safe)
+    LOAD_RAW=$(cat /proc/loadavg | awk '{print $1}')
+    # Convert 8.65 to 865 for integer comparison
+    LOAD_INT=$(echo "$LOAD_RAW" | awk '{print int($1 * 100)}')
+    
     L_STAT="OK"
-    if (( $(echo "$LOAD > 8.6" | bc -l) )); then L_STAT="REDLINE"; elif (( $(echo "$LOAD > 5.9" | bc -l) )); then L_STAT="PEAK"; fi
+    if [ "$LOAD_INT" -gt 860 ]; then 
+        L_STAT="REDLINE"
+    elif [ "$LOAD_INT" -gt 590 ]; then 
+        L_STAT="PEAK"
+    fi
+    
     RAM_VAL=$(free | awk '/Mem:/ {printf("%.0f", $3/$2 * 100)}')
 
-    # 4. ADVANCED SHADER TELEMETRY
-    BANK=$(cat "$VAULT_COUNT" 2>/dev/null || ls -1 "$V_DIR" 2>/dev/null | wc -l || echo "0")
-    NEW_C=$(cat "$SHM_DIR/vault_new.txt" 2>/dev/null || echo "0")
-    V_MB=$(cat "$SHM_DIR/vault_size.txt" 2>/dev/null || du -sm "$V_DIR" 2>/dev/null | awk '{print $1}' || echo "0")
-
-    # 5. ATOMIC WRITE (RESTORING ORIGINAL LAYOUT)
-    # This removes the "custom_text_center=" prefix that caused the display error
-    BAR="ETK: $MODE [$TARGET_ID] | ${TEMP}°C $T_STAT | LOAD: $LOAD $L_STAT | RAM: ${RAM_VAL}% | ${V_MB} MB BANK: ${BANK} NEW: ${NEW_C}"
+# 4. ADVANCED SHADER TELEMETRY
+    BANK=$(cat "$VAULT_COUNT" 2>/dev/null || echo "0")
+    NEW_SHADERS=$(cat "$SHM_DIR/vault_new.txt" 2>/dev/null || echo "0")
     
-    echo "$BAR" > "${LIVE_STAT}.tmp"
-    mv "${LIVE_STAT}.tmp" "$LIVE_STAT"
+    # Calculate physical Vault size in MB (BusyBox Safe per Manifest)
+    V_SIZE=$(du -m "$V_DIR" 2>/dev/null | awk '{print $1}')
+    V_SIZE="${V_SIZE:-0}MB"
 
-    sleep 2
+    # 5. ATOMIC HUD INJECTION [MANIFEST RULE: HUD FORMAT]
+    # Injects the V_SIZE parameter to match: V: XXMB BANK (+NEW)
+    printf "ID:%s | V:%s %s (+%s) | L:%s | T:%s | R:%s%%\n" \
+        "$TARGET_ID" "$V_SIZE" "$BANK" "$NEW_SHADERS" "$L_STAT" "$T_STAT" "$RAM_VAL" > "$LIVE_STAT.tmp"
+    
+    mv -f "$LIVE_STAT.tmp" "$LIVE_STAT"
+
+    sleep 1
 done
