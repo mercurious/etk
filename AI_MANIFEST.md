@@ -70,3 +70,12 @@
 ## COPY-PASTE OPTIMIZATION: The bottom pane of the Pit Wall terminal MUST remain free of ANSI color codes or borders within the data content to facilitate seamless copying into Gemini chat.
 
 ## IMMUTABLE COMMENTS: Any script update MUST include a "GEMINI IMMUTABLE RULE" block in the header to inform subsequent models of structural constraints.
+
+# HUD INSTURMENT STRING NEEDS REDESIGN and LOCKDOWN
+# Format should be, as example
+# ETK:[RACE][NPUA80075]| TEMP: 67°C OK | LOAD: 8.67 OK | RAM: 67% OK | VAULT: 85 MB BANK: 456 NEW: 34
+# ETK: RACE | PIT | LITE | RAW [GAMEID]
+# TEMP: OK | HOT | OVERHEAT
+# LOAD: OK | PEAK | REDLINE
+# RAM: OK | PEAK | CRITICAL
+# VAULT: XX MB BANK: XXX NEW: XX or VAULT: ERROR

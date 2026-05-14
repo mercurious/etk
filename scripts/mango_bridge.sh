@@ -41,6 +41,14 @@ while true; do
     V_SIZE="${V_SIZE:-0}MB"
 
     # 5. ATOMIC HUD INJECTION [MANIFEST RULE: HUD FORMAT]
+    # HUD INSTURMENT STRING NEEDS REDESIGN and LOCKDOWN
+    # Format should be
+    # ETK:[RACE][NPUA80075]| TEMP: 67°C OK | LOAD: 8.67 OK | RAM: 67% OK | VAULT: 85 MB BANK: 456 NEW: 34
+    # ETK: RACE | PIT | LITE | RAW [GAMEID]
+    # TEMP: OK | HOT | OVERHEAT
+    # LOAD: OK | PEAK | REDLINE
+    # RAM: OK | PEAK | CRITICAL
+    # VAULT: XX MB BANK: XXX NEW: XX or VAULT: ERROR
     # Injects the V_SIZE parameter to match: V: XXMB BANK (+NEW)
     printf "ID:%s | V:%s %s (+%s) | L:%s | T:%s | R:%s%%\n" \
         "$TARGET_ID" "$V_SIZE" "$BANK" "$NEW_SHADERS" "$L_STAT" "$T_STAT" "$RAM_VAL" > "$LIVE_STAT.tmp"

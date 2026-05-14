@@ -6,16 +6,15 @@ ToDo.
 
 # The Kit Features
 1. Hardware and driver tunings for maximum performance
-1. Smart thermal protection to safely overdrive the device during shader harvesting
 1. Optimized emulator game configurations tuned to the device hardware
+1. Smart thermal protection to safely overdrive the device during shader harvesting
 1. Automatic shader backup from your device to computer to share with other ETK users
-1. Customized in-game overlay with ETK telematics with MangoHUD
-1. Customized gamepad ETK commands to trigger performance and cooldown modes
-1. Pit wall remote terminal screen to monitor and control device rig
-1. Advanced crash recovery and analytics
-1. Install, configure, repair, and uninstall the kit remotely from a computer
-1. Multi-Installation Options: FULL installation for initial shader harvesting and tuning, LITE installation for saturated shader sets with thermal protection only, RAW for stress testing without shader and thermal protections
-1. Sample pre-compiled shader set
+1. Customized in-game overlay with ETK telematics inside MangoHUD
+1. Customized gamepad ETK commands to trigger performance and cooldown modes (R3)
+1. Pit wall remote terminal screen to monitor and control device rig with advanced crash recovery and analytics (`scripts/commander.sh`)
+1. Install, configure, repair, and uninstall the kit remotely from a computer (`install.sh` and `uninstall.sh`)
+1. Multi-Installation Options: FULL installation for initial shader harvesting and tuning, LITE installation for saturated shader sets with thermal protection only, RAW for stress testing without shader and thermal protections (`ETK_BUILD_TYPE` in `scripts/env.sh`)
+
 
 # ETK Project Structure
 - `AI_MANIFEST.md`: System Manual and Immutable Laws of ETK Development for AI
