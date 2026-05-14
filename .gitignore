@@ -1,0 +1,27 @@
+# --- ETK PROJECT GITIGNORE ---
+
+# 1. Ignore the Shader Vault (Relative paths)
+# This stops those massive .dat and .SELF files from hitting GitHub
+vault/
+**/vault/
+
+# 2. Ignore Live Data / Shared Memory
+# We don't want to track etk_mode.txt or the command queue
+shm/
+**/shm/
+
+# 3. macOS Pollution
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# 4. System & Editor Caches
+*.log
+*.tmp
+*.swp
+__pycache__/
+.vscode/
+
+# 5 Ignore the dev _archive
+_archive/
