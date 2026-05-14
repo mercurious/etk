@@ -25,3 +25,4 @@ __pycache__/
 
 # 5 Ignore the dev _archive
 _archive/
+/os-install
