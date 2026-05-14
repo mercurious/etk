@@ -1,6 +1,7 @@
 # The Emulation Tuning Kit
-- A custom Rocknix middleware rig to enable PS3 Emulation on ARM64 Retrogaming Handhelds by brute-force optimization, thermal and shader protection, shader cache management and advanced in-game telematics
-- The Kit currently includes:
+A custom Rocknix middleware rig to enable PS3 Emulation on ARM64 Retrogaming Handhelds by brute-force optimization, thermal and shader protection, shader cache management and advanced in-game telematics
+
+#The Kit Features
 1. Hardware and driver tunings for maximum performance
 1. Smart thermal protection to safely overdrive the device during shader harvesting
 1. Optimized emulator game configurations tuned to the device hardware
