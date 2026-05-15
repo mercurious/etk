@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==========================================================
-# ETK PHASE 13.5: FLASHER (v13.2.4 - ATOMIC SENTRY)
+# ETK PHASE 13.5: FLASHER (v13.2.5 - ATOMIC SENTRY)
 # ==========================================================
 # MERGE LOG: 
 # - MANIFEST COMPLIANCE: Atomic Symlink Swap added to Sentry.
@@ -37,53 +37,62 @@ ssh $RIG_SSH << 'EOF'
     mkdir -p /storage/.config/custom_scripts/
 
     # 1. Write the Sentry logic
-    cat << 'SENTRY' > "$BOOT_SENTRY"
+cat << 'SENTRY' > "$BOOT_SENTRY"
 #!/bin/bash
-# ETK SENTRY: SYSTEMD SHM BACKBONE
+# ==========================================================
+# ETK PHASE 13.6: EVENT-DRIVEN SENTRY
+# ==========================================================
 source /storage/games-internal/roms/etk/scripts/env.sh
+PREV_STATE="IDLE"
 
-# MANDATORY: Reconstruct the sacred SHM
-mkdir -p "$SHM_DIR" 2>/dev/null
-echo "INITIALIZING" > "$LIVE_STAT"
-
-exec -a etk_guardian bash -c '
+while true; do
     source /storage/games-internal/roms/etk/scripts/env.sh
-    while true; do
-        ACTIVE_PIDS=$(pgrep -f rpcs3)
-        if [ ! -z "$ACTIVE_PIDS" ]; then
-            CURRENT_ID=$(echo "$ACTIVE_PIDS" | while read pid; do cat /proc/$pid/cmdline /proc/$pid/environ 2>/dev/null; done | tr '\''\0'\'' '\''\n'\'' | grep -oE '\''[A-Z]{4}[0-9]{5}'\'' | head -n 1)
-            
-            if [ ! -z "$CURRENT_ID" ]; then
-                echo "$CURRENT_ID" > "$ID_FILE"
-                DESIRED_VAULT_DEST="$ETK_ROOT/vault/$CHIPSET/$CURRENT_ID/shaders"
-                PHYSICAL_LINK_DEST=$(readlink -f /storage/.cache/mesa_shader_cache)
-                
-                if [ "$PHYSICAL_LINK_DEST" != "$DESIRED_VAULT_DEST" ]; then
-                    mkdir -p "$DESIRED_VAULT_DEST"
-                    rm -f /storage/.cache/mesa_shader_cache
-                    ln -sf "$DESIRED_VAULT_DEST" /storage/.cache/mesa_shader_cache
-                    pkill -f vault_d.sh
-                fi
+    
+    # 1. THE TRAP (Is RPCS3 Running?)
+    if pgrep -f "rpcs3|AppRun.wrapped" > /dev/null; then
+        CUR_STATE="RUNNING"
+    else
+        CUR_STATE="IDLE"
+    fi
+
+    # 2. THE BRIDGE (Always keep MangoHud bridge alive)
+    pgrep -f mango_bridge.sh >/dev/null || nohup bash "$ETK_ROOT/scripts/mango_bridge.sh" >/dev/null 2>&1 &
+
+    # 3. STATE TRANSITIONS
+    if [ "$CUR_STATE" == "RUNNING" ]; then
+        # If we just transitioned from IDLE to RUNNING...
+        if [ "$PREV_STATE" == "IDLE" ]; then
+            sleep 3 # Let emulator establish game ID in PARAM.SFO
+            if [ "$ETK_BUILD_TYPE" == "FULL" ]; then
+                nohup bash "$ETK_ROOT/bin/vault_d.sh" >/dev/null 2>&1 &
+                nohup bash "$ETK_ROOT/bin/thermal_d.sh" >/dev/null 2>&1 &
+            elif [ "$ETK_BUILD_TYPE" == "LITE" ]; then
+                nohup bash "$ETK_ROOT/bin/thermal_d.sh" >/dev/null 2>&1 &
             fi
-        else
-            echo "IDLE" > "$ID_FILE"
         fi
         
-        pgrep -f mango_bridge.sh >/dev/null || nohup bash "$ETK_ROOT/scripts/mango_bridge.sh" >/dev/null 2>&1 &
-        
-        if [ "$ETK_BUILD_TYPE" == "FULL" ]; then
-            pgrep -f vault_d.sh >/dev/null || nohup bash "$ETK_ROOT/bin/vault_d.sh" >/dev/null 2>&1 &
-            pgrep -f thermal_d.sh >/dev/null || nohup bash "$ETK_ROOT/bin/thermal_d.sh" >/dev/null 2>&1 &
-        elif [ "$ETK_BUILD_TYPE" == "LITE" ]; then
-            pkill -f vault_d.sh 2>/dev/null
-            pgrep -f thermal_d.sh >/dev/null || nohup bash "$ETK_ROOT/bin/thermal_d.sh" >/dev/null 2>&1 &
-        elif [ "$ETK_BUILD_TYPE" == "RAW" ]; then
+        # Continuous ID Resolution while running
+        ID_STR=$(pgrep -f rpcs3 | xargs -I{} cat /proc/{}/cmdline /proc/{}/environ 2>/dev/null | tr '\0' '\n' | grep -oE '[A-Z]{4}[0-9]{5}' | head -n 1)
+        if [ ! -z "$ID_STR" ]; then
+            echo "$ID_STR" > "$ID_FILE"
+        fi
+
+    elif [ "$CUR_STATE" == "IDLE" ]; then
+        # If we just transitioned from RUNNING to IDLE (User quit or Game crashed)...
+        if [ "$PREV_STATE" == "RUNNING" ]; then
+            echo "IDLE" > "$ID_FILE"
             pkill -f vault_d.sh 2>/dev/null
             pkill -f thermal_d.sh 2>/dev/null
+            
+            # Reset the Bridge stats so HUD doesn't freeze on last known values
+            echo "ETK:[IDLE] | WAITING FOR IGNITION" > "$LIVE_STAT".tmp
+            mv "$LIVE_STAT".tmp "$LIVE_STAT"
         fi
-        sleep 2
-    done
-'
+    fi
+
+    PREV_STATE="$CUR_STATE"
+    sleep 2
+done
 SENTRY
 
     chmod +x "$BOOT_SENTRY"

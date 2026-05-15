@@ -30,7 +30,7 @@
 * **uninstall.sh:** The Cleaner. Restores stock hardware states (GPU/CPU governors) and stops daemons.
 
 ### 2. DAEMONS (THE WORKERS)
-* **01-etk-startup.sh:** The Sentry. Runs at boot. Sniffs for game launches and physically swaps the `/storage/.cache` symlink to the correct vault.
+* **01-etk-startup.sh (etk_sentry.service):** The State Machine. Runs constantly in the background. Tracks emulator ignition (IDLE vs RUNNING), resolves the Game ID, and orchestrates the live/die cycles of the thermal and vault daemons.
 * **vault_d.sh:** The Accountant. Resides in `/bin`. Tracks "NEW" vs "BANKED" shaders in real-time.
 * **thermal_d.sh:** The Governor. Resides in `/bin`. Manages CPU/GPU clocks and triggers "PIT" (Cooldown) vs "RACE" (Performance) modes.
 * **input_d.py:** The Shifter. Python daemon that maps Xbox virtual controller inputs (Select+R3) to ETK commands.
@@ -71,17 +71,13 @@
 
 ## IMMUTABLE COMMENTS: Any script update MUST include a "GEMINI IMMUTABLE RULE" block in the header to inform subsequent models of structural constraints.
 
-## TO DO
+- **HUD FORMAT STRICT LOCK**: The instrument string layout is locked to a dense, space-trimmed format to preserve Flip 2 screen real estate. Future iterations MUST NOT expand spacing or add decorative characters. 
+  - *Format:* `ETK:[MODE][TARGET_ID]|TEMP: XX°C STAT|LOAD: X.XX STAT|RAM: XX% STAT|VAULT: XXMB BANK: XXX NEW: XX`
 
-# FIX AND LOCK FOR FUTURE GEMINI
-# HUD INSTURMENT STRING NEEDS REDESIGN and LOCKDOWN
-# Format should be, as example
-# ETK:[RACE][NPUA80075]| TEMP: 67°C OK | LOAD: 8.67 OK | RAM: 67% OK | VAULT: 85 MB BANK: 456 NEW: 34
-# ETK: RACE | PIT | LITE | RAW [GAMEID]
-# TEMP: OK | HOT | OVERHEAT
-# LOAD: OK | PEAK | REDLINE
-# RAM: OK | PEAK | CRITICAL
-# VAULT: XX MB BANK: XXX NEW: XX or VAULT: ERROR
+- **SENTRY STATE MACHINE (THE IGNITION LOCK)**: The `etk_sentry` service MUST operate as an event-driven state machine. It tracks the `rpcs3` process transitioning between `IDLE` and `RUNNING`.
+  - Background daemons (`vault_d.sh`, `thermal_d.sh`) MUST NOT be executed during the OS boot sequence.
+  - The Sentry must wait 3 seconds after `RUNNING` is detected before launching daemons to ensure `TARGET_ID` is established from `PARAM.SFO`. This prevents the `BANK: 0` race condition.
+  - When transitioning back to `IDLE` (graceful exit or nuclear recovery), the Sentry MUST actively `pkill` the daemons to flush stale memory.
 
 # RESTORE AND LOCK AUTO RSYNC SHADER PROTECTION AND AUTO MANAGEMENT AT INSTALL.SH
 # Gemini designed beautiful tethered shader saver system and then a later Gemini erased it.
