@@ -1,5 +1,5 @@
 # The Emulation Tuning Kit
-A custom Rocknix middleware rig to enable PS3 Emulation on ARM64 Retrogaming Handhelds by brute-force optimization, thermal and shader protection, shader cache management and advanced in-game telematics
+A custom Rocknix middleware rig to enable PS3 Emulation on ARM64 Retrogaming Handhelds by brute-force optimization, thermal and shader protection, shader cache management and advanced in-game telematics. It guards hard-earned shaders from SD card failure, OS flashing, data corruption, device failure, loss or theft. Push your device to its limits while collecting shaders and recover from crashes so the game plays well after several attempts. Designed to make the Gran Turismo series playable on a Flip2, the ETK adopts the racing metaphor throughout but should work for any type of PS3 game. The long term vision is a shader swarm system where the Flip2 automatically seeds and leeches shaders through a tight-knit device-centric P2P network during a battery charge.
 
 # Screenshot
 ToDo.
@@ -42,7 +42,7 @@ ToDo.
 - **System:** Retroid Pocket Flip 2 (SM8250)
 - **OS:** ROCKNIX (Nightly Build: 20260513)
 - **Driver** MESA Turnip 260.1.0
-- **Target:** Gran Turismo 5 Prologue (RPCS3)
+- **Target:** Gran Turismo series HD, Prologue, 5, 6 (RPCS3)
 - **Shell:** BusyBox v1.36.1
 - **Custom Overlay:** MangoHUD
 
@@ -50,12 +50,11 @@ ToDo.
 The Emulation Tuning Kit (ETK) is a performance-optimization and telemetry suite designed to achieve the previously "impossible": **Native 720p PS3 Emulation on ARM Handhelds.** The core user experience is a **"Mining Meta-Game":** The driver performs "Harvesting Runs" to bank shaders into a permanent shader Vault. A gamepad button gear-shift allows the driver to watch a custom MangoHUD overlay and pull over (hit pause) to downshift to PIT mode (thermal cooling) from RACE (overdrive) which prevents crashes while overtaxing the Flip 2. Subsequent races use banked shaders to bypass real-time compilation stutters. Once shader saturation is achieved, and a complete set perfectly compiled for the device and game serial can be easily shared with another ETK user with the same device and game, saving them hours of shader compute and labor.
 
 # Warnings and Recommendations
-- Requires the patience and dedication of race car drivers. You will crash. But you will also win races that could otherwise not even be played. ETK doesn't magically make your device run PS3 emulation, it only gives it a fighting chance with professional grade tools and system tunings.
+- Requires the patience and dedication of race car drivers. You will crash. But you will also win races that could otherwise not be played. ETK doesn't magically make your device run PS3 emulation, it only gives it a fighting chance with professional grade tools and system tunings. Shader sharing spares other players the harvest.
 - Requires the exact Rocknix Nightly specified above. This does not work on the official release nor has it been tested or updated for other Rocknix nightly builds.
 - Do not use your main ROM library SD card for this Rocknix install. Instead, use a reasonably sized (256GB or less) high quality dev card that you don't mind wearing out or needing to reflash. Put your favorite PS3 games on this card and wait until the ETK can be upgraded for a Rocknix (official) release before using on your main card.
 - Do not install on your handheld device if you intend to use the warranty coverage or otherwise would protect it from track day abuse. If you wouldn't take your daily driver to the track, do not install highly experimental software on your only retro handeld the could potentially damage or brick it.
-- Icepack or Refrigeration is recommended during PPU compiling and intensive early-stage shader harvesting or other racing when the WARNING and OVERHEAT messages display on the custom HUD DDU.
-- OS updates and other major system events may require a series of successive PPU recompilations which do take time and putting the device on an ice pack or in the refrigerator will reduce thermal stress on the system during these intensive operations. Once the PPUs have been fully rebuilt, the game launch will skip this process. With each successive pass at recompiling the PPUs, the game start feeling faster, smoother, and more responsive.
+- OS updates, ETK uninstalls and other major system events may require a PPU recompilation which do take time. Putting the device on an ice pack or in the refrigerator will reduce thermal stress on the system during these intensive operations. 
 - The ETK is designed with community shader sharing in mind.
 
 # Custom ETK Gamepad Specifications

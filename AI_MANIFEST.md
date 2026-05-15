@@ -71,6 +71,9 @@
 
 ## IMMUTABLE COMMENTS: Any script update MUST include a "GEMINI IMMUTABLE RULE" block in the header to inform subsequent models of structural constraints.
 
+## TO DO
+
+# FIX AND LOCK FOR FUTURE GEMINI
 # HUD INSTURMENT STRING NEEDS REDESIGN and LOCKDOWN
 # Format should be, as example
 # ETK:[RACE][NPUA80075]| TEMP: 67°C OK | LOAD: 8.67 OK | RAM: 67% OK | VAULT: 85 MB BANK: 456 NEW: 34
@@ -79,3 +82,6 @@
 # LOAD: OK | PEAK | REDLINE
 # RAM: OK | PEAK | CRITICAL
 # VAULT: XX MB BANK: XXX NEW: XX or VAULT: ERROR
+
+# RESTORE AND LOCK AUTO RSYNC SHADER PROTECTION AND AUTO MANAGEMENT AT INSTALL.SH
+# Gemini designed beautiful tethered shader saver system and then a later Gemini erased it.

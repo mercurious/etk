@@ -8,9 +8,15 @@
 # - Maintained Shared-Truth ID resolution and Thermal Boundaries
 # ==========================================================
 
+# --- [ CUSTOMIZE YOUR SETUP HERE ] ---
+# FULL for thermal and shader protection
+# LITE for thermal protection only
+# RAW for system optimizations and custom HUD only
 export ETK_BUILD_TYPE="FULL"
 export RIG_IP="192.168.1.53"
 export RIG_SSH="root@192.168.1.53"
+
+
 
 # --- [ SHM & STATE ] ---
 export SHM_DIR="/dev/shm/etk_shm"

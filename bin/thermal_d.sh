@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==========================================================
-# ETK PHASE 13.5: THERMAL GOVERNOR (v13.1.0 - SILENT PRODUCER)
+# ETK PHASE 13.5: THERMAL GOVERNOR (v13.1.1 - SILENT PRODUCER)
 # ==========================================================
 # ARCHITECTURE: Proactive GPU Clearing & Hard CPU Anchoring
 # HARDWARE: SM8250 (Adreno 650 / Policies 4 & 7)
@@ -38,20 +38,20 @@ while true; do
         fi
     fi
 
-    # 5. CONTINUOUS THERMAL BROADCAST (For mango_bridge.sh)
+	# 5. CONTINUOUS THERMAL BROADCAST (For mango_bridge.sh)
     # Replaces direct LIVE_STAT writes to prevent HUD flicker/race conditions
     if [ "$TEMP" -ge "$RACE_THRESHOLD" ]; then
-        echo "OVERHEAT" > "$SHM_DIR/thermal_stat"
+        echo "${TEMP}°C OVERHEAT" > "$SHM_DIR/thermal_stat"
     elif [ "$TEMP" -ge "$ALARM_TEMP" ]; then
-        echo "HOT" > "$SHM_DIR/thermal_stat"
+        echo "${TEMP}°C HOT" > "$SHM_DIR/thermal_stat"
     else
         if [ "$CURRENT_MODE" == "RACE" ]; then
-            echo "NOMINAL" > "$SHM_DIR/thermal_stat"
+            echo "${TEMP}°C OK" > "$SHM_DIR/thermal_stat"
         else
-            echo "ANCHOR" > "$SHM_DIR/thermal_stat"
+            echo "${TEMP}°C ANCHOR" > "$SHM_DIR/thermal_stat"
         fi
     fi
-
+    
     # 6. GOVERNOR & GPU SYNC (The "Anchor" Logic)
     if [ "$CURRENT_MODE" != "$LAST_MODE" ]; then
         if [ "$CURRENT_MODE" == "RACE" ]; then
