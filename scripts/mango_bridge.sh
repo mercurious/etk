@@ -57,7 +57,7 @@ while true; do
 
     # 5. ATOMIC HUD INJECTION [MANIFEST RULE: HUD FORMAT]
     # Build the exact string requested in AI_MANIFEST.md
-    FINAL_STRING="ETK:[${CUR_MODE}][${TARGET_ID}] | TEMP: ${T_STAT} | LOAD: ${LOAD_RAW} ${L_STAT} | RAM: ${RAM_VAL}% ${R_STAT} | ${VAULT_STR}"
+    FINAL_STRING="ETK:[${CUR_MODE}][${TARGET_ID}]|TEMP: ${T_STAT}|LOAD: ${LOAD_RAW} ${L_STAT}|RAM: ${RAM_VAL}% ${R_STAT}|${VAULT_STR}"
     
     # Write to temp file then move to prevent MangoHud from reading an incomplete file
     echo "$FINAL_STRING" > "${LIVE_STAT}.tmp"

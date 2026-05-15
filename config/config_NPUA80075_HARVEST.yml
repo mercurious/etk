@@ -5,23 +5,22 @@ Audio:
   Channels: 2.0
 
 Core:
-  PPU Threads: 2         
+  PPU Threads: 2          
   # HARVEST TWEAK: Dropped from 3 to 2. Without audio, we don't need the 3rd thread. 
   # This frees up a physical core on the Snapdragon for pure shader compilation.
-  Preferred SPU Threads: 4
-  SPU Block Size: Mega    
+  Preferred SPU Threads: 2 
+  SPU Block Size: Safe    
   SPU XFloat Accuracy: Approximate
   # HARVEST TWEAK: Set to true. This forces the emulator to prioritize RSX rendering 
   # and PPU logic over SPU decoding, helping it push past the video curtain.
-  Lower SPU Priority: false 
-  SPU loop detection: false
+  Lower SPU Priority: true 
 
 Video:
   Renderer: Vulkan
   Resolution: 1280x720
   Resolution Scale: 100   
   Resolution Scale Threshold: 512 
-  Write Color Buffers: false
+  Write Color Buffers: true
   Strict Rendering Mode: false  
   Shader Mode: Async (with Shader Interpreter)
   Shader Precision: Low
@@ -31,8 +30,7 @@ Video:
   VSync: false             
   # HARVEST TWEAK: Set to false. Multithreaded RSX is great for FPS, but it creates 
   # severe race conditions during scene changes (the curtain). Single-thread is stable.
-  Multithreaded RSX: true  
-  RSX FIFO Accuracy: Atomic
+  Multithreaded RSX: false  
+  RSX FIFO Accuracy: Ordered
   ZCULL Accuracy: Relaxed
   Vblank Frequency: 60Hz
-  Accurate RSX reservation access: false
