@@ -25,9 +25,9 @@ echo -e "\033[36m>>> [1/6] INITIALIZING RIG DIRECTORIES...\033[0m"
 ssh $RIG_SSH "mkdir -p $VAULT_DIR $ETK_ROOT/bin $ETK_ROOT/scripts $ETK_ROOT/vault $ETK_ROOT/shm /storage/.config/custom_scripts /storage/.config/rpcs3/custom_configs /storage/games-internal/roms/etk/logs"
 
 # --- STEP 1.5: SHADER VAULT PULL (SAFEGUARD HARVEST) ---
-echo -e "\033[36m>>> [1.5/6] SAFEGUARDING HARVEST (PULLING SHADERS TO HOST PC)...\033[0m"
+echo -e "\033[36m>>> [1.5/6] SAFEGUARDING HARVEST (PULLING SHADERS TO HOST PC)....\033[0m"
 mkdir -p ./vault
-rsync -az --progress --update --exclude='.DS_Store' "$RIG_SSH:$ETK_ROOT/vault/" ./vault/
+rsync -az --update --exclude='.DS_Store' "$RIG_SSH:$ETK_ROOT/vault/" ./vault/
 
 # --- STEP 2: SYNC SCRIPTS & DAEMONS ---
 echo -e "\033[36m>>> [2/6] DEPLOYING GUARDIAN DAEMONS...\033[0m"
@@ -41,7 +41,7 @@ rsync -az --progress --exclude='.DS_Store' ./config/MangoHud.conf $RIG_SSH:/stor
 
 # --- STEP 3.5: SHADER VAULT PUSH (SEED MASTER VAULT) ---
 echo -e "\033[36m>>> [3.5/6] SEEDING RIG WITH MASTER PC SHADER VAULT...\033[0m"
-rsync -az --progress --exclude='.DS_Store' ./vault/ $RIG_SSH:$ETK_ROOT/vault/
+rsync -az --exclude='.DS_Store' ./vault/ $RIG_SSH:$ETK_ROOT/vault/
 
 # --- STEP 4: WAKING THE SENTRY (ROCKNIX SYSTEMD) ---
 echo -e "\033[36m>>> [4/6] DEPLOYING ROCKNIX-NATIVE SYSTEMD SENTRY...\033[0m"
@@ -56,13 +56,20 @@ cat << 'SENTRY' > "$BOOT_SENTRY"
 # ==========================================================
 # ETK PHASE 13.6: EVENT-DRIVEN SENTRY
 # ==========================================================
-# GEMINI IMMUTABLE RULE: Sentry handles top-level state transitions.
-# It MUST atomically zero out vault_new.txt at the exact moment of
-# emulator ignition to ensure downstream daemons register accurate counts.
-# To eliminate race conditions, the definitive Game ID must be resolved
-# and committed to ID_FILE before launching downstream worker daemons.
-# ==========================================================
+
+# --- REBOOT SURVIVAL (THE SEED) ---
+# Rebuild the volatile IPC backbone and seed it with default values 
+# so mango_bridge.sh doesn't crash from missing file read errors on boot.
 source /storage/games-internal/roms/etk/scripts/env.sh
+mkdir -p "$SHM_DIR"
+echo "0" > "$SHM_DIR/vault_count"
+echo "0" > "$SHM_DIR/vault_new.txt"
+echo "0" > "$SHM_DIR/vault_size.txt"
+echo "IDLE" > "$SHM_DIR/active_id.txt"
+echo "$DEFAULT_MODE" > "$SHM_DIR/etk_mode.txt"
+echo "READY" > "$SHM_DIR/vault_stat.txt"
+echo "ETK:[$ETK_BUILD_TYPE] | SYSTEM ONLINE" > "$LIVE_STAT"
+
 PREV_STATE="IDLE"
 
 while true; do
@@ -101,4 +108,50 @@ while true; do
         
         # Continuous ID Resolution while running to maintain lock stability
         ID_STR=$(pgrep -f rpcs3 | xargs -I{} cat /proc/{}/cmdline /proc/{}/environ 2>/dev/null | tr '\0' '\n' | grep -oE '[A-Z]{4}[0-9]{5}' | head -n 1)
-        if
+        if [ ! -z "$ID_STR" ]; then
+            echo "$ID_STR" > "$ID_FILE"
+        fi
+
+    elif [ "$CUR_STATE" == "IDLE" ]; then
+        # If we just transitioned from RUNNING to IDLE (User quit or Game crashed)...
+        if [ "$PREV_STATE" == "RUNNING" ]; then
+            echo "IDLE" > "$ID_FILE"
+            pkill -f vault_d.sh 2>/dev/null
+            pkill -f thermal_d.sh 2>/dev/null
+            
+            # Reset the Bridge stats so HUD doesn't freeze on last known values
+            echo "ETK:[$ETK_BUILD_TYPE] | WAITING FOR IGNITION" > "$LIVE_STAT".tmp
+            mv "$LIVE_STAT".tmp "$LIVE_STAT"
+        fi
+    fi
+
+    PREV_STATE="$CUR_STATE"
+    sleep 2
+done
+SENTRY
+
+    chmod +x "$BOOT_SENTRY"
+
+    # 2. Deploy to the ROCKNIX Persistent Systemd path
+    mkdir -p /storage/.config/system.d/
+    
+    cat << 'SVC' > /storage/.config/system.d/etk.service
+[Unit]
+Description=ETK Guardian Sentry
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/bin/bash /storage/.config/custom_scripts/01-etk-sentry.sh
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+SVC
+
+    # 3. Reload, Enable, and Start using the absolute path
+    systemctl daemon-reload
+    systemctl enable /storage/.config/system.d/etk.service
+    systemctl restart etk.service
+EOF

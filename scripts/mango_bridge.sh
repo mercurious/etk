@@ -18,7 +18,6 @@ while true; do
     # 1. IDENTIFICATION
     source /storage/games-internal/roms/etk/scripts/env.sh
     V_DIR="$VAULT_DIR"
-    CUR_MODE=$(cat "$MODE_FILE" 2>/dev/null || echo "$ETK_BUILD_TYPE")
     
     # 2. CONSUME THERMAL STATE (Produced by thermal_d.sh)
     T_STAT=$(cat "$SHM_DIR/thermal_stat" 2>/dev/null || echo "WAIT")
@@ -57,7 +56,7 @@ while true; do
 
     # 5. ATOMIC HUD INJECTION [MANIFEST RULE: HUD FORMAT]
     # Build the exact string requested in AI_MANIFEST.md
-    FINAL_STRING="ETK:${CUR_MODE}|${TARGET_ID}|${T_STAT}|${LOAD_RAW} ${L_STAT}|${RAM_VAL}% ${R_STAT}|${VAULT_STR}"
+    FINAL_STRING="ETK:$ETK_BUILD_TYPE|${TARGET_ID}|${T_STAT}|${LOAD_RAW} ${L_STAT}|${RAM_VAL}% ${R_STAT}|${VAULT_STR}"
     
     # Write to temp file then move to prevent MangoHud from reading an incomplete file
     echo "$FINAL_STRING" > "${LIVE_STAT}.tmp"
