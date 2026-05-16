@@ -94,3 +94,20 @@ The Emulation Tuning Kit (ETK) is a performance-optimization and telemetry suite
 1. Create a local `~/etk` for the kit's extracted code
 1. Edit `scripts/env.sh` so `RIG_IP` and `RIG_SSH` match your device's IP address found in `Rocknix START button` > `Network Settings` > `IP ADDRESS`
 1. Run `./install.sh` to flash your device with the ETK
+
+## Advanced Feature: The AI Pit Wall (Telemetry Hot Drop)
+The ETK includes a zero-friction diagnostic bridge designed to connect the device's live telemetry and crash logs directly to Google's Gemini AI, completely bypassing the need to manually copy-paste massive log files or open dangerous ports on your home router.
+
+By leveraging a host computer and Google Drive, you can turn Gemini into your live pit mechanic.
+
+**Requirements:**
+- A host computer (Mac/Linux) on the same WiFi network as your handheld rig.
+- Google Drive Desktop App installed and syncing on the host computer.
+- Gemini Advanced with the Google Workspace extension enabled.
+
+**Setup & Usage:**
+1. Open `pit_wall_sync.sh` on your host computer and ensure the `GDRIVE_PATH` matches your local Google Drive directory (it will create an `ETK_Telemetry` folder inside it).
+2. Ensure `RIG_SSH` in the script matches your device's IP address.
+3. Before a heavy harvesting session or testing a new emulator config, run the script on your host computer: `./pit_wall_sync.sh`
+4. Play your game. The script will quietly run in the background, mirroring your rig's RAM disk and crash logs to Google Drive every 5 seconds.
+5. **If the emulator crashes:** Simply open your Gemini chat and say: *"Gemini, check my Google Drive workspace for a file named `etk_crash_report.log` and tell me what the error is."* The AI will read the file directly from your Drive and provide immediate diagnostic feedback.

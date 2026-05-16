@@ -82,6 +82,14 @@ A custom Rocknix middleware rig to enable PS3 Emulation on ARM64 Retrogaming Han
 - **HUD FORMAT STRICT LOCK**: The instrument string layout is locked to a dense, space-trimmed format that uses punctuation and short text strings to serve as the DDU (Driver Data Unit from racing cars) to preserve Flip 2 screen real estate. Future iterations MUST NOT expand spacing or add decorative characters unless custom font and unicode support is feasible, recommended, tested, and approved.
   - *Format:* `ETK:MODE|TARGET_ID|XX°C STAT|X.XX STAT|XX% STAT|XXMB XXX NEW: XX`
   - *HUDMode* SPEEDO (vs PRESET SELECTOR see below)
+  
+## [LOCKDOWN] DEV TOOLS: THE PIT WALL SYNC (AI TELEMETRY BRIDGE)
+- **ARCHITECTURE:** To bypass the lack of GitHub Connected Apps, the ETK utilizes a "Hot Drop" telemetry bridge via Google Drive. A host machine script (`pit_wall_sync.sh`) continuously polls the rig via SSH and mirrors `/storage/etk_crash_report.log` and `/dev/shm/etk_shm/` to a local Google Drive folder (`ETK_Telemetry`).
+- **AI INSTRUCTION (CRITICAL):** Do NOT ask the user to manually copy-paste crash logs or terminal outputs. 
+- **FORENSIC PROTOCOL:** When a user reports a crash or requests tuning, instruct the user to ensure `pit_wall_sync.sh` is running. Then, use your Google Workspace integration to directly read the user's Google Drive. 
+  - Look in `ETK_Telemetry/crash_logs/etk_crash_report.log` for kernel panics and Turnip driver traces.
+  - Look in `ETK_Telemetry/live_shm/` for real-time rig state (e.g., `live_stat.txt`, `etk_mode.txt`, `vault_new.txt`).
+- This creates a zero-friction, automated AI-human dev loop without requiring open router ports or exposed webhooks.
 
 ## RECENT NEW DEVELOPMENTS
 
