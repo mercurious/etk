@@ -1,49 +1,63 @@
 #!/bin/bash
 # ==========================================================
-# ETK PHASE 9: Game Agnostic ETK (v9.5.0 - SESSION TELEMETRY)
+# ETK PHASE 9: Game Agnostic ETK (v9.5.2 - ANTI-RACE / PATH-LOCKED)
 # ==========================================================
 # OWNER: Vault Daemon (The Accountant)
 # TARGET: Global Mesa Shader Cache (Symlinked to Vault)
-# AI INSTRUCTION: DO NOT ATTEMPT TO RSYNC CACHE TO VAULT.
-# The cache IS the vault via symlink. We track session growth.
+# GEMINI IMMUTABLE RULE: Polling loop interval must run at 2s for precise 
+# real-time telemetry. Session lifetimes are completely anchored to Sentry 
+# invocation; do not attempt automated baseline resets inside this loop.
+# To eliminate path-shifting race conditions, the target directory profile 
+# must be resolved and locked at startup before establishing the baseline.
+# All state outputs must implement atomic 'echo > tmp && mv tmp output' patterns.
 # ==========================================================
 
-source /storage/games-internal/roms/etk/scripts/env.sh
+# 1. STARTUP IDENTITY SYNC
+# Loop smoothly until the Sentry establishes a definitive, non-IDLE Game ID profile
+while true; do
+    source /storage/games-internal/roms/etk/scripts/env.sh
+    if [ ! -z "$TARGET_ID" ] && [ "$TARGET_ID" != "IDLE" ] && [[ "$VAULT_DIR" != *"IDLE"* ]]; then
+        break
+    fi
+    sleep 0.5
+done
 
-mkdir -p "$VAULT_DIR"
-mkdir -p "$SHM_DIR"
-echo "READY" > "$SHM_DIR/vault_stat.txt"
+# 2. IMMUTABLE PATH LOCK
+# Freeze environment variables to protect the session from downstream environment updates
+LOCKED_VAULT_DIR="$VAULT_DIR"
+LOCKED_SHM_DIR="$SHM_DIR"
+LOCKED_VAULT_COUNT="$VAULT_COUNT"
 
-# Establish Session Baseline
-if [ -d "$VAULT_DIR" ]; then
-    SESSION_BASELINE=$(find "$VAULT_DIR" -type f 2>/dev/null | wc -l)
+mkdir -p "$LOCKED_VAULT_DIR"
+mkdir -p "$LOCKED_SHM_DIR"
+echo "READY" > "$LOCKED_SHM_DIR/vault_stat.txt"
+
+# 3. ESTABLISH CLEAN SESSION BASELINE
+# Capture the absolute baseline count once against the locked directory tree
+if [ -d "$LOCKED_VAULT_DIR" ]; then
+    SESSION_BASELINE=$(find "$LOCKED_VAULT_DIR" -type f 2>/dev/null | wc -l)
 else
     SESSION_BASELINE=0
 fi
 
+# 4. ACCOUNTING ACCOUNTANT LOOP
 while true; do
-    source /storage/games-internal/roms/etk/scripts/env.sh
-
-    # 1. The Sentry Watcher (Reset baseline if Game ID shifts)
-    # We use the active symlink size to ensure we are looking at the right game
-    CURRENT_BANK=$(find "$VAULT_DIR" -type f 2>/dev/null | wc -l)
+    # Capture absolute real-time bank count
+    CURRENT_BANK=$(find "$LOCKED_VAULT_DIR" -type f 2>/dev/null | wc -l)
     
-    # If the bank is somehow smaller than baseline, a game shift occurred
-    if [ "$CURRENT_BANK" -lt "$SESSION_BASELINE" ]; then
-        SESSION_BASELINE=$CURRENT_BANK
+    # Session Delta Calculation (Directly tracked from the immutable startup snapshot)
+    NEW_COUNT=$((CURRENT_BANK - SESSION_BASELINE))
+    if [ "$NEW_COUNT" -lt 0 ]; then 
+        NEW_COUNT=0 
     fi
 
-    # 2. Session Delta Calculation
-    NEW_COUNT=$((CURRENT_BANK - SESSION_BASELINE))
-    if [ "$NEW_COUNT" -lt 0 ]; then NEW_COUNT=0; fi
-
-    # 3. Size Calculation
-    VAULT_SIZE=$(du -sm "$VAULT_DIR" 2>/dev/null | awk '{print $1}' || echo "0")
+    # Size Calculation (BusyBox compliance using awk decimal interpretation)
+    VAULT_SIZE=$(du -sm "$LOCKED_VAULT_DIR" 2>/dev/null | awk '{print $1}' || echo "0")
     
-    # 4. RAM Disk Hand-off for mango_bridge.sh
-    echo "$CURRENT_BANK" > "$VAULT_COUNT"
-    echo "$NEW_COUNT" > "$SHM_DIR/vault_new.txt"
-    echo "$VAULT_SIZE" > "$SHM_DIR/vault_size.txt"
+    # Atomic Hand-off to prevent line collisions with mango_bridge.sh
+    echo "$CURRENT_BANK" > "$LOCKED_VAULT_COUNT.tmp" && mv "$LOCKED_VAULT_COUNT.tmp" "$LOCKED_VAULT_COUNT"
+    echo "$NEW_COUNT" > "$LOCKED_SHM_DIR/vault_new.txt.tmp" && mv "$LOCKED_SHM_DIR/vault_new.txt.tmp" "$LOCKED_SHM_DIR/vault_new.txt"
+    echo "$VAULT_SIZE" > "$LOCKED_SHM_DIR/vault_size.txt.tmp" && mv "$LOCKED_SHM_DIR/vault_size.txt.tmp" "$LOCKED_SHM_DIR/vault_size.txt"
     
-    sleep 10
+    sleep 2
 done
