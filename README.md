@@ -1,5 +1,5 @@
 # The Emulation Tuning Kit
-A custom Rocknix middleware rig to enable PS3 Emulation on ARM64 Retrogaming Handhelds by brute-force optimization, thermal and shader protection, shader cache management and advanced in-game telematics. It guards hard-earned shaders from SD card failure, OS flashing, data corruption, device failure, loss or theft. Push your device to its limits while collecting shaders and recover from crashes so the game plays well after several attempts. Designed to make the Gran Turismo series playable on a Flip2, the ETK adopts the racing metaphor throughout but should work for any type of PS3 game. The long term vision is a shader swarm system where the Flip2 automatically seeds and leeches shaders through a tight-knit device-centric P2P network during a battery charge.
+A custom Rocknix middleware rig to enable PS3 Emulation on ARM64 Retrogaming Handhelds by brute-force optimization, thermal and shader protection, shader cache management and advanced in-game telematics. It guards hard-earned shaders from SD card failure, OS flashing, data corruption, device failure, loss or theft. Push your device to its limits while collecting shaders and recover from crashes so the game plays well after several attempts. Specifically designed to make Gran Turismo 5 Prologue playable on a Flip2, the ETK adopts the racing metaphor throughout but should work for any type of PS3 game. The long term vision is a shader swarm system where the Flip2 automatically seeds and leeches shaders through a tight-knit device-centric P2P network during a battery charge.
 
 # Screenshot
 ToDo.
@@ -10,7 +10,7 @@ ToDo.
 1. Smart thermal protection to safely overdrive the device during shader harvesting
 1. Automatic shader backup from your device to computer to share with other ETK users
 1. Customized in-game overlay with ETK telematics inside MangoHUD
-1. Customized gamepad ETK commands to trigger performance and cooldown modes (R3)
+1. Customized gamepad ETK commands (L3) as CLUTCH; (R3) as PANIC; (R Analog L-R) as select-swipe
 1. Pit wall remote terminal screen to monitor and control device rig with advanced crash recovery and analytics (`scripts/commander.sh`)
 1. Install, configure, repair, and uninstall the kit remotely from a computer (`install.sh` and `uninstall.sh`)
 1. Multi-Installation Options: FULL installation for initial shader harvesting and tuning, LITE installation for saturated shader sets with thermal protection only, RAW for stress testing without shader and thermal protections (`ETK_BUILD_TYPE` in `scripts/env.sh`)
@@ -42,7 +42,7 @@ ToDo.
 - **System:** Retroid Pocket Flip 2 (SM8250)
 - **OS:** ROCKNIX (Nightly Build: 20260513)
 - **Driver** MESA Turnip 260.1.0
-- **Target:** Gran Turismo series HD, Prologue, 5, 6 (RPCS3)
+- **Target:** Gran Turismo series HD (stable/playable), Prologue (stable/playable), 5 (menus only), 6 (menus only) (RPCS3)
 - **Shell:** BusyBox v1.36.1
 - **Custom Overlay:** MangoHUD
 
@@ -82,11 +82,13 @@ The Emulation Tuning Kit (ETK) is a performance-optimization and telemetry suite
 - Phase 6: Rocknix OS migrated to May 11 Nightly, dependency updated, preserved into repo, 
 - Phase 7: Enabled robust crash reporting, diagnosis, advisory, ETK install tiers
 - Phase 8: Attempted experimental incremental audio support
-- Phase 9: Enable game agnostic ETK
-- Phase 10: Work with pre-alpha testers to test other games
-- Phase 11: Prepare for public GitHub distribution 
+- Phase 9: Enabled game agnostic ETK
+- Phase 10: Onboard ETK Commands and Clutched Next Launch Config Preset in HUD Selector
+- Phase 11: Develop External Networking Gemini Dev Analytics Workflow Tools
 - Phase 12: Develop native Rocknix ETK app for utilities (Tools or carousel UI)
 - Phase 13: Develop shader sharing and shader swarming features per device/per game serial
+- Phase 14: Beta Testing
+- Phase 15: Release
 
 # Easy Install Guide (FULL Kit)
 1. Create a local `~/etk` for the kit's extracted code

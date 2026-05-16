@@ -4,7 +4,7 @@
 # ==========================================================
 # GEMINI IMMUTABLE RULE:
 # 1. HUD STRING FORMAT IS LOCKED: 
-#    ETK:[MODE][ID] | TEMP: XX°C STAT | LOAD: X.XX STAT | RAM: XX% STAT | VAULT: XX MB BANK: XXX NEW: XX
+#    ETK:MODE|ID|XX°C STAT|LOAD: X.XX STAT|RAM: XX% STAT|VAULT: XX MB BANK: XXX NEW: XX
 # 2. ATOMIC SWAP ONLY: MUST use `echo > tmp && mv tmp $LIVE_STAT`
 # 3. RAW TEXT ONLY: No MangoHud configuration keys (e.g., custom_text=) in the output.
 # ==========================================================
@@ -52,12 +52,12 @@ while true; do
     if [ -z "$V_SIZE" ]; then
         VAULT_STR="VAULT: ERROR"
     else
-        VAULT_STR="VAULT: ${V_SIZE} MB BANK: ${BANK} NEW: ${NEW_SHADERS}"
+        VAULT_STR="${V_SIZE} MB ${BANK} NEW: ${NEW_SHADERS}"
     fi
 
     # 5. ATOMIC HUD INJECTION [MANIFEST RULE: HUD FORMAT]
     # Build the exact string requested in AI_MANIFEST.md
-    FINAL_STRING="ETK:[${CUR_MODE}][${TARGET_ID}]|TEMP: ${T_STAT}|LOAD: ${LOAD_RAW} ${L_STAT}|RAM: ${RAM_VAL}% ${R_STAT}|${VAULT_STR}"
+    FINAL_STRING="ETK:${CUR_MODE}|${TARGET_ID}|${T_STAT}|${LOAD_RAW} ${L_STAT}|${RAM_VAL}% ${R_STAT}|${VAULT_STR}"
     
     # Write to temp file then move to prevent MangoHud from reading an incomplete file
     echo "$FINAL_STRING" > "${LIVE_STAT}.tmp"
