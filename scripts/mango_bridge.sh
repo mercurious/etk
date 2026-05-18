@@ -45,12 +45,17 @@ while true; do
     # 4. ADVANCED SHADER TELEMETRY
     BANK=$(cat "$VAULT_COUNT" 2>/dev/null || echo "0")
     NEW_SHADERS=$(cat "$SHM_DIR/vault_new.txt" 2>/dev/null || echo "0")
-    # Calculate physical Vault size in MB (BusyBox Safe per Manifest)
-	V_SIZE=$(du -sm "$V_DIR" 2>/dev/null | awk '{print $1}')
-    
-    if [ -z "$V_SIZE" ]; then
+# ==================================================================
+# PATCHED VIA PIT WALL: BUSYBOX-SAFE SYMLINK FOOTPRINT CALCULATION
+# ==================================================================
+# 1. Use -k (Kilobytes) which is universally supported by BusyBox
+# 2. Use -L to explicitly FORCE du to follow the vault symlinks
+	V_SIZE_KB=$(du -skL "$V_DIR" 2>/dev/null | awk '{print $1}')    
+    if [ -z "$V_SIZE_KB" ] || [ "$V_SIZE_KB" -eq 0 ]; then
         VAULT_STR="VAULT: ERROR"
     else
+    	# Convert Kilobytes to Megabytes safely using integer arithmetic
+    V_SIZE=$((V_SIZE_KB / 1024))
         VAULT_STR="${V_SIZE} MB ${BANK} NEW: ${NEW_SHADERS}"
     fi
 

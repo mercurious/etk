@@ -68,7 +68,8 @@ export CRASH_LOG="/storage/etk_crash_report.log"
 export LAST_ANALYSIS="$SHM_DIR/last_analysis.txt"
 
 # --- [ RESTORED THERMAL BOUNDARIES ] ---
-export ALARM_TEMP=79
+# Recalibrating to Rocknix nightly-20260516 changed thermals
+export ALARM_TEMP=82
 export PIT_THRESHOLD=65
 export RACE_THRESHOLD=85
 

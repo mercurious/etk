@@ -14,6 +14,17 @@ echo "----------------------------------------------------"
 
 mkdir -p "$GDRIVE_PATH/crash_logs"
 mkdir -p "$GDRIVE_PATH/live_shm"
+echo "🧹 SEEDING COLD START TELEMETRY STRUCTS..."
+mkdir -p "$GDRIVE_PATH/crash_logs"
+mkdir -p "$GDRIVE_PATH/live_shm"
+
+# Seed explicit offline markers so the data state is never ambiguous
+echo "ETK:STATUS|OFFLINE - AWAITING RIG BOOT" > "$GDRIVE_PATH/live_shm/live_stat.txt"
+if [ ! -f "$GDRIVE_PATH/crash_logs/etk_crash_report.log" ]; then
+    echo "ETK: FORENSICS ENGINE ONLINE - NO ACTIVE CRASH REPORTED" > "$GDRIVE_PATH/crash_logs/etk_crash_report.log"
+fi
+echo "🏁 STATUS SEEDED. LOGGING ENGINE STARTED."
+# =======================================================================
 
 while true; do
     # 1. Pull the Crash Log (Only if updated)

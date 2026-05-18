@@ -33,3 +33,11 @@ Video:
   ZCULL Accuracy: Relaxed
   #NEW
   Vblank Frequency: 60Hz
+  Vulkan:
+    Adapter: Turnip Adreno (TM) 650
+    Asynchronous Queue Scheduler: Safe
+    Asynchronous Texture Streaming: true
+    Exclusive Fullscreen Mode: Automatic
+    Force primitive restart flag: false
+    Use Re-BAR for GPU uploads: true
+    VRAM allocation limit (MB): 65536

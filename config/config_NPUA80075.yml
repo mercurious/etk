@@ -1,38 +1,53 @@
+# ETK CONIFIG GT5P DAYTONA STABLE BASELINE
 Audio:
-  # HARVEST TWEAK: Silence. Audio processing is the #1 cause of GT menu deadlocks.
-  Renderer: Null
-  Audio Buffer: 100
+   # OpenSL or Cubeb or ALSA
+  Renderer: ALSA
+  # Downmix to Stereo to save SPU mixing cycles
   Channels: 2.0
-
+  Audio Format: Stereo
+  Audio Provider: CellAudio
+  # Increasing buffer to tolerate SPU jitter
+  Audio Buffer: 1000
+  Desired Audio Buffer Duration: 500
+  Enable Buffering: true
+  Time Stretching Threshold: 1000
+  Enable Time Stretching: true
 Core:
-  PPU Threads: 2         
-  # HARVEST TWEAK: Dropped from 3 to 2. Without audio, we don't need the 3rd thread. 
-  # This frees up a physical core on the Snapdragon for pure shader compilation.
-  Preferred SPU Threads: 4
-  SPU Block Size: Mega    
+  # Seems optimal at 2
+  PPU Threads: 2
+  # We need an extra thread for SPU-Audio synthesis
+  Preferred SPU Threads: 3
+  # Try switching between Mega and Safe - makes a big difference
+  SPU Block Size: Mega
+  # Approximate accuracy is mandatory to keep audio sync on SM8250
   SPU XFloat Accuracy: Approximate
-  # HARVEST TWEAK: Set to true. This forces the emulator to prioritize RSX rendering 
-  # and PPU logic over SPU decoding, helping it push past the video curtain.
-  Lower SPU Priority: false 
-  SPU loop detection: false
-
+  # We want SPU threads fast, but not starving the PPU
+  Lower SPU Priority: false
 Video:
+  # Vulkan required for MESA Turnip
   Renderer: Vulkan
   Resolution: 1280x720
-  Resolution Scale: 100   
-  Resolution Scale Threshold: 512 
+  # Attempt 50% 66% 75% during extreme harvesting duress
+  Resolution Scale: 100
+  # Adreno tuned
+  Resolution Scale Threshold: 512
+  # Buffers
   Write Color Buffers: false
-  Strict Rendering Mode: false  
+  Read Color Buffers: false
+  Read Depth Buffer: false
+  Write Depth Buffer: false
+  Strict Rendering Mode: false
   Shader Mode: Async (with Shader Interpreter)
   Shader Precision: Low
+  # Enable Frame Limit to 30 to prevent the CPU from over-reaching
   Frame limit: 30
   Aspect ratio: 16:9
   Output Scaling Mode: Bilinear
-  VSync: false             
-  # HARVEST TWEAK: Set to false. Multithreaded RSX is great for FPS, but it creates 
-  # severe race conditions during scene changes (the curtain). Single-thread is stable.
-  Multithreaded RSX: true  
-  RSX FIFO Accuracy: Atomic
+  VSync: false
+  Multithreaded RSX: true
+  RSX FIFO Accuracy: Ordered
   ZCULL Accuracy: Relaxed
   Vblank Frequency: 60Hz
-  Accurate RSX reservation access: false
+  Relaxed ZCULL Sync: true
+  Vulkan:
+    Asynchronous Texture Streaming: true

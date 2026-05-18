@@ -50,4 +50,4 @@ Video:
   Vblank Frequency: 60Hz
   Relaxed ZCULL Sync: true
   Vulkan:
-    Asynchronous Texture Streaming: true
+    Asynchronous Texture Streaming: false

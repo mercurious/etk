@@ -46,6 +46,8 @@ rsync -az --exclude='.DS_Store' ./vault/ $RIG_SSH:$ETK_ROOT/vault/
 # --- STEP 4: WAKING THE SENTRY (ROCKNIX SYSTEMD) ---
 echo -e "\033[36m>>> [4/6] DEPLOYING ROCKNIX-NATIVE SYSTEMD SENTRY...\033[0m"
 
+
+
 ssh $RIG_SSH << 'EOF'
     BOOT_SENTRY="/storage/.config/custom_scripts/01-etk-sentry.sh"
     mkdir -p /storage/.config/custom_scripts/
@@ -56,6 +58,8 @@ cat << 'SENTRY' > "$BOOT_SENTRY"
 # ==========================================================
 # ETK PHASE 13.6: EVENT-DRIVEN SENTRY
 # ==========================================================
+
+
 
 # --- REBOOT SURVIVAL (THE SEED) ---
 # Rebuild the volatile IPC backbone and seed it with default values 

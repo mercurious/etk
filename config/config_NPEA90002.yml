@@ -1,35 +1,53 @@
+# ETK CONIFIG GT5P DAYTONA STABLE BASELINE
 Audio:
-  # SWITCH: Moving from Null to OpenSL (Native Android/Linux Audio)
-  Renderer: OpenSL
-  # OPTIMIZATION: Increasing buffer to 100ms to tolerate SPU jitter
-  Audio Buffer: 350
-  # NEW: Downmix to Stereo to save SPU mixing cycles
+   # OpenSL or Cubeb or ALSA
+  Renderer: ALSA
+  # Downmix to Stereo to save SPU mixing cycles
   Channels: 2.0
+  Audio Format: Stereo
+  Audio Provider: CellAudio
+  # Increasing buffer to tolerate SPU jitter
+  Audio Buffer: 1000
+  Desired Audio Buffer Duration: 500
+  Enable Buffering: true
+  Time Stretching Threshold: 1000
+  Enable Time Stretching: true
 Core:
-  PPU Threads: 2          
-  # INCREASED: We need an extra thread for SPU-Audio synthesis
-  Preferred SPU Threads: 3 
-  SPU Block Size: Safe    
-  # CRITICAL: Approximate accuracy is mandatory to keep audio sync on SM8250
+  # Seems optimal at 2
+  PPU Threads: 2
+  # We need an extra thread for SPU-Audio synthesis
+  Preferred SPU Threads: 3
+  # Try switching between Mega and Safe - makes a big difference
+  SPU Block Size: Mega
+  # Approximate accuracy is mandatory to keep audio sync on SM8250
   SPU XFloat Accuracy: Approximate
-  # BALANCING: We want SPU threads fast, but not starving the PPU
-  Lower SPU Priority: false 
+  # We want SPU threads fast, but not starving the PPU
+  Lower SPU Priority: false
 Video:
+  # Vulkan required for MESA Turnip
   Renderer: Vulkan
   Resolution: 1280x720
-  Resolution Scale: 100   
-  Resolution Scale Threshold: 512 
-  Write Color Buffers: true
-  Strict Rendering Mode: false  
+  # Attempt 50% 66% 75% during extreme harvesting duress
+  Resolution Scale: 100
+  # Adreno tuned
+  Resolution Scale Threshold: 512
+  # Buffers
+  Write Color Buffers: false
+  Read Color Buffers: false
+  Read Depth Buffer: false
+  Write Depth Buffer: false
+  Strict Rendering Mode: false
   Shader Mode: Async (with Shader Interpreter)
   Shader Precision: Low
-  # NEW: Enable Frame Limit to 30 to prevent the CPU from over-reaching
+  # Enable Frame Limit to 30 to prevent the CPU from over-reaching
   Frame limit: 30
   Aspect ratio: 16:9
   Output Scaling Mode: Bilinear
-  VSync: false             
-  Multithreaded RSX: true  
+  VSync: false
+  Multithreaded RSX: true
   RSX FIFO Accuracy: Ordered
   ZCULL Accuracy: Relaxed
-  #NEW
   Vblank Frequency: 60Hz
+  Relaxed ZCULL Sync: true
+  Vulkan:
+    Asynchronous Texture Streaming: true

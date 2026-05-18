@@ -3,7 +3,7 @@ A custom Rocknix middleware rig to enable PS3 Emulation on ARM64 Retrogaming Han
 
 # ETK (EMULATOR TOOLKIT) MISSION MANIFEST
 **TARGET HARDWARE:** Retroid Pocket Flip 2 (SM8250)
-**TARGET OS:** Rocknix (Read-Only Root, BusyBox Environment) specific nightly build 20260513 with MESA Turnip 260.1.0
+**TARGET OS:** Rocknix (Read-Only Root, BusyBox Environment) specific nightly build 20260517 with MESA Turnip 260.1.0
 **CORE PHILOSOPHY:** Defeat Rocknix's filesystem limitations using a hybrid Persistent/Volatile architecture to enable high-performance PS3 emulation.
 
 ## THE IMMUTABLE LAWS (CRITICAL)
@@ -91,6 +91,14 @@ A custom Rocknix middleware rig to enable PS3 Emulation on ARM64 Retrogaming Han
   - Look in `ETK_Telemetry/live_shm/` for real-time rig state (e.g., `live_stat.txt`, `etk_mode.txt`, `vault_new.txt`).
 - This creates a zero-friction, automated AI-human dev loop without requiring open router ports or exposed webhooks.
 
+### [LOCKDOWN]
+
+- **SYNC Logic Specification**:
+- PULL: New shaders always archived on computer at every run of `install.sh` so it works as a repair, update, and sync tool. All transfers must include professional `--progress` reporting indicators and clear out `.DS_Store` metadata noise.
+- PUSH: sync found games on handheld with shaders found in computer vault.
+- `uninstall.sh` should remove vaults (unless they can be injected into the regular Vulkan or RCPS3 cache so ETK would not be needed for their use after uninstall?)
+
+
 ## RECENT NEW DEVELOPMENTS
 
 - **SENTRY STATE MACHINE (THE IGNITION LOCK)**: The `etk_sentry` service MUST operate as an event-driven state machine. It tracks the `rpcs3` process transitioning between `IDLE` and `RUNNING`.
@@ -100,46 +108,4 @@ A custom Rocknix middleware rig to enable PS3 Emulation on ARM64 Retrogaming Han
   - **ATOMIC SESSION RESET**: The Sentry must atomically reset `vault_new.txt` to `0` at the exact moment of emulator ignition. This ensures worker daemons baseline cleanly from zero every single game launch without relying on internal automated loop resets.
   - When transitioning back to `IDLE` (graceful exit or nuclear recovery), the Sentry MUST actively `pkill` the daemons to flush stale memory.
 
-## PROPOSALS TO DO
 
-### DEVELOP ALT GITHUB CONNECTED ACCESS REPLACEMENT TOOLS
-- If we cannot get Github Connected Apps provisioned because of license limitations, what tool can integrate into the ETK to get closer to a GitHub enabled workflow despite not having full access, accepting certain limitations, but being clever about working around them?
-
-### RESTORE AND LOCK AUTO RSYNC SHADER PROTECTION AND AUTO MANAGEMENT AT `install.sh`
-- Gemini designed beautiful tethered shader saver system and then a later Gemini erased it.
-- **SYNC Logic Specification**:
-- PULL: New shaders always archived on computer at every run of `install.sh` so it works as a repair, update, and sync tool. All transfers must include professional `--progress` reporting indicators and clear out `.DS_Store` metadata noise.
-- PUSH: sync found games on handheld with shaders found in computer vault.
-- `uninstall.sh` should remove vaults (unless they can be injected into the regular Vulkan or RCPS3 cache so ETK would not be needed for their use after uninstall?)
-
-### PLAN FOR A REFACTOR FOR FULLY ONBOARD ETK
-- Go headless and move away from a tethered, commander.sh dependent rig
-- Preserve and enrich commander.sh as dev tool rather than used during harvesting runs, more for crash analytics and to continue to support the overhaul of on-board systems
-- Correct the location of `scripts/mango_bridge.sh` into `bin/` where daemons are expected to live as the ETK goes headless and increasingly event-based.
-- Trap R3 as a PANIC BUTTON that calls Recovery command
-
-### PLAN FOR NEW ONBOARD 'NEXT PRESET' CONFIG SELECTION UI
-- Trap L3 as a CLUTCH to toggle HUD modes from SPEEDO to PRESET SELECT modes
-- with R analog left and right that 'swipes' between an array of preset emulator config settings displayed in the HUD
-- Releasing L3 CLUTCH confirms selection and returns HUD to SPEEDO display
-- Selected custom config preset is preloaded to be injected into emulator at next game launch. Not intended for live config injection into the emulator; dangerous.
-
-### PRESET CONFIGS: Proposed initial on-board preset tiers; The config set should be designed to be easily modified in dev crash test cycles so they can be tuned to the device and potentially also tuned to individual games and easily expandable by advanced ETK users
-- BASE: Performance Target for saturated shader sets
-- PACE: Shader Harvesting optimizations
-- CORE: Survival Blueprint for extreme resource isolation
-
-### SAMPLE TROUBLESHOOTING WORKFLOW
-[RACE LOADS ON BASE] ---> (Turnip Driver crash)
-									|
-									|
-						[Triger R3 Panic Recovery]
-									|
-									|
-[Reboot and/or Relaunch Game] -> [Trigger L3 (Engage HUD Clutch)]  -> [Flick R3 Right to PACE]
-									|
-									|
-						[Exit Emulator to Frontend]
-									|
-									|
-	[Ignition Cycle] ---> Sentry Injects 'PACE' Template -> [Launch Game Safetly]
