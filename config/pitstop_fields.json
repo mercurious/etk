@@ -11,7 +11,7 @@
     "type": "int",
     "min": 10,
     "max": 400,
-    "step": 5
+    "step": 10
   },
   {
     "label": "Desired Buffer Duration",
@@ -19,7 +19,7 @@
     "type": "int",
     "min": 5,
     "max": 400,
-    "step": 1
+    "step": 10
   },
   {
     "label": "Time Stretching Threshold",
@@ -27,7 +27,7 @@
     "type": "int",
     "min": 5,
     "max": 400,
-    "step": 1
+    "step": 20
   },
   {
     "label": "PPU Threads",
@@ -51,7 +51,43 @@
     "type": "enum",
     "options": ["Safe", "Mega", "Giga"]
   },
-
+  {
+  	"label": "Lower SPU Priority",
+  	"yaml_key": "  Lower SPU Priority",
+  	"type": "bool"  
+  },
+  {
+  	"label": "SPU Loop Detection",
+  	"yaml_key": "  SPU Loop Detection",
+  	"type": "bool"
+  },
+  {
+  	"label": "Write Color Buffers",
+  	"yaml_key": "  Write Color Buffers",
+  	"type": "bool"
+  },
+  {
+  	"label": "Read Color Buffers",
+  	"yaml_key": "  Read Color Buffers",
+  	"type": "bool"
+  },
+  {
+    "label": "Resolution Scale",
+    "yaml_key": "  Resolution Scale",
+    "type": "enum",
+	"options": ["50", "66", "75", "100"]
+  },
+  {
+    "label": "Antialisaing",
+    "yaml_key": "  MSAA",
+    "type": "enum",
+	"options": ["Auto", "Disabled"]
+  },  
+  {
+  	"label": "Multithreaded RSX",
+  	"yaml_key": "  Multithreaded RSX",
+  	"type": "bool"
+  },
   {
     "label": "Relaxed ZCULL Sync",
     "yaml_key": "  Relaxed ZCULL Sync",

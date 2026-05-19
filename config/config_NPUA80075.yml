@@ -1,22 +1,22 @@
 # ETK CONIFIG GT5P DAYTONA STABLE BASELINE
 Audio:
    # OpenSL or Cubeb or ALSA
-  Renderer: ALSA
+  Renderer: Cubeb
   # Downmix to Stereo to save SPU mixing cycles
   Channels: 2.0
   Audio Format: Stereo
   Audio Provider: CellAudio
   # Increasing buffer to tolerate SPU jitter
-  Audio Buffer: 380
-  Desired Audio Buffer Duration: 380
+  Audio Buffer: 150
+  Desired Audio Buffer Duration: 150
   Enable Buffering: true
-  Time Stretching Threshold: 380
+  Time Stretching Threshold: 5
   Enable Time Stretching: true
 Core:
   # Seems optimal at 2
   PPU Threads: 2
   # We need an extra thread for SPU-Audio synthesis
-  Preferred SPU Threads: 3
+  Preferred SPU Threads: 4
   # Try switching between Mega and Safe - makes a big difference
   SPU Block Size: Mega
   # Approximate accuracy is mandatory to keep audio sync on SM8250
