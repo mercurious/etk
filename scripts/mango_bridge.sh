@@ -55,7 +55,7 @@ while true; do
         VAULT_STR="VAULT: ERROR"
     else
     	# Convert Kilobytes to Megabytes safely using integer arithmetic
-    V_SIZE=$((V_SIZE_KB / 1024))
+    	V_SIZE=$((V_SIZE_KB / 1024))
         VAULT_STR="${V_SIZE} MB ${BANK} NEW: ${NEW_SHADERS}"
     fi
 
