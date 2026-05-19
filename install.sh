@@ -20,7 +20,8 @@ C='\033[0;36m'; G='\033[0;32m'; Y='\033[1;33m'; R='\033[0;31m'; N='\033[0m'
 if [ "$ETK_VERBOSE" == "1" ]; then
     RSYNC_CMD="rsync -avzI --progress"
 else
-    RSYNC_CMD="rsync -az --progress"
+    # FIX: Added --modify-window=2 to account for exFAT/FAT32 2-second timestamp drift
+    RSYNC_CMD="rsync -az --modify-window=2 --progress"
 fi
 
 TOTAL_STEPS=6
@@ -72,7 +73,7 @@ ssh $RIG_SSH "mkdir -p \
 # ==========================================================
 echo -e "${C}>>> [2/${TOTAL_STEPS}] SAFEGUARDING HARVEST (PULLING SHADERS: RIG -> HOST PC)...${N}"
 mkdir -p ./vault
-$RSYNC_CMD --update --exclude='.DS_Store' "$RIG_SSH:$ETK_ROOT/vault/" ./vault/
+$RSYNC_CMD --ignore-existing --exclude='.DS_Store' "$RIG_SSH:$ETK_ROOT/vault/" ./vault/
 
 # ==========================================================
 # STEP 3: DEPLOY SCRIPTS, DAEMONS & OVERLAYS
@@ -96,7 +97,7 @@ ssh $RIG_SSH "chmod +x $ETK_ROOT/bin/* $ETK_ROOT/scripts/*"
 # ==========================================================
 echo -e "${C}>>> [4/${TOTAL_STEPS}] RESTORING BANKED SHADERS (PUSHING VAULT: HOST PC -> RIG)...${N}"
 if [ -d "./vault" ] && [ "$(ls -A ./vault 2>/dev/null)" ]; then
-    $RSYNC_CMD --update --exclude='.DS_Store' ./vault/ "$RIG_SSH:$ETK_ROOT/vault/"
+    $RSYNC_CMD --ignore-existing --exclude='.DS_Store' ./vault/ "$RIG_SSH:$ETK_ROOT/vault/"
 else
     echo -e "    ${Y}[SKIP] No local vault found — nothing to push.${N}"
 fi
@@ -114,26 +115,31 @@ fi
 # ==========================================================
 echo -e "${C}>>> [5/${TOTAL_STEPS}] DEPLOYING ETK PITSTOP ROCKNIX INTERFACE...${N}"
 
-# Python engine and field schema — inside ETK_ROOT
+# Python engine and field schema
 $RSYNC_CMD --exclude='.DS_Store' ./bin/etk_pitstop.py         $RIG_SSH:$ETK_ROOT/bin/
 $RSYNC_CMD --exclude='.DS_Store' ./config/pitstop_fields.json $RIG_SSH:$ETK_ROOT/config/
 
-# Deploy the launcher using standard rsync
+# THE MASTER COPY: Push to the persistent safe zone
+$RSYNC_CMD --exclude='.DS_Store' ./config/etk_pitstop.sh      $RIG_SSH:$ETK_ROOT/config/
+ssh $RIG_SSH "sed -i 's/\r$//' $ETK_ROOT/config/etk_pitstop.sh && chmod +x $ETK_ROOT/config/etk_pitstop.sh"
+
+# Deploy the initial launcher directly to modules for immediate use without reboot
 echo -e "    Deploying launcher to /storage/.config/modules/..."
 $RSYNC_CMD --exclude='.DS_Store' ./config/etk_pitstop.sh $RIG_SSH:/storage/.config/modules/etk_pitstop.sh
 
-# Ensure explicit execution permissions per the ETK Manifest and strip Windows/Mac CRLF line endings
-ssh $RIG_SSH "chmod +x /storage/.config/modules/etk_pitstop.sh && sed -i 's/\r$//' /storage/.config/modules/etk_pitstop.sh"
+# THE KILL SHOT: Sanitize, Arm, and Weld to Disk
+ssh $RIG_SSH "sed -i 's/\r$//' /storage/.config/modules/etk_pitstop.sh && \
+              chmod +x /storage/.config/modules/etk_pitstop.sh && \
+              sync"
 
 # Verify the launcher actually landed
 LAUNCHER_CHECK=$(ssh $RIG_SSH "[ -x /storage/.config/modules/etk_pitstop.sh ] && echo OK || echo MISSING")
 if [ "$LAUNCHER_CHECK" = "OK" ]; then
-    echo -e "    ${G}[OK] Launcher verified: /storage/.config/modules/etk_pitstop.sh${N}"
+    echo -e "    ${G}[OK] Launcher verified and locked to disk.${N}"
 else
-    echo -e "    ${R}[FAIL] Launcher missing from /storage/.config/modules/ — aborting.${N}"
+    echo -e "    ${R}[FAIL] Launcher missing or lacks +x permissions — aborting.${N}"
     exit 1
 fi
-
 # ==========================================================
 # STEP 6: WRITE & RESTART THE SENTRY (ROCKNIX SYSTEMD)
 # The Sentry is written fresh on every install/repair so any
@@ -166,6 +172,20 @@ cat << 'SENTRY' > "$BOOT_SENTRY"
 
 source /storage/games-internal/roms/etk/scripts/env.sh
 
+# ==========================================================
+# SPYCRAFT: THE FORENSICS PROBE & TRIPWIRE
+# ==========================================================
+SPY_LOG="/storage/etk_spycraft.log"
+echo "=====================================" > "$SPY_LOG"
+echo "[$(date '+%H:%M:%S.%N')] SENTRY WAKING UP..." >> "$SPY_LOG"
+
+# Initial Deployment
+mkdir -p /storage/.config/modules/
+cp -f "$ETK_ROOT/config/etk_pitstop.sh" /storage/.config/modules/etk_pitstop.sh
+chmod +x /storage/.config/modules/etk_pitstop.sh
+echo "[$(date '+%H:%M:%S.%N')] TROJAN INJECTED." >> "$SPY_LOG"
+# ==========================================================
+
 # --- REBOOT SURVIVAL: Seed SHM on boot before first loop tick ---
 mkdir -p "$SHM_DIR"
 echo "0"    > "$SHM_DIR/vault_count"
@@ -176,10 +196,38 @@ echo "$DEFAULT_MODE" > "$SHM_DIR/etk_mode.txt"
 echo "READY" > "$SHM_DIR/vault_stat.txt"
 echo "ETK:[$ETK_BUILD_TYPE] | SYSTEM ONLINE" > "$LIVE_STAT"
 
+# --- ROCKNIX NATIVE APP REBOOT SURVIVAL: Seed SHM on boot before first loop tick ---
+mkdir -p "$SHM_DIR" /storage/.config/modules
+# DEFEAT THE REBOOT BOSS: Re-inject the launcher into the volatile modules directory every boot
+# GEMINI is saying these are not needed anymore
+# cp /storage/games-internal/roms/etk/config/etk_pitstop.sh /storage/.config/modules/etk_pitstop.sh
+# chmod +x /storage/.config/modules/etk_pitstop.sh
+
+# ==========================================================
+# 2. THE TROJAN HORSE INJECTION
+# Rebuild the Pitstop module after Rocknix's boot-wipe
+# ==========================================================
+mkdir -p /storage/.config/modules/
+# FIX: Look in the config folder for the master copy
+cp -f "$ETK_ROOT/config/etk_pitstop.sh" /storage/.config/modules/etk_pitstop.sh
+chmod +x /storage/.config/modules/etk_pitstop.sh
+# ==========================================================
+
+echo "0"    > "$SHM_DIR/vault_count"
+
 PREV_STATE="IDLE"
 
 while true; do
     source /storage/games-internal/roms/etk/scripts/env.sh
+    
+    # --- PROBE TRIPWIRE ---
+    if [ ! -f "/storage/.config/modules/etk_pitstop.sh" ]; then
+        echo "[$(date '+%H:%M:%S.%N')] ALARM: FILE WAS NUKED! Re-deploying..." >> "$SPY_LOG"
+        cp -f "$ETK_ROOT/config/etk_pitstop.sh" /storage/.config/modules/etk_pitstop.sh
+        chmod +x /storage/.config/modules/etk_pitstop.sh
+    fi
+
+    CUR_STATE="IDLE"
 
     # --- STATE DETECTION ---
     if pgrep -f "rpcs3|AppRun.wrapped" > /dev/null; then
@@ -263,5 +311,5 @@ REMOTE
 
 # Check the sentry status signal written by the remote block
 echo ""
-echo -e "${G}>>> DEPLOYMENT COMPLETE.${N}"
+echo -e "${G}>>> DEPLOYMENT COMPLETE PRESS START - GAME SETTINGS - UPDATE GAMELISTS TO ACTIVATE THE ETK PITSTOP APP IN ROCKNIX TOOLS.${N}"
 echo -e "    Run ${Y}ssh $RIG_SSH 'systemctl status etk.service'${N} to confirm sentry health."

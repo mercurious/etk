@@ -49,7 +49,6 @@ def find_gamepad():
         pass
     return '/dev/input/event9'
 
-
 def load_menu_matrix():
     """Initializes schema definition and parses real values live from the target YAML file."""
     if not os.path.exists(FIELDS_JSON):
@@ -58,20 +57,20 @@ def load_menu_matrix():
     with open(FIELDS_JSON, 'r') as f:
         matrix = json.load(f)
 
-    # Read live config array only if the target file actually exists
     yaml_lines = []
     if os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH, 'r') as f:
             yaml_lines = f.readlines()
 
-    # Loop globally over matrix outside the file existence block
     for item in matrix:
         item["current_val"] = None
         item["enum_idx"] = 0
 
         for line in yaml_lines:
-            if line.startswith(item["yaml_key"] + ":"):
-                raw_val = line.split(":", 1)[1].strip().replace('"', '')
+            # Strip whitespace for matching so we catch indented YAML keys
+            stripped = line.lstrip()
+            if stripped.startswith(item["yaml_key"] + ":"):
+                raw_val = stripped.split(":", 1)[1].strip().replace('"', '')
 
                 if item["type"] == "int":
                     item["current_val"] = int(raw_val)
@@ -83,7 +82,7 @@ def load_menu_matrix():
                         item["enum_idx"] = item["options"].index(raw_val)
                 break
 
-        # Bulletproof fallback: assign defaults if key missed or file wasn't present
+        # Bulletproof fallback
         if item["current_val"] is None:
             if item["type"] == "int":
                 item["current_val"] = item["min"]
@@ -108,25 +107,33 @@ def save_menu_matrix(matrix):
     updated_keys = set()
 
     for i in range(len(lines)):
+        stripped = lines[i].lstrip()
         for item in matrix:
-            if lines[i].startswith(item["yaml_key"] + ":"):
+            if stripped.startswith(item["yaml_key"] + ":"):
+                # Capture and preserve the original YAML indentation
+                indent = lines[i][:len(lines[i]) - len(stripped)]
+                
                 if item["type"] == "enum":
-                    lines[i] = f"{item['yaml_key']}: {item['options'][item['enum_idx']]}\n"
+                    val_str = item['options'][item['enum_idx']]
                 elif item["type"] == "bool":
-                    lines[i] = f"{item['yaml_key']}: {'true' if item['current_val'] else 'false'}\n"
+                    val_str = 'true' if item['current_val'] else 'false'
                 else:
-                    lines[i] = f"{item['yaml_key']}: {item['current_val']}\n"
+                    val_str = str(item['current_val'])
+                    
+                lines[i] = f"{indent}{item['yaml_key']}: {val_str}\n"
                 updated_keys.add(item["yaml_key"])
 
-    # Appender Layer: append keys entirely missing from the target YAML
+    # Appender Layer (Fallback for entirely missing keys)
     for item in matrix:
         if item["yaml_key"] not in updated_keys:
             if item["type"] == "enum":
-                lines.append(f"{item['yaml_key']}: {item['options'][item['enum_idx']]}\n")
+                val_str = item['options'][item['enum_idx']]
             elif item["type"] == "bool":
-                lines.append(f"{item['yaml_key']}: {'true' if item['current_val'] else 'false'}\n")
+                val_str = 'true' if item['current_val'] else 'false'
             else:
-                lines.append(f"{item['yaml_key']}: {item['current_val']}\n")
+                val_str = str(item['current_val'])
+            # Assuming 2 spaces indentation for appended items as a standard RPCS3 default
+            lines.append(f"  {item['yaml_key']}: {val_str}\n")
 
     with open(CONFIG_PATH, 'w') as f:
         f.writelines(lines)

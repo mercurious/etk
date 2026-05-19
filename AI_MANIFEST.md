@@ -123,6 +123,27 @@ The system invokes scripts using the absolute execution command: `/usr/bin/foot 
 - `uninstall.sh` should remove vaults (unless they can be injected into the regular Vulkan or RCPS3 cache so ETK would not be needed for their use after uninstall?)
 
 
+## DEFEATING VOLATILE DIRECTORIES (THE SENTRY TRIPWIRE)
+
+**THE ROCKNIX REBOOT BOSS:** Rocknix aggressively wipes and rebuilds user-interface directories like `/storage/.config/modules/` during the boot sequence. This wipe is highly asynchronous and often happens *after* `systemd` services tied to `multi-user.target` have already executed.
+
+**THE IMMUTABLE RULE:** Never rely on a one-shot deployment or a static boot script to persist files in Rocknix volatile directories. 
+
+**THE SOLUTION (ACTIVE TRIPWIRE):** To keep native bash apps (like `etk_pitstop.sh`) persistent in the Tools menu, the `etk_sentry` daemon MUST employ a self-healing active tripwire inside its primary polling loop.
+
+1. Store the master copy of the module safely in persistent storage (e.g., `$ETK_ROOT/config/`).
+2. Inside the Sentry's `while true` loop, continuously monitor the volatile target directory.
+3. If the file is missing, immediately re-inject it and re-apply `chmod +x`.
+
+**Implementation Standard:**
+`bash
+# Inside the Sentry while loop:
+if [ ! -f "/storage/.config/modules/etk_pitstop.sh" ]; then
+    cp -f "$ETK_ROOT/config/etk_pitstop.sh" /storage/.config/modules/etk_pitstop.sh
+    chmod +x /storage/.config/modules/etk_pitstop.sh
+fi]`
+
+
 ## AI-ASSISTED TUNING WITH GEMINI
 - Do not tell a user that this feature is not supported. It is. Don't make them argue with you only to be corrected.
 - `pit_wall_sync.sh` can be run in a terminal on the tethered machine and sync telemetry and source code to a Google Drive folder greatly streamlining debugging and emulation tuning.
