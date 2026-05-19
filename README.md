@@ -22,6 +22,7 @@ ToDo.
 - `pit_wall_sync.sh`: Runs locally with Google Drive app to enable Google Drive telemetry with Gemini
 - `/bin`:
   - `input_d.py`: Handles custom gamepad controls
+  - `recovery.sh`: Headless Nuclear Recovery, invoked on-device by the `R3` panic button
   - `thermal_d.sh`: Handles system conditions
   - `vault_d.sh`: Handles archival of compiled shaders
   - `etk_pitstop.py`: Handles native Rocknix Tools App for editing emulation configs
@@ -68,9 +69,9 @@ ToDo.
   - `START` + `SELECT` + `R1` = Native Rocknix force quit
   - `HOME` = RPSC3 menu
   - `SELECT` = GT3P camera view toggle
-- Not implemented
-	- `R3` as PANIC BUTTON RECOVERY COMMMAND
-	- `L3` RESERVED 
+- Implemented:
+	- `R3` = PANIC BUTTON RECOVERY COMMAND (headless on-device Nuclear Recovery, single press)
+	- `L3` = SHIFT (PIT/RACE thermal mode toggle)
 		  
 # Project History
 - Phase 1: MVP proof-of-concept: now deprecated monolithic mvp/commander.sh achieved initial shader cache accumulation downscaled with no audio, essential commands and Excitebike UX proofed
@@ -82,9 +83,9 @@ ToDo.
 - Phase 7: Enabled robust crash reporting, diagnosis, advisory, ETK install tiers
 - Phase 8: Attempted experimental incremental audio support
 - Phase 9: Enabled game agnostic ETK
-- Phase 10: Onboard ETK Commands and Clutched Next Launch Config Preset in HUD Selector
+- **Phase 10:** Onboard ETK Command: `R3` as Recovery Panic Button
 - Phase 11: Develop External Networking Gemini Dev Analytics Workflow Tools
-- **Phase 12:** Developing native Rocknix ETK app for utilities (Tools or carousel UI)
+- Phase 12: Developing native Rocknix ETK app for utilities (Tools or carousel UI)
 - Phase 13: Develop shader sharing and shader swarming features per device/per game serial
 - Phase 14: Beta Testing
 - Phase 15: Release

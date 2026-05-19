@@ -1,12 +1,15 @@
 #!/bin/bash
 # ==========================================================
-# ETK PHASE 13.5: COMMANDER (v13.5.8 - GHOST HUNTING)
+# ETK PHASE 13.5: COMMANDER (v13.5.9 - SHARED RECOVERY)
 # ==========================================================
-# GEMINI IMMUTABLE RULE: 
+# GEMINI IMMUTABLE RULE:
 # 1. CHARACTER RESET: MUST echo -ne "\033(B" in every UI loop.
 # 2. ANTI-DRIFT: Use \033[K (Erase to Line End) to prevent UI ghosting.
 # 3. SPLIT-PANE: Top is Live Telemetry, Bottom is Raw Forensic Datalog.
 # 4. GHOST HUNT: Probe and Analysis scrapes are DISABLED to stop binary floods.
+# 5. RECOVERY: Nuclear recovery is NOT defined here. It lives in
+#    $ETK_ROOT/bin/recovery.sh (single source of truth, shared
+#    with input_d.py R3 panic button). Do NOT re-inline it.
 # ==========================================================
 source /storage/games-internal/roms/etk/scripts/env.sh
 
@@ -14,22 +17,9 @@ source /storage/games-internal/roms/etk/scripts/env.sh
 stty -echoctl
 echo -ne "\033[2J" 
 
-# Patched and repatched
+# Shared recovery: single source of truth in bin/recovery.sh
 nuclear_recovery() {
-    echo -e "\n\033[31m[!] INITIATING NUCLEAR RECOVERY...\033[0m"
-    
-    # 1. Break the GPU Deadlock by killing the emulator
-    killall -9 rpcs3 2>/dev/null
-    killall -9 AppRun.wrapped 2>/dev/null
-    
-    # 2. Kill worker daemons ONLY (Leave etk_guardian alive to respawn them)
-    pkill -9 -f "mango_bridge.sh" 2>/dev/null
-    pkill -9 -f "vault_d.sh" 2>/dev/null
-    pkill -9 -f "thermal_d.sh" 2>/dev/null
-    
-    rm -f "$SHM_DIR"/*
-    echo "IDLE" > "$ID_FILE"
-    echo -e "\033[32m[+] RECOVERY COMPLETE. EMULATOR TERMINATED.\033[0m"
+    bash "$ETK_ROOT/bin/recovery.sh"
     sleep 2
 }
 run_diagnostics() {

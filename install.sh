@@ -168,6 +168,10 @@ cat << 'SENTRY' > "$BOOT_SENTRY"
 # is the only mechanism that gates daemon spawning and killing.
 # Do NOT "simplify" or "optimize" the PREV_STATE assignment.
 # The $ in "$CUR_STATE" is load-bearing. Do not remove it.
+# WATCHDOGS: mango_bridge.sh AND input_d.py are kept alive
+# every tick regardless of game state. input_d.py is the ONLY
+# persistence vector for the R3 recovery panic button — the
+# rig is headless, so this watchdog is load-bearing too.
 # ==========================================================
 
 source /storage/games-internal/roms/etk/scripts/env.sh
@@ -305,6 +309,9 @@ while true; do
 
     # --- BRIDGE WATCHDOG: Keep mango_bridge alive regardless of game state ---
     pgrep -f mango_bridge.sh >/dev/null || nohup bash "$ETK_ROOT/scripts/mango_bridge.sh" >/dev/null 2>&1 &
+
+    # --- SHIFTER WATCHDOG: Keep input_d.py alive (headless R3 panic button) ---
+    pgrep -f input_d.py >/dev/null || nohup python3 "$ETK_ROOT/bin/input_d.py" >/dev/null 2>&1 &
 
     # --- IGNITION: IDLE -> RUNNING transition ---
     if [ "$CUR_STATE" = "RUNNING" ] && [ "$PREV_STATE" = "IDLE" ]; then

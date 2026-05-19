@@ -1,15 +1,26 @@
 #!/usr/bin/env python3
 # ==========================================================
-# ETK PHASE 4: PYTHON SHIFTER (v11.2.1 - INPUTPLUMBER MERGE)
+# ETK PHASE 10: PYTHON SHIFTER (v10.0.0 - HEADLESS PANIC)
 # ==========================================================
-# MERGE LOG: Tapped into the InputPlumber Virtual Xbox pipe.
-# Bypassed hardware hiding. Fixed Headphone Jack false positive.
+# GEMINI IMMUTABLE RULE:
+# 1. R3 (BTN_THUMBR, code 318) = RECOVERY PANIC BUTTON.
+#    Literal single press. Invokes bin/recovery.sh DIRECTLY
+#    and detached so the rig is fully untethered. Do NOT add
+#    a long-press/double-tap guard and do NOT route this
+#    through CMD_QUEUE (queue needs a tethered consumer).
+# 2. L3 (BTN_THUMBL, code 317) = SHIFT (PIT/RACE mode toggle).
+# 3. SELF-HEAL: The InputPlumber virtual controller may not
+#    exist when the Sentry spawns this at boot. The connect
+#    loop MUST keep re-finding the device; do not collapse it
+#    back into a one-shot open.
 # ==========================================================
-import struct, os, sys, time
+import struct, os, time
 
 # Absolute fallbacks point to the global tmpfs
 MODE_FILE = os.environ.get('MODE_FILE', '/dev/shm/etk_shm/etk_mode.txt')
 CMD_QUEUE = os.environ.get('CMD_QUEUE', '/dev/shm/etk_shm/etk_cmd_queue')
+RECOVERY  = os.environ.get('ETK_RECOVERY',
+                           '/storage/games-internal/roms/etk/bin/recovery.sh')
 
 def find_gamepad():
     """Hunts strictly for the InputPlumber Virtual Controller."""
@@ -28,9 +39,7 @@ def find_gamepad():
         pass
     
     # Fallback to the known Virtual node
-    return '/dev/input/event9' 
-
-DEVICE = find_gamepad()
+    return '/dev/input/event9'
 
 # Event format: Long, Long, Short, Short, Int
 EVENT_FORMAT = 'llHHi'
@@ -42,8 +51,12 @@ def send_cmd(cmd):
             f.write(f"{cmd}\n")
     except: pass
 
+def fire_recovery():
+    """R3 PANIC: invoke the shared headless recovery, detached."""
+    os.system(f"bash {RECOVERY} >/dev/null 2>&1 &")
+
 def toggle_mode():
-    """Reads current mode and flips it (R3 Button Logic)."""
+    """Reads current mode and flips it (L3 SHIFT logic)."""
     try:
         with open(MODE_FILE, 'r') as f:
             current = f.read().strip()
@@ -57,40 +70,44 @@ def toggle_mode():
             f.write(new_mode) 
     except: pass
 
+def event_loop(device):
+    clutch = False
+    with open(device, 'rb') as f:
+        while True:
+            data = f.read(EVENT_SIZE)
+            if not data: break
+            _, _, etype, code, val = struct.unpack(EVENT_FORMAT, data)
+
+            # --- BUTTON MAPPINGS (EV_KEY) ---
+            if etype == 1:
+                # 318 = BTN_THUMBR (R3): RECOVERY PANIC BUTTON
+                if code == 318 and val == 1:
+                    fire_recovery()
+
+                # 317 = BTN_THUMBL (L3): SHIFT (PIT/RACE toggle)
+                if code == 317 and val == 1:
+                    toggle_mode()
+
+                # 314 = BTN_SELECT (clutch modifier for DPAD)
+                if code == 314: clutch = (val == 1)
+
+            # --- DPAD MAPPINGS (EV_ABS) ---
+            elif etype == 3 and clutch:
+                # InputPlumber maps DPAD to ABS_HAT0X (16) and ABS_HAT0Y (17)
+                if code == 16: # Horizontal Axis
+                    if val == 1: send_cmd("VAULT") # Right
+                    elif val == -1: os.system("pkill -USR1 mangohud") # Left
+
 if __name__ == "__main__":
-    print(f"[*] ETK SHIFTER ONLINE. BINDING TO: {DEVICE}", flush=True)
-
-    clutch = False; r1 = False; l2 = False; r2 = False
-
-    try:
-        with open(DEVICE, 'rb') as f:
-            while True:
-                data = f.read(EVENT_SIZE)
-                if not data: break
-                _, _, etype, code, val = struct.unpack(EVENT_FORMAT, data)
-
-                # --- BUTTON MAPPINGS (EV_KEY) ---
-                if etype == 1:
-                    # 318 is standard Linux EVDEV for BTN_THUMBR (R3)
-                    if code == 318 and val == 1: 
-                        toggle_mode()
-                        
-                    # Clutch & Modifiers (SELECT)
-                    if code == 314: clutch = (val == 1) 
-                    if code == 311: r1 = (val == 1)     
-                    if code == 312: l2 = (val == 1)     
-                    if code == 313: r2 = (val == 1)     
-
-                    # NUCLEAR RECOVERY (SELECT + L2 + R2)
-                    if clutch and l2 and r2: 
-                        send_cmd("RECOVERY")
-
-                # --- DPAD MAPPINGS (EV_ABS) ---
-                elif etype == 3 and clutch:
-                    # InputPlumber maps DPAD to ABS_HAT0X (16) and ABS_HAT0Y (17)
-                    if code == 16: # Horizontal Axis
-                        if val == 1: send_cmd("VAULT") # Right
-                        elif val == -1: os.system("pkill -USR1 mangohud") # Left
-
-    except Exception as e:
-        print(f"[!] ETK CRASH: {e}")
+    # SELF-HEAL: the virtual controller may not exist yet when the
+    # Sentry spawns us at boot, and InputPlumber re-creates the node
+    # on resume. Keep re-finding the device instead of dying once.
+    while True:
+        device = find_gamepad()
+        try:
+            print(f"[*] ETK SHIFTER ONLINE. BINDING TO: {device}", flush=True)
+            event_loop(device)
+            print("[!] ETK SHIFTER: device stream closed. Re-binding...", flush=True)
+        except Exception as e:
+            print(f"[!] ETK SHIFTER: {e}. Re-binding...", flush=True)
+        time.sleep(2)
