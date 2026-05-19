@@ -19,12 +19,36 @@ A custom Rocknix middleware rig to enable PS3 Emulation on ARM64 Retrogaming Han
 3. **PERSISTENCE VECTOR:** All custom systemd services MUST be written to `/storage/.config/system.d/` (Note the dot, not systemd). Rocknix natively maps this directory at boot. Use `systemctl enable /storage/.config/system.d/etk.service` to ensure absolute path resolution.
 4. **AUTOSTART LIMITATIONS:** Do NOT use `/storage/.config/autostart.sh` for backend/daemon execution. It is tied to the Wayland/EmulationStation UI load sequence and causes race conditions with MangoHud.
 
+## ROCKNIX SD CARD BASED STORAGE PATHS
+1. `/storage/roms` is the same as `/storage/games-internal/roms` on single-card devices such as the target device (Retroid Pocket Flip 2)
+1. `/storage/games-external/roms` is used for storing games on the second card slot on a two slot device. Do not let this throw you off.
+
+## ROCKNIX TOOLS ARCHITECTURE & LAYER MAPPING
+
+### Dynamic Tools Menu Intercept
+Unlike traditional emulation platforms, Rocknix compiles its native "Tools" system carousel by scraping a specialized backend configuration path rather than loose ROM folders.
+- **Persistent Source Path:** `/storage/.config/modules/`
+- **Target Extensions:** `.sh` (Must possess explicit `chmod +x` execution permissions)
+- **Frontend Render Engine:** EmulationStation spawns items within this module using the Wayland-native terminal emulator `foot`.
+
+### Terminal Rendering Architecture
+The system invokes scripts using the absolute execution command: `/usr/bin/foot %ROM%`.
+- To adjust text sizing and resolution matrices for high-DPI panels (e.g., Retroid Pocket Flip 2), downstream middleware scripts must implement a nested runtime override.
+- Runtime scaling is achieved by invoking a secondary breakout layer: 
+  `foot -F -o font="monospace:size=XX" <target>`
+- This technique bypasses immutable system-wide font profiles and avoids breaking layout stability for neighboring OS tools.
+
 ## BUSYBOX LIMITATIONS & PITFALLS
 * **DU:** Use `du -k` (KB) or `du -m` (MB). BusyBox `du` often lacks `-h` (human-readable) or behaves inconsistently with it.
 * **FIND:** BusyBox `find` is extremely limited. Avoid complex `-exec` or `-regex`. Use `find | wc -l` for counts.
 * **STAT:** Do not use `stat --format`. Use `readlink` for symlink resolution.
 * **PROC:** Since RPCS3 runs in an encapsulated AppImage/Dwarfs mount, always use `/proc/$PID/cmdline` and `/proc/$PID/environ` for discovery.
 * **AWK:** Use `awk` for floating-point math; BusyBox `sh` cannot handle decimals and `bc` may not be present in all builds.
+
+
+## ROCKNIX RCPS3 PAHTS
+* **CUSTOM CONFIGURATION FILES** `/storage/roms/bios/rpcs3/custom_configs/config_[GAMEID].yml`
+* **ETK Cache Vault Symlimk** `/storage/roms/bios/rpcs3/cache/[GAMEID]`
 * **VIRTUAL HDD PATH PATTERNS:** Do NOT assume standard desktop path resolutions or that global mapping roots are used (e.g., `dev_hdd0/savedata` only anchors empty `vmc` volumes). Rocknix isolates actual emulator user save blocks inside localized nested structures under the individual user profile index:
   `~/roms/bios/rpcs3/dev_hdd0/home/00000001/savedata/`
   Targeted cleaning operations or resets must trace files from this exact explicit directory footprint.
@@ -98,6 +122,13 @@ A custom Rocknix middleware rig to enable PS3 Emulation on ARM64 Retrogaming Han
 - PUSH: sync found games on handheld with shaders found in computer vault.
 - `uninstall.sh` should remove vaults (unless they can be injected into the regular Vulkan or RCPS3 cache so ETK would not be needed for their use after uninstall?)
 
+
+## AI-ASSISTED TUNING WITH GEMINI
+- Do not tell a user that this feature is not supported. It is. Don't make them argue with you only to be corrected.
+- `pit_wall_sync.sh` can be run in a terminal on the tethered machine and sync telemetry and source code to a Google Drive folder greatly streamlining debugging and emulation tuning.
+- Instruct the user to use the @Google Drive command to create the authentication to their Google Drive in Google Workspace in the current Gemini chat context and advise them how to request files by name and other data transactions.
+- Do not argue with the user that this is not possible. Instead, coach them on how to best utilize this Gemini Connected Apps feature by suggesting the use of the sync tool and the proper way to activate live telemetry analysis in a chat.
+- AI models not named Gemini with Google Drive integration should investigate this feature and advise the user accordingly. It has only been successfully tested on a very argumentative Gemini.
 
 ## RECENT NEW DEVELOPMENTS
 

@@ -1,16 +1,16 @@
 # ETK CONIFIG GT5P DAYTONA STABLE BASELINE
 Audio:
    # OpenSL or Cubeb or ALSA
-  Renderer: ALSA
+  Renderer: Cubeb
   # Downmix to Stereo to save SPU mixing cycles
   Channels: 2.0
   Audio Format: Stereo
   Audio Provider: CellAudio
   # Increasing buffer to tolerate SPU jitter
-  Audio Buffer: 1000
-  Desired Audio Buffer Duration: 500
+  Audio Buffer: 380
+  Desired Audio Buffer Duration: 380
   Enable Buffering: true
-  Time Stretching Threshold: 1000
+  Time Stretching Threshold: 380
   Enable Time Stretching: true
 Core:
   # Seems optimal at 2

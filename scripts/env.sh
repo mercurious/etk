@@ -17,7 +17,6 @@ export RIG_IP="192.168.1.53"
 export RIG_SSH="root@192.168.1.53"
 
 
-
 # --- [ SHM & STATE ] ---
 export SHM_DIR="/dev/shm/etk_shm"
 export ID_FILE="$SHM_DIR/active_id.txt"
@@ -25,6 +24,11 @@ export MODE_FILE="$SHM_DIR/etk_mode.txt"
 export LIVE_STAT="$SHM_DIR/live_stat.txt"
 export VAULT_COUNT="$SHM_DIR/vault_count"
 export CMD_QUEUE="$SHM_DIR/etk_cmd_queue"
+
+# ----[ FOR ROCKNIX NATIVE PITSTOP APP ] ---
+# Persistent anchor for the last successfully resolved Game ID
+export RECENT_ID_FILE="/storage/games-internal/roms/etk/vault/last_played_id.txt"
+
 
 # =========================================================
 # [CRITICAL: NON-NEGOTIABLE GAME AGNOSTIC ETK LOGIC]
@@ -69,9 +73,9 @@ export LAST_ANALYSIS="$SHM_DIR/last_analysis.txt"
 
 # --- [ RESTORED THERMAL BOUNDARIES ] ---
 # Recalibrating to Rocknix nightly-20260516 changed thermals
-export ALARM_TEMP=82
+export ALARM_TEMP=83
 export PIT_THRESHOLD=65
-export RACE_THRESHOLD=85
+export RACE_THRESHOLD=86
 
 # --- [ RESTORED STEALTH DETECTION ] ---
 if grep -q "mangohud=0" /storage/.config/rocknix/system.conf 2>/dev/null; then
@@ -84,3 +88,7 @@ fi
 export PYTHONPATH="${PYTHONPATH}:/storage/etk/lib/python3.13/site-packages"
 export G='\033[0;32m'; export R='\033[0;31m'; export Y='\033[1;33m'; export C='\033[0;36m'; export N='\033[0m'
 export DEFAULT_MODE="RACE"
+
+# --- [ PIPELINE CONTROLS ] ---
+# Set to 1 for verbose Rsync output, 0 for clean output
+export ETK_VERBOSE=1

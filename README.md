@@ -1,5 +1,5 @@
 # The Emulation Tuning Kit
-A custom Rocknix middleware rig to enable PS3 Emulation on ARM64 Retrogaming Handhelds by brute-force optimization, thermal and shader protection, shader cache management and advanced in-game telematics. It guards hard-earned shaders from SD card failure, OS flashing, data corruption, device failure, loss or theft. Push your device to its limits while collecting shaders and recover from crashes so the game plays well after several attempts. Specifically designed to make Gran Turismo 5 Prologue playable on a Flip2, the ETK adopts the racing metaphor throughout but should work for any type of PS3 game. The long term vision is a shader swarm system where the Flip2 automatically seeds and leeches shaders through a tight-knit device-centric P2P network during a battery charge.
+A custom Rocknix middleware rig to enable PS3 Emulation on ARM64 Retrogaming Handhelds by brute-force optimization, thermal and shader protection, shader cache management and advanced in-game telematics. It guards hard-earned shaders from SD card failure, OS flashing, data corruption, device failure, loss or theft. Push your device to its limits while collecting shaders and recover from crashes so the game plays well after several attempts. Specifically designed to make Gran Turismo 5 Prologue playable on a Flip2 Snapdragon, the ETK adopts the racing metaphor throughout but should work for any type of PS3 game. The long term vision is a shader swarm system where the your device automatically seeds and leeches shaders through a tight-knit device-centric P2P network during a battery charge.
 
 # Screenshot
 ToDo.
@@ -10,33 +10,33 @@ ToDo.
 1. Smart thermal protection to safely overdrive the device during shader harvesting
 1. Automatic shader backup from your device to computer to share with other ETK users
 1. Customized in-game overlay with ETK telematics inside MangoHUD
-1. Customized gamepad ETK commands (L3) as CLUTCH; (R3) as PANIC; (R Analog L-R) as select-swipe
 1. Pit wall remote terminal screen to monitor and control device rig with advanced crash recovery and analytics (`scripts/commander.sh`)
 1. Install, configure, repair, and uninstall the kit remotely from a computer (`install.sh` and `uninstall.sh`)
 1. Multi-Installation Options: FULL installation for initial shader harvesting and tuning, LITE installation for saturated shader sets with thermal protection only, RAW for stress testing without shader and thermal protections (`ETK_BUILD_TYPE` in `scripts/env.sh`)
-
 
 # ETK Project Structure
 - `AI_MANIFEST.md`: System Manual and Immutable Laws of ETK Development for AI
 - `README.md`: You are reading it now.
 - `install.sh`: Flashes the ETK onto your handheld from a computer
 - `uninstall.sh`: Removes the ETK from your handheld from a computer
+- `pit_wall_sync.sh`: Runs locally with Google Drive app to enable Google Drive telemetry with Gemini
 - `/bin`:
   - `input_d.py`: Handles custom gamepad controls
   - `thermal_d.sh`: Handles system conditions
   - `vault_d.sh`: Handles archival of compiled shaders
+  - `etk_pitstop.py`: Handles native Rocknix Tools App for editing emulation configs
 - `/config`:
   - `rsyncd.config`: Handles deployment and backup between handheld and computer
   - `MangoHud.config`: Handles custom in-game on-screen overlay
-  - `config_NPUA80075.yml`: tuned RCPS3 configuration to GranTurismo 5 Prologue
+  - `pistop_fields.json`: The subset of RPCS3 config settings for on-device edits
+  - `etk_pitstop.sh`: Rocknix Tools app installed at `/storage/.config/modules/`
+  - `config_NPUA80075.yml`: tuned RPCS3 configuration to GranTurismo 5 Prologue
 - `/scripts`:
   - `commander.sh`: Pit Wall central unit with remote terminal DDU UI
   - `env.sh`: Establishes pit and race environment
   - `mango_bridge.sh`: Manages live telemetry and overlay display
   - `probe.sh`: Provides error logs
-  - `agnostify.sh`: One-time use migration/cleanup utility for deprecation.
 -  `/vault`: Large archive of Vulkan precompiled shader bins 
-
 
 # ETK System Requirements
 - **System:** Retroid Pocket Flip 2 (SM8250)
@@ -46,8 +46,14 @@ ToDo.
 - **Shell:** BusyBox v1.36.1
 - **Custom Overlay:** MangoHUD
 
-# ETK Concept Brief
-The Emulation Tuning Kit (ETK) is a performance-optimization and telemetry suite designed to achieve the previously "impossible": **Native 720p PS3 Emulation on ARM Handhelds.** The core user experience is a **"Mining Meta-Game":** The driver performs "Harvesting Runs" to bank shaders into a permanent shader Vault. A gamepad button gear-shift allows the driver to watch a custom MangoHUD overlay and pull over (hit pause) to downshift to PIT mode (thermal cooling) from RACE (overdrive) which prevents crashes while overtaxing the Flip 2. Subsequent races use banked shaders to bypass real-time compilation stutters. Once shader saturation is achieved, and a complete set perfectly compiled for the device and game serial can be easily shared with another ETK user with the same device and game, saving them hours of shader compute and labor.
+# What is the ETK and How Does it Really Work?
+- **To enhance how the built-in PS3 emulator handles shader caching,** the ETK intercepts the Vulkan shader cache with a simple symlink and safely stores these files into a vault folder on your SD card organized by device and game ID so they can be archived and shared. Even when you crash during a shader harvesting run, the vault has saved the shaders for the next run.
+- **To enhance how the device handles high demand games during the shader compiling process and high performance gaming,** the ETK manages the system temp and performance to safely overtax the device when it needs to work the hardest while preventing a total meltdown. 
+- **To enhance how you can monitor the device system stress while pushing it to its limits,** the ETK enables a custom dashboard overlay using built-in Rocknix features across a thin horizontal HUD strip designed to evoke the Driver Data Unit (DDU) found in GT and F1 racing cars. The custom HUD DDU also shows the number of shaders harvested during a game session so you realize even if you crash, it was worth it.
+- **To streamline how you can tweak key emulation settings,** the ETK PITSTOP app in the Rocknix Tools menu, inspired by pit wall screens, allows you to easily adjust selected configuration settings using the gamepad controls. The subset of on-board configs can be customized in a JSON file. 
+- **To streamline how you can use AI to tune games or diagnose crashes,** the ETK attempts to use Google Drive and Gemini integration to make chatting about last crash telemetry stored on the device, synchronized with Google Drive, to make settings tweaks easy, accurate, and efficient. Always use @Google Drive to connect your account to a chat session.
+- **To simplify managing game shader vaults and software updates,** the ETK includes a simple command-line utility to install, repair, update, and automatically sync shader vaults as you harvest from games or trade device and game-specific shader folders with others. It also includes a comprensive uninstall utility to retire from the league. A typical game 300+ MB shader vault will involve tens of thousands of binary files so an efficient transfer mechanism to manage shader sets between a computer and the handheld devices is essential.
+- ETK does all of this while trying to maintain a **minimal system footprint without subjecting your SD card to abuse.**
 
 # Warnings and Recommendations
 - Requires the patience and dedication of race car drivers. You will crash. But you will also win races that could otherwise not be played. ETK doesn't magically make your device run PS3 emulation, it only gives it a fighting chance with professional grade tools and system tunings. Shader sharing spares other players the harvest.
@@ -62,17 +68,10 @@ The Emulation Tuning Kit (ETK) is a performance-optimization and telemetry suite
   - `START` + `SELECT` + `R1` = Native Rocknix force quit
   - `HOME` = RPSC3 menu
   - `SELECT` = GT3P camera view toggle
-- Implemented and tested
-	- R3 (press down right analog stick) to toggle thermal mode PIT/RACE  
-- Implemented but untested
-  - `SELECT` + `L2` + `R2` = ETK DDU [R]ecovery key command
-  - `SELECT` + `D-pad Right` = dump [V]ault shaders
-  - `SELECT` + `D-pad Left` = toggle between available MangoHUD configurations (or just on/off)
-- Temporariily disabled     
-	- `SELECT` + `D-pad Up` = download into PIT MODE (thermal cooldown)
-	- `SELECT` + `D-pad Down` = upshift into RACE MODE (overdrive)
-
-  
+- Not implemented
+	- `R3` as PANIC BUTTON RECOVERY COMMMAND
+	- `L3` RESERVED 
+		  
 # Project History
 - Phase 1: MVP proof-of-concept: now deprecated monolithic mvp/commander.sh achieved initial shader cache accumulation downscaled with no audio, essential commands and Excitebike UX proofed
 - Phase 2: Modular professional grade deployable ETK: shader cache successfully upscaled
@@ -85,7 +84,7 @@ The Emulation Tuning Kit (ETK) is a performance-optimization and telemetry suite
 - Phase 9: Enabled game agnostic ETK
 - Phase 10: Onboard ETK Commands and Clutched Next Launch Config Preset in HUD Selector
 - Phase 11: Develop External Networking Gemini Dev Analytics Workflow Tools
-- Phase 12: Develop native Rocknix ETK app for utilities (Tools or carousel UI)
+- **Phase 12:** Developing native Rocknix ETK app for utilities (Tools or carousel UI)
 - Phase 13: Develop shader sharing and shader swarming features per device/per game serial
 - Phase 14: Beta Testing
 - Phase 15: Release
@@ -110,4 +109,5 @@ By leveraging a host computer and Google Drive, you can turn Gemini into your li
 2. Ensure `RIG_SSH` in the script matches your device's IP address.
 3. Before a heavy harvesting session or testing a new emulator config, run the script on your host computer: `./pit_wall_sync.sh`
 4. Play your game. The script will quietly run in the background, mirroring your rig's RAM disk and crash logs to Google Drive every 5 seconds.
-5. **If the emulator crashes:** Simply open your Gemini chat and say: *"Gemini, check my Google Drive workspace for a file named `etk_crash_report.log` and tell me what the error is."* The AI will read the file directly from your Drive and provide immediate diagnostic feedback.
+5. **If the emulator crashes:** Simply open your Gemini chat and type: `@Google Drive check my ETK_Telemetry/crash_logs/etk_crash_report.log and tell me what the error is.` The AI will read the file directly from your Drive and provide immediate diagnostic feedback.
+6. Gemini will frequently argue with you that this is not possible but if you keep insisting it is possible, it will eventually relent and show you it works.

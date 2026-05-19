@@ -48,7 +48,7 @@ while true; do
         if [ "$CURRENT_MODE" == "RACE" ]; then
             echo "${TEMP}°C OK" > "$SHM_DIR/thermal_stat"
         else
-            echo "${TEMP}°C ANCHOR" > "$SHM_DIR/thermal_stat"
+            echo "${TEMP}°C SAFETY-REBOOT!" > "$SHM_DIR/thermal_stat"
         fi
     fi
     
