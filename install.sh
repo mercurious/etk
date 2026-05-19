@@ -215,6 +215,73 @@ chmod +x /storage/.config/modules/etk_pitstop.sh
 
 echo "0"    > "$SHM_DIR/vault_count"
 
+# ==========================================================
+# SHADER PIPELINE: cache -> vault symlink establishment
+# ----------------------------------------------------------
+# Regression context: the /storage/.cache/mesa_shader_cache ->
+# $VAULT_DIR symlink (AI_MANIFEST "SYMLINK SANCTITY") was
+# dropped in commit 8ad9ecf when install.sh became the
+# event-driven boot-persistent Sentry. Without it, MESA Turnip
+# writes shaders to a real cache dir that vault_d.sh never
+# inspects, so the HUD "NEW" counter is pinned at 0 forever.
+#
+# etk_link_cache <target_vault>: idempotently makes the fixed
+# Turnip cache path resolve into the per-game vault.
+#  - If the cache path is a REAL directory (legacy / first run),
+#    its contents are folded into the vault first; the real dir
+#    is only removed if that rsync SUCCEEDS, so shaders are
+#    never lost on a partial migrate.
+#  - The symlink is only (re)pointed when it differs from the
+#    desired target, and vault_d.sh is killed on a re-point so
+#    the Accountant re-baselines against the correct tree.
+# BusyBox-safe: readlink -f, rsync, ln -sf, [ -L ], [ -d ].
+# ==========================================================
+etk_link_cache() {
+    DESIRED="$1"
+    [ -z "$DESIRED" ] && return 0
+    mkdir -p "$DESIRED" "$(dirname "$RPCS3_CACHE_DIR")"
+
+    # Legacy/first-run: a REAL directory squatting on the cache path.
+    # Get it out of the way by RENAME (atomic on same fs, reliable on
+    # BusyBox) so the symlink can always be established — never leave
+    # the pipeline broken on a copy hiccup. Old contents are folded
+    # into the vault best-effort afterward; nothing is deleted, so a
+    # failed fold loses no shaders (they remain in the .pre-etk backup).
+    if [ -e "$RPCS3_CACHE_DIR" ] && [ ! -L "$RPCS3_CACHE_DIR" ] && [ -d "$RPCS3_CACHE_DIR" ]; then
+        BK="${RPCS3_CACHE_DIR}.pre-etk.$(date +%s)"
+        if mv "$RPCS3_CACHE_DIR" "$BK" 2>/dev/null; then
+            if command -v rsync >/dev/null 2>&1; then
+                rsync -a "$BK"/ "$DESIRED"/ 2>/dev/null
+            else
+                cp -a "$BK"/. "$DESIRED"/ 2>/dev/null
+            fi
+            echo "[$(date '+%H:%M:%S.%N')] CACHE DIR MOVED -> $BK, folded into $DESIRED" >> "$SPY_LOG"
+        else
+            echo "[$(date '+%H:%M:%S.%N')] FATAL: cannot move real cache dir $RPCS3_CACHE_DIR" >> "$SPY_LOG"
+            return 1
+        fi
+    fi
+
+    CUR_LINK="$(readlink -f "$RPCS3_CACHE_DIR" 2>/dev/null)"
+    if [ "$CUR_LINK" != "$DESIRED" ]; then
+        rm -f "$RPCS3_CACHE_DIR"
+        ln -sf "$DESIRED" "$RPCS3_CACHE_DIR"
+        pkill -f vault_d.sh 2>/dev/null
+        echo "[$(date '+%H:%M:%S.%N')] CACHE LINKED -> $DESIRED" >> "$SPY_LOG"
+    fi
+    return 0
+}
+
+# --- BOOT PRE-SEED ---
+# RPCS3 can be launched before the first IDLE->RUNNING tick is
+# handled. Point the cache at the last-played game's vault now
+# so the link already exists (as a symlink, never a real dir)
+# before Turnip writes its first shader. Ignition will re-point
+# it if the actual game differs.
+SEED_ID="$(cat "$RECENT_ID_FILE" 2>/dev/null)"
+[ -z "$SEED_ID" ] && SEED_ID="NPUA80075"
+etk_link_cache "$ETK_ROOT/vault/$CHIPSET/$SEED_ID/shaders"
+
 PREV_STATE="IDLE"
 
 while true; do
@@ -247,6 +314,15 @@ while true; do
         # RACE-PROOF IDENTITY SYNC: Resolve and commit ID before spawning workers
         ID_STR=$(pgrep -f rpcs3 | xargs -I{} cat /proc/{}/cmdline /proc/{}/environ 2>/dev/null | tr '\0' '\n' | grep -oE '[A-Z]{4}[0-9]{5}' | head -n 1)
         echo "${ID_STR:-NPUA80075}" > "$ID_FILE"
+
+        # Re-source so $VAULT_DIR reflects the just-resolved ID
+        # (env.sh derives TARGET_ID -> VAULT_DIR from $ID_FILE).
+        source /storage/games-internal/roms/etk/scripts/env.sh
+
+        # SHADER PIPELINE: point the Turnip cache at THIS game's
+        # vault before vault_d.sh starts. etk_link_cache kills any
+        # stale vault_d so the spawn below baselines cleanly.
+        etk_link_cache "$VAULT_DIR"
 
         # ATOMIC SESSION RESET: Zero new-shader counter at ignition
         echo "0" > "$SHM_DIR/vault_new.txt"

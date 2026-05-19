@@ -1,7 +1,7 @@
 # ETK CONIFIG GT5P DAYTONA STABLE BASELINE
 Audio:
    # OpenSL or Cubeb or ALSA
-  Renderer: Cubeb
+  Renderer: ALSA
   # Downmix to Stereo to save SPU mixing cycles
   Channels: 2.0
   Audio Format: Stereo
@@ -25,7 +25,7 @@ Core:
   Lower SPU Priority: false
 Video:
   # Vulkan required for MESA Turnip
-  Renderer: Vulkan
+  Renderer: ALSA
   Resolution: 1280x720
   # Attempt 50% 66% 75% during extreme harvesting duress
   Resolution Scale: 100

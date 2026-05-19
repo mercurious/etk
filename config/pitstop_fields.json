@@ -10,7 +10,7 @@
     "yaml_key": "  Audio Buffer",
     "type": "int",
     "min": 10,
-    "max": 250,
+    "max": 400,
     "step": 5
   },
   {
@@ -18,7 +18,23 @@
     "yaml_key": "  Desired Audio Buffer Duration",
     "type": "int",
     "min": 5,
-    "max": 100,
+    "max": 400,
+    "step": 1
+  },
+  {
+    "label": "Time Stretching Threshold",
+    "yaml_key": "  Time Stretching Threshold",
+    "type": "int",
+    "min": 5,
+    "max": 400,
+    "step": 1
+  },
+  {
+    "label": "PPU Threads",
+    "yaml_key": "  PPU Threads",
+    "type": "int",
+    "min": 0,
+    "max": 5,
     "step": 1
   },
   {
@@ -29,6 +45,13 @@
     "max": 6,
     "step": 1
   },
+  {
+    "label": "SPU Block Size",
+    "yaml_key": "  SPU Block Size",
+    "type": "enum",
+    "options": ["Safe", "Mega", "Giga"]
+  },
+
   {
     "label": "Relaxed ZCULL Sync",
     "yaml_key": "  Relaxed ZCULL Sync",

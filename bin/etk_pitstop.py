@@ -67,10 +67,10 @@ def load_menu_matrix():
         item["enum_idx"] = 0
 
         for line in yaml_lines:
-            # Strip whitespace for matching so we catch indented YAML keys
-            stripped = line.lstrip()
-            if stripped.startswith(item["yaml_key"] + ":"):
-                raw_val = stripped.split(":", 1)[1].strip().replace('"', '')
+            # yaml_key carries its own indentation to disambiguate duplicate
+            # keys (e.g. the Audio vs Video "Renderer"), so match the raw line.
+            if line.rstrip("\n").startswith(item["yaml_key"] + ":"):
+                raw_val = line.split(":", 1)[1].strip().replace('"', '')
 
                 if item["type"] == "int":
                     item["current_val"] = int(raw_val)
@@ -107,21 +107,24 @@ def save_menu_matrix(matrix):
     updated_keys = set()
 
     for i in range(len(lines)):
-        stripped = lines[i].lstrip()
         for item in matrix:
-            if stripped.startswith(item["yaml_key"] + ":"):
-                # Capture and preserve the original YAML indentation
-                indent = lines[i][:len(lines[i]) - len(stripped)]
-                
+            # Mirror load's first-match semantics: skip keys already written so
+            # an ambiguous key (e.g. Audio vs Video "Renderer") only rewrites
+            # its first occurrence instead of clobbering the other section.
+            if item["yaml_key"] in updated_keys:
+                continue
+            # yaml_key already includes its indentation; match the raw line.
+            if lines[i].rstrip("\n").startswith(item["yaml_key"] + ":"):
                 if item["type"] == "enum":
                     val_str = item['options'][item['enum_idx']]
                 elif item["type"] == "bool":
                     val_str = 'true' if item['current_val'] else 'false'
                 else:
                     val_str = str(item['current_val'])
-                    
-                lines[i] = f"{indent}{item['yaml_key']}: {val_str}\n"
+
+                lines[i] = f"{item['yaml_key']}: {val_str}\n"
                 updated_keys.add(item["yaml_key"])
+                break
 
     # Appender Layer (Fallback for entirely missing keys)
     for item in matrix:
@@ -132,8 +135,7 @@ def save_menu_matrix(matrix):
                 val_str = 'true' if item['current_val'] else 'false'
             else:
                 val_str = str(item['current_val'])
-            # Assuming 2 spaces indentation for appended items as a standard RPCS3 default
-            lines.append(f"  {item['yaml_key']}: {val_str}\n")
+            lines.append(f"{item['yaml_key']}: {val_str}\n")
 
     with open(CONFIG_PATH, 'w') as f:
         f.writelines(lines)
@@ -148,19 +150,35 @@ def draw_interface(stdscr, matrix, active_idx, gamepad_status):
     stdscr.attron(curses.color_pair(1))
     stdscr.addstr(0, 2, " ETK PITSTOP // SCHEMATIC DRIVEN EMULATOR TUNER ", curses.A_BOLD)
     stdscr.attroff(curses.color_pair(1))
+    total = len(matrix)
+    # Lap-counter style position telemetry, e.g. "LAP 06/18"
+    lap = f"LAP {active_idx + 1:02d}/{total:02d}"
     stdscr.addstr(1, 2, f"TARGET: config_{TARGET_ID}.yml  |  PAD: {gamepad_status}", curses.A_DIM)
+    if w > len(lap) + 4:
+        stdscr.addstr(1, w - len(lap) - 2, lap, curses.color_pair(1) | curses.A_BOLD)
     stdscr.addstr(2, 2, "-" * (w - 4), curses.A_DIM)
 
     start_y = 4
-    for idx, item in enumerate(matrix):
-        if start_y + idx >= h - 4:
-            break
+    # Content rows live between the header rule (row 2) and the footer rule
+    # (row h-3). Defensive clamp keeps this sane on a tiny handheld TTY.
+    capacity = max(1, (h - 3) - start_y)
+
+    # Stateless scroll window: center the cursor when possible, clamped to
+    # the ends so the list never scrolls past its first/last entry.
+    if total <= capacity:
+        offset = 0
+    else:
+        offset = min(max(0, active_idx - capacity // 2), total - capacity)
+
+    for row, idx in enumerate(range(offset, min(offset + capacity, total))):
+        item = matrix[idx]
+        y = start_y + row
         is_selected = (idx == active_idx)
         prefix = "> " if is_selected else "  "
         attr = curses.A_REVERSE if is_selected else curses.A_NORMAL
 
-        stdscr.addstr(start_y + idx, 4, prefix, curses.color_pair(1) if is_selected else curses.A_NORMAL)
-        stdscr.addstr(start_y + idx, 8, f"{item['label']:<30}")
+        stdscr.addstr(y, 4, prefix, curses.color_pair(1) if is_selected else curses.A_NORMAL)
+        stdscr.addstr(y, 8, f"{item['label']:<30}")
 
         if item["type"] == "enum":
             val_str = f"[ {item['options'][item['enum_idx']]} ]"
@@ -169,12 +187,21 @@ def draw_interface(stdscr, matrix, active_idx, gamepad_status):
         else:
             val_str = f"[ {item['current_val']} ]"
 
-        stdscr.addstr(start_y + idx, 40, val_str, attr)
+        stdscr.addstr(y, 40, val_str, attr)
 
     # Control footer
     stdscr.addstr(h - 3, 2, "-" * (w - 4), curses.A_DIM)
-    footer = "DPAD UP/DN: Move  DPAD LT/RT: Change  A: Save  B: Drop  Q: Quit"
+    footer = "DPAD UP/DN: Move  DPAD LT/RT: Change  A: Save  B: Quit "
     stdscr.addstr(h - 2, 4, footer[:w - 6], curses.A_BOLD)
+
+    # Scroll telltales — race shift-light chevrons parked on the rules.
+    # Drawn last so they sit on top of the header/footer separator lines.
+    if w > 16:
+        if offset > 0:
+            stdscr.addstr(2, w - 12, " /\\ MORE ", curses.color_pair(1) | curses.A_BOLD)
+        if offset + capacity < total:
+            stdscr.addstr(h - 3, w - 12, " \\/ MORE ", curses.color_pair(1) | curses.A_BOLD)
+
     stdscr.refresh()
 
 
