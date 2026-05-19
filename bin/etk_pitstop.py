@@ -29,6 +29,29 @@ ETK_ROOT = os.environ.get('ETK_ROOT', '/storage/games-internal/roms/etk')
 CONFIG_PATH = f"/storage/games-internal/roms/bios/rpcs3/custom_configs/config_{TARGET_ID}.yml"
 FIELDS_JSON = f"{ETK_ROOT}/config/pitstop_fields.json"
 
+# Rocknix's PS3 launchers: each "<Game Name>.psn" file contains the title
+# ID as text, so the directory is a static name<->ID map that resolves
+# even when Pitstop runs idle from the tools menu (no rpcs3 process).
+PS3_ROMS_DIR = "/storage/games-internal/roms/ps3"
+
+
+def resolve_game_name(target_id):
+    """Map a title ID to its human display name via the .psn launchers.
+    Falls back to the ID itself so the header is never blank."""
+    try:
+        for entry in os.listdir(PS3_ROMS_DIR):
+            if not entry.endswith(".psn"):
+                continue
+            with open(os.path.join(PS3_ROMS_DIR, entry), 'r') as f:
+                if f.read().strip() == target_id:
+                    return entry[:-4]
+    except Exception:
+        pass
+    return target_id
+
+
+GAME_NAME = resolve_game_name(TARGET_ID)
+
 # FIX 3: SIGNED int ('i') to correctly receive val=-1 from D-PAD axes.
 EVENT_FORMAT = 'llHHi'
 EVENT_SIZE = struct.calcsize(EVENT_FORMAT)
@@ -206,9 +229,7 @@ def draw_interface(stdscr, matrix, active_idx, gamepad_status, status=""):
     total = len(matrix)
     # Lap-counter style position telemetry, e.g. "LAP 06/18"
     lap = f"LAP {active_idx + 1:02d}/{total:02d}"
-    # Show the FULL resolved path, not just the basename — if saves aren't
-    # persisting, the first thing to confirm is which file is being written.
-    target = f"FILE: {CONFIG_PATH}  |  PAD: {gamepad_status}"
+    target = f"GAME: {GAME_NAME}  |  PAD: {gamepad_status}"
     stdscr.addstr(1, 2, target[:w - 4], curses.A_DIM)
     if w > len(lap) + 4:
         stdscr.addstr(1, w - len(lap) - 2, lap, curses.color_pair(1) | curses.A_BOLD)

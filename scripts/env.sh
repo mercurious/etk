@@ -64,16 +64,18 @@ export CHIPSET="SM8250"
 # Single source of truth for *writing* the game ID (the immutable block
 # above only resolves it for the current shell when ID_FILE is absent).
 # The Sentry must commit ID_FILE/RECENT_ID_FILE before re-sourcing env.sh,
-# so it needs the same robust resolution: in-memory grep -> ROM path ->
-# PARAM.SFO strings. Matches "rpcs3|AppRun.wrapped" because Rocknix ships
-# RPCS3 as an AppImage whose process is AppRun.wrapped — the old
-# rpcs3-only grep missed it, stranding the ID at the NPUA80075 fallback.
+# so it needs the same resolution. The primary scan is byte-for-byte the
+# proven pre-existing one-liner: it must xargs over *every* rpcs3 PID, not
+# just the first — the AppImage spawns multiple processes and the game ID
+# lives in a non-first worker, so a single-PID/head approach strands the
+# ID at the NPUA80075 fallback (regression: stuck per-game). The only
+# addition is the PARAM.SFO fallback, gated on the primary returning
+# empty and derived from the live ROM path so it can never yield a
+# stale or wrong-game ID.
 resolve_game_id() {
-    pid=$(pgrep -f "rpcs3|AppRun.wrapped" | head -n 1)
-    [ -z "$pid" ] && return 0
-    id=$(cat /proc/$pid/cmdline /proc/$pid/environ 2>/dev/null | tr '\0' '\n' | grep -oE '[A-Z]{4}[0-9]{5}' | head -n 1)
+    id=$(pgrep -f rpcs3 | xargs -I{} cat /proc/{}/cmdline /proc/{}/environ 2>/dev/null | tr '\0' '\n' | grep -oE '[A-Z]{4}[0-9]{5}' | head -n 1)
     if [ -z "$id" ]; then
-        rom=$(cat /proc/$pid/cmdline 2>/dev/null | tr '\0' '\n' | grep "\.ps3" | head -n 1)
+        rom=$(pgrep -f rpcs3 | xargs -I{} cat /proc/{}/cmdline 2>/dev/null | tr '\0' '\n' | grep '\.ps3' | head -n 1)
         if [ -n "$rom" ]; then
             sfo=$(find "$rom" -name "PARAM.SFO" 2>/dev/null | head -n 1)
             [ -n "$sfo" ] && id=$(strings "$sfo" 2>/dev/null | grep -oE '[A-Z]{4}[0-9]{5}' | head -n 1)
