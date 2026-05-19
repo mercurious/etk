@@ -78,8 +78,14 @@ def load_menu_matrix():
                     item["current_val"] = True if raw_val.lower() == "true" else False
                 elif item["type"] == "enum":
                     item["current_val"] = raw_val
-                    if raw_val in item["options"]:
-                        item["enum_idx"] = item["options"].index(raw_val)
+                    # The UI and save path are driven entirely by enum_idx, so
+                    # a value outside the curated options list must still be
+                    # representable — otherwise it silently coerces to
+                    # options[0] on the next save. Adopt the live value so it
+                    # round-trips and remains selectable via the D-pad.
+                    if raw_val not in item["options"]:
+                        item["options"] = [raw_val] + item["options"]
+                    item["enum_idx"] = item["options"].index(raw_val)
                 break
 
         # Bulletproof fallback
@@ -141,7 +147,54 @@ def save_menu_matrix(matrix):
         f.writelines(lines)
 
 
-def draw_interface(stdscr, matrix, active_idx, gamepad_status):
+def commit_and_verify(matrix):
+    """Save, then re-read CONFIG_PATH from disk and confirm every managed
+    key actually holds the intended value. Returns (ok, status). A save
+    that silently fails (read-only path, wrong target file, lost write)
+    must never look like a success — that is the whole reported bug."""
+    try:
+        save_menu_matrix(matrix)
+    except OSError as e:
+        return False, f"WRITE FAIL: {e.__class__.__name__} {e}"
+
+    try:
+        with open(CONFIG_PATH, 'r') as f:
+            disk = f.readlines()
+    except OSError as e:
+        return False, f"READBACK FAIL: {e.__class__.__name__} {e}"
+
+    seen = {}
+    for line in disk:
+        for item in matrix:
+            k = item["yaml_key"]
+            if k not in seen and line.rstrip("\n").startswith(k + ":"):
+                seen[k] = line.split(":", 1)[1].strip().replace('"', '')
+
+    bad = []
+    for item in matrix:
+        k = item["yaml_key"]
+        if k not in seen:
+            bad.append(k.strip() + "(absent)")
+            continue
+        got = seen[k]
+        if item["type"] == "enum":
+            want = item["options"][item["enum_idx"]]
+            ok = got == want
+        elif item["type"] == "bool":
+            want = "true" if item["current_val"] else "false"
+            ok = got.lower() == want
+        else:
+            want = str(item["current_val"])
+            ok = got == want
+        if not ok:
+            bad.append(f"{k.strip()}={got}!={want}")
+
+    if bad:
+        return False, "VERIFY MISMATCH: " + ", ".join(bad[:3])
+    return True, "SAVED OK"
+
+
+def draw_interface(stdscr, matrix, active_idx, gamepad_status, status=""):
     """Draws custom curses viewport based entirely on the parsed schema framework."""
     stdscr.erase()
     h, w = stdscr.getmaxyx()
@@ -153,7 +206,10 @@ def draw_interface(stdscr, matrix, active_idx, gamepad_status):
     total = len(matrix)
     # Lap-counter style position telemetry, e.g. "LAP 06/18"
     lap = f"LAP {active_idx + 1:02d}/{total:02d}"
-    stdscr.addstr(1, 2, f"TARGET: config_{TARGET_ID}.yml  |  PAD: {gamepad_status}", curses.A_DIM)
+    # Show the FULL resolved path, not just the basename — if saves aren't
+    # persisting, the first thing to confirm is which file is being written.
+    target = f"FILE: {CONFIG_PATH}  |  PAD: {gamepad_status}"
+    stdscr.addstr(1, 2, target[:w - 4], curses.A_DIM)
     if w > len(lap) + 4:
         stdscr.addstr(1, w - len(lap) - 2, lap, curses.color_pair(1) | curses.A_BOLD)
     stdscr.addstr(2, 2, "-" * (w - 4), curses.A_DIM)
@@ -189,10 +245,16 @@ def draw_interface(stdscr, matrix, active_idx, gamepad_status):
 
         stdscr.addstr(y, 40, val_str, attr)
 
-    # Control footer
+    # Control footer — replaced by the save status when one exists so a
+    # failed write is impossible to mistake for a clean save+exit.
     stdscr.addstr(h - 3, 2, "-" * (w - 4), curses.A_DIM)
-    footer = "DPAD UP/DN: Move  DPAD LT/RT: Change  A: Save  B: Quit "
-    stdscr.addstr(h - 2, 4, footer[:w - 6], curses.A_BOLD)
+    if status:
+        ok = status == "SAVED OK"
+        stdscr.addstr(h - 2, 4, status[:w - 6],
+                      curses.A_BOLD | (curses.A_NORMAL if ok else curses.A_REVERSE))
+    else:
+        footer = "DPAD UP/DN: Move  DPAD LT/RT: Change  A: Save  B: Quit "
+        stdscr.addstr(h - 2, 4, footer[:w - 6], curses.A_BOLD)
 
     # Scroll telltales — race shift-light chevrons parked on the rules.
     # Drawn last so they sit on top of the header/footer separator lines.
@@ -226,58 +288,74 @@ def main(stdscr):
     except Exception as e:
         gamepad_status = f"NO PAD ({e})"
 
+    status = ""
     running = True
     while running:
-        draw_interface(stdscr, menu_data, cursor_idx, gamepad_status)
+        draw_interface(stdscr, menu_data, cursor_idx, gamepad_status, status)
 
-        # Keyboard input
+        # Keyboard input. getch can raise on resize/interrupt — that is the
+        # only thing we ignore here. Save errors must NOT be swallowed.
         try:
             ch = stdscr.getch()
-            if ch == ord('q') or ch == ord('Q'):
-                running = False
-            elif ch == curses.KEY_UP:
-                cursor_idx = (cursor_idx - 1) % len(menu_data)
-            elif ch == curses.KEY_DOWN:
-                cursor_idx = (cursor_idx + 1) % len(menu_data)
-            elif ch == curses.KEY_LEFT:
-                _adjust_item(menu_data[cursor_idx], -1)
-            elif ch == curses.KEY_RIGHT:
-                _adjust_item(menu_data[cursor_idx], 1)
-            elif ch == ord('\n') or ch == ord('s'):
-                save_menu_matrix(menu_data)
-                running = False
-        except Exception:
-            pass
+        except curses.error:
+            ch = -1
+        if ch == ord('q') or ch == ord('Q'):
+            running = False
+        elif ch == curses.KEY_UP:
+            cursor_idx = (cursor_idx - 1) % len(menu_data)
+            status = ""
+        elif ch == curses.KEY_DOWN:
+            cursor_idx = (cursor_idx + 1) % len(menu_data)
+            status = ""
+        elif ch == curses.KEY_LEFT:
+            _adjust_item(menu_data[cursor_idx], -1)
+            status = ""
+        elif ch == curses.KEY_RIGHT:
+            _adjust_item(menu_data[cursor_idx], 1)
+            status = ""
+        elif ch == ord('\n') or ch == ord('s'):
+            ok, status = commit_and_verify(menu_data)
+            running = not ok  # only leave the editor once the write is proven
 
         # Gamepad input — only if fd was successfully opened
         if fd is not None:
             try:
                 data = os.read(fd, EVENT_SIZE)
-                if data:
-                    _, _, etype, code, val = struct.unpack(EVENT_FORMAT, data)
-
-                    # A button — save and exit
-                    if etype == 1 and code == 304 and val == 1:
-                        save_menu_matrix(menu_data)
-                        running = False
-
-                    # B button — exit without save
-                    elif etype == 1 and code == 305 and val == 1:
-                        running = False
-
-                    # D-PAD Up/Down (ABS_HAT0Y)
-                    elif etype == 3 and code == 17:
-                        if val == -1:
-                            cursor_idx = (cursor_idx - 1) % len(menu_data)
-                        elif val == 1:
-                            cursor_idx = (cursor_idx + 1) % len(menu_data)
-
-                    # D-PAD Left/Right (ABS_HAT0X)
-                    elif etype == 3 and code == 16 and val != 0:
-                        _adjust_item(menu_data[cursor_idx], val)
-
             except BlockingIOError:
-                pass
+                data = None
+            except OSError as e:
+                data = None
+                gamepad_status = f"PAD READ ERR ({e.errno})"
+            if data and len(data) == EVENT_SIZE:
+                _, _, etype, code, val = struct.unpack(EVENT_FORMAT, data)
+
+                # Confirm button — save, verify, exit only if it stuck.
+                # This pad's InputPlumber virtual-Xbox node swaps South/East:
+                # the physical confirm button emits BTN_EAST (305), not
+                # BTN_SOUTH (304). Binding 304 here is why every "save"
+                # silently took the old quit path. Verified on-device.
+                if etype == 1 and code == 305 and val == 1:
+                    ok, status = commit_and_verify(menu_data)
+                    running = not ok
+
+                # Back button (BTN_SOUTH 304 on this swapped pad) — exit
+                # without saving.
+                elif etype == 1 and code == 304 and val == 1:
+                    running = False
+
+                # D-PAD Up/Down (ABS_HAT0Y)
+                elif etype == 3 and code == 17:
+                    if val == -1:
+                        cursor_idx = (cursor_idx - 1) % len(menu_data)
+                        status = ""
+                    elif val == 1:
+                        cursor_idx = (cursor_idx + 1) % len(menu_data)
+                        status = ""
+
+                # D-PAD Left/Right (ABS_HAT0X)
+                elif etype == 3 and code == 16 and val != 0:
+                    _adjust_item(menu_data[cursor_idx], val)
+                    status = ""
 
     if fd is not None:
         os.close(fd)

@@ -25,16 +25,45 @@ fi
 source /storage/games-internal/roms/etk/scripts/env.sh
 
 # 3. Resolve active game identity.
-#    Priority: live SHM (game running) -> persistent anchor (last played) -> hardcoded default
-if [ -f "$ID_FILE" ] && [ "$(cat $ID_FILE 2>/dev/null)" != "IDLE" ]; then
-    RAW_ID=$(cat "$ID_FILE")
-else
-    RAW_ID=$(cat "$RECENT_ID_FILE" 2>/dev/null)
+#    Priority: live SHM (game running) -> persistent anchor (last played).
+#    NO silent hardcoded fallback: editing a default config when no game is
+#    resolved is exactly how tuning silently lands in the wrong file and
+#    looks "not retained" on the next launch. Fail loudly instead.
+RAW_ID=""
+if [ -f "$ID_FILE" ]; then
+    FILE_ID=$(cat "$ID_FILE" 2>/dev/null | tr -d '[:space:]')
+    case "$FILE_ID" in
+        IDLE|UNKNOWN_ID|"") ;;
+        *) RAW_ID="$FILE_ID" ;;
+    esac
+fi
+if [ -z "$RAW_ID" ]; then
+    RAW_ID=$(cat "$RECENT_ID_FILE" 2>/dev/null | tr -d '[:space:]')
 fi
 
 CLEAN_ID=$(echo "$RAW_ID" | tr -d '[:space:]')
-if [ -z "$CLEAN_ID" ]; then
-    CLEAN_ID="NPUA80075"
+
+# Title IDs are exactly 4 uppercase letters + 5 digits. Anything else
+# (empty, IDLE, partial) means we could not safely resolve a target.
+if ! echo "$CLEAN_ID" | grep -qE '^[A-Z]{4}[0-9]{5}$'; then
+    clear
+    echo ""
+    echo "  ETK PITSTOP // NO TARGET RESOLVED"
+    echo "  ---------------------------------"
+    echo ""
+    echo "  Could not determine the active PS3 title, so Pitstop"
+    echo "  will NOT edit a default config (that strands your tuning"
+    echo "  in the wrong file)."
+    echo ""
+    echo "  ID_FILE   : $(cat "$ID_FILE" 2>/dev/null || echo '(missing)')"
+    echo "  RECENT_ID : $(cat "$RECENT_ID_FILE" 2>/dev/null || echo '(missing)')"
+    echo ""
+    echo "  Launch a game once so ETK can anchor its identity,"
+    echo "  then reopen Pitstop."
+    echo ""
+    echo "  Exiting in 8s..."
+    sleep 8
+    exit 1
 fi
 export TARGET_ID="$CLEAN_ID"
 

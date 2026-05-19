@@ -319,8 +319,14 @@ while true; do
         sleep 4
 
         # RACE-PROOF IDENTITY SYNC: Resolve and commit ID before spawning workers
-        ID_STR=$(pgrep -f rpcs3 | xargs -I{} cat /proc/{}/cmdline /proc/{}/environ 2>/dev/null | tr '\0' '\n' | grep -oE '[A-Z]{4}[0-9]{5}' | head -n 1)
+        ID_STR=$(resolve_game_id)
         echo "${ID_STR:-NPUA80075}" > "$ID_FILE"
+        # Anchor the persistent last-played ID at ignition, not only on the
+        # running tick — otherwise a game that exits before the first
+        # non-empty tick leaves RECENT_ID_FILE pointing at the prior game,
+        # so Pitstop tunes the wrong config. Never anchor the NPUA80075
+        # fallback: only commit a genuinely resolved ID.
+        [ -n "$ID_STR" ] && echo "$ID_STR" > "$RECENT_ID_FILE"
 
         # Re-source so $VAULT_DIR reflects the just-resolved ID
         # (env.sh derives TARGET_ID -> VAULT_DIR from $ID_FILE).
@@ -345,7 +351,7 @@ while true; do
 
     # --- RUNNING: Continuous ID refresh and persistent anchor write ---
     if [ "$CUR_STATE" = "RUNNING" ]; then
-        ID_STR=$(pgrep -f rpcs3 | xargs -I{} cat /proc/{}/cmdline /proc/{}/environ 2>/dev/null | tr '\0' '\n' | grep -oE '[A-Z]{4}[0-9]{5}' | head -n 1)
+        ID_STR=$(resolve_game_id)
         if [ -n "$ID_STR" ]; then
             echo "$ID_STR" > "$ID_FILE"
             echo "$ID_STR" > "$RECENT_ID_FILE"
