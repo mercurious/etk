@@ -1,12 +1,14 @@
 [
   {
     "label": "Audio Renderer Backend",
+    "section": "Audio",
     "yaml_key": "  Renderer",
     "type": "enum",
     "options": ["OpenSL", "Cubeb", "ALSA"]
   },
   {
     "label": "Audio Buffer Size (ms)",
+    "section": "Audio",
     "yaml_key": "  Audio Buffer",
     "type": "int",
     "min": 10,
@@ -15,6 +17,7 @@
   },
   {
     "label": "Desired Buffer Duration",
+    "section": "Audio",
     "yaml_key": "  Desired Audio Buffer Duration",
     "type": "int",
     "min": 5,
@@ -23,6 +26,7 @@
   },
   {
     "label": "Time Stretching Threshold",
+    "section": "Audio",
     "yaml_key": "  Time Stretching Threshold",
     "type": "int",
     "min": 5,
@@ -31,6 +35,7 @@
   },
   {
     "label": "PPU Threads",
+    "section": "Core",
     "yaml_key": "  PPU Threads",
     "type": "int",
     "min": 0,
@@ -39,6 +44,7 @@
   },
   {
     "label": "SPU Preferred Threads",
+    "section": "Core",
     "yaml_key": "  Preferred SPU Threads",
     "type": "int",
     "min": 0,
@@ -47,49 +53,52 @@
   },
   {
     "label": "SPU Block Size",
+    "section": "Core",
     "yaml_key": "  SPU Block Size",
     "type": "enum",
     "options": ["Safe", "Mega", "Giga"]
   },
   {
-  	"label": "Lower SPU Priority",
-  	"yaml_key": "  Lower SPU Priority",
-  	"type": "bool"  
+    "label": "Lower SPU Priority",
+    "section": "Core",
+    "yaml_key": "  Lower SPU Priority",
+    "type": "bool"
   },
   {
-  	"label": "SPU Loop Detection",
-  	"yaml_key": "  SPU Loop Detection",
-  	"type": "bool"
+    "label": "Write Color Buffers",
+    "section": "Video",
+    "yaml_key": "  Write Color Buffers",
+    "type": "bool"
   },
   {
-  	"label": "Write Color Buffers",
-  	"yaml_key": "  Write Color Buffers",
-  	"type": "bool"
-  },
-  {
-  	"label": "Read Color Buffers",
-  	"yaml_key": "  Read Color Buffers",
-  	"type": "bool"
+    "label": "Read Color Buffers",
+    "section": "Video",
+    "yaml_key": "  Read Color Buffers",
+    "type": "bool"
   },
   {
     "label": "Resolution Scale",
+    "section": "Video",
     "yaml_key": "  Resolution Scale",
     "type": "enum",
-	"options": ["50", "66", "75", "100"]
+    "options": ["50", "66", "75", "100"]
   },
   {
-    "label": "Antialisaing",
+    "label": "Antialiasing",
+    "section": "Video",
     "yaml_key": "  MSAA",
     "type": "enum",
-	"options": ["Auto", "Disabled"]
-  },  
+    "options": ["Auto", "Disabled"]
+  },
   {
-  	"label": "Multithreaded RSX",
-  	"yaml_key": "  Multithreaded RSX",
-  	"type": "bool"
+    "label": "Multithreaded RSX",
+    "section": "Video",
+    "yaml_key": "  Multithreaded RSX",
+    "type": "bool"
   },
   {
     "label": "Relaxed ZCULL Sync",
+    "section": "Video",
     "yaml_key": "  Relaxed ZCULL Sync",
     "type": "bool"
   }
