@@ -16,11 +16,6 @@ TICK=0
 
 # --- 1. THE ANTI-THRASHING PATCH ---
 sysctl -w vm.swappiness=10 2>/dev/null
-# RPCS3 maps the PS3 address space as many small VMAs; the kernel
-# default (65530) is exhausted on memory-heavy titles, causing mmap
-# failures. Raise the ceiling well above default (not the legacy
-# value of 1024, which was BELOW default and would have crippled it).
-sysctl -w vm.max_map_count=1048576 2>/dev/null
 echo 1 > /proc/sys/vm/drop_caches 2>/dev/null
 
 mkdir -p "$SHM_DIR" 2>/dev/null

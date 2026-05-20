@@ -104,8 +104,7 @@ The system invokes scripts using the absolute execution command: `/usr/bin/foot 
 ## [LOCKDOWN] HUD FORMATTING
 
 - **HUD FORMAT STRICT LOCK**: The instrument string layout is locked to a dense, space-trimmed format that uses punctuation and short text strings to serve as the DDU (Driver Data Unit from racing cars) to preserve Flip 2 screen real estate. Future iterations MUST NOT expand spacing or add decorative characters unless custom font and unicode support is feasible, recommended, tested, and approved.
-  - *Format:* `ETK:MODE|TARGET_ID|XX°C STAT|X.XX STAT|XX% STAT|XXMB XXX NEW: XX`
-  - *HUDMode* SPEEDO (vs PRESET SELECTOR see below)
+  - *Format:* `ETK:INSTALL_MODE|TARGET_ID|XX°C STAT|X.XX STAT|XX% STAT|XXMB XXX NEW:XX|`
   
 ## [LOCKDOWN] DEV TOOLS: THE PIT WALL SYNC (AI TELEMETRY BRIDGE)
 - **ARCHITECTURE:** To bypass the lack of GitHub Connected Apps, the ETK utilizes a "Hot Drop" telemetry bridge via Google Drive. A host machine script (`pit_wall_sync.sh`) continuously polls the rig via SSH and mirrors `/storage/etk_crash_report.log` and `/dev/shm/etk_shm/` to a local Google Drive folder (`ETK_Telemetry`).
