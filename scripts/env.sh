@@ -116,3 +116,22 @@ export DEFAULT_MODE="RACE"
 # --- [ PIPELINE CONTROLS ] ---
 # Set to 1 for verbose Rsync output, 0 for clean output
 export ETK_VERBOSE=1
+
+# --- [ SIMPLE TELEMETRY ] ---
+# Post-mortem ledger + career stats layer (dossier: BuildSimpleTelemetry.md §4).
+# All paths derive from $ETK_ROOT — no hardcoded paths in downstream scripts.
+# The directories are NOT created at source-time; consumers call
+# telemetry_init_dirs() before their first write so a read-only source
+# (e.g. install.sh running in a probe-only mode) does not provision state.
+export TELEMETRY_DIR="$ETK_ROOT/etk_telemetry"
+export SESSIONS_LEDGER="$TELEMETRY_DIR/sessions.tsv"
+export CONFIG_CHANGES_LEDGER="$TELEMETRY_DIR/config_changes.tsv"
+export CAREER_DIR="$TELEMETRY_DIR/career"
+export PIT_NOTE_FILE="$TELEMETRY_DIR/pit_note.txt"
+export SIGNATURES_FILE="$ETK_ROOT/config/crash_signatures.json"
+
+# Helper: ensure telemetry tree exists; safe to call repeatedly.
+# Shell-only — Python consumers in bin/etk_pitstop.py do their own mkdir.
+telemetry_init_dirs() {
+    mkdir -p "$TELEMETRY_DIR" "$CAREER_DIR"
+}

@@ -328,7 +328,7 @@ while true; do
     fi
 
     # --- BRIDGE WATCHDOG: Keep mango_bridge alive regardless of game state ---
-    pgrep -f mango_bridge.sh >/dev/null || nohup bash "$ETK_ROOT/scripts/mango_bridge.sh" >/dev/null 2>&1 &
+    pgrep -f mango_bridge.sh >/dev/null || nohup bash "$ETK_ROOT/bin/mango_bridge.sh" >/dev/null 2>&1 &
 
     # --- SHIFTER WATCHDOG: Keep input_d.py alive (headless R3 panic button) ---
     pgrep -f input_d.py >/dev/null || nohup python3 "$ETK_ROOT/bin/input_d.py" >/dev/null 2>&1 &

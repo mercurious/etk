@@ -22,6 +22,7 @@ ToDo.
 - `pit_wall_sync.sh`: Runs locally with Google Drive app to enable Google Drive telemetry with Gemini
 - `/bin`:
   - `input_d.py`: Handles custom gamepad controls
+  - `mango_bridge.sh`: Manages live telemetry and overlay display
   - `recovery.sh`: Headless Nuclear Recovery, invoked on-device by the `R3` panic button
   - `thermal_d.sh`: Handles system conditions
   - `vault_d.sh`: Handles archival of compiled shaders
@@ -35,7 +36,6 @@ ToDo.
 - `/scripts`:
   - `commander.sh`: Pit Wall central unit with remote terminal DDU UI
   - `env.sh`: Establishes pit and race environment
-  - `mango_bridge.sh`: Manages live telemetry and overlay display
   - `probe.sh`: Provides error logs
 -  `/vault`: Large archive of Vulkan precompiled shader bins 
 

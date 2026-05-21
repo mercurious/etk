@@ -10,7 +10,6 @@
 ### PLAN FOR A REFACTOR FOR FULLY ONBOARD ETK
 - Go headless and move away from a tethered, commander.sh dependent rig
 - Preserve and enrich commander.sh as dev tool rather than used during harvesting runs, more for crash analytics and to continue to support the overhaul of on-board systems
-- Correct the location of `scripts/mango_bridge.sh` into `bin/` where daemons are expected to live as the ETK goes headless and increasingly event-based.
 - Trap R3 as a PANIC BUTTON that calls Recovery command
 
 ### Native Rocknix Config Editor App
