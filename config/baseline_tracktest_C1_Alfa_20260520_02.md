@@ -1,5 +1,73 @@
-Audio:
-  Audio Buffer: 225
+# Track Test 2
+- May 20, 2026
+
+## Test Cleanboot C-1 Alfa No-Audio Baseline 
+### Notes
+- Driver Delay: 50
+- Resolution: 75%
+- BATT charging at 38% test start at 51% at test end
+
+### Test Results
+- never saw CRITICAL RAM on-track at Resolution 75%
+
+1.  clean gold, clean racing
+2.  clean gold, dirty racing
+3.  clean driving, freeze at lap 2 06.295 (forgot to note HUD before R3)
+
+`SM8250:~ # dmesg | strings | grep -iE "adreno|kgsl|turnip|fence|timeout|msm_dpu|panic|oom|killed process|segfault|sigsegv|hard lockup|watchdog|call trace|backtrace|firmware|out of memory|rcu_sched" | tail -n 30
+[    0.000000] psci: PSCIv1.1 detected in firmware.
+[    0.068843] Call trace:
+[    0.688911] qcom_scm firmware:scm: qseecom: found qseecom with version 0x1402000
+[    0.688923] qcom_scm firmware:scm: qseecom: untested machine, skipping
+[    1.132998] msm_dpu ae01000.display-controller: bound ae94000.dsi (ops 0xffff800081326b38)
+[    1.134209] msm_dpu ae01000.display-controller: bound ae90000.displayport-controller (ops 0xffff8000813256b8)
+[    1.134396] adreno 3d00000.gpu: supply vdd not found, using dummy regulator
+[    1.134424] adreno 3d00000.gpu: supply vddcx not found, using dummy regulator
+[    1.142585] msm_dpu ae01000.display-controller: bound 3d00000.gpu (ops 0xffff8000812f2538)
+[    1.144870] msm_dpu ae01000.display-controller: [drm:adreno_request_fw] loaded qcom/a650_sqe.fw from new location
+[    1.144881] msm_dpu ae01000.display-controller: [drm:adreno_request_fw] loaded qcom/a650_gmu.bin from new location
+[    1.145468] [drm] Loaded GMU firmware v2.1.8
+[    1.277430] msm_dpu ae01000.display-controller: [drm] fb0: msmdrmfb frame buffer device
+[    1.282882] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2
+[    2.588375] kernel-overlays-setup: added firmware from /usr/lib/kernel-overlays/base/lib/firmware
+[  212.294129] adreno 3d00000.gpu: [drm:a6xx_irq] *ERROR* gpu fault ring 0 fence 59f2 status 00E51585 rb 0b02/0b63 ib1 0000000156A89000/0ded ib2 000000015BE46EE4/0000
+[  212.294179] msm_dpu ae01000.display-controller: [drm:recover_worker] *ERROR* 6.5.0.2: hangcheck recover!
+[  212.294198] msm_dpu ae01000.display-controller: [drm:recover_worker] *ERROR* 6.5.0.2: offending task: RSX Offloader (/tmp/.mount_6RXj9Pu1/AppRun.wrapped --no-gui /storage/.config/rpcs3/dev_hdd0/game/NPUA80075/USRDIR/EBOOT.BIN)
+[  213.480356] rb 0: fence:    23019/23026
+SM8250:~ # 
+`
+
+4. Clean gold. Clean driving. 69C 6.74 88% NEW:0 at Trophy Screen
+
+5. Freeze at tunnel, Lap 2, 76C 6.57 91% NEW: 0
+
+`SM8250:~ # dmesg | strings | grep -iE "adreno|kgsl|turnip|fence|timeout|msm_dpu|panic|oom|killed process|segfault|sigsegv|hard lockup|watchdog|call trace|backtrace|firmware|out of memory|rcu_sched" | tail -n 30
+[    0.000000] psci: PSCIv1.1 detected in firmware.
+[    0.068802] Call trace:
+[    0.688873] qcom_scm firmware:scm: qseecom: found qseecom with version 0x1402000
+[    0.688890] qcom_scm firmware:scm: qseecom: untested machine, skipping
+[    1.259821] msm_dpu ae01000.display-controller: bound ae94000.dsi (ops 0xffff800081326b38)
+[    1.261055] msm_dpu ae01000.display-controller: bound ae90000.displayport-controller (ops 0xffff8000813256b8)
+[    1.261269] adreno 3d00000.gpu: supply vdd not found, using dummy regulator
+[    1.261293] adreno 3d00000.gpu: supply vddcx not found, using dummy regulator
+[    1.269744] msm_dpu ae01000.display-controller: bound 3d00000.gpu (ops 0xffff8000812f2538)
+[    1.272204] msm_dpu ae01000.display-controller: [drm:adreno_request_fw] loaded qcom/a650_sqe.fw from new location
+[    1.272214] msm_dpu ae01000.display-controller: [drm:adreno_request_fw] loaded qcom/a650_gmu.bin from new location
+[    1.272789] [drm] Loaded GMU firmware v2.1.8
+[    1.405337] msm_dpu ae01000.display-controller: [drm] fb0: msmdrmfb frame buffer device
+[    1.407996] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2
+[    2.626071] kernel-overlays-setup: added firmware from /usr/lib/kernel-overlays/base/lib/firmware
+[    4.738659] Call trace:
+[  267.869041] adreno 3d00000.gpu: [drm:a6xx_irq] *ERROR* gpu fault ring 0 fence 7135 status 00800005 rb 0adf/0adf ib1 000000014A1F9000/0432 ib2 00000001BB145904/0922
+[  267.869108] msm_dpu ae01000.display-controller: [drm:recover_worker] *ERROR* 6.5.0.2: hangcheck recover!
+[  267.869132] msm_dpu ae01000.display-controller: [drm:recover_worker] *ERROR* 6.5.0.2: offending task: RSX Offloader (/tmp/.mount_PfnhYZeX/AppRun.wrapped --no-gui /storage/.config/rpcs3/dev_hdd0/game/NPUA80075/USRDIR/EBOOT.BIN)
+[  267.869150] rb 0: fence:    28978/28981
+SM8250:~ # `
+
+## TESTED CONFIG
+
+`Audio:
+  Audio Buffer: 150
   Audio Channel Layout: Automatic
   Audio Device: "@@@default@@@"
   Audio Format: Stereo
@@ -7,7 +75,7 @@ Audio:
   Audio Provider: CellAudio
   Channels: 2.0
   Convert to 16 bit: false
-  Desired Audio Buffer Duration: 225
+  Desired Audio Buffer Duration: 100
   Disable Sampling Skip: false
   Dump to file: false
   Enable Buffering: true
@@ -18,7 +86,7 @@ Audio:
   Music Handler: Qt
   RSXAudio Avport: HDMI 0
   Renderer: Cubeb
-  Time Stretching Threshold: 25
+  Time Stretching Threshold: 100
 Core:
   Accurate Cache Line Stores: false
   Accurate PPU 128-byte Reservation Op Max Length: 0
@@ -197,7 +265,7 @@ Video:
   Disable Vulkan Memory Allocator: false
   Disable ZCull Occlusion Queries: true
   Driver Recovery Timeout: 1000000
-  Driver Wake-Up Delay: 50
+  Driver Wake-Up Delay: 0
   Enable Frame Skip: false
   FidelityFX CAS Sharpening Intensity: 50
   Force CPU Blit: false
@@ -242,7 +310,7 @@ Video:
   Renderdoc Compatibility Mode: false
   Renderer: Vulkan
   Resolution: 1280x720
-  Resolution Scale: 100
+  Resolution Scale: 75
   Resolution Scale Threshold: 512
   Screen size in inches: 24
   Second Frame Limit: 0
@@ -274,4 +342,5 @@ Video:
     VRAM allocation limit (MB): 65536
   Write Color Buffers: false
   Write Depth Buffer: false
-  ZCULL Accuracy: Relaxed
+  ZCULL Accuracy: Relaxed`
+

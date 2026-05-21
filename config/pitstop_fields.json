@@ -11,8 +11,8 @@
     "section": "Audio",
     "yaml_key": "  Audio Buffer",
     "type": "int",
-    "min": 10,
-    "max": 400,
+    "min": 4,
+    "max": 250,
     "step": 10
   },
   {
@@ -20,8 +20,8 @@
     "section": "Audio",
     "yaml_key": "  Desired Audio Buffer Duration",
     "type": "int",
-    "min": 5,
-    "max": 400,
+    "min": 4,
+    "max": 250,
     "step": 10
   },
   {
@@ -29,9 +29,9 @@
     "section": "Audio",
     "yaml_key": "  Time Stretching Threshold",
     "type": "int",
-    "min": 5,
-    "max": 400,
-    "step": 20
+    "min": 0,
+    "max": 100,
+    "step": 5
   },
   {
     "label": "PPU Threads",
@@ -65,6 +65,12 @@
     "type": "bool"
   },
   {
+    "label": "SPU loop detection",
+    "section": "Core",
+    "yaml_key": "  SPU loop detection",
+    "type": "bool"
+  },
+  {
     "label": "Write Color Buffers",
     "section": "Video",
     "yaml_key": "  Write Color Buffers",
@@ -84,6 +90,13 @@
     "options": ["50", "66", "75", "100"]
   },
   {
+  	"label": "Frame Limit",
+  	"section": "Video",
+  	"yaml_key": "  Frame Limit",
+  	"type": "enum",
+  	"options": ["Off", "30", "50", "60", "120", "Display (60)", "Auto", "PS3 Native"]
+  },
+  {
     "label": "Antialiasing",
     "section": "Video",
     "yaml_key": "  MSAA",
@@ -97,9 +110,57 @@
     "type": "bool"
   },
   {
+  	"label": "Accurate RSX Reservation Access",
+  	"section": "Core",
+  	"yaml_key": "  Accurate RSX reservation access",
+  	"type": "bool"
+  },
+  {
+    "label": "Shader Mode",
+    "section": "Video",
+    "yaml_key": "  Shader Mode",
+    "type": "enum",
+    "options": ["Legacy Recompiler (single-threaded)", "Async Recompiler (multi-threaded)", "Async Recompiler with Shader Interpreter", "Shader Interpreter only"]
+  },
+  {
+    "label": "Resolution Scale Threshold",
+    "section": "Video",
+    "yaml_key": "  Resolution Scale Threshold",
+    "type": "enum",
+    "options":["1", "512"]
+  },
+  {
+    "label": "Driver Wake-Up Delay",
+    "section": "Video",
+    "yaml_key": "  Driver Wake-Up Delay",
+    "type": "int",
+    "min": 0,
+    "max": 800,
+    "step": 10
+  },
+  {
     "label": "Relaxed ZCULL Sync",
     "section": "Video",
     "yaml_key": "  Relaxed ZCULL Sync",
     "type": "bool"
+  },
+  {
+    "label": "Async Texture Streaming",
+    "section": "Video",
+    "yaml_key": "    Asynchronous Texture Streaming",
+    "type": "bool"
+  },
+  {
+    "label": "Force CPU Blit",
+    "section": "Video",
+    "yaml_key": "  Force CPU Blit",
+    "type": "bool"
+  },
+  {
+    "label": "Async Queue Scheduler",
+    "section": "Video",
+    "yaml_key": "    Asynchronous Queue Scheduler",
+    "type": "enum",
+    "options": ["Safe", "Fast"]
   }
 ]

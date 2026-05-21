@@ -40,7 +40,16 @@ sleep 1
 
 # Resolve current game ID from rig (for vault path construction)
 RIG_ID=$(ssh $RIG_SSH "cat $ID_FILE 2>/dev/null || pgrep -f rpcs3 | xargs -I{} cat /proc/{}/cmdline /proc/{}/environ 2>/dev/null | tr '\0' '\n' | grep -oE '[A-Z]{4}[0-9]{5}' | head -n 1")
-export TARGET_ID="${RIG_ID:-NPUA80075}"
+# Reject the IDLE/UNKNOWN_ID sentinels: env.sh writes "IDLE" to $ID_FILE
+# whenever no game is running, and `${RIG_ID:-...}` only catches empty.
+# Without this guard, an install while the rig is idle (the normal case)
+# resolves VAULT_DIR to vault/$CHIPSET/IDLE/shaders and `mkdir -p` below
+# creates an empty IDLE/shaders dir on the rig (then mirrored to host).
+case "$RIG_ID" in
+    ""|IDLE|UNKNOWN_ID) TARGET_ID="NPUA80075" ;;
+    *) TARGET_ID="$RIG_ID" ;;
+esac
+export TARGET_ID
 export VAULT_DIR="$ETK_ROOT/vault/$CHIPSET/$TARGET_ID/shaders"
 echo -e "    RIG ID   : ${Y}${TARGET_ID}${N}"
 echo -e "    VAULT DIR: ${Y}${VAULT_DIR}${N}"
@@ -72,8 +81,12 @@ ssh $RIG_SSH "mkdir -p \
 # --update skips files where the rig copy is older than host.
 # ==========================================================
 echo -e "${C}>>> [2/${TOTAL_STEPS}] SAFEGUARDING HARVEST (PULLING SHADERS: RIG -> HOST PC)...${N}"
-mkdir -p ./vault
-$RSYNC_CMD --ignore-existing --exclude='.DS_Store' "$RIG_SSH:$ETK_ROOT/vault/" ./vault/
+# Scoped to $CHIPSET/ so anything outside the structured
+# vault/$CHIPSET/<gameID>/shaders/ tree (e.g. RPCS3 ppu-* per-binary
+# caches that landed at vault root from a legacy tool or a manual op)
+# cannot propagate between rig and host on subsequent installs.
+mkdir -p "./vault/$CHIPSET"
+$RSYNC_CMD --ignore-existing --exclude='.DS_Store' "$RIG_SSH:$ETK_ROOT/vault/$CHIPSET/" "./vault/$CHIPSET/"
 
 # ==========================================================
 # STEP 3: DEPLOY SCRIPTS, DAEMONS & OVERLAYS
@@ -96,8 +109,9 @@ ssh $RIG_SSH "chmod +x $ETK_ROOT/bin/* $ETK_ROOT/scripts/*"
 # rig shaders with host copies, but --update handles version drift.
 # ==========================================================
 echo -e "${C}>>> [4/${TOTAL_STEPS}] RESTORING BANKED SHADERS (PUSHING VAULT: HOST PC -> RIG)...${N}"
-if [ -d "./vault" ] && [ "$(ls -A ./vault 2>/dev/null)" ]; then
-    $RSYNC_CMD --ignore-existing --exclude='.DS_Store' ./vault/ "$RIG_SSH:$ETK_ROOT/vault/"
+# Scoped to $CHIPSET/ — see step 2 rationale.
+if [ -d "./vault/$CHIPSET" ] && [ "$(ls -A "./vault/$CHIPSET" 2>/dev/null)" ]; then
+    $RSYNC_CMD --ignore-existing --exclude='.DS_Store' "./vault/$CHIPSET/" "$RIG_SSH:$ETK_ROOT/vault/$CHIPSET/"
 else
     echo -e "    ${Y}[SKIP] No local vault found — nothing to push.${N}"
 fi
@@ -283,7 +297,13 @@ etk_link_cache() {
 # before Turnip writes its first shader. Ignition will re-point
 # it if the actual game differs.
 SEED_ID="$(cat "$RECENT_ID_FILE" 2>/dev/null)"
-[ -z "$SEED_ID" ] && SEED_ID="NPUA80075"
+# Match the install-time TARGET_ID guard: reject IDLE/UNKNOWN_ID sentinels,
+# not just empty. RECENT_ID_FILE should only ever hold a resolved game ID,
+# but treat any non-pattern value as missing so a stale sentinel cannot
+# create vault/$CHIPSET/IDLE/shaders via etk_link_cache's mkdir.
+case "$SEED_ID" in
+    ""|IDLE|UNKNOWN_ID) SEED_ID="NPUA80075" ;;
+esac
 etk_link_cache "$ETK_ROOT/vault/$CHIPSET/$SEED_ID/shaders"
 
 PREV_STATE="IDLE"

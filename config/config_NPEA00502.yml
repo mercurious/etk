@@ -1,5 +1,5 @@
 Audio:
-  Audio Buffer: 225
+  Audio Buffer: 250
   Audio Channel Layout: Automatic
   Audio Device: "@@@default@@@"
   Audio Format: Stereo
@@ -7,22 +7,22 @@ Audio:
   Audio Provider: CellAudio
   Channels: 2.0
   Convert to 16 bit: false
-  Desired Audio Buffer Duration: 225
+  Desired Audio Buffer Duration: 250
   Disable Sampling Skip: false
   Dump to file: false
   Enable Buffering: true
-  Enable Time Stretching: true
+  Enable Time Stretching: false
   Master Volume: 100
   Microphone Devices: "@@@@@@@@@@@@"
   Microphone Type: "Null"
   Music Handler: Qt
   RSXAudio Avport: HDMI 0
-  Renderer: Cubeb
+  Renderer: "Null"
   Time Stretching Threshold: 25
 Core:
   Accurate Cache Line Stores: false
   Accurate PPU 128-byte Reservation Op Max Length: 0
-  Accurate RSX reservation access: false
+  Accurate RSX reservation access: true
   Accurate SPU DMA: false
   Accurate SPU Reservations: true
   Allow RSX CPU Preemptions: true
@@ -59,8 +59,8 @@ Core:
   Performance Report Threshold: 500
   Precise SPU Verification: false
   Preferred SPU Threads: 3
-  RSX FIFO Fetch Accuracy: "Ordered & Atomic"
-  SPU Block Size: Mega
+  RSX FIFO Fetch Accuracy: Atomic
+  SPU Block Size: Safe
   SPU Cache: true
   SPU Debug: false
   SPU Decoder: Recompiler (LLVM)
@@ -155,7 +155,7 @@ Savestate:
   Start Paused: false
   Suspend Emulation Savestate Mode: false
 System:
-  Console PSID: 0x730A344806DDD47D10D3C0A44601EAFC
+  Console PSID: 0xE66FF3E257E32FE21F739100D12A5518
   Console time offset (s): 0
   Date Format: ddmmyyyy
   Enter button assignment: Enter with cross
@@ -166,7 +166,7 @@ System:
   License Area: SCEA
   Process ARGV:
     {}
-  System Name: RPCS3-958
+  System Name: RPCS3-581
   Time Format: clock24
 VFS:
   Disk cache maximum size (MB): 5120
@@ -177,7 +177,7 @@ VFS:
 Video:
   3D Display Enabled: false
   3D Display Mode: Disabled
-  Accurate ZCULL stats: true
+  Accurate ZCULL stats: false
   Allow Host GPU Labels: false
   Anisotropic Filter Override: 0
   Aspect ratio: 16:9
@@ -197,19 +197,19 @@ Video:
   Disable Vulkan Memory Allocator: false
   Disable ZCull Occlusion Queries: true
   Driver Recovery Timeout: 1000000
-  Driver Wake-Up Delay: 50
+  Driver Wake-Up Delay: 0
   Enable Frame Skip: false
   FidelityFX CAS Sharpening Intensity: 50
-  Force CPU Blit: false
+  Force CPU Blit: true
   Force Hardware MSAA Resolve: false
   Force High Precision Z buffer: false
   Frame limit: 30
   Framebuffer Aliasing Heuristic Bias: Auto
   Handle RSX Memory Tiling: false
   Log shader programs: false
-  MSAA: Auto
+  MSAA: Disabled
   Minimum Scalable Dimension: 16
-  Multithreaded RSX: true
+  Multithreaded RSX: false
   Output Scaling Mode: Bilinear
   Performance Overlay:
     Body Background (hex): "#002339FF"
@@ -234,8 +234,8 @@ Video:
     Title Color (hex): "#F26C24FF"
     Use Window Space: false
     Vertical Margin (%): 7
-  RSX FIFO Accuracy: Ordered
-  Read Color Buffers: false
+  RSX FIFO Accuracy: Atomic
+  Read Color Buffers: true
   Read Depth Buffer: false
   Record With Overlays: true
   Relaxed ZCULL Sync: true
@@ -251,7 +251,7 @@ Video:
     Allow custom background: true
     Blur effect strength: 0
     Darkening effect strength: 30
-  Shader Mode: Async Recompiler with Shader Interpreter
+  Shader Mode: Async Recompiler (multi-threaded)
   Shader Precision: Low
   Stretch To Display Area: false
   Strict Rendering Mode: false
@@ -259,7 +259,7 @@ Video:
   Texture LOD Bias Addend: 0
   Use GPU texture scaling: false
   Use full RGB output range: true
-  VSync: false
+  VSync: true
   VSync Mode: Disabled
   Vblank Frequency: 60Hz
   Vblank NTSC Fixup: false
@@ -267,11 +267,11 @@ Video:
   Vulkan:
     Adapter: Turnip Adreno (TM) 650
     Asynchronous Queue Scheduler: Safe
-    Asynchronous Texture Streaming: true
+    Asynchronous Texture Streaming: false
     Exclusive Fullscreen Mode: Automatic
     Force primitive restart flag: false
     Use Re-BAR for GPU uploads: true
     VRAM allocation limit (MB): 65536
-  Write Color Buffers: false
+  Write Color Buffers: true
   Write Depth Buffer: false
   ZCULL Accuracy: Relaxed

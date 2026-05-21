@@ -112,6 +112,21 @@ ssh $RIG_SSH << CLEAN
     rm -f /storage/.config/custom_scripts/01-etk-sentry.sh
     echo "    Removed: 01-etk-sentry.sh"
 
+    # Legacy carcasses from earlier ETK phases. The pre-rename install
+    # left a separate `etk-guardian.service` unit pointing at the old
+    # `01-etk-startup.sh` script — when the script was renamed to
+    # `01-etk-sentry.sh` and the unit to `etk.service`, neither old
+    # half was cleaned up. The dead unit then sits in a status=127
+    # restart loop forever, spamming the systemd journal. A stale
+    # `etk_sentry.sh` (Phase 12, pre-`01-` prefix) likewise lingers in
+    # custom_scripts/ and confuses anyone grepping for sentry logic.
+    systemctl disable --now etk-guardian.service 2>/dev/null
+    rm -f /storage/.config/system.d/etk-guardian.service
+    rm -f /storage/.config/custom_scripts/etk_sentry.sh
+    rm -f /storage/.config/01-etk-startup.sh
+    systemctl daemon-reload 2>/dev/null
+    echo "    Removed: legacy etk-guardian.service / etk_sentry.sh / 01-etk-startup.sh"
+
     # Tools menu launcher (target both current and any legacy uppercase-space name)
     rm -f "/storage/.config/modules/etk_pitstop.sh"
     rm -f "/storage/.config/modules/ETK PITSTOP.sh"
