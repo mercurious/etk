@@ -42,7 +42,7 @@ ToDo.
 # ETK System Requirements
 - **System:** Retroid Pocket Flip 2 (SM8250)
 - **OS:** ROCKNIX (Nightly Build: 20260518)
-- **Driver** MESA Turnip 260.1.0
+- **Driver** MESA Turnip 26.1.0
 - **Target:** Gran Turismo series HD (stable/playable), Prologue (stable/playable), 5 (menus only), 6 (menus only) (RPCS3)
 - **Shell:** BusyBox v1.36.1
 - **Custom Overlay:** MangoHUD

@@ -1,3 +1,28 @@
+# Track Test 3
+- May 20, 2026
+
+## Test Cleanboot C-1 Alfa No-Audio Baseline 
+### Notes
+- PPU:2 SPU:3 BLOCK:Mega
+- 720p
+- Reso Scale Threshold: 1
+- Write Color Buffers: ON
+- Driver Wake-Up: 0
+
+### Test Results
+
+1. Overheat Event in early lap 1
+
+2. 0'32 Screen in lap 1scrambles mostly to black with remnant pixels
+82C 7.53 84%
+
+3. freeze  before race start
+
+4. 
+
+## TESTED CONFIG
+
+`
 Audio:
   Audio Buffer: 100
   Audio Channel Layout: Automatic
@@ -197,7 +222,7 @@ Video:
   Disable Vulkan Memory Allocator: false
   Disable ZCull Occlusion Queries: true
   Driver Recovery Timeout: 1000000
-  Driver Wake-Up Delay: 50
+  Driver Wake-Up Delay: 0
   Enable Frame Skip: false
   FidelityFX CAS Sharpening Intensity: 50
   Force CPU Blit: false
@@ -242,8 +267,8 @@ Video:
   Renderdoc Compatibility Mode: false
   Renderer: Vulkan
   Resolution: 1280x720
-  Resolution Scale: 66
-  Resolution Scale Threshold: 512
+  Resolution Scale: 100
+  Resolution Scale Threshold: 1
   Screen size in inches: 24
   Second Frame Limit: 0
   Shader Compiler Threads: 0
@@ -272,6 +297,10 @@ Video:
     Force primitive restart flag: false
     Use Re-BAR for GPU uploads: true
     VRAM allocation limit (MB): 65536
-  Write Color Buffers: false
+  Write Color Buffers: true
   Write Depth Buffer: false
   ZCULL Accuracy: Relaxed
+
+
+`
+

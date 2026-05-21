@@ -3,7 +3,7 @@ A custom Rocknix middleware rig to enable PS3 Emulation on ARM64 Retrogaming Han
 
 # ETK (EMULATOR TOOLKIT) MISSION MANIFEST
 **TARGET HARDWARE:** Retroid Pocket Flip 2 (SM8250)
-**TARGET OS:** Rocknix (Read-Only Root, BusyBox Environment) specific nightly build 20260517 with MESA Turnip 260.1.0
+**TARGET OS:** Rocknix (Read-Only Root, BusyBox Environment) specific nightly build 20260517 with MESA Turnip 26.1.0
 **CORE PHILOSOPHY:** Defeat Rocknix's filesystem limitations using a hybrid Persistent/Volatile architecture to enable high-performance PS3 emulation.
 
 ## THE IMMUTABLE LAWS (CRITICAL)
