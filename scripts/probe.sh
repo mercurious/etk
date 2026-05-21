@@ -26,8 +26,8 @@ source /storage/games-internal/roms/etk/scripts/env.sh
   
   # Patched
   echo -e "\n[5] RPCS3 INTERNAL ERROR LOG"
-  
-  strings /storage/.config/rpcs3/rpcs3.log 2>/dev/null | tail -n 20
+  # Rocknix RPCS3 writes its log to .cache (not .config) as RPCS3.log.
+  strings /storage/.cache/rpcs3/RPCS3.log 2>/dev/null | tail -n 20
 
 } | tr -cd "[:print:]\n" > "$CRASH_LOG" 2>&1
 

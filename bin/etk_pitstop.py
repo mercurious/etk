@@ -79,7 +79,24 @@ TELEMETRY_DIR = os.environ.get('TELEMETRY_DIR', f"{ETK_ROOT}/etk_telemetry")
 CONFIG_CHANGES_LEDGER = os.environ.get(
     'CONFIG_CHANGES_LEDGER', f"{TELEMETRY_DIR}/config_changes.tsv"
 )
+SESSIONS_LEDGER = os.environ.get(
+    'SESSIONS_LEDGER', f"{TELEMETRY_DIR}/sessions.tsv"
+)
+CAREER_DIR = os.environ.get('CAREER_DIR', f"{TELEMETRY_DIR}/career")
+PIT_NOTE_FILE = os.environ.get('PIT_NOTE_FILE', f"{TELEMETRY_DIR}/pit_note.txt")
 CONFIG_CHANGES_HEADER = "epoch\tgame_id\tfield_label\told_value\tnew_value\n"
+
+
+# === COLOR PAIRS ===
+# Pitstop curses UI is exempt from the manifest's no-ANSI rule
+# (that rule applies to commander.sh's pit-wall pane, where ANSI codes
+# would corrupt copy-paste). Here we use them for at-a-glance status
+# triage in the TELEMETRY tab.
+PAIR_TITLE = 1     # cyan on black — existing
+PAIR_CLEAN = 2     # green on black — successful sessions
+PAIR_CRASH = 3     # red on black   — PANIC / hard failures
+PAIR_RECOV = 4     # yellow on black — recoverable crashes
+PAIR_CONFIG = 5    # cyan dim — config-change events in the ledger
 
 
 # === GAMEPAD CODES (H1) ===
@@ -638,7 +655,7 @@ def _draw_footer(stdscr, h, w, current_tab, status):
         if current_tab == CURRENT_TAB_TUNING:
             footer = "DPAD UP/DN: Move  LT/RT: Change  A: Save  B: Quit  L1/R1 [/]: Tabs"
         else:
-            footer = "L1/R1 [/]: Switch Tab  B: Quit                      [Task 2: scrolling]"
+            footer = "DPAD UP/DN: Scroll  A: Refresh  B: Quit  L1/R1 [/]: Tabs"
         stdscr.addstr(h - 2, 4, footer[:w - 6], curses.A_BOLD)
 
 
@@ -766,65 +783,491 @@ def handle_tuning_pad(state, etype, code, val):
     return "continue"
 
 
-# === TELEMETRY TAB (Task 1 stub; Task 2 wires real data) ===
+# === TELEMETRY LOADERS ===
 
-def draw_telemetry_stub(stdscr, state):
-    """Skeletal scaffold matching dossier §11 layout. Task 2 swaps the
-    -- placeholders for live ledger reads — geometry is locked here so
-    layout regressions get caught before data goes live."""
-    h, w = stdscr.getmaxyx()
-    _draw_meta_line(stdscr, w, state["gamepad_status"], "")
+def load_sessions_ledger(filter_game_id=None):
+    """Read $SESSIONS_LEDGER, return list of dicts (newest first).
+    Tolerates missing file (returns []) and malformed rows (skipped)."""
+    if not os.path.exists(SESSIONS_LEDGER):
+        return []
+    rows = []
+    try:
+        with open(SESSIONS_LEDGER) as f:
+            header_seen = False
+            for line in f:
+                line = line.rstrip("\n")
+                if not line:
+                    continue
+                if not header_seen:
+                    header_seen = True
+                    continue
+                fields = line.split("\t")
+                if len(fields) < 14:
+                    continue
+                try:
+                    row = {
+                        "epoch": int(fields[0]),
+                        "duration_s": int(fields[1] or 0),
+                        "build": fields[2],
+                        "game_id": fields[3],
+                        "status": fields[4],
+                        "peak_cpu_pct": int(fields[5] or 0),
+                        "peak_ram_mb": int(fields[6] or 0),
+                        "peak_temp": int(fields[7] or 0),
+                        "avg_temp": int(fields[8] or 0),
+                        "crash_sig": fields[9],
+                        "fence_at_crash": int(fields[10] or 0),
+                        "shaders_harvested": int(fields[11] or 0),
+                        "drain_pct": int(fields[12] or 0),
+                        "thermal_overrides": int(fields[13] or 0),
+                        "_kind": "session",
+                    }
+                except ValueError:
+                    continue
+                if filter_game_id is None or row["game_id"] == filter_game_id:
+                    rows.append(row)
+    except Exception as e:
+        _log(f"sessions ledger read failed: {e}")
+    rows.sort(key=lambda r: r["epoch"], reverse=True)
+    return rows
 
-    y = 5
-    stdscr.addstr(y, 2, f"CAREER — {GAME_NAME} ({TARGET_ID})", curses.A_BOLD)
-    y += 1
-    stdscr.addstr(y, 2, "-" * (w - 4), curses.A_DIM)
-    y += 1
-    stdscr.addstr(y, 2, "--h --m total  --  -- sessions  --  --% clean  --  -- crashes (-- rcv / -- pnc)"[:w - 4], curses.A_DIM)
-    y += 1
-    stdscr.addstr(y, 2, "-- shaders banked  --  +-- avg/session  --  streak -- (best --)"[:w - 4], curses.A_DIM)
-    y += 1
-    stdscr.addstr(y, 2, "-" * (w - 4), curses.A_DIM)
-    y += 2
 
-    # Session table
-    if y < h - 6:
-        stdscr.addstr(y, 2, "TIME      STATUS              DUR    TEMP    LOAD    RAM     SHD  DRAIN"[:w - 4], curses.A_BOLD)
-        y += 1
-        stdscr.addstr(y, 2, "-" * (w - 4), curses.A_DIM)
-        y += 1
-        # Placeholder rows — exact shape Task 2 fills in.
-        rows = [
-            "--:--     [Task 2: session rows render here]",
-            "--:--     [CONFIG events interleave chronologically]",
-            "--:--     [Day separators group entries by date]",
-        ]
-        for r in rows:
-            if y >= h - 5:
+def load_config_changes(filter_game_id=None):
+    """Read $CONFIG_CHANGES_LEDGER, return list of dicts (newest first)."""
+    if not os.path.exists(CONFIG_CHANGES_LEDGER):
+        return []
+    rows = []
+    try:
+        with open(CONFIG_CHANGES_LEDGER) as f:
+            header_seen = False
+            for line in f:
+                line = line.rstrip("\n")
+                if not line:
+                    continue
+                if not header_seen:
+                    header_seen = True
+                    continue
+                fields = line.split("\t")
+                if len(fields) < 5:
+                    continue
+                try:
+                    row = {
+                        "epoch": int(fields[0]),
+                        "game_id": fields[1],
+                        "field_label": fields[2],
+                        "old_value": fields[3],
+                        "new_value": fields[4],
+                        "_kind": "config",
+                    }
+                except ValueError:
+                    continue
+                if filter_game_id is None or row["game_id"] == filter_game_id:
+                    rows.append(row)
+    except Exception as e:
+        _log(f"config changes ledger read failed: {e}")
+    rows.sort(key=lambda r: r["epoch"], reverse=True)
+    return rows
+
+
+def load_career_stats(game_id):
+    """Read $CAREER_DIR/<game_id>.txt as key=value pairs. None if absent."""
+    path = f"{CAREER_DIR}/{game_id}.txt"
+    if not os.path.exists(path):
+        return None
+    stats = {}
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.rstrip("\n")
+                if "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                stats[k.strip()] = v.strip()
+    except Exception as e:
+        _log(f"career stats read failed: {e}")
+        return None
+    return stats
+
+
+def load_pit_note():
+    """Read $PIT_NOTE_FILE. Returns string content, or None when absent
+    or empty so the UI can suppress the entire PIT NOTE band cleanly."""
+    if not os.path.exists(PIT_NOTE_FILE):
+        return None
+    try:
+        with open(PIT_NOTE_FILE) as f:
+            content = f.read().strip()
+        return content if content else None
+    except Exception:
+        return None
+
+
+# === TELEMETRY HELPERS ===
+
+def _time_label(epoch):
+    """Compact 12-hour time like '8:49a' or '12:34p' — dossier §11."""
+    t = time.localtime(epoch)
+    hour = t.tm_hour
+    minute = t.tm_min
+    if hour == 0:
+        h12, ap = 12, 'a'
+    elif hour < 12:
+        h12, ap = hour, 'a'
+    elif hour == 12:
+        h12, ap = 12, 'p'
+    else:
+        h12, ap = hour - 12, 'p'
+    return f"{h12}:{minute:02d}{ap}"
+
+
+def _day_label(epoch, now=None):
+    """Day-bucket label: Today / Yesterday / 'Wed 05/18' style.
+    Uses zero-padded month/day (%m/%d) for portability — the %-m/%-d
+    non-padded variants are GNU-only and silently fail on other libcs."""
+    if now is None:
+        now = time.time()
+    today = time.strftime("%Y-%m-%d", time.localtime(now))
+    yesterday = time.strftime("%Y-%m-%d", time.localtime(now - 86400))
+    epoch_day = time.strftime("%Y-%m-%d", time.localtime(epoch))
+    if epoch_day == today:
+        return "Today"
+    if epoch_day == yesterday:
+        return "Yesterday"
+    return time.strftime("%a %m/%d", time.localtime(epoch))
+
+
+def _format_duration(secs):
+    """Compact session duration like '2m20s' or '1h05m'."""
+    if secs <= 0:
+        return "----"
+    if secs < 3600:
+        return f"{secs // 60}m{secs % 60:02d}s"
+    return f"{secs // 3600}h{(secs % 3600) // 60:02d}m"
+
+
+def _wrap_text(text, width, max_lines=2):
+    """Word-wrap with hard line cap. Used for the PIT NOTE block —
+    dossier §13 caps visible text at ~4 lines but our 21-row TTY can't
+    afford that. Two lines is the realistic max here; longer notes get
+    truncated with an ellipsis on the last visible line."""
+    words = text.split()
+    lines = []
+    cur = ""
+    for w in words:
+        candidate = (cur + " " + w).strip() if cur else w
+        if len(candidate) <= width:
+            cur = candidate
+        else:
+            if cur:
+                lines.append(cur)
+            cur = w
+            if len(lines) >= max_lines:
                 break
-            stdscr.addstr(y, 2, r[:w - 4], curses.A_DIM)
+    if cur and len(lines) < max_lines:
+        lines.append(cur)
+    if len(lines) == max_lines and cur and len(words) > sum(len(l.split()) for l in lines):
+        # Truncated — mark with ellipsis
+        last = lines[-1]
+        if len(last) > width - 3:
+            last = last[:width - 3].rstrip()
+        lines[-1] = last + " …"
+    return lines
+
+
+def _status_attr(status):
+    """Map a session status to its display color pair."""
+    if status == "CLEAN":
+        return curses.color_pair(PAIR_CLEAN) | curses.A_BOLD
+    if status == "PANIC":
+        return curses.color_pair(PAIR_CRASH) | curses.A_BOLD
+    if status.startswith("RECOVERY:"):
+        return curses.color_pair(PAIR_RECOV)
+    return curses.A_NORMAL
+
+
+def _refresh_telemetry_caches(state):
+    """Reload ledger data from disk. Called on tab-switch into TELEMETRY
+    so newly-saved CONFIG rows or post-mortem sessions appear immediately."""
+    state["_sessions_cache"] = load_sessions_ledger(TARGET_ID)
+    state["_config_changes_cache"] = load_config_changes(TARGET_ID)
+    state["_career_cache"] = load_career_stats(TARGET_ID)
+    state["_pit_note_cache"] = load_pit_note()
+
+
+# === TELEMETRY TAB ===
+
+def draw_telemetry(stdscr, state):
+    """Live TELEMETRY tab. Renders CAREER row anchor, scrollable session
+    ledger with chronologically-interleaved CONFIG events and day-bucket
+    separators, and an optional PIT NOTE band at the bottom (suppressed
+    when pit_note.txt is absent — dossier §13)."""
+    h, w = stdscr.getmaxyx()
+
+    if state.get("_sessions_cache") is None:
+        _refresh_telemetry_caches(state)
+    sessions = state["_sessions_cache"]
+    config_changes = state["_config_changes_cache"]
+    career = state["_career_cache"]
+    pit_note = state["_pit_note_cache"]
+
+    # === CAREER ANCHOR ===
+    y = 5
+    stdscr.addstr(y, 2, f"CAREER - {GAME_NAME} ({TARGET_ID})", curses.A_BOLD)
+    y += 1
+    stdscr.addstr(y, 2, "-" * (w - 4), curses.A_DIM)
+    y += 1
+
+    if career is None:
+        if sessions:
+            stdscr.addstr(y, 2, "First session — no career stats yet."[:w - 4], curses.A_DIM)
+            y += 1
+            y += 1  # keep block height stable
+        else:
+            stdscr.addstr(y, 2, "No sessions recorded for this game yet."[:w - 4], curses.A_DIM)
+            y += 1
+            stdscr.addstr(y, 2, "Launch a game to start collecting telemetry."[:w - 4], curses.A_DIM)
+            y += 1
+    else:
+        line1 = (
+            f"{career.get('total_duration_human', '0h 0m')} total"
+            f"  *  {career.get('total_sessions', '0')} sessions"
+            f"  *  {career.get('clean_rate_pct', '0')}% clean"
+            f"  *  {career.get('crash_count', '0')} crashes"
+            f" ({career.get('recov_count', '0')}r/{career.get('panic_count', '0')}p)"
+        )
+        stdscr.addstr(y, 2, line1[:w - 4], curses.A_BOLD)
+        y += 1
+        line2 = (
+            f"{career.get('total_shaders', '0')} shaders banked"
+            f"  *  +{career.get('avg_shaders_per_session', '0')} avg/session"
+            f"  *  streak {career.get('current_streak', '0')} (best {career.get('best_streak', '0')})"
+        )
+        stdscr.addstr(y, 2, line2[:w - 4], curses.A_DIM)
+        y += 1
+
+    stdscr.addstr(y, 2, "-" * (w - 4), curses.A_DIM)
+    y += 2  # visual breather before the table
+
+    # === PIT NOTE RESERVATION ===
+    # Reserve bottom rows for the PIT NOTE block when present so the
+    # session table doesn't render over it. dossier §13: suppress
+    # entirely when pit_note.txt absent — gives the table more room.
+    pit_lines = []
+    pit_block_h = 0
+    if pit_note:
+        pit_lines = _wrap_text(pit_note, w - 14, max_lines=2)
+        pit_block_h = 1 + len(pit_lines)  # 1 rule + N text lines
+
+    # === SESSION TABLE ===
+    table_top = y
+    # Footer = h-2 (text), rule = h-3. Pit note (if any) sits above the rule.
+    table_bottom = h - 3 - pit_block_h
+    table_capacity = max(1, table_bottom - table_top - 2)  # -2 for col-header + rule
+
+    # Column header (sized to fit 74-col Flip 2 TTY)
+    header_line = "TIME    STATUS              DUR    TEMP    LOAD  RAM     SHD  DRAIN"
+    stdscr.addstr(y, 2, header_line[:w - 4], curses.A_BOLD)
+    y += 1
+    stdscr.addstr(y, 2, "-" * (w - 4), curses.A_DIM)
+    y += 1
+
+    # Merge sessions + config events by epoch, newest first.
+    merged = []
+    for s in sessions:
+        merged.append(s)
+    for c in config_changes:
+        merged.append(c)
+    merged.sort(key=lambda r: r["epoch"], reverse=True)
+
+    # Clamp scroll cursor to current dataset extent.
+    max_scroll = max(0, len(merged) - table_capacity)
+    state["telemetry_scroll"] = min(state.get("telemetry_scroll", 0), max_scroll)
+    scroll = state["telemetry_scroll"]
+    visible = merged[scroll: scroll + table_capacity]
+
+    if not visible:
+        stdscr.addstr(y, 2, "No telemetry recorded for this game yet."[:w - 4], curses.A_DIM)
+        y += 1
+    else:
+        prev_day = None
+        for row in visible:
+            if y >= table_bottom:
+                break
+            day = _day_label(row["epoch"])
+            if prev_day is not None and day != prev_day:
+                sep = f"- {day} "
+                sep_line = sep + "-" * max(0, (w - 4) - len(sep))
+                stdscr.addstr(y, 2, sep_line[:w - 4], curses.A_DIM)
+                y += 1
+                if y >= table_bottom:
+                    break
+            prev_day = day
+
+            if row["_kind"] == "session":
+                _draw_session_row(stdscr, y, w, row)
+            else:
+                _draw_config_row(stdscr, y, w, row)
             y += 1
 
-    # Bottom PIT NOTE block — Task 2 reads $PIT_NOTE_FILE and suppresses
-    # this entire band when the file is absent (dossier §13).
-    if h > 8:
-        stdscr.addstr(h - 5, 2, "-" * (w - 4), curses.A_DIM)
-        stdscr.addstr(h - 4, 2, "PIT NOTE  --  [Task 2: optional AI summary when pit_note.txt exists]"[:w - 4], curses.A_DIM)
+    # === PAGE INDICATOR ===
+    # Top-right corner of the meta row — shows scroll context. Pre-tabs
+    # had a LAP counter here; TELEMETRY uses the equivalent slot for
+    # Pg X/Y so the operator knows how much history is hidden.
+    if max_scroll > 0:
+        total_pages = max(1, (len(merged) + table_capacity - 1) // table_capacity)
+        cur_page = (scroll // table_capacity) + 1
+        page_str = f"Pg {cur_page}/{total_pages}"
+    else:
+        page_str = f"{len(merged)} entries"
+    _draw_meta_line(stdscr, w, state["gamepad_status"], page_str)
+
+    # === PIT NOTE BAND ===
+    if pit_block_h > 0:
+        pit_y = h - 3 - pit_block_h
+        stdscr.addstr(pit_y, 2, "-" * (w - 4), curses.A_DIM)
+        for i, line in enumerate(pit_lines):
+            prefix = "PIT NOTE  " if i == 0 else "          "
+            stdscr.addstr(pit_y + 1 + i, 2, (prefix + line)[:w - 4], curses.A_DIM)
+
+
+def _draw_session_row(stdscr, y, w, row):
+    """Render one session row. Builds the full line as a single clipped
+    string, writes it once, then overlays the colored STATUS column.
+    Single-write + overlay is overflow-safe — a narrow TTY truncates the
+    base line cleanly rather than tripping addwstr() returned ERR."""
+    status = row["status"]
+    if status == "CLEAN":
+        mark = " * "
+    elif status == "PANIC":
+        mark = " ! "
+    else:
+        mark = "   "
+
+    time_str = _time_label(row["epoch"])
+    dur_str = _format_duration(row["duration_s"])
+    peak_t = row["peak_temp"]
+    avg_t = row["avg_temp"]
+    temp_str = f"{avg_t}/{peak_t}C" if peak_t > 0 else "----"
+    load_str = f"{row['peak_cpu_pct']}%" if row['peak_cpu_pct'] > 0 else "----"
+    ram = row["peak_ram_mb"]
+    if ram >= 1000:
+        ram_str = f"{ram // 1000}.{(ram % 1000) // 100}G"
+    elif ram > 0:
+        ram_str = f"{ram}MB"
+    else:
+        ram_str = "----"
+    shd = row["shaders_harvested"]
+    shd_str = str(shd) if shd > 0 else "0"
+    drain = row["drain_pct"]
+    drain_str = f"{drain}%" if drain != 0 else "0%"
+
+    base = (
+        f"{time_str:<6}"
+        f"{mark:<3}"
+        f"{status[:18]:<18}  "
+        f"{dur_str:>6}  "
+        f"{temp_str:>7}  "
+        f"{load_str:>4}  "
+        f"{ram_str:>5}  "
+        f"{shd_str:>3}  "
+        f"{drain_str:>5}"
+    )
+    base = base[:w - 4]
+    try:
+        stdscr.addstr(y, 2, base)
+    except curses.error:
+        return
+
+    # Overlay the STATUS substring with its color. Position is computed
+    # from the fixed prefix widths above (6 + 3 = 9 cols of preface).
+    status_col = 2 + 9
+    status_text = status[:18]
+    if status_col + len(status_text) <= w - 1:
+        try:
+            stdscr.addstr(y, status_col, status_text, _status_attr(status))
+        except curses.error:
+            pass
+
+
+def _draw_config_row(stdscr, y, w, row):
+    """Render one CONFIG row: time, marker, field label, old->new
+    transition. Other columns blank. Single-write + colored overlay
+    pattern matches _draw_session_row for overflow safety."""
+    time_str = _time_label(row["epoch"])
+    field = row["field_label"]
+    transition = f"{row['old_value']} -> {row['new_value']}"
+    body = f"{field}  {transition}"
+
+    base = f"{time_str:<6} > {body}"
+    base = base[:w - 4]
+    try:
+        stdscr.addstr(y, 2, base)
+    except curses.error:
+        return
+    # Overlay just the body text with the CONFIG color so the row is
+    # visually distinct from session rows but the time prefix reads
+    # uniformly across both kinds.
+    overlay_col = 2 + 6 + 3
+    overlay_text = body[: max(0, (w - 4) - 9)]
+    if overlay_text:
+        try:
+            stdscr.addstr(y, overlay_col, overlay_text, curses.color_pair(PAIR_CONFIG))
+        except curses.error:
+            pass
+
+
+def _draw_config_row(stdscr, y, w, row):
+    """Render one CONFIG row: tighter shape than session — just time,
+    marker, field label, and old->new transition. Other columns blank."""
+    attr = curses.color_pair(PAIR_CONFIG)
+    time_str = _time_label(row["epoch"])
+    field = row["field_label"]
+    transition = f"{row['old_value']} -> {row['new_value']}"
+    # Truncate field if combining with transition would overflow
+    avail = w - 4 - 11  # after TIME(6) gap(2) MARK(3)
+    body = f"{field}  {transition}"
+    if len(body) > avail:
+        body = body[:avail - 1] + "…"
+    stdscr.addstr(y, 2, time_str)
+    stdscr.addstr(y, 8, " > ", attr)
+    stdscr.addstr(y, 11, body, attr)
 
 
 def handle_telemetry_kb(state, ch):
-    """Stub keyboard handler. Only quit honored — scrolling lands in Task 2.
-    Tab-switch keys are intercepted upstream."""
+    """Keyboard input for TELEMETRY. Scroll via arrows + page keys.
+    Tab-switch keys [/] intercepted upstream."""
     if ch == ord('q') or ch == ord('Q'):
         return "quit"
+    if ch == curses.KEY_UP:
+        state["telemetry_scroll"] = max(0, state.get("telemetry_scroll", 0) - 1)
+    elif ch == curses.KEY_DOWN:
+        # Upper-bound clamp happens in draw_telemetry once it knows
+        # the capacity vs total — no need to clamp aggressively here.
+        state["telemetry_scroll"] = state.get("telemetry_scroll", 0) + 1
+    elif ch == curses.KEY_PPAGE:
+        state["telemetry_scroll"] = max(0, state.get("telemetry_scroll", 0) - 5)
+    elif ch == curses.KEY_NPAGE:
+        state["telemetry_scroll"] = state.get("telemetry_scroll", 0) + 5
+    elif ch == ord('r') or ch == ord('R'):
+        # Manual refresh: useful when a session post-mortem just landed
+        # while Pitstop was open.
+        _refresh_telemetry_caches(state)
     return "continue"
 
 
 def handle_telemetry_pad(state, etype, code, val):
-    """Stub gamepad handler. BTN_BACK quits; everything else is ignored.
-    Tab-switch buttons are intercepted upstream."""
+    """Gamepad input for TELEMETRY. D-pad vertical = scroll. BTN_CONFIRM
+    refreshes from disk. Tab-switch buttons intercepted upstream."""
     if etype == EV_KEY and val == 1 and code == BTN_BACK:
         return "quit"
+    if etype == EV_KEY and val == 1 and code == BTN_CONFIRM:
+        _refresh_telemetry_caches(state)
+        return "continue"
+    if etype == EV_ABS and code == ABS_HAT0Y:
+        if val == -1:
+            state["telemetry_scroll"] = max(0, state.get("telemetry_scroll", 0) - 1)
+        elif val == 1:
+            state["telemetry_scroll"] = state.get("telemetry_scroll", 0) + 1
     return "continue"
 
 
@@ -834,10 +1277,16 @@ def _switch_tab(state, target_tab):
     """Switch tabs. Clears the transient status string so a TUNING save
     failure doesn't follow the user into TELEMETRY. Persistent state
     (matrix edits, cursor position, gamepad status) is preserved per
-    dossier Test 4."""
+    dossier Test 4. Invalidates TELEMETRY data caches on entry so a
+    newly-saved CONFIG row or post-mortem session appears immediately."""
     if state["current_tab"] != target_tab:
         state["current_tab"] = target_tab
         state["status"] = ""
+        if target_tab == CURRENT_TAB_TELEMETRY:
+            state["_sessions_cache"] = None
+            state["_config_changes_cache"] = None
+            state["_career_cache"] = None
+            state["_pit_note_cache"] = None
 
 
 # === MAIN LOOP ===
@@ -851,7 +1300,7 @@ def _draw(stdscr, state):
     if state["current_tab"] == CURRENT_TAB_TUNING:
         draw_tuning(stdscr, state)
     else:
-        draw_telemetry_stub(stdscr, state)
+        draw_telemetry(stdscr, state)
     _draw_footer(stdscr, h, w, state["current_tab"], state["status"])
     stdscr.refresh()
 
@@ -859,7 +1308,11 @@ def _draw(stdscr, state):
 def main(stdscr):
     curses.curs_set(0)
     curses.start_color()
-    curses.init_pair(1, curses.COLOR_CYAN, curses.COLOR_BLACK)
+    curses.init_pair(PAIR_TITLE, curses.COLOR_CYAN, curses.COLOR_BLACK)
+    curses.init_pair(PAIR_CLEAN, curses.COLOR_GREEN, curses.COLOR_BLACK)
+    curses.init_pair(PAIR_CRASH, curses.COLOR_RED, curses.COLOR_BLACK)
+    curses.init_pair(PAIR_RECOV, curses.COLOR_YELLOW, curses.COLOR_BLACK)
+    curses.init_pair(PAIR_CONFIG, curses.COLOR_CYAN, curses.COLOR_BLACK)
     stdscr.timeout(50)
 
     matrix = load_menu_matrix()
@@ -880,7 +1333,14 @@ def main(stdscr):
         "current_tab": CURRENT_TAB_TUNING,
         "status": "",
         "gamepad_status": gamepad_status,
-        "telemetry_scroll": 0,  # reserved for Task 2 — unused by stub
+        "telemetry_scroll": 0,
+        # Telemetry data caches — populated lazily on first TELEMETRY
+        # render, invalidated on every tab-switch into TELEMETRY so a
+        # CONFIG save or new post-mortem appears without a relaunch.
+        "_sessions_cache": None,
+        "_config_changes_cache": None,
+        "_career_cache": None,
+        "_pit_note_cache": None,
     }
 
     running = True

@@ -29,6 +29,17 @@ pkill -9 -f "mango_bridge.sh" 2>/dev/null
 pkill -9 -f "vault_d.sh" 2>/dev/null
 pkill -9 -f "thermal_d.sh" 2>/dev/null
 
-rm -f "$SHM_DIR"/*
+# Flush stale IPC state, but PRESERVE the post-mortem seed files.
+# The Sentry observes RUNNING->IDLE on its next tick (rule 3 handoff)
+# and fires session_postmortem.sh — which needs these four files to
+# attribute DUR / DRAIN / SHD to the crash you just recovered from.
+# They are overwritten cleanly on the next ignition, so nothing stale
+# leaks forward. BusyBox-safe: for/case/${##} are all POSIX.
+for f in "$SHM_DIR"/*; do
+    case "${f##*/}" in
+        session_start.txt|battery_start.txt|thermal_log_start.txt|vault_new.txt) ;;
+        *) rm -f "$f" ;;
+    esac
+done
 echo "IDLE" > "$ID_FILE"
 echo -e "\033[32m[+] RECOVERY COMPLETE. EMULATOR TERMINATED.\033[0m"

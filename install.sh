@@ -130,8 +130,9 @@ fi
 echo -e "${C}>>> [5/${TOTAL_STEPS}] DEPLOYING ETK PITSTOP ROCKNIX INTERFACE...${N}"
 
 # Python engine and field schema
-$RSYNC_CMD --exclude='.DS_Store' ./bin/etk_pitstop.py         $RIG_SSH:$ETK_ROOT/bin/
-$RSYNC_CMD --exclude='.DS_Store' ./config/pitstop_fields.json $RIG_SSH:$ETK_ROOT/config/
+$RSYNC_CMD --exclude='.DS_Store' ./bin/etk_pitstop.py            $RIG_SSH:$ETK_ROOT/bin/
+$RSYNC_CMD --exclude='.DS_Store' ./config/pitstop_fields.json    $RIG_SSH:$ETK_ROOT/config/
+$RSYNC_CMD --exclude='.DS_Store' ./config/crash_signatures.json  $RIG_SSH:$ETK_ROOT/config/
 
 # THE MASTER COPY: Push to the persistent safe zone
 $RSYNC_CMD --exclude='.DS_Store' ./config/etk_pitstop.sh      $RIG_SSH:$ETK_ROOT/config/
@@ -367,6 +368,13 @@ while true; do
         elif [ "$ETK_BUILD_TYPE" = "LITE" ]; then
             nohup bash "$ETK_ROOT/bin/thermal_d.sh" >/dev/null 2>&1 &
         fi
+
+        # --- SIMPLE TELEMETRY: capture session start state for post-mortem ---
+        # session_postmortem.sh consumes these on the RUNNING->IDLE edge.
+        # All three are ephemeral SHM keys, scoped to this single session.
+        date +%s > "$SHM_DIR/session_start.txt"
+        cat /sys/class/power_supply/*/capacity 2>/dev/null | head -1 > "$SHM_DIR/battery_start.txt"
+        wc -l < "$ETK_ROOT/telemetry.log" 2>/dev/null > "$SHM_DIR/thermal_log_start.txt" || echo 0 > "$SHM_DIR/thermal_log_start.txt"
     fi
 
     # --- RUNNING: Continuous ID refresh and persistent anchor write ---
@@ -386,6 +394,14 @@ while true; do
 
         echo "ETK:[$ETK_BUILD_TYPE] | WAITING FOR IGNITION" > "$LIVE_STAT.tmp"
         mv "$LIVE_STAT.tmp" "$LIVE_STAT"
+
+        # --- SIMPLE TELEMETRY: post-mortem rollup ---
+        # Runs in background so this transition stays sub-second. The
+        # post-mortem reads SHM seeds captured at IDLE->RUNNING above
+        # (still present — SHM survives until next reboot), aggregates
+        # the session, appends one row to $SESSIONS_LEDGER, and
+        # triggers career_aggregate.sh.
+        nohup bash "$ETK_ROOT/bin/session_postmortem.sh" >/dev/null 2>&1 &
     fi
 
     # THE LOAD-BEARING LINE. Do not change to a literal string.

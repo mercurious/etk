@@ -1,0 +1,60 @@
+[
+  {
+    "id": "GPU_FENCE_TIMEOUT",
+    "label": "Adreno",
+    "patterns": [
+      "a6xx_irq.*gpu fault",
+      "msm_dpu.*hangcheck recover",
+      "drm:recover_worker.*offending task.*rpcs3"
+    ],
+    "severity": "high",
+    "summary": "GPU stalled waiting on render completion",
+    "explanation": "The Adreno driver gave up waiting for the GPU to finish a frame. Often caused by per-frame complexity exceeding the watchdog window (lap-2 tunnel territory in GT5P).",
+    "suggested_changes": [
+      {"yaml_key": "  Driver Wake-Up Delay", "new_value": "50"},
+      {"yaml_key": "  Resolution Scale", "new_value": "75"}
+    ]
+  },
+  {
+    "id": "OOM_KILL",
+    "label": "OOM",
+    "patterns": [
+      "out of memory",
+      "oom-killer",
+      "Killed process.*rpcs3"
+    ],
+    "severity": "critical",
+    "summary": "Kernel killed RPCS3 - out of RAM",
+    "explanation": "System exhausted memory. Reduce graphical fidelity to lower RAM footprint.",
+    "suggested_changes": [
+      {"yaml_key": "  Resolution Scale", "new_value": "66"},
+      {"yaml_key": "  Write Color Buffers", "new_value": "false"}
+    ]
+  },
+  {
+    "id": "SPU_RECOMPILER_FAULT",
+    "label": "SPU",
+    "patterns": [
+      "SPU.*decoder",
+      "spu_recompiler.*fail",
+      "Predecessor not found for target"
+    ],
+    "severity": "medium",
+    "summary": "SPU recompiler tripped on an instruction",
+    "explanation": "Aggressive SPU block size couldn't trace a code path cleanly. Safer block size usually resolves.",
+    "suggested_changes": [
+      {"yaml_key": "  SPU Block Size", "new_value": "Safe"}
+    ]
+  },
+  {
+    "id": "THERMAL_INFERRED",
+    "label": "Thermal",
+    "patterns": [],
+    "severity": "medium",
+    "summary": "Possible thermal-related instability",
+    "explanation": "No specific crash signature matched, but peak temperature exceeded ALARM_TEMP. Could be thermal-induced.",
+    "suggested_changes": [
+      {"yaml_key": "  Resolution Scale", "new_value": "75"}
+    ]
+  }
+]

@@ -25,7 +25,23 @@ while true; do
     # 2. HARDWARE SENSING
     read -r T_RAW < /sys/class/thermal/thermal_zone14/temp 2>/dev/null || T_RAW="0"
     TEMP=$((T_RAW / 1000))
-    
+
+    # 2b. TELEMETRY SAMPLE (throttled)
+    # session_postmortem.sh computes avg/peak TEMP from "SAMPLE" lines in
+    # telemetry.log. thermal_d already reads TEMP every tick (2s) — this
+    # only adds a log append, not a new sample. Throttled to ~30s (15
+    # ticks) to keep SD-card writes minimal (~1 line / 30s). Tick 1 also
+    # samples so short crash sessions still get one reading.
+    #
+    # DEV TOGGLE: to reduce write overhead while isolating a regression
+    # during development, comment out the three lines below.
+    # session_postmortem.sh tolerates the absence cleanly — peak_temp/
+    # avg_temp fall back to 0 and the TELEMETRY tab renders "----".
+    TICK=$((TICK + 1))
+    if [ "$TICK" -eq 1 ] || [ $((TICK % 15)) -eq 0 ]; then
+        echo "$(date +%s) SAMPLE $TEMP" >> "$ETK_ROOT/telemetry.log"
+    fi
+
     # 3. INTENT SENSING
     read -r CURRENT_MODE < "$MODE_FILE" 2>/dev/null || CURRENT_MODE="$DEFAULT_MODE"
 
