@@ -68,11 +68,60 @@ ssh $RIG_SSH "mkdir -p \
     $ETK_ROOT/vault \
     $ETK_ROOT/logs \
     $ETK_ROOT/config \
+    $PKG_STAGING_DIR \
     /storage/.config/custom_scripts \
     /storage/.config/system.d \
     /storage/.config/modules \
     /storage/.config/MangoHud \
-    /storage/games-internal/roms/bios/rpcs3/custom_configs"
+    $RPCS3_CUSTOM_CONFIGS \
+    $RPCS3_GAME_DIR \
+    $RPCS3_EXDATA_DIR \
+    $PS3_LAUNCHER_DIR"
+
+# Document the PKG install drop folder so a user browsing the SD card
+# understands what it is and that staged files are consumed on success.
+ssh $RIG_SSH "cat > '$PKG_STAGING_DIR/README.txt'" <<'PKGREADME'
+ETK PITSTOP - PS3 PACKAGE INSTALL DROP FOLDER
+=============================================
+
+Drop ONE .pkg file here (plus its .rap licence file, if the
+game needs one) to install a PS3 game.
+
+Then on the handheld:
+  Tools > ETK Pitstop > TOOLS tab > Install a staged PS3 Package
+
+On a SUCCESSFUL install the .pkg and .rap are deleted from this
+folder automatically. A failed install leaves them here so you
+can retry. One game at a time.
+PKGREADME
+
+# ETK mako notification style: a criteria section scoped to app-name
+# "ETK Pitstop" so ETK toasts are wide and readable WITHOUT altering
+# Rocknix's own notifications. Idempotent -- appended only once.
+ssh $RIG_SSH 'bash -s' <<'ETKMAKO'
+MCFG=/storage/.config/mako/config
+if [ -f "$MCFG" ] && ! grep -q 'app-name="ETK Pitstop"' "$MCFG"; then
+cat >> "$MCFG" <<'MK'
+
+[app-name="ETK Pitstop"]
+width=1280
+height=560
+font=monospace 24
+default-timeout=8000
+padding=20
+margin=24
+border-size=3
+border-color=#00b4d8
+border-radius=14
+text-alignment=left
+background-color=#10141a
+MK
+XDG_RUNTIME_DIR=/var/run/0-runtime-dir makoctl reload 2>/dev/null
+echo "    [OK] ETK mako notification style installed."
+else
+echo "    [SKIP] ETK mako style already present (or mako config absent)."
+fi
+ETKMAKO
 
 # ==========================================================
 # STEP 2: VAULT PULL — RIG -> HOST PC (SAFEGUARD HARVEST)
@@ -133,6 +182,9 @@ echo -e "${C}>>> [5/${TOTAL_STEPS}] DEPLOYING ETK PITSTOP ROCKNIX INTERFACE...${
 $RSYNC_CMD --exclude='.DS_Store' ./bin/etk_pitstop.py            $RIG_SSH:$ETK_ROOT/bin/
 $RSYNC_CMD --exclude='.DS_Store' ./config/pitstop_fields.json    $RIG_SSH:$ETK_ROOT/config/
 $RSYNC_CMD --exclude='.DS_Store' ./config/crash_signatures.json  $RIG_SSH:$ETK_ROOT/config/
+# ETK default per-game RPCS3 config template (TOOLS-tab installer copies this
+# to custom_configs/config_<ID>.yml for each newly installed game).
+$RSYNC_CMD --exclude='.DS_Store' ./config/etk_template.yml       $RIG_SSH:$ETK_ROOT/config/
 
 # THE MASTER COPY: Push to the persistent safe zone
 $RSYNC_CMD --exclude='.DS_Store' ./config/etk_pitstop.sh      $RIG_SSH:$ETK_ROOT/config/
@@ -317,6 +369,17 @@ while true; do
         echo "[$(date '+%H:%M:%S.%N')] ALARM: FILE WAS NUKED! Re-deploying..." >> "$SPY_LOG"
         cp -f "$ETK_ROOT/config/etk_pitstop.sh" /storage/.config/modules/etk_pitstop.sh
         chmod +x /storage/.config/modules/etk_pitstop.sh
+    fi
+
+    # --- INSTALL LOCK (dossier §4) ---
+    # While the TOOLS-tab installer runs, RPCS3 IS the installer process,
+    # not a game. Stay parked in IDLE: no RUNNING transition, no worker
+    # spawn, no post-mortem, no phantom telemetry row. The lock lives in
+    # volatile SHM, so a crash mid-install self-clears on the next reboot.
+    if [ -f "$ETK_INSTALL_LOCK" ]; then
+        PREV_STATE="IDLE"
+        sleep 2
+        continue
     fi
 
     CUR_STATE="IDLE"

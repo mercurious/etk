@@ -147,3 +147,35 @@ export TELEMETRY_MIN_SESSION_S=60
 telemetry_init_dirs() {
     mkdir -p "$TELEMETRY_DIR" "$CAREER_DIR"
 }
+
+# --- [ TOOLS TAB: HEADLESS PKG/RAP INSTALLER ] ---
+# Paths for the TOOLS-tab PS3 package installer/uninstaller.
+# Discovery + rationale: spike/ and dossiers/GameInstallFeatureDossier.md.
+# Consumers read with fallbacks; dirs are provisioned by install.sh, never
+# created at source-time (keeps a read-only source side-effect free).
+export RPCS3_BIN="/usr/bin/rpcs3-sa"
+export RPCS3_DEV_HDD0="/storage/games-internal/roms/bios/rpcs3/dev_hdd0"
+export RPCS3_GAME_DIR="$RPCS3_DEV_HDD0/game"
+export RPCS3_EXDATA_DIR="$RPCS3_DEV_HDD0/home/00000001/exdata"
+export RPCS3_CUSTOM_CONFIGS="/storage/games-internal/roms/bios/rpcs3/custom_configs"
+export RPCS3_HDD1_CACHE="/storage/games-internal/roms/bios/rpcs3/dev_hdd1/caches"
+export RPCS3_RUNTIME_CACHE="/storage/.cache/rpcs3/cache"
+export RPCS3_LOG="/storage/.cache/rpcs3/RPCS3.log"
+
+# Staging drop folder — the user places ONE .pkg (+ optional .rap) here; the
+# installer deletes the staged files on a SUCCESSFUL install only.
+export PKG_STAGING_DIR="$ETK_ROOT/pkg_install_drop"
+export PS3_LAUNCHER_DIR="/storage/games-internal/roms/ps3"
+
+# ETK default per-game RPCS3 config — copied to custom_configs/config_<ID>.yml
+# for each newly installed game so first launch runs tuned.
+export ETK_TEMPLATE_CONFIG="$ETK_ROOT/config/etk_template.yml"
+
+# Rocknix per-game settings store — the installer upserts the MangoHud overlay
+# key  ps3["<title>.psn"].rocknix.mangohud.enabled=1  here.
+export ROCKNIX_SYSTEM_CFG="/storage/.config/system/configs/system.cfg"
+export ROCKNIX_MAKO_CONFIG="/storage/.config/mako/config"
+
+# Sentry sentinel: present in volatile SHM while an install runs so the Sentry
+# stays parked in IDLE (no phantom RUNNING session). See 01-etk-sentry.sh, §4.
+export ETK_INSTALL_LOCK="$SHM_DIR/etk_install_lock"

@@ -51,6 +51,11 @@ import struct
 import curses
 import time
 import traceback
+import subprocess
+import glob
+import fcntl
+import re
+import shutil
 
 
 # === GLOBALS ===
@@ -95,6 +100,43 @@ except ValueError:
     TELEMETRY_MIN_SESSION_S = 60
 
 
+# === ETK_NO_TARGET (dossier §3) ===
+# The launcher sets ETK_NO_TARGET=1 when it could not resolve a PS3 title
+# (a fresh rig with no installed game). In that mode TUNING and TELEMETRY
+# render an inert panel — no config or ledger is ever touched — and TOOLS
+# is the live, default tab so the user can install their first game.
+ETK_NO_TARGET = os.environ.get('ETK_NO_TARGET', '0').strip() == '1'
+
+
+# === TOOLS TAB: INSTALLER PATHS ===
+# Routed through env.sh; the fallbacks mirror the existing ETK_ROOT pattern
+# so an isolated dev run still has sane values.
+RPCS3_BIN = os.environ.get('RPCS3_BIN', '/usr/bin/rpcs3-sa')
+RPCS3_GAME_DIR = os.environ.get(
+    'RPCS3_GAME_DIR',
+    '/storage/games-internal/roms/bios/rpcs3/dev_hdd0/game')
+RPCS3_EXDATA_DIR = os.environ.get(
+    'RPCS3_EXDATA_DIR',
+    '/storage/games-internal/roms/bios/rpcs3/dev_hdd0/home/00000001/exdata')
+RPCS3_CUSTOM_CONFIGS = os.environ.get(
+    'RPCS3_CUSTOM_CONFIGS',
+    '/storage/games-internal/roms/bios/rpcs3/custom_configs')
+RPCS3_HDD1_CACHE = os.environ.get(
+    'RPCS3_HDD1_CACHE',
+    '/storage/games-internal/roms/bios/rpcs3/dev_hdd1/caches')
+RPCS3_RUNTIME_CACHE = os.environ.get(
+    'RPCS3_RUNTIME_CACHE', '/storage/.cache/rpcs3/cache')
+RPCS3_LOG = os.environ.get('RPCS3_LOG', '/storage/.cache/rpcs3/RPCS3.log')
+PKG_STAGING_DIR = os.environ.get(
+    'PKG_STAGING_DIR', f"{os.environ.get('ETK_ROOT', '/storage/games-internal/roms/etk')}/pkg_install_drop")
+ETK_TEMPLATE_CONFIG = os.environ.get(
+    'ETK_TEMPLATE_CONFIG', f"{os.environ.get('ETK_ROOT', '/storage/games-internal/roms/etk')}/config/etk_template.yml")
+ROCKNIX_SYSTEM_CFG = os.environ.get(
+    'ROCKNIX_SYSTEM_CFG', '/storage/.config/system/configs/system.cfg')
+SHM_DIR = os.environ.get('SHM_DIR', '/dev/shm/etk_shm')
+ETK_INSTALL_LOCK = os.environ.get('ETK_INSTALL_LOCK', f"{SHM_DIR}/etk_install_lock")
+
+
 # === COLOR PAIRS ===
 # Pitstop curses UI is exempt from the manifest's no-ANSI rule
 # (that rule applies to commander.sh's pit-wall pane, where ANSI codes
@@ -132,15 +174,19 @@ BTN_BACK = 304              # BTN_SOUTH today; may become 305 post-nightly
 
 
 # === TAB DISPATCH ===
+# Tab IDs are stable identifiers; the TABS list sets the left-to-right
+# DISPLAY + cycle order. L1/R1 and [/] step through TABS, clamped at ends.
 CURRENT_TAB_TUNING = 0
 CURRENT_TAB_TELEMETRY = 1
+CURRENT_TAB_TOOLS = 2
 
-# Tab registry. Adding a future 3rd/4th tab is one line here plus a new
-# CURRENT_TAB_* constant and matching draw_/handle_ pair. Geometry math
-# handles itself — no per-tab layout work needed.
+# Tab registry — order here is the on-screen order: [TELEMETRY][TUNING][TOOLS].
+# Adding a future tab is one line here plus a new CURRENT_TAB_* constant and
+# a matching draw_/handle_ pair. Geometry math handles itself.
 TABS = [
-    ("TUNING", CURRENT_TAB_TUNING),
     ("TELEMETRY", CURRENT_TAB_TELEMETRY),
+    ("TUNING", CURRENT_TAB_TUNING),
+    ("TOOLS", CURRENT_TAB_TOOLS),
 ]
 
 
@@ -292,7 +338,7 @@ def resolve_game_name(target_id):
     return target_id
 
 
-GAME_NAME = resolve_game_name(TARGET_ID)
+GAME_NAME = "(no game resolved)" if ETK_NO_TARGET else resolve_game_name(TARGET_ID)
 
 
 # === GAMEPAD DISCOVERY ===
@@ -661,10 +707,39 @@ def _draw_footer(stdscr, h, w, current_tab, status):
                       curses.A_BOLD | (curses.A_NORMAL if ok else curses.A_REVERSE))
     else:
         if current_tab == CURRENT_TAB_TUNING:
-            footer = "DPAD UP/DN: Move  LT/RT: Change  A: Save  B: Quit  L1/R1 [/]: Tabs"
+            footer = "DPAD UP/DN: Move  LT/RT: Change  A: Save  B: Quit  L1/R1: Tabs"
+        elif current_tab == CURRENT_TAB_TELEMETRY:
+            footer = "DPAD UP/DN: Scroll  A: Refresh  B: Quit  L1/R1: Tabs"
         else:
-            footer = "DPAD UP/DN: Scroll  A: Refresh  B: Quit  L1/R1 [/]: Tabs"
+            footer = "DPAD UP/DN: Move  A: Select  B: Back  L1/R1: Tabs"
         stdscr.addstr(h - 2, 4, footer[:w - 6], curses.A_BOLD)
+
+
+# === INERT PANEL (ETK_NO_TARGET) ===
+
+def _draw_inert_panel(stdscr, state, tabname):
+    """Rendered for TUNING / TELEMETRY when the launcher could not resolve
+    a PS3 title (ETK_NO_TARGET). Touches no config and no ledger — it just
+    steers the user to the TOOLS tab to install their first game."""
+    h, w = stdscr.getmaxyx()
+    _draw_meta_line(stdscr, w, state.get("gamepad_status", ""), "")
+    y = 6
+    stdscr.addstr(y, 4, f"{tabname} unavailable - no PS3 game resolved yet.",
+                  curses.A_BOLD)
+    y += 2
+    for line in (
+        "ETK could not determine an active PS3 title, so it will",
+        "not edit a default config or ledger (that would strand",
+        "your tuning in the wrong file).",
+        "",
+        "Open the TOOLS tab (L1/R1) to install your first game,",
+        "then relaunch Pitstop.",
+    ):
+        if y >= h - 4:
+            break
+        stdscr.addstr(y, 4, line[:w - 6],
+                      curses.A_BOLD if line.startswith("Open") else curses.A_DIM)
+        y += 1
 
 
 # === TUNING TAB ===
@@ -672,6 +747,9 @@ def _draw_footer(stdscr, h, w, current_tab, status):
 def draw_tuning(stdscr, state):
     """Tuning matrix editor. start_y shifts to row 5 (was row 4 pre-tabs)
     to leave room for the tab strip on row 1."""
+    if ETK_NO_TARGET:
+        _draw_inert_panel(stdscr, state, "TUNING")
+        return
     matrix = state["matrix"]
     active_idx = state["cursor_idx"]
     h, w = stdscr.getmaxyx()
@@ -1013,6 +1091,10 @@ def draw_telemetry(stdscr, state):
     when pit_note.txt is absent — dossier §13)."""
     h, w = stdscr.getmaxyx()
 
+    if ETK_NO_TARGET:
+        _draw_inert_panel(stdscr, state, "TELEMETRY")
+        return
+
     if state.get("_sessions_cache") is None:
         _refresh_telemetry_caches(state)
     sessions = state["_sessions_cache"]
@@ -1316,6 +1398,840 @@ def handle_telemetry_pad(state, etype, code, val):
     return "continue"
 
 
+# ============================================================
+# === TOOLS TAB — PS3 PACKAGE INSTALLER / UNINSTALLER ===
+# ============================================================
+# Proven on-device in spike/ (see project memory + dossier).
+# RPCS3 has no headless install: --installpkg always pops a GUI
+# confirm dialog. The installer launches RPCS3 attached to the
+# live sway session, polls for the "PKG Installation" window,
+# focuses it and injects Enter via /dev/uinput to confirm — no
+# screen coordinates needed (Enter triggers the default button).
+# Uninstall is a pure filesystem rm. Progress is surfaced through
+# mako notifications (dbus-send). RPCS3 owns the screen during an
+# install; this curses UI is only visible before and after.
+# ============================================================
+
+_TOOLS_MENU = ["Install a staged PS3 Package", "Uninstall a Game"]
+
+
+def _tools_env():
+    """Environment for the install subprocesses. Pitstop runs inside the
+    ES sway session (launched from Tools), so WAYLAND_DISPLAY /
+    XDG_RUNTIME_DIR are normally inherited; fill sane fallbacks and derive
+    SWAYSOCK so the installer still works if a var didn't propagate."""
+    env = dict(os.environ)
+    env.setdefault('XDG_RUNTIME_DIR', '/var/run/0-runtime-dir')
+    env.setdefault('WAYLAND_DISPLAY', 'wayland-1')
+    env['QT_QPA_PLATFORM'] = 'wayland'
+    if not env.get('SWAYSOCK'):
+        socks = sorted(glob.glob(f"{env['XDG_RUNTIME_DIR']}/sway-ipc.*.sock"))
+        if socks:
+            env['SWAYSOCK'] = socks[0]
+    return env
+
+
+class _Notifier:
+    """Posts mako notifications via dbus-send, reusing one notification id
+    (replaces_id) so progress updates one toast in place. Best-effort —
+    a notification failure must never abort an install."""
+
+    def __init__(self):
+        self._id = "0"
+        self._env = _tools_env()
+
+    def post(self, summary, body, timeout=6000):
+        try:
+            r = subprocess.run(
+                ["dbus-send", "--session", "--print-reply",
+                 "--dest=org.freedesktop.Notifications",
+                 "/org/freedesktop/Notifications",
+                 "org.freedesktop.Notifications.Notify",
+                 "string:ETK Pitstop", "uint32:" + self._id, "string:",
+                 "string:" + summary, "string:" + body,
+                 "array:string:", "dict:string:variant:",
+                 "int32:%d" % timeout],
+                env=self._env, capture_output=True, text=True, timeout=10)
+            for ln in r.stdout.splitlines():
+                ln = ln.strip()
+                if ln.startswith("uint32"):
+                    self._id = ln.split()[1]
+                    break
+        except Exception as e:
+            _log(f"mako notify failed: {e}")
+
+
+# --- /dev/uinput virtual keyboard (confirms the install dialog) ---
+
+def _uinput_ioc(direction, nr, size):
+    return (direction << 30) | (size << 16) | (ord('U') << 8) | nr
+
+_UI_SET_EVBIT = _uinput_ioc(1, 100, 4)
+_UI_SET_KEYBIT = _uinput_ioc(1, 101, 4)
+_UI_DEV_SETUP = _uinput_ioc(1, 3, 92)
+_UI_DEV_CREATE = _uinput_ioc(0, 1, 0)
+_UI_DEV_DESTROY = _uinput_ioc(0, 2, 0)
+_KEY_ENTER = 28
+
+
+def _uinput_open_keyboard():
+    """Create a /dev/uinput virtual keyboard that can emit KEY_ENTER.
+    Returns the fd, or None if uinput is unavailable. UI_SET_EVBIT /
+    UI_SET_KEYBIT take the bit number as a plain integer arg."""
+    try:
+        fd = os.open('/dev/uinput', os.O_WRONLY | os.O_NONBLOCK)
+        fcntl.ioctl(fd, _UI_SET_EVBIT, EV_KEY)
+        fcntl.ioctl(fd, _UI_SET_EVBIT, 0)          # EV_SYN
+        fcntl.ioctl(fd, _UI_SET_KEYBIT, _KEY_ENTER)
+        setup = (struct.pack('HHHH', 0x03, 0x1234, 0x5678, 1)
+                 + b'ETK Virtual Keyboard'.ljust(80, b'\0')
+                 + struct.pack('I', 0))
+        fcntl.ioctl(fd, _UI_DEV_SETUP, setup)
+        fcntl.ioctl(fd, _UI_DEV_CREATE)
+        return fd
+    except Exception as e:
+        _log(f"uinput keyboard create failed: {e}")
+        return None
+
+
+def _uinput_tap_enter(fd):
+    """Emit one KEY_ENTER press+release on the virtual keyboard."""
+    def emit(t, c, v):
+        os.write(fd, struct.pack('llHHi', 0, 0, t, c, v))
+    try:
+        emit(EV_KEY, _KEY_ENTER, 1); emit(0, 0, 0)   # 0,0,0 = SYN_REPORT
+        time.sleep(0.06)
+        emit(EV_KEY, _KEY_ENTER, 0); emit(0, 0, 0)
+    except Exception as e:
+        _log(f"uinput tap failed: {e}")
+
+
+def _uinput_close(fd):
+    try:
+        fcntl.ioctl(fd, _UI_DEV_DESTROY)
+        os.close(fd)
+    except Exception:
+        pass
+
+
+# --- sway window helpers ------------------------------------
+
+def _swaymsg(args, env):
+    try:
+        return subprocess.run(["swaymsg", *args], env=env,
+                              capture_output=True, text=True,
+                              timeout=10).stdout
+    except Exception as e:
+        _log(f"swaymsg failed: {e}")
+        return ""
+
+
+def _find_install_dialog(env):
+    """Walk the sway tree for RPCS3's 'PKG Installation' dialog window.
+    Returns its con_id, or None if not yet mapped."""
+    try:
+        tree = json.loads(_swaymsg(["-t", "get_tree"], env))
+    except Exception:
+        return None
+    found = [None]
+
+    def walk(n):
+        nm = (n.get("name") or "").lower()
+        if found[0] is None and "pkg" in nm and "install" in nm:
+            found[0] = n.get("id")
+        for key in ("nodes", "floating_nodes"):
+            for child in n.get(key, []):
+                walk(child)
+
+    walk(tree)
+    return found[0]
+
+
+def _restore_pitstop_window(env):
+    """Re-assert the Pitstop (foot) window as fullscreen. Launching RPCS3
+    knocks foot out of fullscreen in sway's tree, which would otherwise
+    leave the curses UI tiled and clipped off-screen on return. The next
+    main-loop _draw picks up the restored size via getmaxyx()."""
+    try:
+        _swaymsg(['[app_id="foot"]', 'fullscreen', 'enable'], env)
+        time.sleep(0.3)
+    except Exception as e:
+        _log(f"restore pitstop window failed: {e}")
+
+
+def _kill_rpcs3():
+    """Force-kill any RPCS3 process. Pitstop's own cmdline does not contain
+    these patterns, so pkill -f cannot self-match."""
+    for pat in ("rpcs3-sa", "AppRun.wrapped"):
+        try:
+            subprocess.run(["pkill", "-9", "-f", pat],
+                           capture_output=True, timeout=10)
+        except Exception:
+            pass
+    time.sleep(1)
+
+
+def _rpcs3_running():
+    try:
+        return subprocess.run(["pgrep", "-f", "rpcs3-sa|AppRun.wrapped"],
+                              capture_output=True, timeout=10).returncode == 0
+    except Exception:
+        return False
+
+
+# --- package / config inspection ----------------------------
+
+def _pkg_title_id(pkg_path):
+    """Extract the PS3 title ID (AAAA00000) from a .pkg header — the
+    content ID is a 36+ byte ASCII field at header offset 0x30."""
+    try:
+        with open(pkg_path, 'rb') as f:
+            head = f.read(0x80)
+        if head[0:4] != b'\x7fPKG':
+            return None
+        cid = head[0x30:0x30 + 48].decode('latin-1', 'ignore')
+        m = re.search(r'[A-Z]{4}[0-9]{5}', cid)
+        return m.group(0) if m else None
+    except Exception as e:
+        _log(f"pkg title id read failed: {e}")
+        return None
+
+
+def _sfo_title(game_dir):
+    """Parse PARAM.SFO for the human TITLE string. None on any failure —
+    the caller falls back to the title ID (dossier §7.2 step 5)."""
+    path = os.path.join(game_dir, "PARAM.SFO")
+    try:
+        with open(path, 'rb') as f:
+            data = f.read()
+        if data[0:4] != b'\x00PSF':
+            return None
+        key_tbl = struct.unpack('<I', data[0x08:0x0C])[0]
+        data_tbl = struct.unpack('<I', data[0x0C:0x10])[0]
+        n_entries = struct.unpack('<I', data[0x10:0x14])[0]
+        for i in range(n_entries):
+            e = 0x14 + i * 16
+            key_off = struct.unpack('<H', data[e:e + 2])[0]
+            data_len = struct.unpack('<I', data[e + 4:e + 8])[0]
+            data_off = struct.unpack('<I', data[e + 12:e + 16])[0]
+            key_end = data.index(b'\x00', key_tbl + key_off)
+            key = data[key_tbl + key_off:key_end].decode('ascii', 'ignore')
+            if key == "TITLE":
+                raw = data[data_tbl + data_off:data_tbl + data_off + data_len]
+                title = raw.split(b'\x00', 1)[0].decode('utf-8', 'ignore').strip()
+                return title or None
+    except Exception as e:
+        _log(f"PARAM.SFO parse failed: {e}")
+    return None
+
+
+def _sanitize_psn_name(name):
+    """Make a string safe as a .psn filename. The .psn CONTENT stays the
+    raw title ID regardless — only the filename is sanitized."""
+    out = []
+    for ch in name:
+        if ch in '/\\:"\'`' or ord(ch) < 32:
+            out.append(' ')
+        else:
+            out.append(ch)
+    cleaned = ' '.join(''.join(out).split()).strip()
+    return cleaned or "PS3 Game"
+
+
+def _scan_staging():
+    """Return (pkgs, raps) — sorted lists of absolute paths in the staging
+    drop folder. Case-insensitive extension match. Dotfiles are skipped:
+    copying from macOS litters the folder with '._name.pkg' AppleDouble
+    siblings and '.DS_Store', and '._name.pkg' would otherwise read as a
+    second package ("2 packages staged - install one at a time")."""
+    pkgs, raps = [], []
+    try:
+        for entry in sorted(os.listdir(PKG_STAGING_DIR)):
+            if entry.startswith('.'):
+                continue
+            full = os.path.join(PKG_STAGING_DIR, entry)
+            if not os.path.isfile(full):
+                continue
+            low = entry.lower()
+            if low.endswith('.pkg'):
+                pkgs.append(full)
+            elif low.endswith('.rap'):
+                raps.append(full)
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        _log(f"staging scan failed: {e}")
+    return pkgs, raps
+
+
+def _list_psn_games():
+    """Enumerate installed PS3 games from the .psn launchers. Returns a
+    list of {name, title_id, psn} dicts, sorted by name."""
+    games = []
+    try:
+        for entry in sorted(os.listdir(PS3_ROMS_DIR)):
+            # Skip dotfiles — macOS '._name.psn' AppleDouble siblings would
+            # otherwise show up as junk entries in the uninstall list.
+            if entry.startswith('.') or not entry.endswith(".psn"):
+                continue
+            full = os.path.join(PS3_ROMS_DIR, entry)
+            try:
+                with open(full) as f:
+                    tid = f.read().strip()
+            except Exception:
+                tid = ""
+            games.append({"name": entry[:-4], "title_id": tid, "psn": full})
+    except Exception as e:
+        _log(f"psn enumerate failed: {e}")
+    return games
+
+
+def _dir_size(path):
+    total = 0
+    for root, _, files in os.walk(path):
+        for fn in files:
+            try:
+                total += os.path.getsize(os.path.join(root, fn))
+            except Exception:
+                pass
+    return total
+
+
+# --- post-install onboarding writers ------------------------
+
+def _write_psn(title_id, human_name):
+    """Write PS3_ROMS_DIR/<human_name>.psn containing the raw title ID
+    (no trailing newline — matches the existing .psn convention). Atomic
+    tmp+replace. Returns the .psn basename."""
+    fname = _sanitize_psn_name(human_name) + ".psn"
+    path = os.path.join(PS3_ROMS_DIR, fname)
+    tmp = path + ".etk.tmp"
+    with open(tmp, 'w') as f:
+        f.write(title_id)
+    os.replace(tmp, path)
+    return fname
+
+
+def _enable_mangohud(psn_filename):
+    """Enable the per-game MangoHud overlay by upserting the key into
+    Rocknix's system.cfg with a LITERAL-string match.
+
+    We deliberately do NOT call Rocknix's set_setting: its del_setting does
+    `sed "/^${key}=/d"`, and our key — ps3["Game.psn"].rocknix.mangohud.enabled
+    — contains regex metacharacters (the [ ] " of the bracket index), so the
+    sed never matches and the old line is never removed. set_setting then
+    just appends a duplicate on every install; duplicate lines make
+    get_setting emit a multi-line value ("1 1 1") which fails runemu.sh's
+    `= "1"` test, so MangoHud silently never turns on. This upsert removes
+    every prior line for the exact key (literal compare) and appends one,
+    so it is idempotent and self-heals any existing duplicates."""
+    key = f'ps3["{psn_filename}"].rocknix.mangohud.enabled'
+    try:
+        if os.path.exists(ROCKNIX_SYSTEM_CFG):
+            with open(ROCKNIX_SYSTEM_CFG) as f:
+                lines = f.readlines()
+        else:
+            lines = []
+        kept = [ln for ln in lines if ln.split("=", 1)[0] != key]
+        if kept and not kept[-1].endswith("\n"):
+            kept[-1] += "\n"
+        kept.append(key + "=1\n")
+        tmp = ROCKNIX_SYSTEM_CFG + ".etk.tmp"
+        with open(tmp, 'w') as f:
+            f.writelines(kept)
+        os.replace(tmp, ROCKNIX_SYSTEM_CFG)
+        return True
+    except Exception as e:
+        _log(f"mangohud enable failed: {e}")
+        return False
+
+
+def _deploy_template_config(title_id):
+    """Copy the ETK template to custom_configs/config_<ID>.yml so the
+    game's first launch runs tuned. Never clobbers a config that already
+    exists. Returns a short status word for the result panel."""
+    dest = os.path.join(RPCS3_CUSTOM_CONFIGS, f"config_{title_id}.yml")
+    if os.path.exists(dest):
+        return "kept existing"
+    try:
+        if not os.path.exists(ETK_TEMPLATE_CONFIG):
+            _log(f"template config missing: {ETK_TEMPLATE_CONFIG}")
+            return "template missing"
+        os.makedirs(RPCS3_CUSTOM_CONFIGS, exist_ok=True)
+        shutil.copyfile(ETK_TEMPLATE_CONFIG, dest)
+        return "applied"
+    except Exception as e:
+        _log(f"template config deploy failed: {e}")
+        return "failed"
+
+
+# --- the blocking install / uninstall sequences -------------
+
+def _run_install(pkg_path, rap_path, notify):
+    """Blocking install of one staged .pkg. Returns (ok, [result lines]).
+    RPCS3 owns the screen for the duration; progress goes to mako."""
+    env = _tools_env()
+    title_id = _pkg_title_id(pkg_path) or "????"
+
+    if _rpcs3_running():
+        return False, ["RPCS3 is already running.",
+                       "Close the game first, then retry."]
+
+    # Install lock — the Sentry stays parked in IDLE while we drive RPCS3
+    # so no phantom telemetry session fires. Clear any stale lock first
+    # (we own it exclusively; installs are idle-time only).
+    try:
+        os.makedirs(SHM_DIR, exist_ok=True)
+        open(ETK_INSTALL_LOCK, 'w').close()
+    except Exception as e:
+        _log(f"install lock write failed: {e}")
+
+    proc = None
+    kfd = None
+    try:
+        notify.post("Installing PS3 package",
+                    f"Preparing {os.path.basename(pkg_path)}\n"
+                    "RPCS3 will open on screen - do not touch the controller.")
+        before = set(os.listdir(RPCS3_GAME_DIR)) if os.path.isdir(RPCS3_GAME_DIR) else set()
+
+        proc = subprocess.Popen(
+            [RPCS3_BIN, "--installpkg", pkg_path], env=env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True)
+
+        # Wait for the install-dialog WINDOW to map in sway (RPCS3 parses
+        # the PKG header before the window is mappable, so poll the tree).
+        dlg = None
+        t0 = time.time()
+        while time.time() - t0 < 90:
+            time.sleep(1)
+            dlg = _find_install_dialog(env)
+            if dlg is not None:
+                break
+        if dlg is None:
+            return False, ["RPCS3 did not show the install dialog.",
+                           "The package may be unreadable.",
+                           "Staged files were kept."]
+
+        notify.post("Installing PS3 package", "Confirming install dialog...")
+        _swaymsg(["[con_id=%d]" % dlg, "focus"], env)
+        time.sleep(0.6)
+        kfd = _uinput_open_keyboard()
+        if kfd is None:
+            return False, ["Could not create the virtual keyboard",
+                           "needed to confirm the install dialog."]
+        time.sleep(1.8)             # let sway register the new keyboard
+        confirmed = False
+        for _attempt in range(4):
+            _swaymsg(["[con_id=%d]" % dlg, "focus"], env)
+            time.sleep(0.3)
+            _uinput_tap_enter(kfd)
+            time.sleep(3)
+            if _find_install_dialog(env) is None:
+                confirmed = True
+                break
+        if not confirmed:
+            return False, ["Could not confirm the install dialog.",
+                           "Staged files were kept."]
+
+        notify.post("Installing PS3 package",
+                    "Extracting package files - please wait...")
+        new_id = None
+        t1 = time.time()
+        proc_dead_since = None
+        while time.time() - t1 < 600:
+            time.sleep(3)
+            try:
+                fresh = [d for d in (set(os.listdir(RPCS3_GAME_DIR)) - before)
+                         if "lock" not in d.lower()]
+            except Exception:
+                fresh = []
+            if fresh:
+                new_id = fresh[0]
+                eboot = os.path.join(RPCS3_GAME_DIR, new_id,
+                                     "USRDIR", "EBOOT.BIN")
+                if os.path.exists(eboot):
+                    break
+            if proc.poll() is not None:
+                if new_id:
+                    break
+                # RPCS3 exited without producing a game folder — give the
+                # filesystem a short grace window to settle, then stop so a
+                # failed install can't hang the loop for the full 600s.
+                if proc_dead_since is None:
+                    proc_dead_since = time.time()
+                elif time.time() - proc_dead_since > 15:
+                    break
+        if not new_id:
+            return False, ["Install did not complete - no game folder",
+                           "appeared. Staged files were kept so you",
+                           "can retry."]
+
+        _kill_rpcs3()    # RPCS3 self-exits after install; make sure it is gone
+
+        human = _sfo_title(os.path.join(RPCS3_GAME_DIR, new_id)) or new_id
+
+        rap_done = "none staged"
+        if rap_path:
+            try:
+                os.makedirs(RPCS3_EXDATA_DIR, exist_ok=True)
+                shutil.copyfile(
+                    rap_path,
+                    os.path.join(RPCS3_EXDATA_DIR, os.path.basename(rap_path)))
+                rap_done = "copied to exdata"
+            except Exception as e:
+                _log(f"rap copy failed: {e}")
+                rap_done = "COPY FAILED"
+
+        psn_name = _write_psn(new_id, human)
+        mh_ok = _enable_mangohud(psn_name)
+        cfg_status = _deploy_template_config(new_id)
+
+        # Delete staged files — success path only. A failed install above
+        # returns early and leaves them untouched for a retry. Also sweep
+        # macOS AppleDouble / .DS_Store cruft so the drop folder is clean
+        # for the next game: the common workflow is dropping the .pkg over
+        # SMB from a Mac Finder, which litters the folder with '._' files
+        # (Rocknix even ships a "Remove ._ Files" Tools utility for this).
+        cleanup = [f for f in (pkg_path, rap_path) if f]
+        try:
+            for entry in os.listdir(PKG_STAGING_DIR):
+                if entry.startswith('.'):
+                    cleanup.append(os.path.join(PKG_STAGING_DIR, entry))
+        except Exception:
+            pass
+        for staged in cleanup:
+            try:
+                os.remove(staged)
+            except Exception as e:
+                _log(f"staging cleanup failed for {staged}: {e}")
+
+        notify.post("Install complete",
+                    f"{human} installed.\n"
+                    "Press START > Game Settings > Update Gamelists "
+                    "to add it to your library.", timeout=15000)
+        return True, [
+            f"INSTALLED:  {human}",
+            f"  title id   : {new_id}",
+            f"  licence    : {rap_done}",
+            f"  launcher   : {psn_name}",
+            f"  mangohud   : {'enabled' if mh_ok else 'FAILED - enable manually'}",
+            f"  etk config : {cfg_status}",
+            "",
+            "Press START > Game Settings > Update Gamelists",
+            "on the handheld to see it in your library.",
+        ]
+    except Exception as e:
+        _log(f"install flow error: {e}\n{traceback.format_exc()}")
+        return False, ["Install error:",
+                       f"  {e.__class__.__name__}: {str(e)[:48]}"]
+    finally:
+        if kfd is not None:
+            _uinput_close(kfd)
+        _kill_rpcs3()
+        # RPCS3 knocked the Pitstop (foot) window out of fullscreen in
+        # sway; re-assert it so the curses UI is not left tiled/clipped.
+        _restore_pitstop_window(env)
+        try:
+            os.remove(ETK_INSTALL_LOCK)
+        except Exception:
+            pass
+
+
+def _run_uninstall(game, notify):
+    """Blocking uninstall of one game (a dict from _list_psn_games).
+    Removes artifacts + RPCS3 caches; preserves savedata and the ETK
+    shader vault. Returns (ok, [result lines])."""
+    tid = game.get("title_id") or ""
+    name = game.get("name", "?")
+
+    if not re.match(r'^[A-Z]{4}[0-9]{5}$', tid):
+        # Orphan .psn (no valid title ID) — just remove the launcher file.
+        try:
+            os.remove(game["psn"])
+            return True, [f"Removed orphan launcher: {name}",
+                          "(its .psn held no valid title ID)"]
+        except Exception as e:
+            return False, [f"Could not remove launcher: {e}"]
+
+    if _rpcs3_running():
+        return False, ["RPCS3 is running - close the game first."]
+
+    dir_targets = [
+        os.path.join(RPCS3_GAME_DIR, tid),
+        os.path.join(RPCS3_RUNTIME_CACHE, tid),
+        os.path.join(RPCS3_HDD1_CACHE, f"{tid}_{tid}"),
+    ]
+    file_targets = [game["psn"]]
+    try:
+        for entry in os.listdir(RPCS3_EXDATA_DIR):
+            if tid in entry and entry.lower().endswith('.rap'):
+                file_targets.append(os.path.join(RPCS3_EXDATA_DIR, entry))
+    except Exception:
+        pass
+
+    freed = sum(_dir_size(d) for d in dir_targets if os.path.isdir(d))
+    removed = 0
+    for d in dir_targets:
+        if os.path.isdir(d):
+            try:
+                shutil.rmtree(d)
+                removed += 1
+            except Exception as e:
+                _log(f"uninstall rmtree {d}: {e}")
+    for f in file_targets:
+        if os.path.isfile(f):
+            try:
+                os.remove(f)
+                removed += 1
+            except Exception as e:
+                _log(f"uninstall rm {f}: {e}")
+
+    mb = freed // (1024 * 1024)
+    notify.post("Game uninstalled",
+                f"{name} removed - {mb} MB freed.\n"
+                "Press START > Game Settings > Update Gamelists to refresh.",
+                timeout=15000)
+    return True, [
+        f"UNINSTALLED:  {name}",
+        f"  title id : {tid}",
+        f"  removed  : {removed} items, {mb} MB freed",
+        "  kept     : your save data + ETK shader vault",
+        "",
+        "Press START > Game Settings > Update Gamelists",
+        "on the handheld to refresh your library.",
+    ]
+
+
+# === TOOLS TAB — DRAW ===
+
+def _draw_tools_busy(stdscr, kind):
+    """Paint a 'working' frame before a blocking TOOLS op. RPCS3 covers
+    this during an install; mako carries the live progress."""
+    try:
+        stdscr.erase()
+        h, w = stdscr.getmaxyx()
+        _draw_title_bar(stdscr, w)
+        _draw_tab_strip(stdscr, CURRENT_TAB_TOOLS, w)
+        if kind == "install":
+            msg = "Installing - RPCS3 will open. Do not touch the controller."
+        else:
+            msg = "Uninstalling - please wait..."
+        stdscr.addstr(h // 2, max(2, (w - len(msg)) // 2), msg[:w - 4],
+                      curses.A_BOLD)
+        hint = "Watch the on-screen notifications for progress."
+        stdscr.addstr(h // 2 + 2, max(2, (w - len(hint)) // 2), hint[:w - 4],
+                      curses.A_DIM)
+        stdscr.refresh()
+    except curses.error:
+        pass
+
+
+def draw_tools(stdscr, state):
+    """TOOLS tab — a 2-item menu (Install / Uninstall) with confirm,
+    game-list and result sub-screens. A simple sub-mode state machine
+    keyed on state['tools_mode']."""
+    h, w = stdscr.getmaxyx()
+    _draw_meta_line(stdscr, w, state.get("gamepad_status", ""), "")
+    mode = state.get("tools_mode", "menu")
+    y = 5
+
+    def put(row, col, text, attr=curses.A_NORMAL):
+        try:
+            stdscr.addstr(row, col, text[:max(0, w - col - 1)], attr)
+        except curses.error:
+            pass
+
+    if mode == "menu":
+        put(y, 2, "TOOLS", curses.A_BOLD); y += 1
+        put(y, 2, "-" * (w - 4), curses.A_DIM); y += 2
+        for i, label in enumerate(_TOOLS_MENU):
+            sel = (i == state.get("tools_cursor", 0))
+            put(y, 4, "> " if sel else "  ",
+                curses.color_pair(1) if sel else curses.A_NORMAL)
+            put(y, 6, f"{i + 1}. {label}",
+                curses.A_REVERSE if sel else curses.A_NORMAL)
+            y += 2
+        y += 1
+        put(y, 4, "Staging drop folder (place ONE .pkg + .rap):",
+            curses.A_DIM); y += 1
+        put(y, 6, PKG_STAGING_DIR, curses.A_DIM)
+
+    elif mode == "install_confirm":
+        pkg, rap, tid = state["tools_pkg"]
+        put(y, 2, "INSTALL - CONFIRM", curses.A_BOLD); y += 1
+        put(y, 2, "-" * (w - 4), curses.A_DIM); y += 2
+        put(y, 4, f"Package : {os.path.basename(pkg)}"); y += 1
+        put(y, 4, f"Title ID: {tid}"); y += 1
+        rap_txt = os.path.basename(rap) if rap else "none staged"
+        put(y, 4, f"Licence : {rap_txt}"); y += 2
+        put(y, 4, "RPCS3 will open on screen for about a minute.",
+            curses.A_BOLD); y += 1
+        put(y, 4, "Do NOT touch the controller while it installs.",
+            curses.A_BOLD); y += 2
+        put(y, 4, "A: Install     B: Cancel",
+            curses.color_pair(1) | curses.A_BOLD)
+
+    elif mode == "uninstall_list":
+        games = state.get("tools_games", [])
+        put(y, 2, f"UNINSTALL - SELECT A GAME  ({len(games)})",
+            curses.A_BOLD); y += 1
+        put(y, 2, "-" * (w - 4), curses.A_DIM); y += 1
+        if not games:
+            put(y, 4, "No installed PS3 games found.", curses.A_DIM); y += 2
+            put(y, 4, "B: Back", curses.color_pair(1) | curses.A_BOLD)
+        else:
+            cur = state.get("tools_cursor", 0)
+            cap = max(1, (h - 4) - y)
+            if len(games) <= cap:
+                off = 0
+            else:
+                off = min(max(0, cur - cap // 2), len(games) - cap)
+            for row, idx in enumerate(range(off, min(off + cap, len(games)))):
+                g = games[idx]
+                sel = (idx == cur)
+                put(y + row, 4, "> " if sel else "  ",
+                    curses.color_pair(1) if sel else curses.A_NORMAL)
+                put(y + row, 6, f"{g['name']}  ({g['title_id']})",
+                    curses.A_REVERSE if sel else curses.A_NORMAL)
+
+    elif mode == "uninstall_confirm":
+        g = state["tools_games"][state["tools_cursor"]]
+        put(y, 2, "UNINSTALL - CONFIRM", curses.A_BOLD); y += 1
+        put(y, 2, "-" * (w - 4), curses.A_DIM); y += 2
+        put(y, 4, f"Delete:   {g['name']}", curses.A_BOLD); y += 1
+        put(y, 4, f"Title ID: {g['title_id']}"); y += 2
+        put(y, 4, "Removes the game, licence, launcher and caches."); y += 1
+        put(y, 4, "Keeps your save data and ETK shader vault."); y += 2
+        put(y, 4, "A: Delete     B: Cancel",
+            curses.color_pair(1) | curses.A_BOLD)
+
+    elif mode == "result":
+        ok, lines = state.get("tools_result") or (False, ["(no result)"])
+        put(y, 2, "DONE" if ok else "FAILED", curses.A_BOLD | (
+            curses.color_pair(PAIR_CLEAN) if ok else curses.color_pair(PAIR_CRASH)))
+        y += 1
+        put(y, 2, "-" * (w - 4), curses.A_DIM); y += 2
+        for ln in lines:
+            if y >= h - 4:
+                break
+            put(y, 4, ln)
+            y += 1
+        if y < h - 4:
+            y += 1
+            put(y, 4, "A / B: Back to menu",
+                curses.color_pair(1) | curses.A_BOLD)
+
+
+# === TOOLS TAB — INPUT ===
+
+def _tools_move(state, delta):
+    mode = state.get("tools_mode", "menu")
+    if mode == "menu":
+        state["tools_cursor"] = (state.get("tools_cursor", 0) + delta) % len(_TOOLS_MENU)
+    elif mode == "uninstall_list":
+        n = len(state.get("tools_games", []))
+        if n:
+            state["tools_cursor"] = (state.get("tools_cursor", 0) + delta) % n
+
+
+def _tools_select(state):
+    """A / CONFIRM action. May queue a blocking op via state['tools_action']
+    for the main loop to run. Always returns 'continue' (TOOLS never
+    save_exits — B from the menu is the only quit path)."""
+    mode = state.get("tools_mode", "menu")
+
+    if mode == "menu":
+        if state.get("tools_cursor", 0) == 0:        # Install
+            pkgs, raps = _scan_staging()
+            if len(pkgs) == 0:
+                state["tools_result"] = (False, [
+                    "No package staged.",
+                    "",
+                    "Drop ONE .pkg file (plus its .rap, if the game",
+                    "needs one) into the staging folder:",
+                    "  " + PKG_STAGING_DIR,
+                    "then choose Install again."])
+                state["tools_mode"] = "result"
+            elif len(pkgs) > 1:
+                state["tools_result"] = (False, [
+                    f"{len(pkgs)} packages staged - install one at a time.",
+                    "",
+                    "Leave only ONE .pkg in the staging folder:",
+                    "  " + PKG_STAGING_DIR])
+                state["tools_mode"] = "result"
+            else:
+                pkg = pkgs[0]
+                rap = raps[0] if raps else None
+                state["tools_pkg"] = (pkg, rap, _pkg_title_id(pkg) or "unknown")
+                state["tools_mode"] = "install_confirm"
+        else:                                        # Uninstall
+            state["tools_games"] = _list_psn_games()
+            state["tools_cursor"] = 0
+            state["tools_mode"] = "uninstall_list"
+
+    elif mode == "install_confirm":
+        pkg, rap, _tid = state["tools_pkg"]
+        state["tools_action"] = ("install", pkg, rap)
+
+    elif mode == "uninstall_list":
+        if state.get("tools_games"):
+            state["tools_mode"] = "uninstall_confirm"
+
+    elif mode == "uninstall_confirm":
+        g = state["tools_games"][state["tools_cursor"]]
+        state["tools_action"] = ("uninstall", g)
+
+    elif mode == "result":
+        state["tools_mode"] = "menu"
+        state["tools_cursor"] = 0
+
+    return "continue"
+
+
+def _tools_back(state):
+    """B action. Returns 'quit' only from the top menu (matching the other
+    tabs' B-quits-the-app behavior); sub-screens just step back."""
+    mode = state.get("tools_mode", "menu")
+    if mode == "menu":
+        return "quit"
+    if mode == "uninstall_confirm":
+        state["tools_mode"] = "uninstall_list"
+    else:
+        state["tools_mode"] = "menu"
+        state["tools_cursor"] = 0
+    return "continue"
+
+
+def handle_tools_kb(state, ch):
+    """Keyboard input for TOOLS. Tab-switch keys [/] intercepted upstream."""
+    if ch == ord('q') or ch == ord('Q'):
+        return "quit"
+    if ch == curses.KEY_UP:
+        _tools_move(state, -1)
+    elif ch == curses.KEY_DOWN:
+        _tools_move(state, 1)
+    elif ch == ord('\n') or ch == ord('s'):
+        return _tools_select(state)
+    elif ch in (curses.KEY_BACKSPACE, 8, 127):
+        return _tools_back(state)
+    return "continue"
+
+
+def handle_tools_pad(state, etype, code, val):
+    """Gamepad input for TOOLS. L1/R1 intercepted upstream for tabs."""
+    if etype == EV_KEY and val == 1 and code == BTN_CONFIRM:
+        return _tools_select(state)
+    if etype == EV_KEY and val == 1 and code == BTN_BACK:
+        return _tools_back(state)
+    if etype == EV_ABS and code == ABS_HAT0Y:
+        if val == -1:
+            _tools_move(state, -1)
+        elif val == 1:
+            _tools_move(state, 1)
+    return "continue"
+
+
 # === TAB SWITCH ===
 
 def _switch_tab(state, target_tab):
@@ -1334,6 +2250,19 @@ def _switch_tab(state, target_tab):
             state["_pit_note_cache"] = None
 
 
+def _cycle_tab(state, direction):
+    """Step to the previous/next tab in TABS display order, clamped at the
+    ends. Extends the original two-tab [/] idiom cleanly to N tabs."""
+    order = [tab_id for _, tab_id in TABS]
+    try:
+        i = order.index(state["current_tab"])
+    except ValueError:
+        i = 0
+    j = max(0, min(len(order) - 1, i + direction))
+    if order[j] != state["current_tab"]:
+        _switch_tab(state, order[j])
+
+
 # === MAIN LOOP ===
 
 def _draw(stdscr, state):
@@ -1344,10 +2273,40 @@ def _draw(stdscr, state):
     _draw_tab_strip(stdscr, state["current_tab"], w)
     if state["current_tab"] == CURRENT_TAB_TUNING:
         draw_tuning(stdscr, state)
-    else:
+    elif state["current_tab"] == CURRENT_TAB_TELEMETRY:
         draw_telemetry(stdscr, state)
+    else:
+        draw_tools(stdscr, state)
     _draw_footer(stdscr, h, w, state["current_tab"], state["status"])
     stdscr.refresh()
+
+
+def _dispatch_kb(state, ch):
+    """Route a keyboard event to the active tab's handler. In ETK_NO_TARGET
+    mode TUNING/TELEMETRY are inert — only TOOLS receives input (plus a
+    plain 'q' quit) so no config or ledger is ever touched."""
+    ct = state["current_tab"]
+    if ct == CURRENT_TAB_TOOLS:
+        return handle_tools_kb(state, ch)
+    if ETK_NO_TARGET:
+        return "quit" if ch in (ord('q'), ord('Q')) else "continue"
+    if ct == CURRENT_TAB_TUNING:
+        return handle_tuning_kb(state, ch)
+    return handle_telemetry_kb(state, ch)
+
+
+def _dispatch_pad(state, etype, code, val):
+    """Gamepad counterpart of _dispatch_kb."""
+    ct = state["current_tab"]
+    if ct == CURRENT_TAB_TOOLS:
+        return handle_tools_pad(state, etype, code, val)
+    if ETK_NO_TARGET:
+        if etype == EV_KEY and val == 1 and code == BTN_BACK:
+            return "quit"
+        return "continue"
+    if ct == CURRENT_TAB_TUNING:
+        return handle_tuning_pad(state, etype, code, val)
+    return handle_telemetry_pad(state, etype, code, val)
 
 
 def main(stdscr):
@@ -1360,7 +2319,11 @@ def main(stdscr):
     curses.init_pair(PAIR_CONFIG, curses.COLOR_CYAN, curses.COLOR_BLACK)
     stdscr.timeout(50)
 
-    matrix = load_menu_matrix()
+    # ETK_NO_TARGET: no PS3 title resolved — skip the schema/config load
+    # entirely. TUNING/TELEMETRY render inert panels and TOOLS is the live
+    # tab, so the matrix is never drawn, edited or saved; loading a fallback
+    # game's config here would be misleading and pointless.
+    matrix = [] if ETK_NO_TARGET else load_menu_matrix()
     device_path = find_gamepad()
 
     # FIX 2: gamepad open failure degrades to keyboard-only, not hard exit.
@@ -1375,7 +2338,9 @@ def main(stdscr):
     state = {
         "matrix": matrix,
         "cursor_idx": 0,
-        "current_tab": CURRENT_TAB_TUNING,
+        # Default tab: TOOLS when no game resolved (the install front door,
+        # dossier §3), otherwise TELEMETRY.
+        "current_tab": CURRENT_TAB_TOOLS if ETK_NO_TARGET else CURRENT_TAB_TELEMETRY,
         "status": "",
         "gamepad_status": gamepad_status,
         "telemetry_scroll": 0,
@@ -1386,6 +2351,13 @@ def main(stdscr):
         "_config_changes_cache": None,
         "_career_cache": None,
         "_pit_note_cache": None,
+        # TOOLS tab sub-mode state machine (menu / install_confirm /
+        # uninstall_list / uninstall_confirm / result).
+        "tools_mode": "menu",
+        "tools_cursor": 0,
+        "tools_pkg": None,
+        "tools_games": [],
+        "tools_result": None,
     }
 
     running = True
@@ -1400,14 +2372,14 @@ def main(stdscr):
             ch = -1
 
         if ch != -1:
-            # Tab switching (keyboard) — intercepted before per-tab dispatch
+            # Tab switching (keyboard) — intercepted before per-tab dispatch.
+            # [/] now CYCLE through the TABS display order (3 tabs).
             if ch == ord('['):
-                _switch_tab(state, CURRENT_TAB_TUNING)
+                _cycle_tab(state, -1)
             elif ch == ord(']'):
-                _switch_tab(state, CURRENT_TAB_TELEMETRY)
+                _cycle_tab(state, 1)
             else:
-                handler = handle_tuning_kb if state["current_tab"] == CURRENT_TAB_TUNING else handle_telemetry_kb
-                verb = handler(state, ch)
+                verb = _dispatch_kb(state, ch)
                 if verb in ("quit", "save_exit"):
                     running = False
 
@@ -1423,16 +2395,42 @@ def main(stdscr):
             if data and len(data) == EVENT_SIZE:
                 _, _, etype, code, val = struct.unpack(EVENT_FORMAT, data)
 
-                # Tab switching (gamepad) — intercepted before per-tab dispatch
+                # Tab switching (gamepad) — L1/R1 cycle through the tabs.
                 if etype == EV_KEY and val == 1 and code == BTN_TL:
-                    _switch_tab(state, CURRENT_TAB_TUNING)
+                    _cycle_tab(state, -1)
                 elif etype == EV_KEY and val == 1 and code == BTN_TR:
-                    _switch_tab(state, CURRENT_TAB_TELEMETRY)
+                    _cycle_tab(state, 1)
                 else:
-                    handler = handle_tuning_pad if state["current_tab"] == CURRENT_TAB_TUNING else handle_telemetry_pad
-                    verb = handler(state, etype, code, val)
+                    verb = _dispatch_pad(state, etype, code, val)
                     if verb in ("quit", "save_exit"):
                         running = False
+
+        # Execute a queued TOOLS long-operation (install / uninstall).
+        # Runs here in the main loop so it has stdscr for the 'busy' frame;
+        # the op itself blocks (RPCS3 owns the screen during an install)
+        # and surfaces live progress through mako notifications.
+        action = state.pop("tools_action", None)
+        if action:
+            _draw_tools_busy(stdscr, action[0])
+            notifier = _Notifier()
+            if action[0] == "install":
+                ok, lines = _run_install(action[1], action[2], notifier)
+            else:
+                ok, lines = _run_uninstall(action[1], notifier)
+            state["tools_result"] = (ok, lines)
+            state["tools_mode"] = "result"
+            # Drain input buffered during the (multi-second) blocking op so
+            # a button pressed mid-install doesn't skip past the result.
+            if fd is not None:
+                try:
+                    while os.read(fd, EVENT_SIZE):
+                        pass
+                except (BlockingIOError, OSError):
+                    pass
+            try:
+                curses.flushinp()
+            except Exception:
+                pass
 
     if fd is not None:
         os.close(fd)

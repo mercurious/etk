@@ -44,28 +44,21 @@ fi
 CLEAN_ID=$(echo "$RAW_ID" | tr -d '[:space:]')
 
 # Title IDs are exactly 4 uppercase letters + 5 digits. Anything else
-# (empty, IDLE, partial) means we could not safely resolve a target.
-if ! echo "$CLEAN_ID" | grep -qE '^[A-Z]{4}[0-9]{5}$'; then
-    clear
-    echo ""
-    echo "  ETK PITSTOP // NO TARGET RESOLVED"
-    echo "  ---------------------------------"
-    echo ""
-    echo "  Could not determine the active PS3 title, so Pitstop"
-    echo "  will NOT edit a default config (that strands your tuning"
-    echo "  in the wrong file)."
-    echo ""
-    echo "  ID_FILE   : $(cat "$ID_FILE" 2>/dev/null || echo '(missing)')"
-    echo "  RECENT_ID : $(cat "$RECENT_ID_FILE" 2>/dev/null || echo '(missing)')"
-    echo ""
-    echo "  Launch a game once so ETK can anchor its identity,"
-    echo "  then reopen Pitstop."
-    echo ""
-    echo "  Exiting in 8s..."
-    sleep 8
-    exit 1
+# (empty, IDLE, partial) means we could not resolve a target.
+#
+# DEGRADE, DON'T EXIT (dossier §3): a fresh rig with no installed PS3
+# game must still be able to open Pitstop -- the TOOLS tab is the front
+# door for installing that first game. So instead of exiting, launch the
+# engine with ETK_NO_TARGET=1. The engine forces the TOOLS tab and renders
+# TUNING / TELEMETRY as inert panels, so no default config or ledger is
+# ever touched in the unresolved state.
+if echo "$CLEAN_ID" | grep -qE '^[A-Z]{4}[0-9]{5}$'; then
+    export TARGET_ID="$CLEAN_ID"
+    export ETK_NO_TARGET=0
+else
+    export TARGET_ID=""
+    export ETK_NO_TARGET=1
 fi
-export TARGET_ID="$CLEAN_ID"
 
 # 4. Sanitize terminal space
 clear
