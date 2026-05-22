@@ -185,6 +185,8 @@ $RSYNC_CMD --exclude='.DS_Store' ./config/crash_signatures.json  $RIG_SSH:$ETK_R
 # ETK default per-game RPCS3 config template (TOOLS-tab installer copies this
 # to custom_configs/config_<ID>.yml for each newly installed game).
 $RSYNC_CMD --exclude='.DS_Store' ./config/etk_template.yml       $RIG_SSH:$ETK_ROOT/config/
+# SVG icon master for the polished Tools-menu app entry (dossier addendum R1).
+$RSYNC_CMD --exclude='.DS_Store' ./config/etk_pitstop.svg        $RIG_SSH:$ETK_ROOT/config/
 
 # THE MASTER COPY: Push to the persistent safe zone
 $RSYNC_CMD --exclude='.DS_Store' ./config/etk_pitstop.sh      $RIG_SSH:$ETK_ROOT/config/
@@ -206,6 +208,19 @@ if [ "$LAUNCHER_CHECK" = "OK" ]; then
 else
     echo -e "    ${R}[FAIL] Launcher missing or lacks +x permissions — aborting.${N}"
     exit 1
+fi
+
+# Register ETK Pitstop as a polished Tools-menu app: run the modules
+# injector so the launcher + SVG icon + enriched gamelist <game> entry
+# land immediately. /storage/.config/modules is boot-volatile, so the
+# Sentry re-asserts all three every boot — this is just the first pass.
+echo -e "    Registering ETK Pitstop in the Tools menu..."
+ssh $RIG_SSH "python3 $ETK_ROOT/bin/etk_modules_inject.py"
+GAMELIST_CHECK=$(ssh $RIG_SSH "grep -c '>ETK Pitstop<' /storage/.config/modules/gamelist.xml 2>/dev/null || echo 0")
+if [ "${GAMELIST_CHECK:-0}" -ge 1 ] 2>/dev/null; then
+    echo -e "    ${G}[OK] ETK Pitstop registered as a Tools-menu app.${N}"
+else
+    echo -e "    ${Y}[WARN] Tools-menu entry not confirmed — the Sentry will re-inject it.${N}"
 fi
 # ==========================================================
 # STEP 6: WRITE & RESTART THE SENTRY (ROCKNIX SYSTEMD)
@@ -365,10 +380,17 @@ while true; do
     source /storage/games-internal/roms/etk/scripts/env.sh
     
     # --- PROBE TRIPWIRE ---
-    if [ ! -f "/storage/.config/modules/etk_pitstop.sh" ]; then
-        echo "[$(date '+%H:%M:%S.%N')] ALARM: FILE WAS NUKED! Re-deploying..." >> "$SPY_LOG"
-        cp -f "$ETK_ROOT/config/etk_pitstop.sh" /storage/.config/modules/etk_pitstop.sh
-        chmod +x /storage/.config/modules/etk_pitstop.sh
+    # /storage/.config/modules is boot-volatile: Rocknix wipes it and
+    # regenerates gamelist.xml every boot. Re-assert the full ETK Pitstop
+    # Tools-menu presence -- launcher .sh, .svg icon, and the enriched
+    # <game> entry -- whenever any of the three is missing. The injector is
+    # idempotent and touches only the ETK entry; other tools are untouched.
+    if [ ! -f "/storage/.config/modules/etk_pitstop.sh" ] \
+       || [ ! -f "/storage/.config/modules/etk_pitstop.svg" ] \
+       || [ ! -f "$MODULES_GAMELIST" ] \
+       || ! grep -q '>ETK Pitstop<' "$MODULES_GAMELIST" 2>/dev/null; then
+        echo "[$(date '+%H:%M:%S.%N')] modules wiped/stale -- re-injecting ETK Pitstop" >> "$SPY_LOG"
+        python3 "$ETK_ROOT/bin/etk_modules_inject.py" >> "$SPY_LOG" 2>&1
     fi
 
     # --- INSTALL LOCK (dossier §4) ---

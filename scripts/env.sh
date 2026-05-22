@@ -179,3 +179,12 @@ export ROCKNIX_MAKO_CONFIG="/storage/.config/mako/config"
 # Sentry sentinel: present in volatile SHM while an install runs so the Sentry
 # stays parked in IDLE (no phantom RUNNING session). See 01-etk-sentry.sh, §4.
 export ETK_INSTALL_LOCK="$SHM_DIR/etk_install_lock"
+
+# --- [ TOOLS-MENU APP REGISTRATION ] ---
+# /storage/.config/modules is boot-volatile: Rocknix wipes it and regenerates
+# gamelist.xml every boot. The Sentry re-injects the ETK Pitstop launcher, its
+# SVG icon and the enriched <game> entry via bin/etk_modules_inject.py so it
+# shows as a polished Tools app, not a bare filename. Dossier addendum R1.
+export MODULES_DIR="/storage/.config/modules"
+export MODULES_GAMELIST="$MODULES_DIR/gamelist.xml"
+export ETK_PITSTOP_SVG="$ETK_ROOT/config/etk_pitstop.svg"
