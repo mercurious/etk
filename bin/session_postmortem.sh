@@ -107,8 +107,16 @@ fi
 # RPCS3.log is already session-scoped — RPCS3 truncates it per launch.
 # $CRASH_LOG is deliberately NOT in the haystack: probe.sh builds it
 # from unwindowed dmesg, which would re-introduce the stale-fault bleed.
+#
+# CRITICAL: this anchor is only valid when ANCHOR_RELIABLE=1. The
+# RPCS3.log mtime fallback sets START_EPOCH to the log's LAST write,
+# which tracks session END (or the instant rpcs3 froze on a GPU fault) —
+# NOT session start. Using that as window_start collapses the window to
+# ~now and excludes the whole session's faults, so a real RECOVERY
+# misclassifies as CLEAN. When the anchor is unreliable, fall back to
+# the 10-minute net regardless of whether mtime gave a nonzero epoch.
 DMESG_WINDOW_START=0
-if [ "$START_EPOCH" -gt 0 ]; then
+if [ "$ANCHOR_RELIABLE" -eq 1 ]; then
     DMESG_WINDOW_START=$((START_EPOCH - BOOT_EPOCH))
 else
     # No reliable session anchor — fall back to the last 10 minutes of
