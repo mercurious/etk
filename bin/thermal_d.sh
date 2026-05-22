@@ -33,13 +33,19 @@ while true; do
     # ticks) to keep SD-card writes minimal (~1 line / 30s). Tick 1 also
     # samples so short crash sessions still get one reading.
     #
+    # The SAMPLE line carries a 4th field: /proc/loadavg 1-minute load
+    # average. Total CPU% saturates to ~100 instantly on this stack and
+    # carries no signal — loadavg is the unbounded, discriminating metric.
+    # session_postmortem.sh parses peak loadavg from field 4.
+    #
     # DEV TOGGLE: to reduce write overhead while isolating a regression
-    # during development, comment out the three lines below.
+    # during development, comment out the four lines below.
     # session_postmortem.sh tolerates the absence cleanly — peak_temp/
-    # avg_temp fall back to 0 and the TELEMETRY tab renders "----".
+    # avg_temp/peak_load fall back to 0 and the TELEMETRY tab renders "----".
     TICK=$((TICK + 1))
     if [ "$TICK" -eq 1 ] || [ $((TICK % 15)) -eq 0 ]; then
-        echo "$(date +%s) SAMPLE $TEMP" >> "$ETK_ROOT/telemetry.log"
+        LOADAVG=$(awk '{print $1}' /proc/loadavg 2>/dev/null)
+        echo "$(date +%s) SAMPLE $TEMP ${LOADAVG:-0}" >> "$ETK_ROOT/telemetry.log"
     fi
 
     # 3. INTENT SENSING
@@ -50,7 +56,7 @@ while true; do
         if [ "$CURRENT_MODE" == "RACE" ]; then
             echo "PIT" > "$MODE_FILE"
             CURRENT_MODE="PIT"
-            echo "$(date) - THERMAL OVERRIDE: Switched to PIT at ${TEMP}C" >> "$ETK_ROOT/telemetry.log"
+            echo "$(date +%s) THERMAL OVERRIDE: Switched to PIT at ${TEMP}C" >> "$ETK_ROOT/telemetry.log"
         fi
     fi
 

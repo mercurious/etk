@@ -1,12 +1,5 @@
 [
   {
-    "label": "Audio Renderer Backend",
-    "section": "Audio",
-    "yaml_key": "  Renderer",
-    "type": "enum",
-    "options": ["OpenSL", "Cubeb", "ALSA"]
-  },
-  {
     "label": "Audio Buffer Size (ms)",
     "section": "Audio",
     "yaml_key": "  Audio Buffer",
@@ -14,6 +7,13 @@
     "min": 4,
     "max": 250,
     "step": 10
+  },
+  {
+    "label": "Audio Renderer Backend",
+    "section": "Audio",
+    "yaml_key": "  Renderer",
+    "type": "enum",
+    "options": ["OpenSL", "Cubeb", "ALSA"]
   },
   {
     "label": "Desired Buffer Duration",

@@ -10,9 +10,14 @@
 # atomically writes $CAREER_DIR/<game_id>.txt.
 # ==========================================================
 # GEMINI IMMUTABLE RULE:
-# - Sessions with duration_s < 60 are EXCLUDED from career stats —
-#   they're aborted launches, not real attempts. NEVER change this
-#   threshold, or all historical career numbers shift.
+# - Sessions shorter than $TELEMETRY_MIN_SESSION_S (default 60s) are
+#   EXCLUDED from career stats — they're aborted launches, not real
+#   attempts. The threshold is a documented policy parameter set in
+#   env.sh; it now lives in a var for visibility, but changing its VALUE
+#   still shifts all historical career numbers — treat the value as
+#   immutable.
+# - Sessions with status ABORTED are excluded by name as well, so the
+#   rule is legible and doesn't rely solely on the duration coincidence.
 # - BusyBox-compliant. awk is used for the aggregation pass.
 # - Atomic write via tmp+mv so a concurrent Pitstop read never sees
 #   a half-written career file.
@@ -43,16 +48,17 @@ fi
 
 # Single-pass awk aggregation. Field map (1-based):
 #   1=epoch 2=duration_s 3=build 4=game_id 5=status
-#   6=peak_cpu_pct 7=peak_ram_mb 8=peak_temp 9=avg_temp
+#   6=peak_load 7=peak_ram_mb 8=peak_temp 9=avg_temp
 #   10=crash_sig 11=fence_at_crash 12=shaders_harvested
 #   13=drain_pct 14=thermal_overrides
 #
 # Ledger is append-only oldest-first, so cur_streak at END reflects
 # the streak ending on the newest row — which IS current_streak.
-AGG=$(awk -F'\t' -v gid="$GID" '
+AGG=$(awk -F'\t' -v gid="$GID" -v mindur="${TELEMETRY_MIN_SESSION_S:-60}" '
     NR == 1 { next }
     $4 != gid { next }
-    $2+0 < 60 { next }
+    $2+0 < mindur { next }
+    $5 == "ABORTED" { next }
 
     {
         total++

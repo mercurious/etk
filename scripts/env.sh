@@ -130,6 +130,13 @@ export CAREER_DIR="$TELEMETRY_DIR/career"
 export PIT_NOTE_FILE="$TELEMETRY_DIR/pit_note.txt"
 export SIGNATURES_FILE="$ETK_ROOT/config/crash_signatures.json"
 
+# Minimum session length (seconds) to count as a real attempt. Sessions
+# shorter than this are force-quit/fat-finger aborts: career_aggregate.sh
+# excludes them and session_postmortem.sh reclassifies a sub-threshold
+# CLEAN as ABORTED. A documented policy parameter — tunable here, not
+# hardcoded. Changing it shifts all historical career numbers.
+export TELEMETRY_MIN_SESSION_S=60
+
 # Helper: ensure telemetry tree exists; safe to call repeatedly.
 # Shell-only — Python consumers in bin/etk_pitstop.py do their own mkdir.
 telemetry_init_dirs() {

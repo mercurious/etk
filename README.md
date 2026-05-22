@@ -5,16 +5,18 @@ A custom Rocknix middleware rig to enable PS3 Emulation on ARM64 Retrogaming Han
 ToDo.
 
 # The Kit Features
+1. Native Rocknix ETK Pitstop App for on-device config editing and telemetry analysis
+1. Customized in-game overlay dashbard with ETK telematics inside MangoHUD
 1. Hardware and driver tunings for maximum performance
 1. Optimized emulator game configurations tuned to the device hardware
 1. Smart thermal protection to safely overdrive the device during shader harvesting
 1. Automatic shader backup from your device to computer to share with other ETK users
-1. Customized in-game overlay with ETK telematics inside MangoHUD
 1. Pit wall remote terminal screen to monitor and control device rig with advanced crash recovery and analytics (`scripts/commander.sh`)
 1. Install, configure, repair, and uninstall the kit remotely from a computer (`install.sh` and `uninstall.sh`)
 1. Multi-Installation Options: FULL installation for initial shader harvesting and tuning, LITE installation for saturated shader sets with thermal protection only, RAW for stress testing without shader and thermal protections (`ETK_BUILD_TYPE` in `scripts/env.sh`)
 
 # ETK Project Structure
+*Needs update for latest `etk_pitstop`*
 - `AI_MANIFEST.md`: System Manual and Immutable Laws of ETK Development for AI
 - `README.md`: You are reading it now.
 - `install.sh`: Flashes the ETK onto your handheld from a computer
@@ -83,9 +85,9 @@ ToDo.
 - Phase 7: Enabled robust crash reporting, diagnosis, advisory, ETK install tiers
 - Phase 8: Attempted experimental incremental audio support
 - Phase 9: Enabled game agnostic ETK
-- **Phase 10:** Onboard ETK Command: `R3` as Recovery Panic Button
+- Phase 10: Onboard ETK Command: `R3` as Recovery Panic Button
 - Phase 11: Develop External Networking Gemini Dev Analytics Workflow Tools
-- Phase 12: Developing native Rocknix ETK app for utilities (Tools or carousel UI)
+- ***Phase 12:** Developing native Rocknix ETK app for utilities (Tools or carousel UI)
 - Phase 13: Develop shader sharing and shader swarming features per device/per game serial
 - Phase 14: Beta Testing
 - Phase 15: Release

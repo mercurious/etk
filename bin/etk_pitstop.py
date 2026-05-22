@@ -86,6 +86,14 @@ CAREER_DIR = os.environ.get('CAREER_DIR', f"{TELEMETRY_DIR}/career")
 PIT_NOTE_FILE = os.environ.get('PIT_NOTE_FILE', f"{TELEMETRY_DIR}/pit_note.txt")
 CONFIG_CHANGES_HEADER = "epoch\tgame_id\tfield_label\told_value\tnew_value\n"
 
+# Sessions shorter than this are aborts, not real attempts. Sourced from
+# env.sh; the TELEMETRY tab dims sub-threshold rows so a force-quit or a
+# misclassified 2s "crash" doesn't read as signal.
+try:
+    TELEMETRY_MIN_SESSION_S = int(os.environ.get('TELEMETRY_MIN_SESSION_S', 60))
+except ValueError:
+    TELEMETRY_MIN_SESSION_S = 60
+
 
 # === COLOR PAIRS ===
 # Pitstop curses UI is exempt from the manifest's no-ANSI rule
@@ -811,7 +819,7 @@ def load_sessions_ledger(filter_game_id=None):
                         "build": fields[2],
                         "game_id": fields[3],
                         "status": fields[4],
-                        "peak_cpu_pct": int(fields[5] or 0),
+                        "peak_load": float(fields[5] or 0),
                         "peak_ram_mb": int(fields[6] or 0),
                         "peak_temp": int(fields[7] or 0),
                         "avg_temp": int(fields[8] or 0),
@@ -982,6 +990,8 @@ def _status_attr(status):
         return curses.color_pair(PAIR_CRASH) | curses.A_BOLD
     if status.startswith("RECOVERY:"):
         return curses.color_pair(PAIR_RECOV)
+    if status == "ABORTED":
+        return curses.A_DIM
     return curses.A_NORMAL
 
 
@@ -1064,8 +1074,9 @@ def draw_telemetry(stdscr, state):
     table_bottom = h - 3 - pit_block_h
     table_capacity = max(1, table_bottom - table_top - 2)  # -2 for col-header + rule
 
-    # Column header (sized to fit 74-col Flip 2 TTY)
-    header_line = "TIME    STATUS              DUR    TEMP    LOAD  RAM     SHD  DRAIN"
+    # Column header — built from the same _TEL_W_* constants the data
+    # rows use, so labels always sit directly above their columns.
+    header_line = _telemetry_header()
     stdscr.addstr(y, 2, header_line[:w - 4], curses.A_BOLD)
     y += 1
     stdscr.addstr(y, 2, "-" * (w - 4), curses.A_DIM)
@@ -1130,13 +1141,57 @@ def draw_telemetry(stdscr, state):
             stdscr.addstr(pit_y + 1 + i, 2, (prefix + line)[:w - 4], curses.A_DIM)
 
 
+# TELEMETRY session-table column widths. The header and every data row
+# are built from these same constants so labels always sit directly
+# above their data. Column order (dossier Feature #10): RAM promoted next
+# to DUR since it's the live discriminator on Eiger; SHD demoted to the
+# rightmost slot since it is all-zero on a saturated vault.
+_TEL_W_TIME = 6
+_TEL_W_MARK = 3
+_TEL_W_STATUS = 15
+_TEL_W_DUR = 6
+_TEL_W_RAM = 5
+_TEL_W_LOAD = 5
+_TEL_W_TEMP = 7
+_TEL_W_DRAIN = 5
+_TEL_W_SHD = 4
+
+
+def _telemetry_header():
+    """Build the session-table column header from the shared _TEL_W_*
+    width constants so it can never drift from the data rows."""
+    return (
+        f"{'TIME':<{_TEL_W_TIME}}"
+        f"{'':<{_TEL_W_MARK}}"
+        f"{'STATUS':<{_TEL_W_STATUS}}"
+        f"  {'DUR':>{_TEL_W_DUR}}"
+        f"  {'RAM':>{_TEL_W_RAM}}"
+        f"  {'LOAD':>{_TEL_W_LOAD}}"
+        f"  {'TEMP':>{_TEL_W_TEMP}}"
+        f"  {'DRAIN':>{_TEL_W_DRAIN}}"
+        f"  {'SHD':>{_TEL_W_SHD}}"
+    )
+
+
 def _draw_session_row(stdscr, y, w, row):
     """Render one session row. Builds the full line as a single clipped
-    string, writes it once, then overlays the colored STATUS column.
-    Single-write + overlay is overflow-safe — a narrow TTY truncates the
-    base line cleanly rather than tripping addwstr() returned ERR."""
+    string from the shared _TEL_W_* constants, writes it once, then
+    overlays the colored STATUS column. Single-write + overlay is
+    overflow-safe — a narrow TTY truncates the base line cleanly rather
+    than tripping addwstr() returned ERR.
+
+    A sub-threshold session (duration < TELEMETRY_MIN_SESSION_S) is a
+    low-confidence row — a force-quit abort, or a short 'crash' whose
+    fence/thermal data the post-mortem could not trust. It renders dimmed
+    with no status color. A zero-duration row (no reliable session
+    anchor at all) additionally gets a '?' mark."""
     status = row["status"]
-    if status == "CLEAN":
+    duration = row["duration_s"]
+    low_conf = duration < TELEMETRY_MIN_SESSION_S
+
+    if duration == 0:
+        mark = " ? "
+    elif status == "CLEAN":
         mark = " * "
     elif status == "PANIC":
         mark = " ! "
@@ -1144,11 +1199,15 @@ def _draw_session_row(stdscr, y, w, row):
         mark = "   "
 
     time_str = _time_label(row["epoch"])
-    dur_str = _format_duration(row["duration_s"])
+    dur_str = _format_duration(duration)
+
     peak_t = row["peak_temp"]
     avg_t = row["avg_temp"]
     temp_str = f"{avg_t}/{peak_t}C" if peak_t > 0 else "----"
-    load_str = f"{row['peak_cpu_pct']}%" if row['peak_cpu_pct'] > 0 else "----"
+
+    load = row["peak_load"]
+    load_str = f"{load:.1f}" if load > 0 else "----"
+
     ram = row["peak_ram_mb"]
     if ram >= 1000:
         ram_str = f"{ram // 1000}.{(ram % 1000) // 100}G"
@@ -1156,35 +1215,38 @@ def _draw_session_row(stdscr, y, w, row):
         ram_str = f"{ram}MB"
     else:
         ram_str = "----"
-    shd = row["shaders_harvested"]
-    shd_str = str(shd) if shd > 0 else "0"
+
     drain = row["drain_pct"]
-    drain_str = f"{drain}%" if drain != 0 else "0%"
+    drain_str = f"{drain}%"
+    shd_str = str(row["shaders_harvested"])
 
     base = (
-        f"{time_str:<6}"
-        f"{mark:<3}"
-        f"{status[:18]:<18}  "
-        f"{dur_str:>6}  "
-        f"{temp_str:>7}  "
-        f"{load_str:>4}  "
-        f"{ram_str:>5}  "
-        f"{shd_str:>3}  "
-        f"{drain_str:>5}"
+        f"{time_str:<{_TEL_W_TIME}}"
+        f"{mark:<{_TEL_W_MARK}}"
+        f"{status[:_TEL_W_STATUS]:<{_TEL_W_STATUS}}"
+        f"  {dur_str:>{_TEL_W_DUR}}"
+        f"  {ram_str:>{_TEL_W_RAM}}"
+        f"  {load_str:>{_TEL_W_LOAD}}"
+        f"  {temp_str:>{_TEL_W_TEMP}}"
+        f"  {drain_str:>{_TEL_W_DRAIN}}"
+        f"  {shd_str:>{_TEL_W_SHD}}"
     )
     base = base[:w - 4]
+    base_attr = curses.A_DIM if low_conf else curses.A_NORMAL
     try:
-        stdscr.addstr(y, 2, base)
+        stdscr.addstr(y, 2, base, base_attr)
     except curses.error:
         return
 
-    # Overlay the STATUS substring with its color. Position is computed
-    # from the fixed prefix widths above (6 + 3 = 9 cols of preface).
-    status_col = 2 + 9
-    status_text = status[:18]
+    # Overlay the STATUS substring with its color. Column start is
+    # computed from the fixed prefix widths (TIME + MARK). A low-
+    # confidence row keeps the dim attr instead of a status color.
+    status_col = 2 + _TEL_W_TIME + _TEL_W_MARK
+    status_text = status[:_TEL_W_STATUS]
+    status_attr = curses.A_DIM if low_conf else _status_attr(status)
     if status_col + len(status_text) <= w - 1:
         try:
-            stdscr.addstr(y, status_col, status_text, _status_attr(status))
+            stdscr.addstr(y, status_col, status_text, status_attr)
         except curses.error:
             pass
 
@@ -1214,23 +1276,6 @@ def _draw_config_row(stdscr, y, w, row):
             stdscr.addstr(y, overlay_col, overlay_text, curses.color_pair(PAIR_CONFIG))
         except curses.error:
             pass
-
-
-def _draw_config_row(stdscr, y, w, row):
-    """Render one CONFIG row: tighter shape than session — just time,
-    marker, field label, and old->new transition. Other columns blank."""
-    attr = curses.color_pair(PAIR_CONFIG)
-    time_str = _time_label(row["epoch"])
-    field = row["field_label"]
-    transition = f"{row['old_value']} -> {row['new_value']}"
-    # Truncate field if combining with transition would overflow
-    avail = w - 4 - 11  # after TIME(6) gap(2) MARK(3)
-    body = f"{field}  {transition}"
-    if len(body) > avail:
-        body = body[:avail - 1] + "…"
-    stdscr.addstr(y, 2, time_str)
-    stdscr.addstr(y, 8, " > ", attr)
-    stdscr.addstr(y, 11, body, attr)
 
 
 def handle_telemetry_kb(state, ch):

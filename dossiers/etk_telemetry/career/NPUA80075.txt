@@ -1,0 +1,13 @@
+game_id=NPUA80075
+game_name=NPUA80075
+total_duration_s=4880
+total_duration_human=1h 21m
+total_sessions=27
+clean_rate_pct=22
+crash_count=21
+recov_count=21
+panic_count=0
+total_shaders=0
+avg_shaders_per_session=0
+current_streak=0
+best_streak=2
