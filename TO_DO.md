@@ -1,49 +1,22 @@
 # ALL ITEMS BELOW ARE NOT YET IMPLEMENTED
 - Do not consider anything below this section as implemented, only in the proposal, planning, discussion phases, do not assume anything about this last section.
 
-## PROPOSALS TO DO
+## BUGS
+- ETK still not perfectly classifying CLEAN vs Crash
+- ETK still not perfectly loading last launched game
+- Enable MangoHUD without forcing user to use Rocknix advanced game settings > system to enable it, so find the advanced-game-settings config and tweak it, but when?
+- New game onboarding/discovery isn't getting the right settings template, can't be fixed with pitstop; need to setup a default template for all new games or fix my emulator?
+- Add audio codec from emulator menu and reconcile in-game edits with post-pre-game edits.
+after install complete to clear folder for another game)
+- Still finding orphan shaders in /vault so can't blame an old ETK script
 
-### IN-PROGRESS: DEVELOP ALT GITHUB CONNECTED ACCESS REPLACEMENT TOOLS
-- If we cannot get Github Connected Apps provisioned because of license limitations, what tool can integrate into the ETK to get closer to a GitHub enabled workflow despite not having full access, accepting certain limitations, but being clever about working around them?
+
+## PROPOSALS
+
+- Add TOOLS tab to ETK PITSTOP with a Install (.pkg not .iso) feature that looks inside `/roms/tmp/rpsc3_install/` (only support one game at a time and auto-delete .pkg .rap 
 
 
-### PLAN FOR A REFACTOR FOR FULLY ONBOARD ETK
-- Go headless and move away from a tethered, commander.sh dependent rig
-- Preserve and enrich commander.sh as dev tool rather than used during harvesting runs, more for crash analytics and to continue to support the overhaul of on-board systems
-- Trap R3 as a PANIC BUTTON that calls Recovery command
-
-### Native Rocknix Config Editor App
-- see pit_wall_sync.sh
-- needs reformatting for Flip 2 Rocknix actual resolution 100x font size or smaller terminal resolution
-- otherwise shows massive potential
-- needs install.sh and uninstall.sh provisioning without breakage
-- tested but rolled back after token burnout and stability regression
-
-# Turnip and System Settings
-
-# Force Turnip to prioritize throughput over power saving
-`export TU_DEBUG=sysmem,gmem,noconstcheck`
-`export MESA_VK_WSI_PRESENT_MODE=mailbox`
-
-# Force Turnip to prioritize throughput over power saving
-`export TU_DEBUG=sysmem,gmem,noconstcheck`
-`export MESA_VK_WSI_PRESENT_MODE=mailbox`
-
-`
-# 1. Thermal & Clock Lockdown
-echo "performance" | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
-echo "performance" | tee /sys/class/kgsl/kgsl-3d0/devfreq/governor
-echo 670000000 > /sys/class/kgsl/kgsl-3d0/devfreq/max_freq
-
-# 2. Turnip 26.0.6 Special Directives
-export TU_DEBUG=sysmem,gmem,noconstcheck
-export MESA_VK_WSI_PRESENT_MODE=mailbox
-export MESA_EXTENSION_OVERRIDE="-VK_KHR_variable_pointers"
-
-# 3. Memory Management for the Save Process
-echo 1024 > /proc/sys/vm/max_map_count
-sysctl -w vm.swappiness=1`
-
+## PROPOSALS IN PROGRESS
 
 # New Simple Telemetry Menu
 `|DAY|TIME|DURATION|GAMEID|STATUS|DRAIN|AVG/PEAK:TEMP|AVG/PEAK:LOAD|AVG/PEAK:RAM|NEW:SHADERS|`
