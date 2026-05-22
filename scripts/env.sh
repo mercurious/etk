@@ -113,6 +113,11 @@ export PYTHONPATH="${PYTHONPATH}:/storage/etk/lib/python3.13/site-packages"
 export G='\033[0;32m'; export R='\033[0;31m'; export Y='\033[1;33m'; export C='\033[0;36m'; export N='\033[0m'
 export DEFAULT_MODE="RACE"
 
+# --- [ HUD ] ---
+# Seconds the HUD shows the MODE|GAMEID launch header before collapsing to
+# pure telemetry. Sourced by mango_bridge.sh.
+export HUD_HEADER_HOLD_S=15
+
 # --- [ PIPELINE CONTROLS ] ---
 # Set to 1 for verbose Rsync output, 0 for clean output
 export ETK_VERBOSE=1

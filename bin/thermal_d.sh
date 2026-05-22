@@ -63,12 +63,12 @@ while true; do
 	# 5. CONTINUOUS THERMAL BROADCAST (For mango_bridge.sh)
     # Replaces direct LIVE_STAT writes to prevent HUD flicker/race conditions
     if [ "$TEMP" -ge "$RACE_THRESHOLD" ]; then
-        echo "${TEMP}°C OVERHEAT" > "$SHM_DIR/thermal_stat"
+        echo "${TEMP}°C»»»»OVERHEAT" > "$SHM_DIR/thermal_stat"
     elif [ "$TEMP" -ge "$ALARM_TEMP" ]; then
-        echo "${TEMP}°C HOT" > "$SHM_DIR/thermal_stat"
+        echo "${TEMP}°C»»HOT" > "$SHM_DIR/thermal_stat"
     else
         if [ "$CURRENT_MODE" == "RACE" ]; then
-            echo "${TEMP}°C OK" > "$SHM_DIR/thermal_stat"
+            echo "${TEMP}°C" > "$SHM_DIR/thermal_stat"
         else
             echo "${TEMP}°C SAFETY L3 TO CLEAR" > "$SHM_DIR/thermal_stat"
         fi
