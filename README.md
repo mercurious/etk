@@ -5,13 +5,13 @@ A custom Rocknix middleware rig to enable PS3 Emulation on ARM64 Retrogaming Han
 ToDo.
 
 # The Kit Features
-1. Native Rocknix ETK Pitstop App for on-device config editing and telemetry analysis
-1. Customized in-game overlay dashbard with ETK telematics inside MangoHUD
-1. Hardware and driver tunings for maximum performance
+1. Native Rocknix ETK Pitstop App for on-device config editing, per game telemetry analysis, and simple PS3 game installation (drop .pkg and .rap in `roms/etk/pkg_install_drop/`)
+1. Customized in-game overlay dashbard with ETK telematics inside native Rocknix MangoHUD
+1. Hardware and driver tunings for maximum performance going beyond config settings
 1. Optimized emulator game configurations tuned to the device hardware
 1. Smart thermal protection to safely overdrive the device during shader harvesting
-1. Automatic shader backup from your device to computer to share with other ETK users
-1. Pit wall remote terminal screen to monitor and control device rig with advanced crash recovery and analytics (`scripts/commander.sh`)
+1. Automatic shader backup from your device to computer to shield hard earned work from loss and to share with other ETK users
+1. Pit wall remote terminal screen to monitor and control device (`scripts/commander.sh`)
 1. Install, configure, repair, and uninstall the kit remotely from a computer (`install.sh` and `uninstall.sh`)
 1. Multi-Installation Options: FULL installation for initial shader harvesting and tuning, LITE installation for saturated shader sets with thermal protection only, RAW for stress testing without shader and thermal protections (`ETK_BUILD_TYPE` in `scripts/env.sh`)
 

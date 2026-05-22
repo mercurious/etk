@@ -521,5 +521,7 @@ REMOTE
 
 # Check the sentry status signal written by the remote block
 echo ""
-echo -e "${G}>>> DEPLOYMENT COMPLETE PRESS START - GAME SETTINGS - UPDATE GAMELISTS TO ACTIVATE THE ETK PITSTOP APP IN ROCKNIX TOOLS.${N}"
+echo -e "${G}>>> DEPLOYMENT COMPLETE. REBOOT THE DEVICE TO ACTIVATE THE ETK PITSTOP APP IN ROCKNIX TOOLS.${N}"
+echo -e "    (EmulationStation reads the Tools gamelist at startup, so the polished"
+echo -e "     ETK Pitstop entry appears after a reboot — Update Gamelists does not refresh it.)"
 echo -e "    Run ${Y}ssh $RIG_SSH 'systemctl status etk.service'${N} to confirm sentry health."

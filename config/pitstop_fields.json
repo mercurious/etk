@@ -1,28 +1,29 @@
 [
-  {
-    "label": "Audio Buffer Size (ms)",
-    "section": "Audio",
-    "yaml_key": "  Audio Buffer",
-    "type": "int",
-    "min": 4,
-    "max": 250,
-    "step": 10
-  },
+
   {
     "label": "Audio Renderer Backend",
     "section": "Audio",
     "yaml_key": "  Renderer",
     "type": "enum",
-    "options": ["OpenSL", "Cubeb", "ALSA"]
+    "options": ["OpenSL", "Cubeb", "ALSA","FAudio"]
   },
   {
     "label": "Desired Buffer Duration",
     "section": "Audio",
     "yaml_key": "  Desired Audio Buffer Duration",
     "type": "int",
-    "min": 4,
+    "min": 5,
     "max": 250,
-    "step": 10
+    "step": 5
+  },
+  {
+    "label": "Audio Buffer Size (ms)",
+    "section": "Audio",
+    "yaml_key": "  Audio Buffer",
+    "type": "int",
+    "min": 5,
+    "max": 250,
+    "step": 5
   },
   {
     "label": "Time Stretching Threshold",
@@ -127,16 +128,16 @@
     "section": "Video",
     "yaml_key": "  Resolution Scale Threshold",
     "type": "enum",
-    "options":["1", "512"]
+    "options":["1", "16", "512"]
   },
   {
     "label": "Driver Wake-Up Delay",
     "section": "Video",
     "yaml_key": "  Driver Wake-Up Delay",
     "type": "int",
-    "min": 0,
+    "min": 1,
     "max": 800,
-    "step": 10
+    "step": 50
   },
   {
     "label": "Relaxed ZCULL Sync",
