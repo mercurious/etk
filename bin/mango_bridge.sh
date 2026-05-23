@@ -3,10 +3,12 @@
 # ETK PHASE 13.5: HUD BRIDGE (v13.2.0 - INSTRUMENT LOCKDOWN)
 # ==========================================================
 # AI IMMUTABLE RULE:
-# 1. HUD STRING FORMAT IS LOCKED (time-gated launch header):
-#    First HUD_HEADER_HOLD_S of a session (launch window):
+# 1. HUD STRING FORMAT IS LOCKED (three-stage time-gated header):
+#    Stage 1 — launch window  (0 <= AGE < HUD_HEADER_HOLD_S):
 #      MODE|ID|XX°CSTAT|X.XXSTAT|XX%STAT|XXMB X.Xk XX+
-#    After the launch window it collapses to pure telemetry:
+#    Stage 2 — instrument labels  (HUD_HEADER_HOLD_S <= AGE < 2*HUD_HEADER_HOLD_S):
+#      TEMP: XX°CSTAT|CORES: X.XXSTAT|MEM: XX%STAT|SHDRS: XXMB X.Xk XX+
+#    Stage 3 — pure telemetry  (AGE >= 2*HUD_HEADER_HOLD_S):
 #      XX°CSTAT|X.XXSTAT|XX%STAT|XXMB X.Xk XX+
 # 2. ATOMIC SWAP ONLY: MUST use `echo > tmp && mv tmp $LIVE_STAT`
 # 3. RAW TEXT ONLY: No MangoHud configuration keys (e.g., custom_text=) in the output.
@@ -74,24 +76,31 @@ while true; do
         VAULT_STR="${V_SIZE}MB ${BANK_STR} ${NEW_SHADERS}+"
     fi
 
-    # --- TIME-GATED LAUNCH HEADER ---
-    # MODE|GAMEID| only for the first $HUD_HEADER_HOLD_S of a session, then "".
+    # --- TIME-GATED LAUNCH HEADER (three stages) ---
+    # Stage 1 (0..HOLD):     MODE|GAMEID| + telemetry body
+    # Stage 2 (HOLD..2HOLD): labeled telemetry body (TEMP:/CORES:/MEM:/SHDRS:)
+    # Stage 3 (2HOLD..):     pure telemetry body
     # Clock is the ignition-seeded session_start.txt (install.sh) — no second
-    # timer. A missing/non-numeric clock collapses to the compact strip.
-    HEADER=""
+    # timer. A missing/non-numeric clock collapses to stage 3.
+    STAGE=3
     S_START=$(cat "$SHM_DIR/session_start.txt" 2>/dev/null)
     case "$S_START" in ''|*[!0-9]*) S_START=0 ;; esac
-    if [ "$S_START" -gt 0 ]; then
+    if [ "$S_START" -gt 0 ] && [ "$TARGET_ID" != "IDLE" ]; then
         AGE=$(( $(date +%s) - S_START ))
-        if [ "$AGE" -ge 0 ] && [ "$AGE" -lt "${HUD_HEADER_HOLD_S:-60}" ] \
-           && [ "$TARGET_ID" != "IDLE" ]; then
-            HEADER="${ETK_BUILD_TYPE}|${TARGET_ID}|"
+        HOLD="${HUD_HEADER_HOLD_S:-60}"
+        if [ "$AGE" -ge 0 ] && [ "$AGE" -lt "$HOLD" ]; then
+            STAGE=1
+        elif [ "$AGE" -ge "$HOLD" ] && [ "$AGE" -lt $(( HOLD * 2 )) ]; then
+            STAGE=2
         fi
     fi
 
     # 5. ATOMIC HUD INJECTION [MANIFEST RULE: HUD FORMAT]
-    # Time-gated header (above) + telemetry body.
-    FINAL_STRING="${HEADER}${T_STAT}|${LOAD_RAW}${L_STAT}|${RAM_VAL}%${R_STAT}|${VAULT_STR}"
+    case "$STAGE" in
+        1) FINAL_STRING="${ETK_BUILD_TYPE}|${TARGET_ID}|${T_STAT}|${LOAD_RAW}${L_STAT}|${RAM_VAL}%${R_STAT}|${VAULT_STR}" ;;
+        2) FINAL_STRING="TEMP: ${T_STAT}|CORES: ${LOAD_RAW}${L_STAT}|MEM: ${RAM_VAL}%${R_STAT}|SHDRS: ${VAULT_STR}" ;;
+        *) FINAL_STRING="${T_STAT}|${LOAD_RAW}${L_STAT}|${RAM_VAL}%${R_STAT}|${VAULT_STR}" ;;
+    esac
     
     # Write to temp file then move to prevent MangoHud from reading an incomplete file
     echo "$FINAL_STRING" > "${LIVE_STAT}.tmp"

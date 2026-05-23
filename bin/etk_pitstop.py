@@ -1270,13 +1270,26 @@ def _draw_session_row(stdscr, y, w, row):
     low-confidence row — a force-quit abort, or a short 'crash' whose
     fence/thermal data the post-mortem could not trust. It renders dimmed
     with no status color. A zero-duration row (no reliable session
-    anchor at all) additionally gets a '?' mark."""
+    anchor at all) additionally gets a '?' mark.
+
+    Mark alphabet (priority order):
+      ?  no session anchor (duration == 0)
+      +  any session that harvested shaders (CLEAN or crashed)
+      *  crash-free run with zero harvest (CLEAN, vault saturated)
+      !  PANIC with no harvest
+         blank otherwise (RECOVERY/ABORTED, no harvest)
+    Reuses the '+'='shader gain' meaning from the HUD vault string
+    (e.g. '345 0+'). Together '+'/'*' stack down the ledger as the
+    positive markers — a glanceable indicator of progress over time."""
     status = row["status"]
     duration = row["duration_s"]
+    shaders = row["shaders_harvested"]
     low_conf = duration < TELEMETRY_MIN_SESSION_S
 
     if duration == 0:
         mark = " ? "
+    elif shaders > 0:
+        mark = " + "
     elif status == "CLEAN":
         mark = " * "
     elif status == "PANIC":
