@@ -2,6 +2,7 @@
 - Do not consider anything below this section as implemented, only in the proposal, planning, discussion phases, do not assume anything about this last section.
 
 ## BUGS
+- Check spycraft tool, it's still running?
 - ETK still not perfectly classifying CLEAN vs Crash
 - New game install, GTA San Andreas and VAULT:ERROR appears on first load, might need to trap a bootstrap condition instead, second launch shows empty vault correctly
 - Default Config is probably not correct starter template

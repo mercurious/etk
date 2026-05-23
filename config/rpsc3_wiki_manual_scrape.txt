@@ -1,0 +1,287 @@
+
+Toggle search
+Toggle menu
+Toggle preferences menu
+Toggle personal menu
+Help:Default Settings
+Help page
+Views
+Read
+View source
+View history
+associated-pages
+Help page
+Discussion
+More actions
+Below is the default configuration for the emulator. Not all options mentioned below are mandatory. For example, options such as Resolution Scale and Anisotropic Filter can be increased if your graphics card can handle the additional load whereas Approximate xfloat should be disabled with weaker CPUs on games that will work fine without it. If the game has graphical glitches, you may also need to enable Write Color Buffers or Read Color Buffers to fix them. For best performance, read the description for each option carefully and also refer to the specific configurations mentioned for each game page.
+
+CPU configuration
+Setting	Default Option	Description
+PPU decoder	LLVM Recompiler	LLVM Recompiler: Recompiles the game's executable once before running it for the first time. By far the fastest option and should always be used. Should you face compatibility issues, fall back to one of the Interpreters and retry.
+Interpreter (static): This is the most accurate option. Interpreter (slow). Try this if PPU Recompiler doesn't work.
+SPU decoder	LLVM Recompiler	LLVM Recompiler: Fastest option with very good compatibility. Recompiles the game's SPU LLVM cache before running which adds extra start-up time. If you experience issues, use the ASMJIT Recompiler.
+ASMJIT Recompiler: Fast option with very good compatibility. If unsure use this option.
+Interpreter (dynamic): May be faster than static interpreter. Try this if SPU Recompiler (LLVM) and ASMJIT doesn't work.
+Interpreter (static): Slowest option. Try this if SPU Recompiler (LLVM), ASMJIT, and Dynamic do not work.
+SPU XFloat Accuracy	Approximate XFloat	Control accuracy to SPU float vectors processing.
+Fixes bugs in various games at the cost of performance.
+This setting is only applied when SPU Decoder is set to Dynamic or LLVM.
+Enable SPU loop detection	Off	Try to detect loop conditions in SPU kernels and use them as scheduling hints.
+Improves performance and reduces CPU usage. May cause severe audio stuttering in rare cases.
+Max Power saving CPU-preemptions	0	Reduces CPU usage and power consumption, on mobile devices improves battery life. (0 means disabled)
+Higher values cause a more pronounced effect, but may cause audio or performance issues. A value of 50 or less is recommended.
+This option forces an FPS limit because it's active when framerate is stable.
+The lighter the game is on the hardware, the more power is saved by it. (Until the preemption count barrier is reached)
+SPU block size	Safe	This option controls the SPU analyser, particularly the size of compiled units.
+Mega and Giga modes may improve performance by tying smaller units together, decreasing the number of compiled units but increasing their size.
+Use the Safe mode for maximum compatibility.
+Preferred SPU threads	Auto	Some SPU stages are sensitive to race conditions and allowing a limited number at a time helps alleviate performance stalls. Setting this to a smaller value might improve performance and reduce stuttering in some games.
+Please note that the best value depends on the individual game and specific CPU being used, so users need to try different values themselves.
+Leave this on Auto if performance is negatively affected when setting a small value.
+Thread Scheduler	Operating System	Control how RPCS3 utilizes the threads of your system.
+Each option heavily depends on the game and on your cpu. It is recommended to try each option to find out which performs the best. Changing the thread scheduler is not supported for CPUs with less than 12 logical threads.
+GPU configuration
+Setting	Default Option	Description
+Renderer	Vulkan	Vulkan is the fastest renderer while OpenGL is the most accurate renderer. If unsure, use Vulkan.
+Should you have any compatibility issues when using Vulkan, fall back to OpenGL.
+Graphics device	NA	On multi GPU systems select which GPU to use in RPCS3 when using Vulkan. This is not needed when using OpenGL.
+Aspect ratio	16:9	Leave this on 16:9 unless you have a 4:3 monitor.
+Framelimit	Auto	Most games have a built in frame limit. By using RPCS3's framelimiter simultaneously with the game one you may only hurt performance. Setting the framelimit to Off is the best option as it performs faster.
+Only use framelimiter if a game runs too fast without it. Some games may crash if the framerate is too high. If that happens, set value to anything other than Off.
+Anisotropic filter	Auto	Modern GPUs can handle this setting fine, even at 16x. Keep this on Auto if you want to use the original settings used by a real PS3. May break some Unreal Engine games if set to anything except auto. Higher values increase sharpness of textures on sloped sufaces at the cost of GPU resources. If unsure give 16x a try.
+Anti-aliasing	Auto	Emulates PS3 multisampling layout.
+Can fix some visual artifacts in some games.
+Low to moderate performance hit depending on your GPU hardware.
+ZCULL accuracy	Precise (slowest)	Changes ZCULL report synchronization behavior. Experiment to find the best option for your game.
+Precise is the most accurate to PS3 behaviour.
+Approximate is a faster way to generate occlusion data which may not always match what the PS3 would generate.
+Relaxed changes the synchronization method completely and can improve performance and break visual effects in some games.
+Shader quality	High	Controls the precision level of generated shaders. Low precision generates much faster code depending on the hardware, but can sometimes generate minor visual glitches or flicker.
+Default resolution	1280x720	In most cases, do not change resolution in settings, leave it at 1280x720. Any other setting may result in compatibility issues and performance decrease.
+If you wish to try setting the resolution higher to 1920x1080, you MUST check the compatible resolutions for the game from the game list to ensure that it can support such a resolution.
+Forcing such resolution on games that do not support it will result in significant issues.
+Using resolutions lower than 1280x720 will not improve performance.
+Resolution scale	100%	Scales the game's resolution by the given percentage of the base resolution set in the above option. Set this value to 100% if you want to use the normal resolution.
+Note that you can use keyboard arrow keys for precise changes on the slide bars.
+Resolution scale threshold	16 x 16	Only framebuffers greater than this size will be upscaled. Increasing this value might fix problems with missing graphics when upscaling, especially when Write Color Buffers is enabled. Do not touch this setting if you are unsure.
+Note that you can use keyboard arrow keys for precise changes on the slide bars.
+FSR	Disabled	AMD FidelityFX Super Resolution upscaling filter. FSR will attempt to handle upscaling with a reduced VRAM usage for games that have high VRAM usage. May cause visual artifacts. Does not currently work with stereo 3D output or OpenGL at the moment. If unsure use Resolution scaler instead.
+Shader mode	Async (multi threaded)	Legacy (single threaded): Disables asynchronous shader compilation. Fixes missing graphics while shaders are compiling but introduces severe stuttering or lag. Use this if you do not want to deal with graphics pop-in, or for testing before filing any bug reports.
+Async (multi threaded): This is the recommended option. If a shader is not found in the cache, nothing will be rendered for this shader until it has compiled. You may experience graphics pop-in.
+Async with shader interpreter: Hybrid rendering mode. If a shader is not found in the cache, the interpreter will be used to render approximated graphics for this shader until it has compiled.
+Shader interpreter only: All rendering is handled by the interpreter with no attempt to compile native shaders. This mode is very slow and experimental.
+Write color buffers	Off	Enable this option if you get missing graphics or broken lighting ingame.
+Might degrade performance and introduce stuttering in some cases.
+Strict rendering mode	Off	Enforces strict compliance to the API specification. Might result in degraded performance in some games. Can resolve rare cases of missing graphics and flickering.
+Overrides settings for Resolution Scale and Resolution Scale Threshold and enforces default values.
+It is meant to disable all the shortcuts in the rendering path, and as such it trades speed and resolution options for the enhanced compatibility.
+VSync	Off	By having this off you might obtain a higher frame rate at the cost of tearing artifacts in the game.
+Stretch to display area	Off	Overrides the aspect ratio and stretches the image to the full display area. Useful for games that have an ultrawide (21:9 or 32:9) patch available.
+Enable 3D	Off	Enables 3D stereo rendering.
+Note that only anaglyph viewing is supported at the moment.
+Multithreaded RSX	Off	Offloads some RSX operations to a secondary thread.
+May improve performance for some high-core processors. May cause slowdown in some situations due to the extra worker thread load.
+Asynchronous texture streaming	Off	Stream textures to GPU in parallel with 3D rendering.
+Can improve performance on more powerful GPUs that have spare headroom.
+Only works with Vulkan renderer.
+Audio configuration
+Setting	Default Option	Description
+Audio output	Cubeb	Cubeb is the recommended option and should be used whenever possible.
+Windows: XAudio2 is the next best alternative.
+Linux: PulseAudio is the next best alternative.
+Audio format	Stereo	Determines the sound format.
+Configure this setting if you want to switch between stereo and surround sound.
+Changing these values requires a restart of the game.
+The manual setting will use your selected formats while the automatic setting will let the game choose from all available formats.
+Convert to 16-bit	Off	Uses 16-bit audio samples instead of default 32-bit floating point. Use with buggy audio drivers if you have no sound or completely broken sound.
+Dump to file	Off	Saves all audio as a raw wave file. If unsure, leave this unchecked.
+Music handler	Qt	Currently only used for cellMusic emulation.
+Select Qt to use the default output device of your operating system.
+This may not be able to play all audio formats.
+Volume	100%	Controls the overall volume of the emulation. Values above 100% might reduce the audio quality.
+Note that you can use keyboard arrow keys for precise changes on the slide bars.
+Enable buffering	On	Enables audio buffering, which reduces crackle and stutter but increases audio latency (requires Cubeb or XAudio2).
+Audio buffer duration	100ms	Target buffer duration in milliseconds. Higher values make the buffering algorithm's job easier, but may introduce noticeable audio latency.
+Note that you can use keyboard arrow keys for precise changes on the slide bars.
+Enable time stretching	Off	Reduces crackle and stutter further, but may cause a very noticeable reduction in audio quality on slower CPUs.
+Requires audio buffering to be enabled.
+Time stretching threshold	75%	Buffer fill level (in percentage) below which time stretching will start.
+Note that you can use keyboard arrow keys for precise changes on the slide bars.
+Microphone type	Null	Standard should be used for most games.
+Singstar emulates a singstar device and should be used with Singstar games.
+Real Singstar should only be used with a REAL Singstar device with Singstar games.
+Rocksmith should be used with a Rocksmith dongle.
+I/O configuration
+Setting	Default Option	Description
+Keyboard handler	Null	Some games support native keyboard input. Basic will work in these cases.
+Mouse handler	Basic	Some games support native mouse input. Basic will work in these cases.
+Move handler	Null	PlayStation Move support is not implemented, leave this on null.
+Fake: Experimental! This maps Move controls to DS4 controller mappings.
+Path handler mode	Single-threaded	Single-threaded: All pad handlers run on the same thread sequentially.
+Multi-threaded: Each pad handler has its own thread.
+Only use multi-threaded if you can spare the extra threads.
+Enable background input	On	Allows pad and keyboard input while the game window is unfocused.
+Show PlayStation Move cursor	Off	Shows the raw position of the PS Move input.
+This can be very helpful during calibration screens.
+Camera input	Unknown	Depending on the game you may need to select a specific camera type.
+Camera handler	Null	select QT to use the default camera device on your Operating System.
+Camera	Default	Select the camera that you want to use during gameplay.
+Camera Flip	No	Flips camera either Veritcally, horizontally, or both.
+Buzz! emulated controller	Null (use real Buzzers)	Select 1 or 2 controllers if the game requires Buzz! controllers and you don't have real controllers.
+Select Null if the game has support for DualShock or if you have real Buzz! controllers.
+DJ Hero Emulated Turntable	Null	Emulates a DJ Hero Turntable. Not needed if you have a real turntable or the game supports DualShock controllers. You can use emulated turntables at the same time as real turntables.
+Guitar Hero Live emulated guitar	Null	Emulates a Guitar Hero Live controller, Not needed if you have a real Guitar Hero Live controller or the game supports DualShock controllers. You can use emulated guitars at the same time as real guitars.
+System configuration
+Setting	Default Option	Description
+Console language	English (US)	Some games may fail to boot if the system language is not available in the game itself. Other games will switch language automatically to what is selected here.
+It is recommended leaving this on a language supported by the game.
+Console region	America	The console region defines the license area of the PS3.
+Depending on the license area, some games may not work.
+Enter button assignment	Enter with cross	The button used for enter/accept/confirm in system dialogs. You can change this to use the circle button instead, which is the default configuration on Japanese systems and in many Japanese games.
+In these cases, having the cross button assigned can often lead to confusion.
+Clear disk cache automatically	Off	Automatically removes older files from disk cache on boot if it grows larger than the specified value. Games can use the cache folder to temporarily store data outside of system memory. It is not used for long-term storage.
+Default wipe size is set to 5120MB.
+Note that you can use keyboard arrow keys for precise changes on the slide bars.
+Keyboard type	English keyboard (US Standard)	Sets the used keyboard layout. Currently only US, Japanese and German layouts are fully supported.
+Console time	Current time	Sets the time to be used within the console. This will be applied as an offset that tracks wall clock time.
+Can be reset to current wallclock time by clicking Set to Now.
+Homebrew: Enable /host_root/	Off	Required for some homebrew applications. If unsure, don't use this option.
+Network configuration
+Setting	Default Option	Description
+Network status	Disconnected	If set to Connected, RPCS3 will allow programs to use our internet connection.
+DNS	8.8.8.8	DNS used to resolve hostname by applications.
+IP/Host switches		DNS Swap List.
+Bind address	0.0.0.0	Interface IP address to bind to.
+PSN Status	Disconnected	If set to Simulated, RPCS3 will fake PSN connection as best as it can. If set to RPCN, RPCS3 will use a Peer to Peer server connection to emulate online gameplay to the best of it's ability.
+Advanced configuration
+Setting	Default Option	Description
+Debug console mode	Off	Increases the amount of usable system memory to match a DECR console and more.
+Causes some software to behave differently than on retail hardware.
+Accurate DFMA	On	Provides extra accuracy on FMA instructions at the cost of performance.
+While disabling it might give a decent performance boost if your CPU doesn't support FMA, it may also introduce subtle bugs that otherwise do not occur.
+You can't disable it if your CPU supports FMA.
+Accurate RSX reservation access	Off	Forces RSX pauses on SPU MFC_GETLLAR and SPU MFC_PUTLLUC operations. Improves stability in some games but reduces performance.
+Accurate SPU DMA	Off	Accurately processes SPU DMA operations.
+Disable SPU GETLLAR Spin Optimization	Off	This can cause severe performance degradation and stuttering in many games. This option is only needed for a select number of games.
+Enable SPU Events Busy Loop	Off	Enable SPU RdEventStat spin. This increases CPU usage, this setting is beneficial for high-threaded CPUs (12+) with select number of games.
+PPU Non-Java mode Fixup	On	Legacy option, Fixup result vector values in Non-Java Mode in PPU LLVM. If unsure, do not modify this setting.
+PPU Vector NaN Fixup	Off	Fixup NaN resultsin vector instructions in PPU Backends. If unsure, do not modify this setting.
+PPU LLVM precompilation	On	Searches the game's directory and precompiles extra PPU modules during boot.
+If disabled, these modules will only be compiled when needed. Depending on the game, this might interrupt the gameplay unexpectedly and possibly frequently.
+Only disable this if you want to get ingame more quickly.
+Number of shader compiler threads	Auto	Number of threads to use for the shader compiler backend.
+Only has an impact when shader mode is set to one of the asynchronous modes.
+Delay each odd MFC command	Off	Forces delaying any odd MFC command, waits for at least 2 pending commands to execute them in a random order.
+Must be used with either SPU interpreters currently.
+Severely degrades performance! If unsure, don't use this option.
+Suspend-emulation savestates mode	On	When this mode is on, emulation exits when saving and the savestate file is concealed after loading it, preventing reuse by RPCS3.
+This mode is like hibernation of emulation: if you don't want to be able to cheat using savestates when playing the game, consider using this mode.
+Do note that the savestate file is not gone completely just ignored by RPCS3, you can manually relaunch it if needed.
+Silence all logs	Off	Stop writing any logs after game startup. Don't use unless you believe it's necessary.
+Sleep timers accuracy	Usleep only	Changes the sleep period accuracy.
+As Host uses default accuracy of the underlying operating system, while All Timers attempts to improve it.
+Usleep Only limits the adjustments to usleep syscall only.
+Can affect perfomance in unexpected ways.
+Maximum number of SPURS threads	Unlimited	Limits the maximum number of SPURS threads in each thread group. May improve performance in some cases, especially on systems with limited number of hardware threads.
+Limiting the number of threads is also likely to cause crashes. It's recommended to keep this at default value.
+Clocks scale	100%	Changes the scale of emulated system time.
+Affects software which uses system time to calculate things such as dynamic timesteps.
+Only available on per-game configurations.
+Read depth buffers	Off	Initializes render target memory using vm memory.
+Write depth buffers	Off	Writes depth buffer values to vm memory.
+Read color buffers	Off	Initializes render target memory using vm memory.
+Disable on-disk shader cache	Off	Disables the loading and saving of shaders from and to the shader cache in the data directory.
+Disable vertex cache	Off	Disables the vertex cache. Might resolve missing or flickering graphics output. May degrade performance.
+Allow host GPU labels (experimental)	Off	Allows the host GPU to synchronize with CELL directly. This incurs a performance penalty, but exposes the true state of GPU objects to the guest CPU. Can help eliminate visual noise and glitching at the cost of performance. Use with caution.
+Vulkan queue scheduler	Safe	Determines how to schedule GPU async compute jobs when using asynchronous streaming.
+Safe mode is spec compliant at the cost of some CPU overhead. This works with all devices.
+Fast mode is faster but violates the Vulkan specification and is hacky. It is disabled on NVIDIA GPUs as it is known to cause GPU hangs.
+RSX FIFO Accuracy	Fast	Fast is the least accurate setting, RSX does not emulate atomic FIFO buffer.
+Atomic benefits stability greatly in many games with little performance penalty.
+Atomic & Ordered is the most accurate option, but it is the slowest and without much stability benefit in games.
+Exclusive fullscreen mode	Automatic (Default)	Controls which fullscreen mode RPCS3 requests from drivers when using Vulkan renderer.
+Automatic will let the driver choose an appropriate mode, while the other options will hint the drivers on whether they should use exclusive or borderless fullscreen.
+Using Prefer borderless fullscreen option can help if you have issues with streaming RPCS3 gameplay or if your system incorrectly enables HDR mode when using fullscreen.
+Driver wake-up delay	1 µs	Try fiddling with this setting when encountering unstable games. The higher value, the better stability it may provide. 200μs and 400μs are good for most games.
+Increments/Decrements for each test should be around 100μs to 200μs until finding the best value for optimal stability.
+Values above this may cause noticeable performance penalties, use with caution.
+Only available on per-game configurations.
+VBlank frequency	60 Hz	Adjusts the frequency of vertical blanking signals that the emulator sends.
+Affects timing of events which rely on these signals.
+Only available on per-game configurations.
+VBlank NTSC Fixup	Off	Multiplies the rate of VBLANK by 1000/1001 for values like 59.94Hz.
+Known to fix the rhythm game Space Channel 5 Part 2.
+Only available on per-game configurations.
+Debug configuration
+Below configurations are primarily used by developers. If unsure, don't use these options.
+
+Setting	Default Option	Description
+RenderDoc compatibility mode	Off	Enables use of classic OpenGL buffers which allows capturing tools to work with RPCS3 e.g RenderDoc.
+Also allows Vulkan to use debug markers for nicer Renderdoc captures.
+If unsure, don't use this option.
+Debug output	Off	Enables the selected API's inbuilt debugging functionality. Will cause severe performance degradation especially with Vulkan.
+Debug overlay	Off	Provides a graphical overlay of various debugging information.
+If unsure, don't use this option.
+Log shader programs	Off	Dump game shaders to file. Only useful to developers.
+If unsure, don't use this option.
+Use high precision Z-buffer	Off	Only useful when debugging differences in GPU hardware.
+Not necessary for average users.
+If unsure, don't use this option.
+Disable ZCull occlusion queries	Off	Disables running occlusion queries. Minor to moderate performance boost.
+Might introduce issues with broken occlusion e.g missing geometry and extreme pop-in.
+Force CPU blit emulation	Off	Forces emulation of all blit and image manipulation operations on the CPU.
+Requires 'Write Color Buffers' option to also be enabled in most cases to avoid missing graphics.
+Significantly degrades performance but is more accurate in some cases. This setting overrides the 'GPU texture scaling' option.
+Disable Vulkan memory allocator	Off	Disables the custom Vulkan memory allocator and reverts to direct calls to VkAllocateMemory/VkFreeMemory.
+Disable FIFO reordering	Off	Disables RSX FIFO optimizations completely. Draws are processed as they are received by the DMA puller.
+Strict texture flushing	Off	Forces texture flushing even in situations where it is not necessary/correct.
+Known to cause visual artifacts, but useful for debugging certain texture cache issues.
+Force GPU texture scaling	Off	Force all texture transfer, scaling and conversion operations on the GPU.
+May cause texture corruption in some cases.
+PPU debug	Off	Creates PPU logs.
+Only useful for developers.
+Never use this.
+SPU debug	Off	Creates SPU logs.
+Only useful for developers.
+Never use this.
+MFC debug	Off	Creates MFC logs.
+Only useful for developers.
+Never use this.
+Set DAZ and FTZ	Off	Sets special MXCSR flags to debug errors in SSE operations.
+Only used in PPU thread when it's not precise.
+Only useful to developers.
+Never use this.
+Accurate PPU Saturation Bit	Off	Accurately set Saturation Bit values in PPU backends. If unsure, do not modify this setting.
+Accurate PPU Non-Java Mode	Off	Respect Non-Java Mode bit values for vector ops in PPU backends. If unsure, do not modify this setting.
+Accurate PPU vector NaN handling	Off	Accurately set NaN results in vector instructions in PPU backends. If unsure, do not modify this setting.
+Accurate PPU Float Condition Control	Off	Accurately set FPCC Bits in PPU backends. If unsure, do not modify this setting.
+Accurate cache line stories	Off	Accurately processes PPU DCBZ instruction.
+In addition, when combined with Accurate SPU DMA, SPU PUT cache line accesses will be processed atomically.
+Hook static functions	Off	Allows to hook some functions like 'memcpy' replacing them with high-level implementations.
+May do nothing or break things. Experimental.
+Enable performance report	Off	Measure certain events and print a chart after the emulator is stopped. Don't enable if not asked to.
+Accurate PPU 128 reservations	Disabled	When enabled, PPU atomic operations will operate on entire cache line data, as opposed to a single 64bit block of memory when disabled.
+Numerical values control whether or not to enable the accurate version based on the atomic operation's length.
+PPU thread count	2	Affects maximum amount of PPU threads running concurrently, the value of 1 has very low compatibility with games.
+2 is the default, if unsure do not modify this setting.
+LOD bias offset	0.00	Changes texture sampling accuracy. Small values have a big effect.
+Avoid using values outside the range of -12 to +12 if you're unsure.
+-3 to +3 is plenty for most usecases
+Disable Asynchronous Memory Manager	Off	Force host memory management calls to be inlined instead of handled asynchronously.
+This can cause severe performance degradation and stuttering in some games.
+This option is only needed by developers to debug problems with texture cache memory protection.
+Last modified
+2 months ago
+Last modified
+This page was last edited on 9 March 2026, at 23:28.
+Copyright
+Content is available under Creative Commons Attribution-ShareAlike 4.0 International License unless otherwise noted.
+RPCS3 Wiki
+RPCS3 Wiki is the official wiki dedicated to RPCS3, the Sony PlayStation 3 emulator. It covers all content relating to RPCS3 including tutorials, guides, patches, best configurations for games, etc. The Wiki aims to be the best repository of up to date information on the emulator.
+
+Privacy policy
+About RPCS3 Wiki
+Disclaimers
+In Emulation We Trust
+Creative Commons Attribution-ShareAlike 4.0 International License
+Powered by MediaWiki

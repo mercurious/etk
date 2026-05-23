@@ -1,25 +1,15 @@
 [
-
   {
     "label": "Audio Renderer Backend",
     "section": "Audio",
     "yaml_key": "  Renderer",
     "type": "enum",
-    "options": ["OpenSL", "Cubeb", "ALSA","FAudio"]
+    "options": ["Cubeb", "ALSA", "FAudio"]
   },
   {
     "label": "Desired Buffer Duration",
     "section": "Audio",
     "yaml_key": "  Desired Audio Buffer Duration",
-    "type": "int",
-    "min": 5,
-    "max": 250,
-    "step": 5
-  },
-  {
-    "label": "Audio Buffer Size (ms)",
-    "section": "Audio",
-    "yaml_key": "  Audio Buffer",
     "type": "int",
     "min": 5,
     "max": 250,
@@ -39,12 +29,12 @@
     "section": "Core",
     "yaml_key": "  PPU Threads",
     "type": "int",
-    "min": 0,
+    "min": 1,
     "max": 5,
     "step": 1
   },
   {
-    "label": "SPU Preferred Threads",
+    "label": "SPU Preferred Threads (0=Auto)",
     "section": "Core",
     "yaml_key": "  Preferred SPU Threads",
     "type": "int",
@@ -58,12 +48,6 @@
     "yaml_key": "  SPU Block Size",
     "type": "enum",
     "options": ["Safe", "Mega", "Giga"]
-  },
-  {
-    "label": "Lower SPU Priority",
-    "section": "Core",
-    "yaml_key": "  Lower SPU Priority",
-    "type": "bool"
   },
   {
     "label": "SPU loop detection",
@@ -91,11 +75,11 @@
     "options": ["50", "66", "75", "100"]
   },
   {
-  	"label": "Frame Limit",
-  	"section": "Video",
-  	"yaml_key": "  Frame Limit",
-  	"type": "enum",
-  	"options": ["Off", "30", "50", "60", "120", "Display (60)", "Auto", "PS3 Native"]
+    "label": "Frame Limit",
+    "section": "Video",
+    "yaml_key": "  Frame limit",
+    "type": "enum",
+    "options": ["Off", "30", "50", "60", "120", "Auto", "PS3 Native"]
   },
   {
     "label": "Antialiasing",
@@ -111,10 +95,10 @@
     "type": "bool"
   },
   {
-  	"label": "Accurate RSX Reservation Access",
-  	"section": "Core",
-  	"yaml_key": "  Accurate RSX reservation access",
-  	"type": "bool"
+    "label": "Accurate RSX Reservation Access",
+    "section": "Core",
+    "yaml_key": "  Accurate RSX reservation access",
+    "type": "bool"
   },
   {
     "label": "Shader Mode",
@@ -124,11 +108,11 @@
     "options": ["Legacy Recompiler (single-threaded)", "Async Recompiler (multi-threaded)", "Async Recompiler with Shader Interpreter", "Shader Interpreter only"]
   },
   {
-    "label": "Resolution Scale Threshold",
+    "label": "Min Scalable Dimension (px)",
     "section": "Video",
-    "yaml_key": "  Resolution Scale Threshold",
+    "yaml_key": "  Minimum Scalable Dimension",
     "type": "enum",
-    "options":["1", "16", "512"]
+    "options": ["16", "512", "1024"]
   },
   {
     "label": "Driver Wake-Up Delay",
