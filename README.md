@@ -1,11 +1,15 @@
 # The Emulation Tuning Kit
-A custom Rocknix middleware rig to enable PS3 Emulation on ARM64 Retrogaming Handhelds by brute-force optimization, thermal and shader protection, shader cache management and advanced in-game telematics. It guards hard-earned shaders from SD card failure, OS flashing, data corruption, device failure, loss or theft. Push your device to its limits while collecting shaders and recover from crashes so the game plays well after several attempts. Specifically designed to make Gran Turismo 5 Prologue playable on a Flip2 Snapdragon, the ETK adopts the racing metaphor throughout but should work for any type of PS3 game. The long term vision is a shader swarm system where the your device automatically seeds and leeches shaders through a tight-knit device-centric P2P network during a battery charge.
+A custom Rocknix middleware rig to enable PS3 Emulation on ARM64 Retrogaming Handhelds by brute-force optimization, shader cache management, advanced in-game telematics, and simple PS3 PKG installation. It guards hard-earned shaders from SD card failure, OS flashing, data corruption, device failure, loss or theft. Push your handheld to its limits while collecting shaders with tools to recover from crashes so the game plays well after several attempts. Specifically designed to make Gran Turismo 5 Prologue playable on a Flip2 Snapdragon, the ETK adopts the racing metaphor throughout but should work for any type of PS3 game. The long term vision is a shader swarm system where the your device automatically seeds and leeches shaders and proven emulation tunings through a tight-knit device-centric P2P network during a battery charge.
 
-# Screenshot
+# Screenshots
 ToDo.
+- Sample GT5P in-game screen with HUD DDU
+- Sample ETK Pitstop app TELEMETRY ledger screen
+- Sample ETK Pitstop app TUNING screen
+- Sample ETK Pitstop app TOOLS PKG installer sequence screenshots
 
 # The Kit Features
-1. Native Rocknix ETK Pitstop App for on-device config editing, per game telemetry analysis, and simple PS3 game installation (drop .pkg and .rap in `roms/etk/pkg_install_drop/`)
+1. Native Rocknix ETK Pitstop App for on-device config editing, per game telemetry analysis over time, and simple PS3 game installation (drop .pkg and .rap in `roms/etk/pkg_install_drop/`)
 1. Customized in-game overlay dashbard with ETK telematics inside native Rocknix MangoHUD
 1. Hardware and driver tunings for maximum performance going beyond config settings
 1. Optimized emulator game configurations tuned to the device hardware
@@ -16,30 +20,34 @@ ToDo.
 1. Multi-Installation Options: FULL installation for initial shader harvesting and tuning, LITE installation for saturated shader sets with thermal protection only, RAW for stress testing without shader and thermal protections (`ETK_BUILD_TYPE` in `scripts/env.sh`)
 
 # ETK Project Structure
-*Needs update for latest `etk_pitstop`*
 - `AI_MANIFEST.md`: System Manual and Immutable Laws of ETK Development for AI
 - `README.md`: You are reading it now.
 - `install.sh`: Flashes the ETK onto your handheld from a computer
 - `uninstall.sh`: Removes the ETK from your handheld from a computer
-- `pit_wall_sync.sh`: Runs locally with Google Drive app to enable Google Drive telemetry with Gemini
 - `/bin`:
+  - `etk_modules_inject.py`: Handles installing native Rocknix PITSTOP app persistently
+  - `etk_pitstop.py`: Handles native Rocknix Tools App TELEMTRY, TUNING, TOOLS
   - `input_d.py`: Handles custom gamepad controls
   - `mango_bridge.sh`: Manages live telemetry and overlay display
   - `recovery.sh`: Headless Nuclear Recovery, invoked on-device by the `R3` panic button
-  - `thermal_d.sh`: Handles system conditions
+  - `session_postmortem.sh`: Handles recording Simple Telemetry to PITSTOP session ledger
+  - `thermal_d.sh`: Handles system conditions and emergency cooldown
   - `vault_d.sh`: Handles archival of compiled shaders
-  - `etk_pitstop.py`: Handles native Rocknix Tools App for editing emulation configs
 - `/config`:
-  - `rsyncd.config`: Handles deployment and backup between handheld and computer
+  - `crash_signatures.json`: Defines crash reporting analytics
+  - `etk_pitsop.sh`: Native Rocknix app launcher gets installed into device
+  - `etk_pitsop.svg`: Native Rocknix app icon gets installed into device
+  - `etk_template.yml`: Default emulator template for game packages installed with TOOLS
   - `MangoHud.config`: Handles custom in-game on-screen overlay
   - `pistop_fields.json`: The subset of RPCS3 config settings for on-device edits
-  - `etk_pitstop.sh`: Rocknix Tools app installed at `/storage/.config/modules/`
-  - `config_NPUA80075.yml`: tuned RPCS3 configuration to GranTurismo 5 Prologue
+  - `rsyncd.config`: Handles deployment and backup between handheld and computer
 - `/scripts`:
-  - `commander.sh`: Pit Wall central unit with remote terminal DDU UI
-  - `env.sh`: Establishes pit and race environment
+  - `career_aggregate.sh`: Handles summarizing session ledger into stats for PITSTOP app
+  - `commander.sh`: Pit Wall DDU UI for the terminal interface
+  - `env.sh`: Establishes pit and race environment variables
   - `probe.sh`: Provides error logs
--  `/vault`: Large archive of Vulkan precompiled shader bins 
+- `/tools`: various utilities used during ETK development
+- `/vault`: Large archive of Vulkan precompiled shader bins organized by chipset and gameID
 
 # ETK System Requirements
 - **System:** Retroid Pocket Flip 2 (SM8250)
@@ -51,11 +59,10 @@ ToDo.
 
 # What is the ETK and How Does it Really Work?
 - **To enhance how the built-in PS3 emulator handles shader caching,** the ETK intercepts the Vulkan shader cache with a simple symlink and safely stores these files into a vault folder on your SD card organized by device and game ID so they can be archived and shared. Even when you crash during a shader harvesting run, the vault has saved the shaders for the next run.
-- **To enhance how the device handles high demand games during the shader compiling process and high performance gaming,** the ETK manages the system temp and performance to safely overtax the device when it needs to work the hardest while preventing a total meltdown. 
+- **To enhance how the device handles high demand games during the shader compiling process and high performance gaming,** the ETK manages the system temp and performance to safely overtax the device when it needs to work the hardest while preventing a total meltdown. It also modifies how the OS manages virtual memory and fine tunes the video driver.
 - **To enhance how you can monitor the device system stress while pushing it to its limits,** the ETK enables a custom dashboard overlay using built-in Rocknix features across a thin horizontal HUD strip designed to evoke the Driver Data Unit (DDU) found in GT and F1 racing cars. The custom HUD DDU also shows the number of shaders harvested during a game session so you realize even if you crash, it was worth it.
 - **To streamline how you can tweak key emulation settings,** the ETK PITSTOP app in the Rocknix Tools menu, inspired by pit wall screens, allows you to easily adjust selected configuration settings using the gamepad controls. The subset of on-board configs can be customized in a JSON file. 
-- **To streamline how you can use AI to tune games or diagnose crashes,** the ETK attempts to use Google Drive and Gemini integration to make chatting about last crash telemetry stored on the device, synchronized with Google Drive, to make settings tweaks easy, accurate, and efficient. Always use @Google Drive to connect your account to a chat session.
-- **To simplify managing game shader vaults and software updates,** the ETK includes a simple command-line utility to install, repair, update, and automatically sync shader vaults as you harvest from games or trade device and game-specific shader folders with others. It also includes a comprensive uninstall utility to retire from the league. A typical game 300+ MB shader vault will involve tens of thousands of binary files so an efficient transfer mechanism to manage shader sets between a computer and the handheld devices is essential.
+- **To simplify managing game shader vaults and software updates,** the ETK includes a simple command-line utility to install, repair, update, and automatically sync shader vaults as you harvest from games or trade device and game-specific shader folders with others. It also includes an uninstall utility to retire from the league. A typical game 300+ MB shader vault will involve tens of thousands of binary files so an efficient transfer mechanism to manage shader sets between a computer and the handheld devices is essential.
 - ETK does all of this while trying to maintain a **minimal system footprint without subjecting your SD card to abuse.**
 
 # Warnings and Recommendations
@@ -97,10 +104,18 @@ ToDo.
 1. Edit `scripts/env.sh` so `RIG_IP` and `RIG_SSH` match your device's IP address found in `Rocknix START button` > `Network Settings` > `IP ADDRESS`
 1. Run `./install.sh` to flash your device with the ETK
 
-## Advanced Feature: The AI Pit Wall (Telemetry Hot Drop)
-The ETK includes a zero-friction diagnostic bridge designed to connect the device's live telemetry and crash logs directly to Google's Gemini AI, completely bypassing the need to manually copy-paste massive log files or open dangerous ports on your home router.
+# How to Install PS3 Games with the ETK
+The ETK solves the problem of installing PS3 Packages on Rocknix which is otherwise a ridiculous process.
+1. Place a single PS3 `.pkg` and `.rap` into `/storage/roms/etk/pkg_install_drop/`
+1. In Rocknick Tools > ETK Pistop > TOOLS > Install a stage PS3 package
+1. Wait for the automated process where ETK will handle RPCS3 installation for you and follow the on screen overlay instructions
+1. Quit ETK Pitstop after installation and Update Gamelists in Rocknix
 
-By leveraging a host computer and Google Drive, you can turn Gemini into your live pit mechanic.
+# How to Use Simple Telemetry
+The ETK Pitstop Rocknix Tools app records your sessions for each game. You must launch a game and quit to switch which app the ETK Pitstop app will display. It records your tuning changes in a session ledger with summary statistics to help you determine which settings have resulted in better play results.
+
+## Advanced Feature: Google Gemini Pit Wall (Telemetry Hot Drop)
+The ETK includes a zero-friction diagnostic bridge designed to connect the device's live telemetry and crash logs directly to Google's Gemini AI, completely bypassing the need to manually copy-paste massive log files or open dangerous ports on your home router. By leveraging a host computer and Google Drive, you can turn Gemini into your live pit mechanic.
 
 **Requirements:**
 - A host computer (Mac/Linux) on the same WiFi network as your handheld rig.
@@ -108,7 +123,7 @@ By leveraging a host computer and Google Drive, you can turn Gemini into your li
 - Gemini Advanced with the Google Workspace extension enabled.
 
 **Setup & Usage:**
-1. Open `pit_wall_sync.sh` on your host computer and ensure the `GDRIVE_PATH` matches your local Google Drive directory (it will create an `ETK_Telemetry` folder inside it).
+1. Open `etk/tools/pit_wall_sync.sh` on your host computer and ensure the `GDRIVE_PATH` matches your local Google Drive directory (it will create an `ETK_Telemetry` folder inside it).
 2. Ensure `RIG_SSH` in the script matches your device's IP address.
 3. Before a heavy harvesting session or testing a new emulator config, run the script on your host computer: `./pit_wall_sync.sh`
 4. Play your game. The script will quietly run in the background, mirroring your rig's RAM disk and crash logs to Google Drive every 5 seconds.
