@@ -97,6 +97,10 @@ export RIG_MANGO_CONF="/storage/.config/MangoHud/MangoHud.conf"
 export PROBE_SCRIPT="$ETK_ROOT/scripts/probe.sh"
 export CRASH_LOG="/storage/etk_crash_report.log"
 export LAST_ANALYSIS="$SHM_DIR/last_analysis.txt"
+# Boot tripwire: anomaly-only sink (modules re-injection, cache symlink
+# events). install.sh truncates on boot; empty file = clean boot.
+# Consumed by tools/vault_doctor.sh §6.
+export TRIPWIRE_LOG="/storage/etk_tripwire.log"
 
 # --- [ RESTORED THERMAL BOUNDARIES ] ---
 # Recalibrating to Rocknix nightly-20260516 changed thermals

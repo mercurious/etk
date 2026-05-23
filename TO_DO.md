@@ -3,20 +3,20 @@
 
 ## BUGS
 - Check spycraft tool, it's still running?
-- ETK still not perfectly classifying CLEAN vs Crash
+
 - New game install, GTA San Andreas and VAULT:ERROR appears on first load, might need to trap a bootstrap condition instead, second launch shows empty vault correctly
-- Default Config is probably not correct starter template
-- ETK still not perfectly loading last launched game
-- Enable MangoHUD without forcing user to use Rocknix advanced game settings > system to enable it, so find the advanced-game-settings config and tweak it, but when?
-- New game onboarding/discovery isn't getting the right settings template, can't be fixed with pitstop; need to setup a default template for all new games or fix my emulator?
-- Add audio codec from emulator menu and reconcile in-game edits with post-pre-game edits.
-after install complete to clear folder for another game)
+
 - Still finding orphan shaders in /vault so can't blame an old ETK script
 
+## Enhancements
 
-## PROPOSALS
+- Add a character highlight in ledger for sessions that resulted in shaders despite a crash to highlight their productivity vs sessions that crash without shaders
 
-- Add TOOLS tab to ETK PITSTOP with a Install (.pkg not .iso) feature that looks inside `/roms/tmp/rpsc3_install/` (only support one game at a time and auto-delete .pkg .rap 
+- Add a second HUD sequence during loading to briefly show instrumentation labels
+1.(30s)  ETK|FULL|NPUA80075|73°C|5.60|34%|34MB 345 0+
+1.(30s)  ETK|TEMP: 75°C|CORES: 6.60|MEM: 45%|SHDRS: 34MB 345 0+
+1.(hide) ETK|78°C|6.70|46%|34MB 345 0+
+
 
 
 ## PROPOSALS IN PROGRESS

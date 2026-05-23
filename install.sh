@@ -258,19 +258,15 @@ cat << 'SENTRY' > "$BOOT_SENTRY"
 
 source /storage/games-internal/roms/etk/scripts/env.sh
 
-# ==========================================================
-# SPYCRAFT: THE FORENSICS PROBE & TRIPWIRE
-# ==========================================================
-SPY_LOG="/storage/etk_spycraft.log"
-echo "=====================================" > "$SPY_LOG"
-echo "[$(date '+%H:%M:%S.%N')] SENTRY WAKING UP..." >> "$SPY_LOG"
+# --- BOOT TRIPWIRE LOG ---
+# Anomaly-only sink: truncated on boot; empty file == clean boot.
+# Writers below append on module re-injection and cache symlink events.
+: > "$TRIPWIRE_LOG"
 
 # Initial Deployment
 mkdir -p /storage/.config/modules/
 cp -f "$ETK_ROOT/config/etk_pitstop.sh" /storage/.config/modules/etk_pitstop.sh
 chmod +x /storage/.config/modules/etk_pitstop.sh
-echo "[$(date '+%H:%M:%S.%N')] TROJAN INJECTED." >> "$SPY_LOG"
-# ==========================================================
 
 # --- REBOOT SURVIVAL: Seed SHM on boot before first loop tick ---
 mkdir -p "$SHM_DIR"
@@ -341,9 +337,9 @@ etk_link_cache() {
             else
                 cp -a "$BK"/. "$DESIRED"/ 2>/dev/null
             fi
-            echo "[$(date '+%H:%M:%S.%N')] CACHE DIR MOVED -> $BK, folded into $DESIRED" >> "$SPY_LOG"
+            echo "[$(date '+%H:%M:%S.%N')] CACHE DIR MOVED -> $BK, folded into $DESIRED" >> "$TRIPWIRE_LOG"
         else
-            echo "[$(date '+%H:%M:%S.%N')] FATAL: cannot move real cache dir $RPCS3_CACHE_DIR" >> "$SPY_LOG"
+            echo "[$(date '+%H:%M:%S.%N')] FATAL: cannot move real cache dir $RPCS3_CACHE_DIR" >> "$TRIPWIRE_LOG"
             return 1
         fi
     fi
@@ -353,7 +349,7 @@ etk_link_cache() {
         rm -f "$RPCS3_CACHE_DIR"
         ln -sf "$DESIRED" "$RPCS3_CACHE_DIR"
         pkill -f vault_d.sh 2>/dev/null
-        echo "[$(date '+%H:%M:%S.%N')] CACHE LINKED -> $DESIRED" >> "$SPY_LOG"
+        echo "[$(date '+%H:%M:%S.%N')] CACHE LINKED -> $DESIRED" >> "$TRIPWIRE_LOG"
     fi
     return 0
 }
@@ -389,8 +385,8 @@ while true; do
        || [ ! -f "/storage/.config/modules/etk_pitstop.svg" ] \
        || [ ! -f "$MODULES_GAMELIST" ] \
        || ! grep -q '>ETK Pitstop<' "$MODULES_GAMELIST" 2>/dev/null; then
-        echo "[$(date '+%H:%M:%S.%N')] modules wiped/stale -- re-injecting ETK Pitstop" >> "$SPY_LOG"
-        python3 "$ETK_ROOT/bin/etk_modules_inject.py" >> "$SPY_LOG" 2>&1
+        echo "[$(date '+%H:%M:%S.%N')] modules wiped/stale -- re-injecting ETK Pitstop" >> "$TRIPWIRE_LOG"
+        python3 "$ETK_ROOT/bin/etk_modules_inject.py" >> "$TRIPWIRE_LOG" 2>&1
     fi
 
     # --- INSTALL LOCK (dossier §4) ---

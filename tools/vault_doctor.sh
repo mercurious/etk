@@ -107,8 +107,8 @@ elif [ -z "$LK" ]; then
 else
   echo "  symlink -> $LK (TARGET_ID idle; pinned to last game, normal)"
 fi
-tail -n 6 /storage/etk_spycraft.log 2>/dev/null
-grep -qE 'CACHE LINKED|CACHE DIR MOVED' /storage/etk_spycraft.log 2>/dev/null \
+tail -n 6 "$TRIPWIRE_LOG" 2>/dev/null
+grep -qE 'CACHE LINKED|CACHE DIR MOVED' "$TRIPWIRE_LOG" 2>/dev/null \
   && echo "  (sentry logged the link this boot)" \
   || echo "  (no CACHE log this boot: old sentry or log rotated — not a fault if link is correct above)"
 
