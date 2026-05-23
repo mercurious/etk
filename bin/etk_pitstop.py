@@ -1230,6 +1230,10 @@ def draw_telemetry(stdscr, state):
 # rightmost slot since it is all-zero on a saturated vault.
 _TEL_W_TIME = 6
 _TEL_W_MARK = 3
+# 15 chars: fits "RECOVERY:Adreno", "RECOVERY:VkLost", "RECOVERY:Silent".
+# Per user feedback 2026-05-23 the R3 origin is NOT shown in STATUS
+# (it's in crash_sig) — limited column width is reserved for the
+# crash-signature label, which is what drives TUNING decisions.
 _TEL_W_STATUS = 15
 _TEL_W_DUR = 6
 _TEL_W_RAM = 5

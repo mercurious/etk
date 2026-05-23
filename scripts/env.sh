@@ -13,9 +13,12 @@
 # LITE for thermal protection only
 # RAW for system optimizations and custom HUD only
 export ETK_BUILD_TYPE="FULL"
-export RIG_IP="192.168.1.53"
-export RIG_SSH="root@192.168.1.53"
-
+# City WiFi
+# export RIG_IP="192.168.1.53"
+# export RIG_SSH="root@192.168.1.53"
+# Country WiFi
+export RIG_IP="10.0.0.40"
+export RIG_SSH="root@10.0.0.40"
 
 # --- [ SHM & STATE ] ---
 export SHM_DIR="/dev/shm/etk_shm"

@@ -47,6 +47,50 @@
     ]
   },
   {
+    "id": "VK_DEVICE_LOST",
+    "label": "VkLost",
+    "patterns": [
+      "^F .*VK_ERROR_DEVICE_LOST"
+    ],
+    "severity": "high",
+    "summary": "Vulkan device lost - GPU stopped responding",
+    "explanation": "RPCS3 reported VK_ERROR_DEVICE_LOST as a fatal. Usually the userspace twin of an Adreno fence timeout, but also fires for Vulkan validation crashes and driver bugs. Pattern matches only the fatal F-line so non-terminal device-lost reports don't promote a still-running session.",
+    "suggested_changes": [
+      {"yaml_key": "  Driver Wake-Up Delay", "new_value": "50"}
+    ]
+  },
+  {
+    "id": "VK_SWAPCHAIN_DEATH",
+    "label": "VkSwap",
+    "patterns": [
+      "VkPresent returned unexpected error code -4"
+    ],
+    "severity": "medium",
+    "summary": "Vulkan swapchain died mid-present",
+    "explanation": "vkQueuePresentKHR returned -4 (VK_ERROR_DEVICE_LOST). RPCS3 tries to recreate the swapchain - if that fails the session dies. Often correlates with GPU fence pressure.",
+    "suggested_changes": []
+  },
+  {
+    "id": "PPU_LIVELOCK",
+    "label": "PPU",
+    "patterns": [
+      "_sys_lwmutex_lock.*failed.*CELL_ESRCH"
+    ],
+    "severity": "low",
+    "summary": "PPU livelock - lwmutex acquire spamming CELL_ESRCH",
+    "explanation": "Light-weight mutex acquisition spammed CELL_ESRCH (Invalid ID). A single hit is normal at startup; postmortem requires >=10 occurrences in the windowed RPCS3.log tail before treating as a signature, to stay above baseline noise.",
+    "suggested_changes": []
+  },
+  {
+    "id": "R3_PANIC",
+    "label": "Silent",
+    "patterns": [],
+    "severity": "high",
+    "summary": "User invoked R3 nuclear recovery",
+    "explanation": "Operator pressed R3 (BTN_THUMBR) to fire bin/recovery.sh. The sentinel at $SHM_DIR/r3_pressed.txt is the source of truth; pattern-matching does not apply. R3 origin is recorded in crash_sig as R3_PANIC; STATUS column shows RECOVERY:<sig_label> when a signature also fired, or RECOVERY:Silent when no signature matched (user-initiated recovery with no detected cause).",
+    "suggested_changes": []
+  },
+  {
     "id": "THERMAL_INFERRED",
     "label": "Thermal",
     "patterns": [],

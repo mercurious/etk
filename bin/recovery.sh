@@ -29,15 +29,24 @@ pkill -9 -f "mango_bridge.sh" 2>/dev/null
 pkill -9 -f "vault_d.sh" 2>/dev/null
 pkill -9 -f "thermal_d.sh" 2>/dev/null
 
+# R3 audit sentinel — written BEFORE the flush so the preserve-list keeps
+# it for session_postmortem.sh on the next Sentry tick. Without this, an
+# R3 panic on a session that didn't fire any kernel-side crash signature
+# misclassifies as CLEAN (or ABORTED if <60s) — see ledger rows where the
+# user pressed R3 but the row reads CLEAN. The mtime acts as a freshness
+# check: postmortem ignores a sentinel that predates session_start.
+mkdir -p "$SHM_DIR" 2>/dev/null
+date +%s > "$SHM_DIR/r3_pressed.txt"
+
 # Flush stale IPC state, but PRESERVE the post-mortem seed files.
 # The Sentry observes RUNNING->IDLE on its next tick (rule 3 handoff)
-# and fires session_postmortem.sh — which needs these four files to
-# attribute DUR / DRAIN / SHD to the crash you just recovered from.
-# They are overwritten cleanly on the next ignition, so nothing stale
-# leaks forward. BusyBox-safe: for/case/${##} are all POSIX.
+# and fires session_postmortem.sh — which needs these five files to
+# attribute DUR / DRAIN / SHD and R3-origin to the crash you just
+# recovered from. They are overwritten cleanly on the next ignition, so
+# nothing stale leaks forward. BusyBox-safe: for/case/${##} are all POSIX.
 for f in "$SHM_DIR"/*; do
     case "${f##*/}" in
-        session_start.txt|battery_start.txt|thermal_log_start.txt|vault_new.txt) ;;
+        session_start.txt|battery_start.txt|thermal_log_start.txt|vault_new.txt|r3_pressed.txt) ;;
         *) rm -f "$f" ;;
     esac
 done

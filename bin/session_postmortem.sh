@@ -138,18 +138,117 @@ DMESG_OUT=$(dmesg 2>/dev/null | awk -v t="$DMESG_WINDOW_START" '
 RPCS3_TAIL=$(strings "$RPCS3_LOG" 2>/dev/null | tail -n 200)
 HAYSTACK=$(printf '%s\n%s\n' "$DMESG_OUT" "$RPCS3_TAIL")
 
+# --- SEVERITY-RANKED SIGNATURE SCAN ---
+# Highest-severity hit becomes STATUS; ALL hits are concatenated into
+# CRASH_SIG so a session that fires SPU + Adreno + Vulkan-device-lost is
+# diagnosable from the ledger even though the STATUS column shows only
+# the dominant label. Severity tiers (mirrored from
+# crash_signatures.json, which is the spec): critical=4, high=3,
+# medium=2, low=1.
+#
+# Discovery (2026-05-23 rig probe): the live RPCS3.log carried 4
+# "Predecessor not found for target" SPU hits AND 1 VK_ERROR_DEVICE_LOST
+# fatal AND no Adreno line in the current dmesg ring — yet 138 historical
+# RECOVERY rows are ALL "RECOVERY:Adreno". First-match-wins ordering on
+# Adreno was masking SPU; VK_ERROR_DEVICE_LOST wasn't a signature at all.
+WINNING_SEV=0
+WINNING_LABEL=""
+WINNING_SIG=""
+SIG_LIST=""
+
+sig_record() {
+    # $1=severity $2=label $3=sig_id — accumulates hit into composite
+    # list and promotes WINNING_* when severity beats the current top.
+    if [ -z "$SIG_LIST" ]; then
+        SIG_LIST="$3"
+    else
+        SIG_LIST="$SIG_LIST,$3"
+    fi
+    if [ "$1" -gt "$WINNING_SEV" ]; then
+        WINNING_SEV="$1"
+        WINNING_LABEL="$2"
+        WINNING_SIG="$3"
+    fi
+}
+
 if [ "$STATUS" = "CLEAN" ]; then
+    # critical (4)
+    if echo "$HAYSTACK" | grep -qE 'out of memory|oom-killer|Killed process.*rpcs3'; then
+        sig_record 4 "OOM" "OOM_KILL"
+    fi
+    # high (3) — kernel-side GPU fault
     if echo "$HAYSTACK" | grep -qE 'a6xx_irq.*gpu fault|msm_dpu.*hangcheck recover|drm:recover_worker.*offending task.*rpcs3'; then
-        STATUS="RECOVERY:Adreno"
-        CRASH_SIG="GPU_FENCE_TIMEOUT"
-    elif echo "$HAYSTACK" | grep -qE 'out of memory|oom-killer|Killed process.*rpcs3'; then
-        STATUS="RECOVERY:OOM"
-        CRASH_SIG="OOM_KILL"
-    elif echo "$HAYSTACK" | grep -qE 'SPU.*decoder|spu_recompiler.*fail|Predecessor not found for target'; then
-        STATUS="RECOVERY:SPU"
-        CRASH_SIG="SPU_RECOMPILER_FAULT"
+        sig_record 3 "Adreno" "GPU_FENCE_TIMEOUT"
+    fi
+    # high (3) — userspace twin of an Adreno fence timeout (and also fires
+    # for non-Adreno Vulkan deaths: validation crashes, driver bugs). Scope
+    # to fatal lines (F prefix) so non-terminal device-lost reports don't
+    # promote a still-running session.
+    if echo "$RPCS3_TAIL" | grep -qE '^F .*VK_ERROR_DEVICE_LOST'; then
+        sig_record 3 "VkLost" "VK_DEVICE_LOST"
+    fi
+    # medium (2)
+    if echo "$RPCS3_TAIL" | grep -qE 'VkPresent returned unexpected error code -4'; then
+        sig_record 2 "VkSwap" "VK_SWAPCHAIN_DEATH"
+    fi
+    if echo "$HAYSTACK" | grep -qE 'SPU.*decoder|spu_recompiler.*fail|Predecessor not found for target'; then
+        sig_record 2 "SPU" "SPU_RECOMPILER_FAULT"
+    fi
+    # low (1) — PPU livelock indicator. A single CELL_ESRCH lwmutex failure
+    # is normal at startup; only treat as signature when it spams the log
+    # (>=10 hits in the windowed tail), which historically correlates with
+    # a genuine PPU deadlock. Threshold tuned to RPCS3.log baseline noise.
+    PPU_HITS=$(echo "$RPCS3_TAIL" | grep -cE "_sys_lwmutex_lock.*failed.*CELL_ESRCH")
+    case "$PPU_HITS" in ''|*[!0-9]*) PPU_HITS=0 ;; esac
+    if [ "$PPU_HITS" -ge 10 ]; then
+        sig_record 1 "PPU" "PPU_LIVELOCK"
+    fi
+
+    if [ -n "$WINNING_LABEL" ]; then
+        STATUS="RECOVERY:$WINNING_LABEL"
+        CRASH_SIG="$SIG_LIST"
     fi
 fi
+
+# --- R3 PANIC SENTINEL ---
+# recovery.sh drops $SHM_DIR/r3_pressed.txt before the SHM flush. Honor it
+# only when fresher than the session start (otherwise it's a stale
+# sentinel from a prior R3 that fell through without rpcs3 actually
+# dying). Composite with any signature the scan above found —
+# RECOVERY:R3, RECOVERY:R3+Adreno, RECOVERY:R3+SPU, etc. — so the user
+# always sees R3 attribution AND the diagnostic signal. PANIC (kernel
+# reboot) outranks R3: a hard hang the user couldn't recover from is
+# more useful than the attempted recovery flag.
+R3_SENTINEL="$SHM_DIR/r3_pressed.txt"
+R3_HONORED=0
+if [ -f "$R3_SENTINEL" ] && [ "$STATUS" != "PANIC" ]; then
+    R3_MTIME=$(stat -c %Y "$R3_SENTINEL" 2>/dev/null)
+    case "$R3_MTIME" in ''|*[!0-9]*) R3_MTIME=0 ;; esac
+    # Honor when (a) we have no reliable anchor (treat any sentinel as
+    # fresh) or (b) sentinel mtime is at-or-after session start.
+    if [ "$ANCHOR_RELIABLE" -eq 0 ] || [ "$R3_MTIME" -ge "$START_EPOCH" ]; then
+        R3_HONORED=1
+        # User feedback 2026-05-23: don't put R3 in the visible STATUS —
+        # "RECOVERY" + "R3" is redundant in the row label, and the
+        # limited column width should be spent on crash-signature detail
+        # that drives TUNING edits. The R3 origin is recorded in
+        # CRASH_SIG (R3_PANIC,<sig_id>...) so the distinction survives
+        # for logic + forensics without occupying the visible column.
+        if [ "$STATUS" = "CLEAN" ]; then
+            # R3 fired but the scan was silent — that absence IS the
+            # diagnostic ("operator had to nuke without us seeing why").
+            STATUS="RECOVERY:Silent"
+            [ -z "$CRASH_SIG" ] && CRASH_SIG="R3_PANIC"
+        else
+            # STATUS already RECOVERY:<sig_label> — keep it as-is so the
+            # TUNING-relevant signature stays front-and-center.
+            CRASH_SIG="R3_PANIC,$CRASH_SIG"
+        fi
+    fi
+fi
+# Always consume the sentinel — fresh or stale, leaving it would
+# poison the next session's classification.
+rm -f "$R3_SENTINEL" 2>/dev/null
 
 # --- METRICS ---
 

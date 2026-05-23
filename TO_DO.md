@@ -3,6 +3,8 @@
 
 ## BUGS
 - ETK still not perfectly classifying CLEAN vs Crash
+- New game install, GTA San Andreas and VAULT:ERROR appears on first load, might need to trap a bootstrap condition instead, second launch shows empty vault correctly
+- Default Config is probably not correct starter template
 - ETK still not perfectly loading last launched game
 - Enable MangoHUD without forcing user to use Rocknix advanced game settings > system to enable it, so find the advanced-game-settings config and tweak it, but when?
 - New game onboarding/discovery isn't getting the right settings template, can't be fixed with pitstop; need to setup a default template for all new games or fix my emulator?
