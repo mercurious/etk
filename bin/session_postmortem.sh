@@ -401,4 +401,12 @@ printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
 [ -x "$ETK_ROOT/scripts/career_aggregate.sh" ] && \
     "$ETK_ROOT/scripts/career_aggregate.sh" "$GAME_ID" >/dev/null 2>&1
 
+# --- BREADCRUMB CONSUME ---
+# A clean RUNNING->IDLE transition wrote a real ledger row; the
+# persistent anchor's only purpose was to survive a panic, so retire it
+# now. Leaving it would cause the Sentry's next-boot orphan-detect to
+# synthesize a duplicate PANIC row for a session we just rolled up
+# normally.
+rm -f "$SESSION_ANCHOR" 2>/dev/null
+
 exit 0

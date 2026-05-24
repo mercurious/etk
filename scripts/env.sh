@@ -142,6 +142,13 @@ export CAREER_DIR="$TELEMETRY_DIR/career"
 export PIT_NOTE_FILE="$TELEMETRY_DIR/pit_note.txt"
 export SIGNATURES_FILE="$ETK_ROOT/config/crash_signatures.json"
 
+# Persistent session breadcrumb. Written at IDLE->RUNNING ignition, removed
+# by session_postmortem.sh on a clean RUNNING->IDLE transition. If it
+# survives a reboot, the previous session never reached postmortem (kernel
+# panic / hard hang) and the Sentry synthesizes an orphan PANIC row on
+# boot. Lives in $TELEMETRY_DIR (persistent) NOT $SHM_DIR (boot-volatile).
+export SESSION_ANCHOR="$TELEMETRY_DIR/session_anchor.txt"
+
 # Minimum session length (seconds) to count as a real attempt. Sessions
 # shorter than this are force-quit/fat-finger aborts: career_aggregate.sh
 # excludes them and session_postmortem.sh reclassifies a sub-threshold

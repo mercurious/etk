@@ -370,6 +370,100 @@ case "$SEED_ID" in
 esac
 etk_link_cache "$ETK_ROOT/vault/$CHIPSET/$SEED_ID/shaders"
 
+# ==========================================================
+# ORPHAN PANIC RECOVERY
+# ----------------------------------------------------------
+# session_postmortem.sh only runs on a RUNNING->IDLE edge. A kernel panic
+# / hard hang takes the rig down BEFORE that edge fires, so the
+# panic-ending session never gets a ledger row -- the existing
+# in-postmortem PANIC detector (BOOT_EPOCH > START_EPOCH) is unreachable
+# in that path because nothing schedules a postmortem after a reboot.
+#
+# The persistent $SESSION_ANCHOR breadcrumb closes the gap: ignition
+# writes it, postmortem deletes it. If we find it at Sentry boot AND the
+# rig has rebooted since it was written AND no rpcs3 is running now,
+# that's an orphan -- the previous session paniced. Synthesize one PANIC
+# row from what survived (breadcrumb epoch, RPCS3.log mtime as
+# last-alive proxy, RAM peak still parseable until RPCS3 next launches),
+# then consume the breadcrumb so the next clean session starts fresh.
+# ==========================================================
+if [ -f "$SESSION_ANCHOR" ]; then
+    BC_LINE=$(cat "$SESSION_ANCHOR" 2>/dev/null)
+    BC_EPOCH=$(printf '%s\n' "$BC_LINE" | cut -f1)
+    BC_GAME=$(printf '%s\n' "$BC_LINE" | cut -f2)
+    BC_BUILD=$(printf '%s\n' "$BC_LINE" | cut -f3)
+    case "$BC_EPOCH" in ''|*[!0-9]*) BC_EPOCH=0 ;; esac
+    [ -z "$BC_GAME" ]  && BC_GAME="UNKNOWN"
+    [ -z "$BC_BUILD" ] && BC_BUILD="$ETK_BUILD_TYPE"
+
+    NOW=$(date +%s)
+    UPTIME_SEC=$(awk '{print int($1)}' /proc/uptime 2>/dev/null)
+    case "$UPTIME_SEC" in ''|*[!0-9]*) UPTIME_SEC=0 ;; esac
+    BOOT_EPOCH=$((NOW - UPTIME_SEC))
+
+    # Synthesize ONLY when: breadcrumb has a real epoch, rig has rebooted
+    # since it was written, and no rpcs3 is currently running (a Sentry
+    # restart with rpcs3 still alive is not a panic -- let the normal
+    # state machine resume).
+    if [ "$BC_EPOCH" -gt 0 ] \
+       && [ "$BOOT_EPOCH" -gt "$BC_EPOCH" ] \
+       && ! pgrep -f "rpcs3|AppRun.wrapped" >/dev/null; then
+
+        # Last-alive proxy: RPCS3 writes its log continuously, so its
+        # mtime tracks the last moment the process was responsive. RPCS3
+        # truncates this log on next launch, so until then the file is
+        # still the panicked session's. If mtime is unavailable or
+        # absurd, fall back to 0 duration -- an honest unknown.
+        LAST_ALIVE=0
+        if [ -f "$RPCS3_LOG" ]; then
+            LAST_ALIVE=$(stat -c %Y "$RPCS3_LOG" 2>/dev/null)
+            case "$LAST_ALIVE" in ''|*[!0-9]*) LAST_ALIVE=0 ;; esac
+        fi
+        if [ "$LAST_ALIVE" -gt "$BC_EPOCH" ] && [ "$LAST_ALIVE" -lt "$BOOT_EPOCH" ]; then
+            ORPHAN_DURATION=$((LAST_ALIVE - BC_EPOCH))
+            ROW_EPOCH=$LAST_ALIVE
+        else
+            ORPHAN_DURATION=0
+            ROW_EPOCH=$NOW
+        fi
+
+        # Peak RAM is the only metric still parseable post-reboot --
+        # RPCS3.log persists until next launch, telemetry/SHM seeds are
+        # gone. Mirror the postmortem's PERF parser exactly.
+        ORPHAN_PEAK_RAM=0
+        if [ -f "$RPCS3_LOG" ]; then
+            ORPHAN_PEAK_RAM=$(strings "$RPCS3_LOG" 2>/dev/null \
+                | grep -oE '\(Peak: [0-9]+MB\)' \
+                | grep -oE '[0-9]+' \
+                | awk 'BEGIN{m=0} {if ($1+0 > m) m=$1+0} END{print int(m+0)}')
+            case "$ORPHAN_PEAK_RAM" in ''|*[!0-9]*) ORPHAN_PEAK_RAM=0 ;; esac
+        fi
+
+        # Header write is idempotent -- mirrors postmortem's tmp+mv idiom
+        # so a first-ever orphan synthesis still gets the schema right.
+        mkdir -p "$TELEMETRY_DIR"
+        if [ ! -f "$SESSIONS_LEDGER" ]; then
+            TMP="$SESSIONS_LEDGER.tmp"
+            printf 'epoch\tduration_s\tbuild\tgame_id\tstatus\tpeak_load\tpeak_ram_mb\tpeak_temp\tavg_temp\tcrash_sig\tfence_at_crash\tshaders_harvested\tdrain_pct\tthermal_overrides\n' > "$TMP"
+            mv "$TMP" "$SESSIONS_LEDGER"
+        fi
+
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+            "$ROW_EPOCH" "$ORPHAN_DURATION" "$BC_BUILD" "$BC_GAME" "PANIC" \
+            "0.0" "$ORPHAN_PEAK_RAM" "0" "0" \
+            "PANIC_REBOOT" "0" "0" "0" "0" \
+            >> "$SESSIONS_LEDGER"
+
+        [ -x "$ETK_ROOT/scripts/career_aggregate.sh" ] && \
+            "$ETK_ROOT/scripts/career_aggregate.sh" "$BC_GAME" >/dev/null 2>&1
+    fi
+
+    # Always consume -- a stale breadcrumb from a Sentry restart without
+    # reboot, or a breadcrumb whose synthesis was skipped, must not
+    # poison the next legitimate session.
+    rm -f "$SESSION_ANCHOR"
+fi
+
 PREV_STATE="IDLE"
 
 while true; do
@@ -456,6 +550,19 @@ while true; do
         date +%s > "$SHM_DIR/session_start.txt"
         cat /sys/class/power_supply/*/capacity 2>/dev/null | head -1 > "$SHM_DIR/battery_start.txt"
         wc -l < "$ETK_ROOT/telemetry.log" 2>/dev/null > "$SHM_DIR/thermal_log_start.txt" || echo 0 > "$SHM_DIR/thermal_log_start.txt"
+
+        # --- PERSISTENT BREADCRUMB ---
+        # Twin of session_start.txt that lives in $TELEMETRY_DIR (persistent),
+        # not SHM (boot-volatile). If a kernel panic / hard hang takes the rig
+        # down before postmortem fires, this file survives the reboot and the
+        # Sentry's boot-time orphan-detect (above the main loop) reconstructs
+        # the lost session as a PANIC row. Cleaned up by session_postmortem.sh
+        # at the end of a normal RUNNING->IDLE rollup. `sync` is one fsync per
+        # ignition — cheap insurance that the breadcrumb is on disk before the
+        # session starts burning silicon.
+        mkdir -p "$TELEMETRY_DIR"
+        printf '%s\t%s\t%s\n' "$(date +%s)" "${ID_STR:-UNKNOWN}" "$ETK_BUILD_TYPE" > "$SESSION_ANCHOR"
+        sync
     fi
 
     # --- RUNNING: Continuous ID refresh and persistent anchor write ---

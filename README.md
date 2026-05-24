@@ -1,9 +1,10 @@
 # The Emulation Tuning Kit
-A custom Rocknix middleware rig to enable PS3 Emulation on ARM64 Retrogaming Handhelds by brute-force optimization, shader cache management, advanced in-game telematics, and simple PS3 PKG installation. It guards hard-earned shaders from SD card failure, OS flashing, data corruption, device failure, loss or theft. Push your handheld to its limits while collecting shaders with tools to recover from crashes so the game plays well after several attempts. Specifically designed to make Gran Turismo 5 Prologue playable on a Flip2 Snapdragon, the ETK adopts the racing metaphor throughout but should work for any type of PS3 game. The long term vision is a shader swarm system where the your device automatically seeds and leeches shaders and proven emulation tunings through a tight-knit device-centric P2P network during a battery charge.
+ETK is a custom Rocknix middleware rig to enable PS3 Emulation on ARM64 Retrogaming Handhelds by brute-force optimization, shader cache management, advanced in-game telematics, and simple PS3 PKG installation. It guards hard-earned shaders from SD card failure, OS flashing, data corruption, device failure, loss or theft. Push your handheld to its limits while collecting shaders with tools to recover from crashes so the game plays well after several attempts. Specifically designed to make Gran Turismo 5 Prologue playable on a Flip2 Snapdragon, the ETK adopts the racing metaphor throughout but should work for any type of PS3 game. The long term vision is a shader swarm system where the your device automatically seeds and leeches shaders and proven emulation tunings through a tight-knit device-centric P2P network during a battery charge.
 
 # Screenshots
 ToDo.
-- Sample GT5P in-game screen with HUD DDU
+- Sample GT5P in-game screen with HUD DDU with shader harvesting.
+- Sample GT5P Class-C Trophy Screen as proof ETK enables game progression.
 - Sample ETK Pitstop app TELEMETRY ledger screen
 - Sample ETK Pitstop app TUNING screen
 - Sample ETK Pitstop app TOOLS PKG installer sequence screenshots
@@ -51,9 +52,9 @@ ToDo.
 
 # ETK System Requirements
 - **System:** Retroid Pocket Flip 2 (SM8250)
-- **OS:** ROCKNIX (Nightly Build: 20260518)
+- **OS:** ROCKNIX (Nightly Build: 20260517)
 - **Driver** MESA Turnip 26.1.0
-- **Target:** Gran Turismo series HD (stable/playable), Prologue (stable/playable), 5 (menus only), 6 (menus only) (RPCS3)
+- **Target/Status:** Gran Turismo series: HD (playable/race audio), Prologue (playable/menu audio), 5 (menus only), 6 (menus only) (RPCS3)
 - **Shell:** BusyBox v1.36.1
 - **Custom Overlay:** MangoHUD
 
