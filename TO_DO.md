@@ -8,6 +8,8 @@
 
 - Still finding orphan shaders in /vault so can't blame an old ETK script
 
+- **MangoHUD native BATT broken on Rocknix nightly-20260520:** reads ~50% high vs Rocknix front-end, plugged-in/charging icon stale and doesn't update accurately. Workaround applied locally (hidden BATT, swapped in GPU + frametime graph). Investigate whether MangoHUD package itself needs bumping, our `config/MangoHud.conf` syntax needs updating, or Rocknix changed the power-supply sysfs paths. Hold the GPU/frametime swap as a separate eval — they may be keepers for the HUD DDU even after BATT is fixed. (See `RocknixNightlyMigrationCloseout.md` §4.2.)
+
 ## Enhancements
 
 - Add a character highlight in ledger for sessions that resulted in shaders despite a crash to highlight their productivity vs sessions that crash without shaders
@@ -18,6 +20,12 @@
 1.(hide) ETK|78°C|6.70|46%|34MB 345 0+
 
 
+
+## PINNED FOR NEXT SESSION (POST-MIGRATION)
+
+- **`install.sh` Tier-B backup upgrade.** Implement `ADDENDUM_install_sh_tiered_backup.md` end-to-end. Decisions already locked: workstream order (validate against live rig first), `./state/` host dir + gitignore + §F privacy lock, stale `--update` rsync comments cleaned up in the same diff, parent dossier §13 softened to point at `--restore-state`. Estimated 30-45 min focused work.
+
+- **GT5P shader harvest protocol write-up.** The operator's systematic sequence — track time trials → pit-crew animations → another level for camera pans → dealership for all cars → back to tracks for single-race camera pans — should be documented as a first-class harvest playbook. Captures the "productive crashing" UX argument and gives future operators (and AI) a reproducible procedure for stress-testing the rig. Candidate location: `dossiers/Gt5pHarvestProtocol.md`.
 
 ## PROPOSALS IN PROGRESS
 

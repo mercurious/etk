@@ -22,23 +22,50 @@ CMD_QUEUE = os.environ.get('CMD_QUEUE', '/dev/shm/etk_shm/etk_cmd_queue')
 RECOVERY  = os.environ.get('ETK_RECOVERY',
                            '/storage/games-internal/roms/etk/bin/recovery.sh')
 
+# Pad-model-agnostic substrings. Rocknix has flipped the InputPlumber
+# virtual target between models across nightlies (Xbox -> DS5 in 20260520);
+# matching any known virtual-pad signature means a future target swap won't
+# strand the R3 panic button on the event9 fallback. Keep in sync with the
+# PAD_HINTS / PAD_EXCLUDE lists in bin/etk_pitstop.py.
+PAD_HINTS = ("xbox", "dualsense", "dual sense", "playstation",
+             "sony", "ds5", "wireless controller", "inputplumber")
+# DS5 presents as a cluster of sibling nodes (Touchpad, Motion Sensors,
+# Headset Jack, Battery) sharing the "... Wireless Controller" parent name.
+# PAD_EXCLUDE filters those out so we land on the buttons device.
+# "keyboard" excludes the separate "InputPlumber Keyboard" node.
+PAD_EXCLUDE = ("touchpad", "motion sensor", "headset", "battery", "keyboard")
+
+
+def _event_num(entry):
+    """Sort key: numeric suffix of 'eventN' (lexical sort puts event10
+    before event2 / event8, which landed us on the DS5 Touchpad node)."""
+    try:
+        return int(entry[len('event'):])
+    except (ValueError, TypeError):
+        return 1 << 30
+
+
 def find_gamepad():
-    """Hunts strictly for the InputPlumber Virtual Controller."""
+    """Locate the InputPlumber virtual controller, pad-model-agnostic.
+    Logs the chosen device + name so a silent wrong-node fallback is one
+    grep away from diagnosis."""
     input_dir = '/sys/class/input/'
     try:
-        for entry in os.listdir(input_dir):
+        for entry in sorted(os.listdir(input_dir), key=_event_num):
             if entry.startswith('event'):
                 name_path = os.path.join(input_dir, entry, 'device/name')
                 if os.path.exists(name_path):
                     with open(name_path, 'r') as f:
-                        name = f.read().strip().lower()
-                        # Lock onto the Virtual Xbox Controller
-                        if "xbox" in name:
-                            return f"/dev/input/{entry}"
-    except Exception as e:
+                        name = f.read().strip()
+                    nl = name.lower()
+                    if any(h in nl for h in PAD_HINTS) and \
+                       not any(x in nl for x in PAD_EXCLUDE):
+                        print(f"[*] ETK SHIFTER: matched /dev/input/{entry} name='{name}'", flush=True)
+                        return f"/dev/input/{entry}"
+    except Exception:
         pass
-    
-    # Fallback to the known Virtual node
+
+    print("[!] ETK SHIFTER: no PAD_HINTS match, falling back to /dev/input/event9", flush=True)
     return '/dev/input/event9'
 
 # Event format: Long, Long, Short, Short, Int

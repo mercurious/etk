@@ -150,12 +150,11 @@ PAIR_CONFIG = 5    # cyan dim — config-change events in the ledger
 
 
 # === GAMEPAD CODES (H1) ===
-# All gamepad-related codes live in this single block so the upcoming
-# PS-pad Rocknix nightly migration (Xbox -> PlayStation virtual gamepad
-# via InputPlumber) is a one-place edit. Mirror any changes here into
+# All gamepad-related codes live in this single block so the next pad
+# target swap is a one-place edit. Mirror any changes here into
 # bin/input_d.py.
 #
-# Stable across Xbox and PlayStation virtual pad models:
+# Stable across Xbox and DS5 virtual pad models:
 EV_KEY = 1                  # button event type
 EV_ABS = 3                  # axis event type
 ABS_HAT0X = 16              # d-pad left/right
@@ -163,14 +162,14 @@ ABS_HAT0Y = 17              # d-pad up/down
 BTN_TL = 310                # L1 / LB shoulder
 BTN_TR = 311                # R1 / RB shoulder
 #
-# May shift on the PS-pad nightly:
-# This rig's InputPlumber virtual-Xbox layout swaps the conventional
-# confirm/back buttons — the physical confirm button emits BTN_EAST(305),
-# not BTN_SOUTH(304). Verified on-device. A PS-style layout may revert
-# to standard (confirm=BTN_SOUTH=304, back=BTN_EAST=305). Swap these two
-# constants when that nightly is installed.
-BTN_CONFIRM = 305           # BTN_EAST today; may become 304 post-nightly
-BTN_BACK = 304              # BTN_SOUTH today; may become 305 post-nightly
+# Face buttons — flipped at the InputPlumber DS5 target switch (Rocknix
+# nightly-20260520, "inputplumber: use target ds5"). Pre-20260520 the
+# Xbox virtual target on this rig was non-standard (confirm=305, back=304);
+# the DS5 target uses the standard PlayStation mapping below. PROBE FIRST
+# on first boot with bin/gamepad_probe.py and confirm before trusting:
+# InputPlumber virtual targets don't always follow physical convention.
+BTN_CONFIRM = 304           # BTN_SOUTH = Cross (X)  = confirm  (DS5 standard)
+BTN_BACK = 305              # BTN_EAST  = Circle (O) = back     (DS5 standard)
 
 
 # === TAB DISPATCH ===
@@ -231,7 +230,7 @@ def _fatal(msg, exc=None):
         traceback.print_exc()
     sys.stderr.write("\n")
     sys.stderr.write(f" Log: {LOG_PATH}\n")
-    sys.stderr.write("\n Press A or B (gamepad) or ENTER to close.\n")
+    sys.stderr.write("\n Press B or A (gamepad) or ENTER to close.\n")
     sys.stderr.write(" Auto-close in 5 min.\n")
     sys.stderr.flush()
     _wait_for_dismiss(timeout=300)
@@ -343,17 +342,58 @@ GAME_NAME = "(no game resolved)" if ETK_NO_TARGET else resolve_game_name(TARGET_
 
 # === GAMEPAD DISCOVERY ===
 
+# Pad-model-agnostic substrings. Rocknix has flipped the InputPlumber
+# virtual target between models across nightlies (Xbox -> DS5 in 20260520);
+# matching any known virtual-pad signature means a future target swap won't
+# strand us on the event9 fallback. Append new substrings here if a probe
+# discovers a name we don't already cover. Keep lowercase.
+PAD_HINTS = ("xbox", "dualsense", "dual sense", "playstation",
+             "sony", "ds5", "wireless controller", "inputplumber")
+#
+# DS5 (and probably any future model) presents as a *cluster* of sibling
+# nodes: the buttons/sticks/d-pad device PLUS Touchpad, Motion Sensors,
+# Headset Jack, Battery. They all share the parent name "... Wireless
+# Controller", so PAD_HINTS matches all of them. PAD_EXCLUDE filters out
+# the sub-nodes so we land on the buttons device. "keyboard" excludes the
+# separate "InputPlumber Keyboard" node (a real keyboard, not a gamepad).
+PAD_EXCLUDE = ("touchpad", "motion sensor", "headset", "battery", "keyboard")
+
+
+def _event_num(entry):
+    """Sort key: extract the integer suffix of 'eventN' so event2 sorts
+    before event10 (lexical sort puts 'event10' before 'event2', which
+    landed us on the DS5 Touchpad node post-20260520)."""
+    try:
+        return int(entry[len('event'):])
+    except (ValueError, TypeError):
+        return 1 << 30
+
+
 def find_gamepad():
-    """Dynamically capture the InputPlumber Virtual Xbox target."""
+    """Locate the InputPlumber virtual controller, pad-model-agnostic.
+    Returns the matched /dev/input/eventN, or /dev/input/event9 as the
+    last-resort fallback. Logs the matched name so a silent wrong-node
+    fallback is one grep away from diagnosis."""
     input_dir = '/sys/class/input/'
     try:
-        for entry in sorted(os.listdir(input_dir)):
+        for entry in sorted(os.listdir(input_dir), key=_event_num):
             if entry.startswith('event'):
                 name_path = os.path.join(input_dir, entry, 'device/name')
                 if os.path.exists(name_path):
                     with open(name_path, 'r') as f:
-                        if "xbox" in f.read().strip().lower():
-                            return f"/dev/input/{entry}"
+                        name = f.read().strip()
+                    nl = name.lower()
+                    if any(h in nl for h in PAD_HINTS) and \
+                       not any(x in nl for x in PAD_EXCLUDE):
+                        try:
+                            _log(f"find_gamepad matched /dev/input/{entry} name='{name}'")
+                        except Exception:
+                            pass
+                        return f"/dev/input/{entry}"
+    except Exception:
+        pass
+    try:
+        _log("find_gamepad: no PAD_HINTS match, falling back to /dev/input/event9")
     except Exception:
         pass
     return '/dev/input/event9'
@@ -707,11 +747,11 @@ def _draw_footer(stdscr, h, w, current_tab, status):
                       curses.A_BOLD | (curses.A_NORMAL if ok else curses.A_REVERSE))
     else:
         if current_tab == CURRENT_TAB_TUNING:
-            footer = "DPAD UP/DN: Move  LT/RT: Change  A: Save  B: Quit  L1/R1: Tabs"
+            footer = "DPAD UP/DN: Move  LT/RT: Change  B: Save  A: Quit  L1/R1: Tabs"
         elif current_tab == CURRENT_TAB_TELEMETRY:
-            footer = "DPAD UP/DN: Scroll  A: Refresh  B: Quit  L1/R1: Tabs"
+            footer = "DPAD UP/DN: Scroll  B: Refresh  A: Quit  L1/R1: Tabs"
         else:
-            footer = "DPAD UP/DN: Move  A: Select  B: Back  L1/R1: Tabs"
+            footer = "DPAD UP/DN: Move  B: Select  A: Back  L1/R1: Tabs"
         stdscr.addstr(h - 2, 4, footer[:w - 6], curses.A_BOLD)
 
 
@@ -2086,7 +2126,7 @@ def draw_tools(stdscr, state):
             curses.A_BOLD); y += 1
         put(y, 4, "Do NOT touch the controller while it installs.",
             curses.A_BOLD); y += 2
-        put(y, 4, "A: Install     B: Cancel",
+        put(y, 4, "B: Install     A: Cancel",
             curses.color_pair(1) | curses.A_BOLD)
 
     elif mode == "uninstall_list":
@@ -2096,7 +2136,7 @@ def draw_tools(stdscr, state):
         put(y, 2, "-" * (w - 4), curses.A_DIM); y += 1
         if not games:
             put(y, 4, "No installed PS3 games found.", curses.A_DIM); y += 2
-            put(y, 4, "B: Back", curses.color_pair(1) | curses.A_BOLD)
+            put(y, 4, "A: Back", curses.color_pair(1) | curses.A_BOLD)
         else:
             cur = state.get("tools_cursor", 0)
             cap = max(1, (h - 4) - y)
@@ -2120,7 +2160,7 @@ def draw_tools(stdscr, state):
         put(y, 4, f"Title ID: {g['title_id']}"); y += 2
         put(y, 4, "Removes the game, licence, launcher and caches."); y += 1
         put(y, 4, "Keeps your save data and ETK shader vault."); y += 2
-        put(y, 4, "A: Delete     B: Cancel",
+        put(y, 4, "B: Delete     A: Cancel",
             curses.color_pair(1) | curses.A_BOLD)
 
     elif mode == "result":
@@ -2136,7 +2176,7 @@ def draw_tools(stdscr, state):
             y += 1
         if y < h - 4:
             y += 1
-            put(y, 4, "A / B: Back to menu",
+            put(y, 4, "B / A: Back to menu",
                 curses.color_pair(1) | curses.A_BOLD)
 
 

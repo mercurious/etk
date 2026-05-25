@@ -52,7 +52,7 @@ ToDo.
 
 # ETK System Requirements
 - **System:** Retroid Pocket Flip 2 (SM8250)
-- **OS:** ROCKNIX (Nightly Build: 20260517)
+- **OS:** ROCKNIX (Nightly Build: 20260520)
 - **Driver** MESA Turnip 26.1.0
 - **Target/Status:** Gran Turismo series: HD (playable/race audio), Prologue (playable/menu audio), 5 (menus only), 6 (menus only) (RPCS3)
 - **Shell:** BusyBox v1.36.1
@@ -77,8 +77,8 @@ ToDo.
 # Custom ETK Gamepad Specifications
 - Reserved:
   - `START` + `SELECT` + `R1` = Native Rocknix force quit
-  - `HOME` = RPSC3 menu
-  - `SELECT` = GT3P camera view toggle
+  - `HOME` = RPCS3 menu
+  - `SELECT` = GT5P camera view toggle
 - Implemented:
 	- `R3` = PANIC BUTTON RECOVERY COMMAND (headless on-device Nuclear Recovery, single press)
 	- `L3` = SHIFT (PIT/RACE thermal mode toggle)

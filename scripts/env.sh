@@ -103,7 +103,8 @@ export LAST_ANALYSIS="$SHM_DIR/last_analysis.txt"
 export TRIPWIRE_LOG="/storage/etk_tripwire.log"
 
 # --- [ RESTORED THERMAL BOUNDARIES ] ---
-# Recalibrating to Rocknix nightly-20260516 changed thermals
+# Recalibrating to Rocknix nightly-20260520 changed thermals; re-validate
+# zone14 + thresholds with scripts/etk_probe.sh after the in-place update.
 export ALARM_TEMP=83
 export PIT_THRESHOLD=65
 export RACE_THRESHOLD=86
