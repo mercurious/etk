@@ -68,9 +68,13 @@ while true; do
         echo "${TEMP}°C»»HOT" > "$SHM_DIR/thermal_stat"
     else
         if [ "$CURRENT_MODE" == "RACE" ]; then
-            echo "${TEMP}°C" > "$SHM_DIR/thermal_stat"
+            echo "${TEMP}°" > "$SHM_DIR/thermal_stat"
         else
-            echo "${TEMP}°C SAFETY L3 TO CLEAR" > "$SHM_DIR/thermal_stat"
+            # PIT = post-thermal-override anchor. The L3 SHIFT button no
+            # longer exits PIT (repurposed to HUD position toggle in v10.1);
+            # the Flip 2 only fully restores overdrive performance after a
+            # cold-boot, so a reboot is the prescribed recovery path.
+            echo "${TEMP}°C OVERHEAT - REBOOT" > "$SHM_DIR/thermal_stat"
         fi
     fi
     

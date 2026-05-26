@@ -14,11 +14,11 @@
 # RAW for system optimizations and custom HUD only
 export ETK_BUILD_TYPE="FULL"
 # City WiFi
-# export RIG_IP="192.168.1.53"
-# export RIG_SSH="root@192.168.1.53"
+export RIG_IP="192.168.1.53"
+export RIG_SSH="root@192.168.1.53"
 # Country WiFi
-export RIG_IP="10.0.0.40"
-export RIG_SSH="root@10.0.0.40"
+# export RIG_IP="10.0.0.40"
+# export RIG_SSH="root@10.0.0.40"
 
 # --- [ SHM & STATE ] ---
 export SHM_DIR="/dev/shm/etk_shm"
@@ -149,6 +149,13 @@ export SIGNATURES_FILE="$ETK_ROOT/config/crash_signatures.json"
 # panic / hard hang) and the Sentry synthesizes an orphan PANIC row on
 # boot. Lives in $TELEMETRY_DIR (persistent) NOT $SHM_DIR (boot-volatile).
 export SESSION_ANCHOR="$TELEMETRY_DIR/session_anchor.txt"
+
+# Per-game MangoHud HUD position memory. Two columns: game_id \t position
+# (top-left | bottom-left). Written by bin/input_d.py on L3 press; read by
+# the Sentry at IDLE->RUNNING to apply the remembered position to the live
+# MangoHud.conf before signaling reload_cfg. Absent file = default
+# (bottom-left, the dashboard convention).
+export HUD_POSITIONS_FILE="$TELEMETRY_DIR/hud_positions.tsv"
 
 # Minimum session length (seconds) to count as a real attempt. Sessions
 # shorter than this are force-quit/fat-finger aborts: career_aggregate.sh

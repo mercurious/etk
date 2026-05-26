@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ==========================================================
-# ETK PHASE 10: PYTHON SHIFTER (v10.0.0 - HEADLESS PANIC)
+# ETK PHASE 10: PYTHON SHIFTER (v10.1.0 - L3 HUD POSITION)
 # ==========================================================
 # GEMINI IMMUTABLE RULE:
 # 1. R3 (BTN_THUMBR, code 318) = RECOVERY PANIC BUTTON.
@@ -8,19 +8,37 @@
 #    and detached so the rig is fully untethered. Do NOT add
 #    a long-press/double-tap guard and do NOT route this
 #    through CMD_QUEUE (queue needs a tethered consumer).
-# 2. L3 (BTN_THUMBL, code 317) = SHIFT (PIT/RACE mode toggle).
+# 2. L3 (BTN_THUMBL, code 317) = HUD POSITION TOGGLE.
+#    Flips MangoHud top-left <-> bottom-left in $RIG_MANGO_CONF,
+#    persists per-game preference to $HUD_POSITIONS_FILE, and
+#    signals MangoHud reload_cfg so the swap takes effect live.
+#    The Sentry re-applies the per-game pref at IDLE->RUNNING.
+#    PIT/RACE thermal mode is now thermal_d.sh-internal only
+#    (auto-PIT at RACE_THRESHOLD; recover via reboot).
 # 3. SELF-HEAL: The InputPlumber virtual controller may not
 #    exist when the Sentry spawns this at boot. The connect
 #    loop MUST keep re-finding the device; do not collapse it
 #    back into a one-shot open.
 # ==========================================================
-import struct, os, time
+import struct, os, time, re, glob, socket
 
 # Absolute fallbacks point to the global tmpfs
-MODE_FILE = os.environ.get('MODE_FILE', '/dev/shm/etk_shm/etk_mode.txt')
 CMD_QUEUE = os.environ.get('CMD_QUEUE', '/dev/shm/etk_shm/etk_cmd_queue')
+ID_FILE   = os.environ.get('ID_FILE',   '/dev/shm/etk_shm/active_id.txt')
 RECOVERY  = os.environ.get('ETK_RECOVERY',
                            '/storage/games-internal/roms/etk/bin/recovery.sh')
+RIG_MANGO_CONF = os.environ.get('RIG_MANGO_CONF',
+                                '/storage/.config/MangoHud/MangoHud.conf')
+HUD_POSITIONS_FILE = os.environ.get(
+    'HUD_POSITIONS_FILE',
+    '/storage/games-internal/roms/etk/etk_telemetry/hud_positions.tsv')
+
+# HUD toggle pair. bottom-left is the dashboard default — sits down by
+# the physical controls on the Flip 2, below the typical "rear view mirror"
+# game-element band. top-left is the alternative for games whose HUD
+# elements crowd the bottom edge (e.g. GT5P).
+HUD_POSITIONS = ('top-left', 'bottom-left')
+HUD_DEFAULT = 'bottom-left'
 
 # Pad-model-agnostic substrings. Rocknix has flipped the InputPlumber
 # virtual target between models across nightlies (Xbox -> DS5 in 20260520);
@@ -82,20 +100,128 @@ def fire_recovery():
     """R3 PANIC: invoke the shared headless recovery, detached."""
     os.system(f"bash {RECOVERY} >/dev/null 2>&1 &")
 
-def toggle_mode():
-    """Reads current mode and flips it (L3 SHIFT logic)."""
+def _read_active_game_id():
+    """Returns the active game ID, or None if the rig is idle / unresolved.
+    Sentry writes 'IDLE' to ID_FILE when no game is running and 'UNKNOWN_ID'
+    when the resolver couldn't identify the game; both are sentinels, not
+    real IDs to persist HUD prefs against."""
     try:
-        with open(MODE_FILE, 'r') as f:
-            current = f.read().strip()
-    except:
-        current = "PIT"
-        
-    new_mode = "RACE" if current == "PIT" else "PIT"
-    
+        with open(ID_FILE) as f:
+            gid = f.read().strip()
+        return gid if gid and gid not in ('IDLE', 'UNKNOWN_ID') else None
+    except Exception:
+        return None
+
+
+def _read_current_position():
+    """Parse the current position= line from RIG_MANGO_CONF. Returns the
+    string ('top-left' / 'bottom-left' / other) or None if the conf is
+    unreadable or has no position= line."""
     try:
-        with open(MODE_FILE, 'w') as f:
-            f.write(new_mode) 
-    except: pass
+        with open(RIG_MANGO_CONF) as f:
+            for line in f:
+                m = re.match(r'^\s*position\s*=\s*(\S+)', line)
+                if m:
+                    return m.group(1).strip()
+    except Exception:
+        pass
+    return None
+
+
+def _write_position_to_conf(new_pos):
+    """Atomic rewrite of the position= line. Returns True on success.
+    Uses the ETK tmp+mv idiom (same as Pitstop's H2 save) so a power loss
+    mid-write never leaves the conf half-written."""
+    try:
+        with open(RIG_MANGO_CONF) as f:
+            lines = f.readlines()
+    except Exception:
+        return False
+    found = False
+    for i, line in enumerate(lines):
+        if re.match(r'^\s*position\s*=', line):
+            lines[i] = f'position={new_pos}\n'
+            found = True
+            break
+    if not found:
+        return False
+    try:
+        tmp = RIG_MANGO_CONF + '.tmp'
+        with open(tmp, 'w') as f:
+            f.writelines(lines)
+        os.replace(tmp, RIG_MANGO_CONF)
+        return True
+    except Exception:
+        return False
+
+
+def _signal_mangohud_reload():
+    """Send 'reload_cfg' to MangoHud's control socket. Fail silent — if
+    MangoHud isn't running (no game launched) or the socket name didn't
+    match our glob, the position change still applies on next launch via
+    the Sentry's IDLE->RUNNING ignition block."""
+    candidates = glob.glob('/tmp/MangoHud*') + glob.glob('/tmp/mangohud*')
+    for path in candidates:
+        try:
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            s.settimeout(0.3)
+            s.connect(path)
+            s.send(b'reload_cfg\n')
+            s.close()
+            return True
+        except Exception:
+            continue
+    return False
+
+
+def _remember_position(game_id, pos):
+    """Upsert game_id -> pos in HUD_POSITIONS_FILE. No-op for None game_id
+    (rig idle / unresolved) so we never write a sentinel as a game key."""
+    if not game_id:
+        return
+    rows = {}
+    try:
+        with open(HUD_POSITIONS_FILE) as f:
+            for line in f:
+                parts = line.rstrip('\n').split('\t')
+                if len(parts) >= 2:
+                    rows[parts[0]] = parts[1]
+    except FileNotFoundError:
+        pass
+    except Exception:
+        return
+    rows[game_id] = pos
+    try:
+        os.makedirs(os.path.dirname(HUD_POSITIONS_FILE), exist_ok=True)
+        tmp = HUD_POSITIONS_FILE + '.tmp'
+        with open(tmp, 'w') as f:
+            for gid, p in sorted(rows.items()):
+                f.write(f'{gid}\t{p}\n')
+        os.replace(tmp, HUD_POSITIONS_FILE)
+    except Exception:
+        pass
+
+
+def toggle_hud_position():
+    """L3: flip MangoHud position top-left <-> bottom-left.
+    1. Read current position from the live conf (default to HUD_DEFAULT).
+    2. Pick the OTHER position from HUD_POSITIONS.
+    3. Atomic write back to conf.
+    4. Persist per-game pref (if a game is running).
+    5. Signal MangoHud reload_cfg so it takes effect live.
+    Each step fails silent — a broken HUD signal still gets the conf right
+    for next launch."""
+    cur = _read_current_position()
+    # Any non-tracked value (or missing) flips us to the dashboard default.
+    if cur == 'top-left':
+        new = 'bottom-left'
+    elif cur == 'bottom-left':
+        new = 'top-left'
+    else:
+        new = HUD_DEFAULT
+    if _write_position_to_conf(new):
+        _remember_position(_read_active_game_id(), new)
+        _signal_mangohud_reload()
 
 def event_loop(device):
     clutch = False
@@ -111,9 +237,9 @@ def event_loop(device):
                 if code == 318 and val == 1:
                     fire_recovery()
 
-                # 317 = BTN_THUMBL (L3): SHIFT (PIT/RACE toggle)
+                # 317 = BTN_THUMBL (L3): HUD position toggle
                 if code == 317 and val == 1:
-                    toggle_mode()
+                    toggle_hud_position()
 
                 # 314 = BTN_SELECT (clutch modifier for DPAD)
                 if code == 314: clutch = (val == 1)

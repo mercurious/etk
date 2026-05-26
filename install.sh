@@ -536,6 +536,36 @@ while true; do
         # ATOMIC SESSION RESET: Zero new-shader counter at ignition
         echo "0" > "$SHM_DIR/vault_new.txt"
 
+        # --- PER-GAME HUD POSITION ---
+        # Apply the remembered MangoHud position for this game (if any) and
+        # signal MangoHud to reload its config so the swap takes effect mid-
+        # launch (the 4s sleep above gives MangoHud time to open its control
+        # socket as RPCS3 initialises Vulkan). Default = bottom-left
+        # (dashboard convention); a per-game override at $HUD_POSITIONS_FILE
+        # wins. L3 (bin/input_d.py) is the user-side toggle that writes that
+        # file. The reload signal is best-effort — if the socket isn't there
+        # yet, the conf is still correct for any subsequent launches.
+        if [ -f "$HUD_POSITIONS_FILE" ] && [ -f "$RIG_MANGO_CONF" ] && [ -n "$ID_STR" ]; then
+            PREF_POS=$(awk -F'\t' -v gid="$ID_STR" '$1==gid {print $2; exit}' "$HUD_POSITIONS_FILE")
+            if [ -n "$PREF_POS" ]; then
+                # Atomic in-place sed; MangoHud.conf has exactly one
+                # position= line by convention.
+                sed -i "s|^position=.*|position=$PREF_POS|" "$RIG_MANGO_CONF"
+                # Inline Python — BusyBox nc lacks reliable -U Unix socket
+                # support. Mirrors the helper in bin/input_d.py so the two
+                # paths stay behaviour-compatible without sharing state.
+                python3 -c "
+import socket, glob
+for p in glob.glob('/tmp/MangoHud*') + glob.glob('/tmp/mangohud*'):
+    try:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(0.3); s.connect(p)
+        s.send(b'reload_cfg\n'); s.close(); break
+    except Exception: pass
+" 2>/dev/null
+            fi
+        fi
+
         # Spawn workers according to build tier
         if [ "$ETK_BUILD_TYPE" = "FULL" ]; then
             nohup bash "$ETK_ROOT/bin/vault_d.sh"   >/dev/null 2>&1 &

@@ -108,6 +108,42 @@ Use the existing `$RSYNC_CMD` variable and the house `--exclude='.DS_Store'` pat
 
 ---
 
+## §G.5. ADDITIONAL SCOPE — STALE-SHADER-SWEEP (added 2026-05-25; bundle with Tier-B)
+
+Empirical pattern confirmed across two consecutive migrations: every Rocknix nightly rebuilds Mesa from source even when upstream Mesa source is unchanged, drifting `libvulkan_freedreno.so`'s build ID and invalidating the prior cache layer. GT5P vault doubled from 9,526 to 19,052 files in one post-20260525 session (the prior 7,738 from 20260520 are now orphaned). Without active management, the vault grows linearly with the count of Mesa-touching nightlies.
+
+### Scope to bundle with Tier-B in next session
+
+1. **`tools/vault_doctor.sh stale-sweep`** (new verb on existing vault_doctor, or new tool if cleaner) — reads Mesa's cache `index` file at `$VAULT_DIR/index`, parses it for live hash entries, walks the 256-shard directory tree, deletes files whose hash key is no longer indexed. Per-game scoped (default: current `$TARGET_ID`; flag for `--all-games`). Dry-run by default; `--apply` to commit. Logs count + freed bytes.
+
+2. **install.sh Mesa-rebuild fingerprint detection** — hash `/usr/lib/libvulkan_freedreno.so` (sha256 of first 64KB is sufficient and BusyBox-friendly) at the start of Step 0, compare against `$ETK_ROOT/vault/.last_mesa.hash`. On change:
+   - Echo `[INFO] MESA REBUILT — vault layer keyed against new build ID. Run \`tools/vault_doctor.sh stale-sweep\` to prune orphaned shaders.` to install.sh stdout
+   - Append a `MESA REBUILD DETECTED` line to `$TRIPWIRE_LOG`
+   - Update `vault/.last_mesa.hash` with the new fingerprint
+   No automatic destructive action — the operator decides when to sweep. Matches the addendum's overall "default-safe, explicit verb for destructive" philosophy (mirrors `--zap-vault` and `--restore-state`).
+
+### Why bundle with Tier-B and not a separate dossier
+
+- Both touch `install.sh` (Tier-B adds backup/restore sub-steps; stale-sweep adds fingerprint detection at Step 0)
+- Both are vault-management workstreams
+- Sweep needs the Tier-B host-side snapshot to be in place first so a misfired sweep can be recovered from the host vault (currently `install.sh` Step 4 pushes shaders host→rig with `--ignore-existing`, so the host vault is the rollback in the same install run)
+
+### Tier coupling rule
+
+Stale-sweep operates ONLY on the per-game shader cache files (Mesa hash-named entries inside `vault/$CHIPSET/<game>/shaders/`). It does NOT touch Tier-B state (`./state/etk_telemetry/`, `./state/custom_configs/`, `./state/rpcs3_home/`). The two features remain orthogonal.
+
+### Alpha-vs-stable framing
+
+This issue is primarily an alpha-development pain point — Rocknix nightlies rebuild Mesa weekly. Once Rocknix ships an official release (currently a year old, but momentum suggests another release in spring), shader vaults regain a much longer shelf life and the sweep becomes a rare housekeeping action rather than a per-migration ritual. Build the tool, but document that operators on a stable Rocknix release rarely need it.
+
+### Additional acceptance criteria (append to §H)
+
+9. **Sweep is dry-run by default.** `tools/vault_doctor.sh stale-sweep` reports proposed deletions without acting; `--apply` is required to delete.
+10. **Sweep is per-game-scoped by default.** Without `--all-games`, only the current `$TARGET_ID`'s shader dir is processed. Guards against accidentally sweeping a game whose Mesa cache index isn't currently loaded (would mistake all entries for orphans).
+11. **Mesa-fingerprint detection is silent on first run.** When `vault/.last_mesa.hash` is absent (fresh rig / first-ever install.sh), the fingerprint is written but no `MESA REBUILD DETECTED` line is logged — there's nothing prior to compare against.
+
+---
+
 ## §G. DEFERRED (out of scope — do NOT implement unless explicitly asked)
 
 **Sentry self-snapshot on game exit.** A hook on the Sentry's `RUNNING→IDLE` edge could copy-if-changed Tier-B state into the vault tree so `install.sh`'s pull captures it automatically, shrinking the loss window from "since last `install.sh`" to "since last game exit." Tempting, but: (a) the operator runs `install.sh` frequently, so the window is already small; (b) it adds SD writes on every exit, which must respect Phase-5 treadwear (copy-if-changed + clean-exit gating only); (c) it touches the load-bearing Sentry state machine. **Leave for a separate dossier.** Note it in the backlog; don't fold it into this diff.

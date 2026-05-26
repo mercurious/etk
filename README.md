@@ -1,5 +1,15 @@
 # The Emulation Tuning Kit
-ETK is a custom Rocknix middleware rig to enable PS3 Emulation on ARM64 Retrogaming Handhelds by brute-force optimization, shader cache management, advanced in-game telematics, and simple PS3 PKG installation. It guards hard-earned shaders from SD card failure, OS flashing, data corruption, device failure, loss or theft. Push your handheld to its limits while collecting shaders with tools to recover from crashes so the game plays well after several attempts. Specifically designed to make Gran Turismo 5 Prologue playable on a Flip2 Snapdragon, the ETK adopts the racing metaphor throughout but should work for any type of PS3 game. The long term vision is a shader swarm system where the your device automatically seeds and leeches shaders and proven emulation tunings through a tight-knit device-centric P2P network during a battery charge.
+
+The Emulation Tuning Kit for Rocknix supports experimental PS emulation on ARM64 Retrogaming Handhelds for the production of highly tuned game and device-specific emulation configurations and shader vaults. It works by equipping your compatible handheld with special features to become a trackday rig to literally and figuratively crash your way into making a game such as Gran Turismo 5 Prologue playable. Push your handheld to its limits while collecting shaders with tools to recover from crashes so the game plays well after several attempts.
+
+The kit instruments the number of shaders compiled for your device in a custom in-game overly using the built-in MangoHUD support. The kit adds a custom Rocknix Tool app for on-board telemetry, tuning, and simplified game package installation. By tracking your productive crashing, you measurably observe and tangibly feel your way toward a playable game that allows you to progres through it, unlocking additional game asset shaders to harvest.
+
+More technically, ETK is a custom Rocknix middleware of shell scripts and python curses that employs brute-force optimization, shader cache management, advanced in-game telematics, and operates an automated file-drop headless install of PS3 PKG installations inside of RPSC3. 
+
+Built for abuse and race conditions, the ETK guards hard-earned shaders, custom tunings, and game saves from SD card failure, OS flashing, data corruption, device failure, loss or theft. The ETK includes an emergency cooldown that automatically puts your device in PIT mode as needed, protecting your engine from overheating.
+
+# Launch ETK Edition: GTP5 SPEC
+Specifically designed to make Gran Turismo 5 Prologue playable on a Flip2 Snapdragon, the ETK adopts the racing metaphor throughout but should work for any type of PS3 game. The long term vision is a shader swarm system where the your device automatically seeds and leeches shaders and proven emulation tunings through a tight-knit device-centric P2P network during a battery charge.
 
 # Screenshots
 ToDo.
@@ -52,9 +62,9 @@ ToDo.
 
 # ETK System Requirements
 - **System:** Retroid Pocket Flip 2 (SM8250)
-- **OS:** ROCKNIX (Nightly Build: 20260520)
+- **OS:** ROCKNIX (Nightly Build: 20260525)
 - **Driver** MESA Turnip 26.1.0
-- **Target/Status:** Gran Turismo series: HD (playable/race audio), Prologue (playable/menu audio), 5 (menus only), 6 (menus only) (RPCS3)
+- **Target/Status:** Gran Turismo series: HD (playable/race audio), Prologue (playable/menu audio), 5 (menus only), 6 (playable/menu audio) (RPCS3)
 - **Shell:** BusyBox v1.36.1
 - **Custom Overlay:** MangoHUD
 
@@ -81,7 +91,8 @@ ToDo.
   - `SELECT` = GT5P camera view toggle
 - Implemented:
 	- `R3` = PANIC BUTTON RECOVERY COMMAND (headless on-device Nuclear Recovery, single press)
-	- `L3` = SHIFT (PIT/RACE thermal mode toggle)
+	- `L3` = MangoHUD position toggle (top-left ⇄ bottom-left), auto-remembered per game. Bottom-left is the dashboard default; flip to top-left for games whose HUD elements crowd the bottom edge (e.g. GT5P). Sentry applies the per-game preference at ignition.
+	- Thermal failsafe (internal): on overheat, the rig auto-drops to PIT (capped CPU/GPU), the HUD reads `OVERHEAT - REBOOT`, and a cold-boot is the prescribed recovery path to fully restore overdrive performance.
 		  
 # Project History
 - Phase 1: MVP proof-of-concept: now deprecated monolithic mvp/commander.sh achieved initial shader cache accumulation downscaled with no audio, essential commands and Excitebike UX proofed

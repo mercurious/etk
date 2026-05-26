@@ -4,8 +4,8 @@
 # ==========================================================
 # AI IMMUTABLE RULE:
 # 1. HUD STRING FORMAT IS LOCKED (three-stage time-gated header):
-#    Stage 1 — launch window  (0 <= AGE < HUD_HEADER_HOLD_S):
-#      MODE|ID|XX°CSTAT|X.XXSTAT|XX%STAT|XXMB X.Xk XX+
+#    Stage 1 — launch window show ETK MODE, GAME ID, VAULT  (0 <= AGE < HUD_HEADER_HOLD_S):
+#      MODE|ID|XX°CSTAT|SHADERS XXMB X.Xk XX+
 #    Stage 2 — instrument labels  (HUD_HEADER_HOLD_S <= AGE < 2*HUD_HEADER_HOLD_S):
 #      TEMP: XX°CSTAT|CORES: X.XXSTAT|MEM: XX%STAT|SHDRS: XXMB X.Xk XX+
 #    Stage 3 — pure telemetry  (AGE >= 2*HUD_HEADER_HOLD_S):
@@ -31,20 +31,20 @@ while true; do
     LOAD_RAW=$(cat /proc/loadavg | awk '{print $1}')
     LOAD_INT=$(echo "$LOAD_RAW" | awk '{print int($1 * 100)}')
     
-    L_STAT="»"
+    L_STAT="»---"
     if [ "$LOAD_INT" -gt 860 ]; then 
-        L_STAT="»»»»PEAK"
+        L_STAT="»»»»"
     elif [ "$LOAD_INT" -gt 590 ]; then 
-        L_STAT="»»»"
+        L_STAT="»»»-"
     fi
     
     # RAM Calculation and Thresholds
     RAM_VAL=$(free | awk '/Mem:/ {printf("%.0f", $3/$2 * 100)}')
-    R_STAT="»"
+    R_STAT="»---"
     if [ "$RAM_VAL" -ge 90 ]; then
-        R_STAT="»»»»MAX"
+        R_STAT="»»»»"
     elif [ "$RAM_VAL" -ge 75 ]; then
-        R_STAT="»»»"
+        R_STAT="»»»-"
     fi
 
     # 4. ADVANCED SHADER TELEMETRY
@@ -97,8 +97,8 @@ while true; do
 
     # 5. ATOMIC HUD INJECTION [MANIFEST RULE: HUD FORMAT]
     case "$STAGE" in
-        1) FINAL_STRING="${ETK_BUILD_TYPE}|${TARGET_ID}|${T_STAT}|${LOAD_RAW}${L_STAT}|${RAM_VAL}%${R_STAT}|${VAULT_STR}" ;;
-        2) FINAL_STRING="TEMP: ${T_STAT}|CORES: ${LOAD_RAW}${L_STAT}|MEM: ${RAM_VAL}%${R_STAT}|SHDRS: ${VAULT_STR}" ;;
+        1) FINAL_STRING="${ETK_BUILD_TYPE}|${TARGET_ID}|SHADERS ${VAULT_STR}" ;;
+        2) FINAL_STRING="TEMP ${T_STAT}|LOAD ${LOAD_RAW}${L_STAT}|RAM ${RAM_VAL}%${R_STAT}|" ;;
         *) FINAL_STRING="${T_STAT}|${LOAD_RAW}${L_STAT}|${RAM_VAL}%${R_STAT}|${VAULT_STR}" ;;
     esac
     

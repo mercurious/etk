@@ -23,7 +23,10 @@
 
 ## PINNED FOR NEXT SESSION (POST-MIGRATION)
 
-- **`install.sh` Tier-B backup upgrade.** Implement `ADDENDUM_install_sh_tiered_backup.md` end-to-end. Decisions already locked: workstream order (validate against live rig first), `./state/` host dir + gitignore + §F privacy lock, stale `--update` rsync comments cleaned up in the same diff, parent dossier §13 softened to point at `--restore-state`. Estimated 30-45 min focused work.
+- **`install.sh` Tier-B backup upgrade + stale-shader-sweep tool.** Bundle two related vault-management features into one focused workstream:
+  - **Tier-B backup**: implement `ADDENDUM_install_sh_tiered_backup.md` end-to-end (decisions already locked — workstream order, `./state/` host dir + gitignore + §F privacy lock, stale `--update` rsync comments cleaned up, parent dossier §13 softened to point at `--restore-state`).
+  - **Stale-shader-sweep tool**: new `tools/vault_doctor.sh stale-sweep` (or extend existing vault_doctor). Reads Mesa's live cache `index` file, identifies cache hashes Mesa actively writes to, deletes orphaned entries from the per-game vault. Addresses the empirical doubling-per-nightly pattern: 20260516→20260520 saw GT5P vault layer once (orphaning ~49k files), 20260520→20260525 layered again (doubling 9.5k→19k in one session). Each Rocknix Mesa rebuild — version string unchanged but `libvulkan_freedreno.so` build ID drifts — invalidates the prior layer. Run on demand post-migration. Manageable during alpha-with-nightlies; less critical once Rocknix ships an official release (long-shelf-life shaders). See `RocknixNightlyMigrationCloseout.md` §2.2.
+  - Consider adding install.sh fingerprint-detect: hash `libvulkan_freedreno.so` against `vault/.last_mesa.hash`; on change, emit `MESA REBUILD DETECTED` to `$TRIPWIRE_LOG` so a stale-sweep prompt is one glance away.
 
 - **GT5P shader harvest protocol write-up.** The operator's systematic sequence — track time trials → pit-crew animations → another level for camera pans → dealership for all cars → back to tracks for single-race camera pans — should be documented as a first-class harvest playbook. Captures the "productive crashing" UX argument and gives future operators (and AI) a reproducible procedure for stress-testing the rig. Candidate location: `dossiers/Gt5pHarvestProtocol.md`.
 
