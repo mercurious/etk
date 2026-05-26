@@ -2,29 +2,29 @@
 
 The Emulation Tuning Kit for Rocknix supports experimental PS3 emulation on ARM64 Retrogaming Handhelds for the production of highly tuned game and device-specific emulation configurations and shader vaults. It works by equipping your compatible handheld with special features to become a track day rig to literally and figuratively crash your way into making a game such as Gran Turismo 6 playable. Push your handheld to its limits while collecting shaders with tools to recover from crashes so the game plays well after several attempts. ETK automatically tracks sessions on a per-game race ledger.
 
-In the style of a race car Driver Data Unit (DDU) dashboard, the ETK instruments provide shader counts in real-time in a custom in-game overly using MangoHUD support built-in to Rocknix. The kit also adds a custom Rocknix Tool app for on-board telemetry analysis, quick tuning of Adreno-centric emulation settings, and simplified game package installation. 
+In the style of a race car Driver Data Unit (DDU) dashboard, the ETK instruments provide shader counts in real-time in a custom in-game overly using MangoHUD support built-in to Rocknix. The kit also adds a custom ETK Pitstop app in the Rocknix Tools carousel menu for on-board telemetry analysis, quick tuning of Adreno-centric emulation settings, and simplified game package installation. 
 
-More technically, ETK is a custom Rocknix middleware composed of shell scripts and python curses that employ brute-force optimization, shader cache management, advanced in-game telematics, and operates an automated file-drop headless install of PS3 PKG installations inside of RPSC3. 
+More technically, ETK is a custom Rocknix middleware composed of shell scripts and python curses that employ brute-force optimization, shader cache management, advanced in-game telematics, on-board screenshot tooling the includes the MangoHUD overlay, and operates an automated file-drop headless install of PS3 PKG installations inside of RPSC3. 
 
-Built for abuse and race conditions, the ETK guards hard-earned shaders, custom tunings, and game saves from SD card failure, OS flashing, data corruption, device failure, loss or theft. The ETK includes an emergency cooldown that automatically puts your device in PIT mode as needed, protecting your engine from overheating.
+Built for abuse and race conditions, the ETK guards hard-earned shaders, custom tunings, screenshots, and game saves from SD card failure, OS flashing, data corruption, device failure, loss or theft. The ETK includes an emergency cooldown that automatically puts your device in PIT mode as needed, protecting your engine from overheating.
 
 # Screenshots
+These images were created by the ETK.
 
-<img src="docs/screenshots/etk_NPEA00502_20260526_124051.png" width="600" alt="GT6 — Mini Cooper chase cam exiting the Trial Mountain tunnel at 97mph, with the ETK HUD strip live across the bottom of the frame" />
+<img src="docs/screenshots/etk_NPEA00502_20260526_124051.png" width="600" alt="GT6 — Mini Cooper chase cam exiting the Deep Forest tunnel at 97mph, with the ETK HUD strip live across the bottom of the frame" />
 
-*GT6 — Trial Mountain, Lap 2, Position 2/6. Bottom strip: `VULKAN 15FPS 68.9ms BATT 66% ETK 79° 11.96 96% 138+ 28.6k 261MB` — live FPS, frametime, battery, GPU temp + load, and the `138+` shader counter all rendered in the same frame as the gameplay. The `+` is the productive-crashing pitch made literal: even when frames stutter on shader storms, the rig is still banking shaders for the next run.*
+*GT6 — Trial Mountain, Lap 2, Position 2/6. Top Mounted DDU strip: `VULKAN 15FPS 68.9ms BATT 66% ETK 79° 11.96 96% 138+ 28.6k 261MB` — live FPS, frametime, battery, GPU temp + load, and the `138+` shader counter all rendered in the same frame as the gameplay. The `+` is the productive-crashing pitch made literal: even when frames stutter on shader storms, the rig is still banking shaders for the next run.*
 
-<img src="docs/screenshots/etk_NPUA80075_20260526_132550.png" width="600" alt="GT5P — Bayside Blue Nissan Skyline GT-R R34 V-Spec II Nür chase cam climbing toward Degner at Suzuka, ETK HUD strip live across the top of the frame" />
+<img src="docs/screenshots/etk_NPUA80075_20260526_132301.png" width="600" alt="GT5P Garage Menu showing game progression." />
 
-*GT5P — Suzuka, Lap 2, climbing into Degner in a Bayside Blue R34 Skyline V-Spec II Nür. Top strip: `VULKAN 24FPS 41.2ms BATT 46% ETK 76° 9.10 97% 0+ 19.0k 172MB`. Same kit, same rig, almost-identical GPU load (97% vs the GT6 shot's 96%) — but the **`0+` shader counter** is the entire other half of the story: this is what a **mature vault** looks like. No new shaders compiling, no compile stutters, FPS climbs from 15 to 24. Crash today (GT6, above), smooth tomorrow (GT5P, here). The ETK is the loop that connects them.*
+*GT5P - Main Menu Garage showing game progression.*
 
-<img src="docs/screenshots/etk_NPUA80075_20260526_132352.png" width="600" alt="GT5P — Suzuka main straight under the iconic SUZUKA CIRCUIT overhead bridge at 101mph, bumper cam, HONDA and BRIDGESTONE trackside banners visible" />
+<img src ="docs/screenshots/etk_NPEA00502_20260526_170526.png" width="600" alt="GT6 — BMW GT3 courtesy car at Spa in cockpit view." />
 
-*GT5P — Suzuka start/finish straight, 101mph bumper cam under the iconic overhead bridge. Real-world landmark recognition: this is the same view real drivers get on lap 1 of any Suzuka session.*
+*GT6 - BMW GT3 courtesy car at Spa*
 
 More to come:
-- Sample GT5P in-game screen with HUD DDU with shader harvesting.
-- Sample GT5P Class-C Trophy Screen as proof ETK enables game progression.
+- Sample GT5P at 100% 720p
 - Sample GT6 Nürburgring Nordschleife clean-lap screen.
 - Sample ETK Pitstop app TELEMETRY ledger screen
 - Sample ETK Pitstop app TUNING screen
@@ -32,6 +32,20 @@ More to come:
 
 # Launch ETK Edition: GTP5 SPEC
 Specifically designed to make Gran Turismo 5 Prologue playable on a Flip2 Snapdragon, the ETK adopts the racing metaphor throughout but should work for any type of PS3 game. Surprisingly, the project has enabled Gran Turismo 6 for shader harvesting at 10fps and 75% 720p resolution.
+
+# ETK Quick Commands
+1. `L1` **screenshot**
+- left top trigger button 
+- **Requires in-game un-binding/un-mapping**
+- Screenshots stored at `/storage/roms/etk/screenshots`
+- `install.sh` syncs `etk/screenshots`
+1. `L3` **DDU HUD**
+- left analog button
+- Toggles ETK DDU dashboard between top and bottom of screen
+1. `R3` **PANIC RECOVERY**
+- right analog button
+- Recover from a crash or freeze.
+- Reboot recommended after returning to Rocknix ES frontend.
 
 # Final Mission
 The long term vision for the ETK is an integrated shader swarm system where your device automatically seeds and leeches shaders and proven emulation tunings over auto-subscribing device-centric bittorrent whisper nets during a battery charge.
