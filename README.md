@@ -162,3 +162,11 @@ The ETK solves the problem of installing PS3 Packages on Rocknix which is otherw
 
 # How to Use Simple Telemetry
 The ETK Pitstop Rocknix Tools app records your sessions for each game. You must launch a game and quit to switch which app the ETK Pitstop app will display. It records your tuning changes in a session ledger with summary statistics to help you determine which settings have resulted in better play results.
+
+# AI Disclosure
+ETK was originally prototyped with Google Gemini and developed/maintained with Anthropic Claude Code.
+
+# License
+ETK is released under the [GNU General Public License v2.0](LICENSE), matching the licensing of [Rocknix](https://github.com/ROCKNIX/distribution) which it extends.
+
+Copyright (C) 2026 mercurious
