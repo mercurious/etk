@@ -17,6 +17,7 @@ Audio:
   RSXAudio Avport: HDMI 0
   Renderer: Cubeb
   Time Stretching Threshold: 75
+  Audio Buffer: 4
 Core:
   Accurate Cache Line Stores: false
   Accurate PPU 128-byte Reservation Op Max Length: 0
@@ -55,7 +56,7 @@ Core:
   PPU Vector NaN Handling: true
   Performance Report Threshold: 500
   Precise SPU Verification: false
-  Preferred SPU Threads: 0
+  Preferred SPU Threads: 4
   RSX FIFO Fetch Accuracy: Atomic
   SPU Block Size: Safe
   SPU Cache: true
@@ -81,6 +82,7 @@ Core:
   Use Accurate DFMA: true
   Use LLVM CPU: ""
   Usleep Time Addend: 0
+  Lower SPU Priority: false
 Input/Output:
   Allow move hue set by game: false
   Background input enabled: true
@@ -194,7 +196,7 @@ Video:
   Disable Vulkan Memory Allocator: false
   Disable ZCull Occlusion Queries: false
   Driver Recovery Timeout: 1000000
-  Driver Wake-Up Delay: 0
+  Driver Wake-Up Delay: 200
   Enable Frame Skip: false
   FidelityFX CAS Sharpening Intensity: 50
   Force CPU Blit: false
@@ -238,7 +240,7 @@ Video:
   Renderdoc Compatibility Mode: false
   Renderer: Vulkan
   Resolution: 720x480
-  Resolution Scale: 50
+  Resolution Scale: 100
   Screen size in inches: 24
   Second Frame Limit: 0
   Shader Compiler Threads: 0
@@ -267,3 +269,5 @@ Video:
     VRAM allocation limit (MB): 65536
   Write Color Buffers: false
   Write Depth Buffer: false
+  Frame Limit: Off
+  Resolution Scale Threshold: 512

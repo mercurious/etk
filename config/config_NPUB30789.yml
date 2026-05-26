@@ -1,5 +1,5 @@
 Audio:
-  Audio Buffer: 225
+  Audio Buffer: 150
   Audio Channel Layout: Automatic
   Audio Device: "@@@default@@@"
   Audio Format: Stereo
@@ -7,7 +7,7 @@ Audio:
   Audio Provider: CellAudio
   Channels: 2.0
   Convert to 16 bit: false
-  Desired Audio Buffer Duration: 225
+  Desired Audio Buffer Duration: 150
   Disable Sampling Skip: false
   Dump to file: false
   Enable Buffering: true
@@ -18,7 +18,7 @@ Audio:
   Music Handler: Qt
   RSXAudio Avport: HDMI 0
   Renderer: Cubeb
-  Time Stretching Threshold: 25
+  Time Stretching Threshold: 100
 Core:
   Accurate Cache Line Stores: false
   Accurate PPU 128-byte Reservation Op Max Length: 0
@@ -54,11 +54,11 @@ Core:
   PPU Profiler: false
   PPU Set FPCC Bits: false
   PPU Set Saturation Bit: false
-  PPU Threads: 2
+  PPU Threads: 0
   PPU Vector NaN Handling: true
   Performance Report Threshold: 500
   Precise SPU Verification: false
-  Preferred SPU Threads: 3
+  Preferred SPU Threads: 0
   RSX FIFO Fetch Accuracy: "Ordered & Atomic"
   SPU Block Size: Mega
   SPU Cache: true
@@ -197,7 +197,7 @@ Video:
   Disable Vulkan Memory Allocator: false
   Disable ZCull Occlusion Queries: true
   Driver Recovery Timeout: 1000000
-  Driver Wake-Up Delay: 50
+  Driver Wake-Up Delay: 0
   Enable Frame Skip: false
   FidelityFX CAS Sharpening Intensity: 50
   Force CPU Blit: false
@@ -238,7 +238,7 @@ Video:
   Read Color Buffers: false
   Read Depth Buffer: false
   Record With Overlays: true
-  Relaxed ZCULL Sync: true
+  Relaxed ZCULL Sync: false
   Renderdoc Compatibility Mode: false
   Renderer: Vulkan
   Resolution: 1280x720
@@ -251,7 +251,7 @@ Video:
     Allow custom background: true
     Blur effect strength: 0
     Darkening effect strength: 30
-  Shader Mode: Async Recompiler with Shader Interpreter
+  Shader Mode: Async Recompiler (multi-threaded)
   Shader Precision: Low
   Stretch To Display Area: false
   Strict Rendering Mode: false
@@ -267,7 +267,7 @@ Video:
   Vulkan:
     Adapter: Turnip Adreno (TM) 650
     Asynchronous Queue Scheduler: Safe
-    Asynchronous Texture Streaming: true
+    Asynchronous Texture Streaming: false
     Exclusive Fullscreen Mode: Automatic
     Force primitive restart flag: false
     Use Re-BAR for GPU uploads: true
@@ -275,3 +275,4 @@ Video:
   Write Color Buffers: false
   Write Depth Buffer: false
   ZCULL Accuracy: Relaxed
+  Frame Limit: Off
