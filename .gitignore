@@ -12,6 +12,14 @@ vault/
 state/
 **/state/
 
+# 1c. Belt-and-suspenders guard: the operator-friendly `screenshots/` is
+# a symlink to `state/screenshots/` (see addendum convention — Tier-B
+# mutable state lives under `state/`). If someone deletes the symlink
+# and recreates a real dir by accident, this keeps PNG captures out of
+# the repo regardless.
+/screenshots
+/screenshots/
+
 # 2. Ignore Live Data / Shared Memory
 # We don't want to track etk_mode.txt or the command queue
 shm/

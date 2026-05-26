@@ -15,10 +15,15 @@ Specifically designed to make Gran Turismo 5 Prologue playable on a Flip2 Snapdr
 The long term vision for the ETK is an integrated shader swarm system where your device automatically seeds and leeches shaders and proven emulation tunings over auto-subscribing device-centric bittorrent whisper nets during a battery charge.
 
 # Screenshots
-ToDo.
+
+<img src="docs/screenshots/etk_NPEA00502_20260526_124051.png" width="600" alt="GT6 — Mini Cooper chase cam exiting the Deep Forest tunnel at 97mph, with the ETK HUD strip live across the bottom of the frame" />
+
+*GT6 — Deep Forest, Lap 2, Position 2/6. Bottom strip: `VULKAN 15FPS 68.9ms BATT 66% ETK 79° 11.96 96% 138+ 28.6k 261MB` — live FPS, frametime, battery, GPU temp + load, and the `138+` shader counter all rendered in the same frame as the gameplay. The `+` is the productive-crashing pitch made literal: even when frames stutter on shader storms, the rig is still banking shaders for the next run.*
+
+More to come:
 - Sample GT5P in-game screen with HUD DDU with shader harvesting.
 - Sample GT5P Class-C Trophy Screen as proof ETK enables game progression.
-- Sample GT6 screens (Nurb, etc.)
+- Sample GT6 Nürburgring Nordschleife clean-lap screen.
 - Sample ETK Pitstop app TELEMETRY ledger screen
 - Sample ETK Pitstop app TUNING screen
 - Sample ETK Pitstop app TOOLS PKG installer sequence screenshots
@@ -110,6 +115,10 @@ Snapshot of per-game status from on-device testing. Full tuning history, panic-l
 - Implemented:
 	- `R3` = PANIC BUTTON RECOVERY COMMAND (headless on-device Nuclear Recovery, single press)
 	- `L3` = MangoHUD position toggle (top-left ⇄ bottom-left), auto-remembered per game. Bottom-left is the dashboard default; flip to top-left for games whose HUD elements crowd the bottom edge (e.g. GT5P). Sentry applies the per-game preference at ignition.
+	- `L1` = ETK SCREENSHOT (in-race recommended). Silent `grim` capture of the full Wayland surface — **MangoHUD overlay included**, which is the whole point (RPCS3's internal screenshot strips the HUD). Single-button trigger so no chord pass-through to the game. **Onboarding pre-flight:** unbind `L1` in each PS3 game's controls (in GT5P/GT6 it defaults to Rear View camera toggle, which doesn't render anyway on Turnip — see `# Tested Games`). Doing this is a natural part of the first-launch settings pass operators do for audio anyway. Shots land in `/storage/games-internal/roms/etk/screenshots/` as `etk_<gameID>_<YYYYMMDD>_<HHMMSS>.png`, instantly visible via the `[games-internal]` SMB share at `\\<rig-ip>\games-internal\roms\etk\screenshots\`. Backed up to the host on every `install.sh` (Tier-B).
+	- `SELECT` + `D-pad Up` = ETK SCREENSHOT (UI/menu fallback). Same capture as L1 above; use this in Pitstop / EmulationStation / dealership / pause menu contexts where L1 has unwanted side effects (Pitstop tab nav). Not recommended in-race — SELECT also triggers the game's camera view toggle, so the captured frame will catch mid-transition.
+	- `SELECT` + `D-pad Right` = manual VAULT command (force a shader-vault tick)
+	- `SELECT` + `D-pad Left` = MangoHUD config reload signal
 	- Thermal failsafe (internal): on overheat, the rig auto-drops to PIT (capped CPU/GPU), the HUD reads `OVERHEAT - REBOOT`, and a cold-boot is the prescribed recovery path to fully restore overdrive performance.
 		  
 # Project History

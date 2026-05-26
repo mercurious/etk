@@ -241,6 +241,19 @@ def event_loop(device):
                 if code == 317 and val == 1:
                     toggle_hud_position()
 
+                # 310 = BTN_TL (L1): ETK SCREENSHOT (in-race recommended).
+                # Single-button trigger so the chord can't pass-through any
+                # in-game side effect (cf. SELECT-clutch chord which fires
+                # GT6's camera toggle alongside the screenshot). Requires the
+                # operator to unbind L1 in each PS3 game's controls — for the
+                # ETK target titles (GT5P/GT6) L1 defaults to rear-view camera
+                # toggle, which doesn't render anyway on Turnip (see
+                # dossiers/etk_gametest_status_sheet.md). Documented as a
+                # pre-flight onboarding step in the README. Backgrounded so
+                # the input loop never blocks on grim latency.
+                if code == 310 and val == 1:
+                    os.system("nohup bash /storage/games-internal/roms/etk/bin/screenshot.sh >/dev/null 2>&1 &")
+
                 # 314 = BTN_SELECT (clutch modifier for DPAD)
                 if code == 314: clutch = (val == 1)
 
@@ -250,6 +263,10 @@ def event_loop(device):
                 if code == 16: # Horizontal Axis
                     if val == 1: send_cmd("VAULT") # Right
                     elif val == -1: os.system("pkill -USR1 mangohud") # Left
+                elif code == 17: # Vertical Axis
+                    # Up: ETK SCREENSHOT (silent grim capture incl. MangoHUD).
+                    # Backgrounded so the input loop never blocks on capture I/O.
+                    if val == -1: os.system("nohup bash /storage/games-internal/roms/etk/bin/screenshot.sh >/dev/null 2>&1 &")
 
 if __name__ == "__main__":
     # SELF-HEAL: the virtual controller may not exist yet when the

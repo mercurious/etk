@@ -86,6 +86,16 @@ if [ -n "$MESA_HASH_NEW" ]; then
     fi
 fi
 
+# --- SCREENSHOT FEATURE DEPENDENCY CHECK ---
+# `grim` is the Wayland screenshot tool that bin/screenshot.sh shells out
+# to. It ships with Rocknix today, but a future nightly could strip it
+# and the L1 chord would then silently produce zero output. Probe at
+# install time so any breakage surfaces here, not at first L1 press.
+if ! ssh $RIG_SSH "command -v grim >/dev/null 2>&1"; then
+    echo -e "    ${Y}[WARN] \`grim\` not available on rig — ETK screenshot feature (L1) will not work${N}"
+    echo -e "    ${Y}       until grim is reinstalled. Check Rocknix package state.${N}"
+fi
+
 # Resolve current game ID from rig (for vault path construction)
 RIG_ID=$(ssh $RIG_SSH "cat $ID_FILE 2>/dev/null || pgrep -f rpcs3 | xargs -I{} cat /proc/{}/cmdline /proc/{}/environ 2>/dev/null | tr '\0' '\n' | grep -oE '[A-Z]{4}[0-9]{5}' | head -n 1")
 # Reject the IDLE/UNKNOWN_ID sentinels: env.sh writes "IDLE" to $ID_FILE
@@ -116,6 +126,7 @@ ssh $RIG_SSH "mkdir -p \
     $ETK_ROOT/vault \
     $ETK_ROOT/logs \
     $ETK_ROOT/config \
+    $ETK_ROOT/screenshots \
     $PKG_STAGING_DIR \
     /storage/.config/custom_scripts \
     /storage/.config/system.d \
@@ -144,6 +155,42 @@ On a SUCCESSFUL install the .pkg and .rap are deleted from this
 folder automatically. A failed install leaves them here so you
 can retry. One game at a time.
 PKGREADME
+
+# Document the ETK screenshots folder so a user browsing the SD card
+# (or the mapped \\<rig-ip>\games-internal SMB share) understands what
+# it is, how to trigger captures, and the per-game L1 onboarding step.
+ssh $RIG_SSH "cat > '$ETK_ROOT/screenshots/README.txt'" <<'SHOTREADME'
+ETK SCREENSHOTS - DRIVER DATA UNIT CAPTURES
+===========================================
+
+Silent `grim` captures of the full Wayland surface, MangoHUD overlay
+included. RPCS3's own Save Screenshot strips the HUD; this folder is
+how you get the ETK DDU into the camera shot.
+
+Triggers (handheld):
+  L1                  = recommended in-race screenshot (single button)
+  SELECT + D-pad Up   = UI / menu / Pitstop / pause-menu fallback
+
+Per-game onboarding (one time, before in-race L1 works):
+  Open each PS3 game's controller settings and UNBIND L1. In GT5P/GT6
+  L1 defaults to Rear View camera toggle, which doesn't render on
+  Turnip anyway — a free trade. Without this step, L1 in-race fires
+  BOTH the screenshot and the game's default L1 action.
+
+Filename: etk_<gameID>_<YYYYMMDD>_<HHMMSS>.png
+  gameID = ROCKNIX when captured outside a game session.
+
+Host access via SMB:
+  Windows:  \\<rig-ip>\games-internal\roms\etk\screenshots\
+  macOS:    smb://<rig-ip>/games-internal/roms/etk/screenshots/
+
+Backup: every `./install.sh` Tier-B mirror copies this folder to the
+host at ./state/screenshots/. To restore on a fresh/reflashed rig run
+`./install.sh --restore-state`.
+
+Diagnostics: if a press produces no file, check `.last_error` in this
+folder — `bin/screenshot.sh` writes grim's stderr there on failure.
+SHOTREADME
 
 # ETK mako notification style: a criteria section scoped to app-name
 # "ETK Pitstop" so ETK toasts are wide and readable WITHOUT altering
@@ -195,12 +242,13 @@ $RSYNC_CMD --ignore-existing --exclude='.DS_Store' "$RIG_SSH:$ETK_ROOT/vault/$CH
 # --ignore-existing — host must track edits; no --delete — host snapshot is
 # an archive, never pruned). Read-only on the rig: zero SD writes. Skipped
 # per-rule when the rig source is absent (fresh rig, first run).
-echo -e "${C}    [Tier-B] Backing up telemetry / configs / RPCS3 home (RIG -> HOST PC)...${N}"
-mkdir -p "$HOST_STATE_DIR/etk_telemetry" "$HOST_STATE_DIR/custom_configs" "$HOST_STATE_DIR/rpcs3_home"
+echo -e "${C}    [Tier-B] Backing up telemetry / configs / RPCS3 home / screenshots (RIG -> HOST PC)...${N}"
+mkdir -p "$HOST_STATE_DIR/etk_telemetry" "$HOST_STATE_DIR/custom_configs" "$HOST_STATE_DIR/rpcs3_home" "$HOST_STATE_DIR/screenshots"
 for pair in \
     "$TELEMETRY_DIR|$HOST_STATE_DIR/etk_telemetry" \
     "$RPCS3_CUSTOM_CONFIGS|$HOST_STATE_DIR/custom_configs" \
-    "$RPCS3_HOME_DIR|$HOST_STATE_DIR/rpcs3_home"; do
+    "$RPCS3_HOME_DIR|$HOST_STATE_DIR/rpcs3_home" \
+    "$ETK_ROOT/screenshots|$HOST_STATE_DIR/screenshots"; do
     SRC="${pair%%|*}"
     DST="${pair##*|}"
     if ssh $RIG_SSH "[ -d $SRC ]" 2>/dev/null; then
@@ -255,11 +303,12 @@ fi
 # No --delete: a fresh rig has nothing extra; --delete is pure downside.
 # Inert on default runs (no flag = no host->rig state write).
 if [ "$RESTORE_STATE" = "1" ]; then
-    echo -e "${C}    [Tier-B] Restoring telemetry / configs / RPCS3 home (HOST PC -> RIG, OVERWRITE)...${N}"
+    echo -e "${C}    [Tier-B] Restoring telemetry / configs / RPCS3 home / screenshots (HOST PC -> RIG, OVERWRITE)...${N}"
     for pair in \
         "$HOST_STATE_DIR/etk_telemetry|$TELEMETRY_DIR" \
         "$HOST_STATE_DIR/custom_configs|$RPCS3_CUSTOM_CONFIGS" \
-        "$HOST_STATE_DIR/rpcs3_home|$RPCS3_HOME_DIR"; do
+        "$HOST_STATE_DIR/rpcs3_home|$RPCS3_HOME_DIR" \
+        "$HOST_STATE_DIR/screenshots|$ETK_ROOT/screenshots"; do
         SRC="${pair%%|*}"
         DST="${pair##*|}"
         if [ -d "$SRC" ] && [ "$(ls -A "$SRC" 2>/dev/null)" ]; then
