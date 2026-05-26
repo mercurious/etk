@@ -179,6 +179,9 @@ export RPCS3_BIN="/usr/bin/rpcs3-sa"
 export RPCS3_DEV_HDD0="/storage/games-internal/roms/bios/rpcs3/dev_hdd0"
 export RPCS3_GAME_DIR="$RPCS3_DEV_HDD0/game"
 export RPCS3_EXDATA_DIR="$RPCS3_DEV_HDD0/home/00000001/exdata"
+# RPCS3 user-profile tree (saves, trophies, .rap licenses) — Tier-B precious,
+# backed up by install.sh, restored only via --restore-state.
+export RPCS3_HOME_DIR="$RPCS3_DEV_HDD0/home"
 export RPCS3_CUSTOM_CONFIGS="/storage/games-internal/roms/bios/rpcs3/custom_configs"
 export RPCS3_HDD1_CACHE="/storage/games-internal/roms/bios/rpcs3/dev_hdd1/caches"
 export RPCS3_RUNTIME_CACHE="/storage/.cache/rpcs3/cache"

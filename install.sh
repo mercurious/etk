@@ -16,6 +16,31 @@ source ./scripts/env.sh
 
 C='\033[0;36m'; G='\033[0;32m'; Y='\033[1;33m'; R='\033[0;31m'; N='\033[0m'
 
+# --- FLAG PARSE ---
+# --restore-state: GATED Tier-B restore (host -> rig). Default off; this is
+# the only path that writes to rig telemetry/configs/saves and is intended
+# ONLY for standing a fresh/reflashed rig back up. Mirrors uninstall.sh's
+# --zap-vault gating idiom. Tolerated in any arg position.
+RESTORE_STATE=0
+for arg in "$@"; do
+    case "$arg" in
+        --restore-state) RESTORE_STATE=1 ;;
+    esac
+done
+
+# Tier-B host snapshot tree (local to install.sh, mirroring how ./vault
+# is already a literal here). Never auto-deleted (cf. ./vault philosophy).
+HOST_STATE_DIR="./state"
+
+if [ "$RESTORE_STATE" = "1" ]; then
+    echo -e "${R}>>> WARNING: --restore-state passed.${N}"
+    echo -e "${R}    Host-side Tier-B state ($HOST_STATE_DIR) will OVERWRITE rig"
+    echo -e "    telemetry ledgers, tuned RPCS3 configs, and the RPCS3 user-profile"
+    echo -e "    tree (saves, trophies, .rap licenses). Intended ONLY for a"
+    echo -e "    fresh/reflashed rig. NEVER run this as part of a routine update.${N}"
+    echo ""
+fi
+
 # --- PIPELINE CONTROLS ---
 if [ "$ETK_VERBOSE" == "1" ]; then
     RSYNC_CMD="rsync -avzI --progress"
@@ -37,6 +62,29 @@ TOTAL_STEPS=6
 echo -e "${C}>>> [0/${TOTAL_STEPS}] PROBING & QUIESCING REMOTE RIG...${N}"
 ssh $RIG_SSH "pkill -f vault_d.sh; pkill -f thermal_d.sh; pkill -f mango_bridge.sh; pkill -f input_d.py" 2>/dev/null
 sleep 1
+
+# --- MESA REBUILD FINGERPRINT (addendum §G.5) ---
+# Every Rocknix nightly rebuilds Mesa from source even when upstream is
+# unchanged; the new libvulkan_freedreno.so build ID invalidates the prior
+# Turnip cache layer, doubling per-game vault size in one session. Fingerprint
+# the first 64 KB of the shared object (BusyBox-friendly, deterministic) and
+# compare against $ETK_ROOT/vault/.last_mesa.hash. On change, emit a one-line
+# tripwire and prompt the operator to run tools/vault_sweep.sh. The hash file's
+# OWN mtime is the rebuild-detected epoch — tools/vault_sweep.sh reads it as
+# the sweep cutoff. Silent on first ever run (no prior hash to compare).
+MESA_HASH_NEW=$(ssh $RIG_SSH "head -c 65536 /usr/lib/libvulkan_freedreno.so 2>/dev/null | sha256sum | cut -d' ' -f1")
+if [ -n "$MESA_HASH_NEW" ]; then
+    MESA_HASH_FILE="$ETK_ROOT/vault/.last_mesa.hash"
+    MESA_HASH_OLD=$(ssh $RIG_SSH "cat $MESA_HASH_FILE 2>/dev/null")
+    if [ -z "$MESA_HASH_OLD" ]; then
+        # First run: seed the fingerprint silently. Nothing prior to compare.
+        ssh $RIG_SSH "mkdir -p $ETK_ROOT/vault && printf '%s\n' '$MESA_HASH_NEW' > $MESA_HASH_FILE"
+    elif [ "$MESA_HASH_OLD" != "$MESA_HASH_NEW" ]; then
+        echo -e "    ${Y}[INFO] MESA REBUILT — vault layer keyed against new build ID.${N}"
+        echo -e "    ${Y}       Run \`tools/vault_sweep.sh\` (on the rig) to prune orphaned shaders.${N}"
+        ssh $RIG_SSH "echo \"[\$(date '+%H:%M:%S.%N')] MESA REBUILD DETECTED (was $MESA_HASH_OLD, now $MESA_HASH_NEW)\" >> $TRIPWIRE_LOG && printf '%s\n' '$MESA_HASH_NEW' > $MESA_HASH_FILE"
+    fi
+fi
 
 # Resolve current game ID from rig (for vault path construction)
 RIG_ID=$(ssh $RIG_SSH "cat $ID_FILE 2>/dev/null || pgrep -f rpcs3 | xargs -I{} cat /proc/{}/cmdline /proc/{}/environ 2>/dev/null | tr '\0' '\n' | grep -oE '[A-Z]{4}[0-9]{5}' | head -n 1")
@@ -76,7 +124,9 @@ ssh $RIG_SSH "mkdir -p \
     $RPCS3_CUSTOM_CONFIGS \
     $RPCS3_GAME_DIR \
     $RPCS3_EXDATA_DIR \
-    $PS3_LAUNCHER_DIR"
+    $RPCS3_HOME_DIR \
+    $PS3_LAUNCHER_DIR \
+    $TELEMETRY_DIR"
 
 # Document the PKG install drop folder so a user browsing the SD card
 # understands what it is and that staged files are consumed on success.
@@ -137,6 +187,34 @@ echo -e "${C}>>> [2/${TOTAL_STEPS}] SAFEGUARDING HARVEST (PULLING SHADERS: RIG -
 mkdir -p "./vault/$CHIPSET"
 $RSYNC_CMD --ignore-existing --exclude='.DS_Store' "$RIG_SSH:$ETK_ROOT/vault/$CHIPSET/" "./vault/$CHIPSET/"
 
+# --- TIER-B BACKUP: rig -> host (addendum §C) ---
+# Mutable-precious state: telemetry ledgers, tuned RPCS3 configs, RPCS3
+# user-profile tree (saves/trophies/.rap licenses). Plain mirror (no
+# --ignore-existing — host must track edits; no --delete — host snapshot is
+# an archive, never pruned). Read-only on the rig: zero SD writes. Skipped
+# per-rule when the rig source is absent (fresh rig, first run).
+echo -e "${C}    [Tier-B] Backing up telemetry / configs / RPCS3 home (RIG -> HOST PC)...${N}"
+mkdir -p "$HOST_STATE_DIR/etk_telemetry" "$HOST_STATE_DIR/custom_configs" "$HOST_STATE_DIR/rpcs3_home"
+for pair in \
+    "$TELEMETRY_DIR|$HOST_STATE_DIR/etk_telemetry" \
+    "$RPCS3_CUSTOM_CONFIGS|$HOST_STATE_DIR/custom_configs" \
+    "$RPCS3_HOME_DIR|$HOST_STATE_DIR/rpcs3_home"; do
+    SRC="${pair%%|*}"
+    DST="${pair##*|}"
+    if ssh $RIG_SSH "[ -d $SRC ]" 2>/dev/null; then
+        $RSYNC_CMD --exclude='.DS_Store' "$RIG_SSH:$SRC/" "$DST/"
+    else
+        echo -e "    ${Y}[SKIP] rig source absent: $SRC${N}"
+    fi
+done
+# RECENT_ID_FILE lives at vault root (outside the $CHIPSET/ scope Step 2
+# pulls). Tiny, mutable, and folding it in saves one wrong-config flash on
+# the first launch after --restore-state (seed_id falls back to NPUA80075
+# otherwise — wrong game's HUD position, wrong cache pre-seed link).
+if ssh $RIG_SSH "[ -f $RECENT_ID_FILE ]" 2>/dev/null; then
+    $RSYNC_CMD --exclude='.DS_Store' "$RIG_SSH:$RECENT_ID_FILE" "./vault/last_played_id.txt"
+fi
+
 # ==========================================================
 # STEP 3: DEPLOY SCRIPTS, DAEMONS & OVERLAYS
 # --delete removes stale files from previous versions so
@@ -163,6 +241,33 @@ if [ -d "./vault/$CHIPSET" ] && [ "$(ls -A "./vault/$CHIPSET" 2>/dev/null)" ]; t
     $RSYNC_CMD --ignore-existing --exclude='.DS_Store' "./vault/$CHIPSET/" "$RIG_SSH:$ETK_ROOT/vault/$CHIPSET/"
 else
     echo -e "    ${Y}[SKIP] No local vault found — nothing to push.${N}"
+fi
+
+# --- TIER-B RESTORE: host -> rig (addendum §C, gated) ---
+# OVERWRITE semantics — NOT --update. A just-reinstalled game drops a
+# *template* config_<ID>.yml whose mtime is newer than the tuned backup, so
+# --update would silently skip the restore and leave the game on template
+# tuning (the spec's "newer-mtime trap"). Plain $RSYNC_CMD overwrites the
+# template with the tuned backup, which is the entire point of --restore-state.
+# No --delete: a fresh rig has nothing extra; --delete is pure downside.
+# Inert on default runs (no flag = no host->rig state write).
+if [ "$RESTORE_STATE" = "1" ]; then
+    echo -e "${C}    [Tier-B] Restoring telemetry / configs / RPCS3 home (HOST PC -> RIG, OVERWRITE)...${N}"
+    for pair in \
+        "$HOST_STATE_DIR/etk_telemetry|$TELEMETRY_DIR" \
+        "$HOST_STATE_DIR/custom_configs|$RPCS3_CUSTOM_CONFIGS" \
+        "$HOST_STATE_DIR/rpcs3_home|$RPCS3_HOME_DIR"; do
+        SRC="${pair%%|*}"
+        DST="${pair##*|}"
+        if [ -d "$SRC" ] && [ "$(ls -A "$SRC" 2>/dev/null)" ]; then
+            $RSYNC_CMD --exclude='.DS_Store' "$SRC/" "$RIG_SSH:$DST/"
+        else
+            echo -e "    ${Y}[SKIP] host source empty: $SRC${N}"
+        fi
+    done
+    if [ -f "./vault/last_played_id.txt" ]; then
+        $RSYNC_CMD --exclude='.DS_Store' "./vault/last_played_id.txt" "$RIG_SSH:$RECENT_ID_FILE"
+    fi
 fi
 
 # ==========================================================

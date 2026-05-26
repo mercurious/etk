@@ -31,20 +31,20 @@ while true; do
     LOAD_RAW=$(cat /proc/loadavg | awk '{print $1}')
     LOAD_INT=$(echo "$LOAD_RAW" | awk '{print int($1 * 100)}')
     
-    L_STAT="»---"
+    L_STAT="»--"
     if [ "$LOAD_INT" -gt 860 ]; then 
-        L_STAT="»»»»"
+        L_STAT="»»»"
     elif [ "$LOAD_INT" -gt 590 ]; then 
-        L_STAT="»»»-"
+        L_STAT="»»-"
     fi
     
     # RAM Calculation and Thresholds
     RAM_VAL=$(free | awk '/Mem:/ {printf("%.0f", $3/$2 * 100)}')
-    R_STAT="»---"
+    R_STAT="»--"
     if [ "$RAM_VAL" -ge 90 ]; then
-        R_STAT="»»»»"
+        R_STAT="»»»"
     elif [ "$RAM_VAL" -ge 75 ]; then
-        R_STAT="»»»-"
+        R_STAT="»»-"
     fi
 
     # 4. ADVANCED SHADER TELEMETRY
@@ -73,7 +73,7 @@ while true; do
     else
     	# Convert Kilobytes to Megabytes safely using integer arithmetic
     	V_SIZE=$((V_SIZE_KB / 1024))
-        VAULT_STR="${V_SIZE}MB ${BANK_STR} ${NEW_SHADERS}+"
+        VAULT_STR="${NEW_SHADERS}+ ${BANK_STR} ${V_SIZE}MB"
     fi
 
     # --- TIME-GATED LAUNCH HEADER (three stages) ---
@@ -97,7 +97,7 @@ while true; do
 
     # 5. ATOMIC HUD INJECTION [MANIFEST RULE: HUD FORMAT]
     case "$STAGE" in
-        1) FINAL_STRING="${ETK_BUILD_TYPE}|${TARGET_ID}|SHADERS ${VAULT_STR}" ;;
+        1) FINAL_STRING="${ETK_BUILD_TYPE}|${TARGET_ID}|SHDRS ${VAULT_STR}" ;;
         2) FINAL_STRING="TEMP ${T_STAT}|LOAD ${LOAD_RAW}${L_STAT}|RAM ${RAM_VAL}%${R_STAT}|" ;;
         *) FINAL_STRING="${T_STAT}|${LOAD_RAW}${L_STAT}|${RAM_VAL}%${R_STAT}|${VAULT_STR}" ;;
     esac

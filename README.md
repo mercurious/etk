@@ -1,15 +1,18 @@
 # The Emulation Tuning Kit
 
-The Emulation Tuning Kit for Rocknix supports experimental PS emulation on ARM64 Retrogaming Handhelds for the production of highly tuned game and device-specific emulation configurations and shader vaults. It works by equipping your compatible handheld with special features to become a trackday rig to literally and figuratively crash your way into making a game such as Gran Turismo 5 Prologue playable. Push your handheld to its limits while collecting shaders with tools to recover from crashes so the game plays well after several attempts.
+The Emulation Tuning Kit for Rocknix supports experimental PS3 emulation on ARM64 Retrogaming Handhelds for the production of highly tuned game and device-specific emulation configurations and shader vaults. It works by equipping your compatible handheld with special features to become a track day rig to literally and figuratively crash your way into making a game such as Gran Turismo 6 playable. Push your handheld to its limits while collecting shaders with tools to recover from crashes so the game plays well after several attempts. ETK automatically tracks sessions on a per-game race ledger.
 
-The kit instruments the number of shaders compiled for your device in a custom in-game overly using the built-in MangoHUD support. The kit adds a custom Rocknix Tool app for on-board telemetry, tuning, and simplified game package installation. By tracking your productive crashing, you measurably observe and tangibly feel your way toward a playable game that allows you to progres through it, unlocking additional game asset shaders to harvest.
+In the style of a racer car Driver Data Unit (DDU) dashboard, the ETK instruments provide shader counts in real-time in a custom in-game overly using MangoHUD support built-in to Rocknix. The kit also adds a custom Rocknix Tool app for on-board telemetry analysis, quick tuning of Adreno-centric emulation settings, and simplified game package installation. 
 
-More technically, ETK is a custom Rocknix middleware of shell scripts and python curses that employs brute-force optimization, shader cache management, advanced in-game telematics, and operates an automated file-drop headless install of PS3 PKG installations inside of RPSC3. 
+More technically, ETK is a custom Rocknix middleware composed of shell scripts and python curses that employ brute-force optimization, shader cache management, advanced in-game telematics, and operates an automated file-drop headless install of PS3 PKG installations inside of RPSC3. 
 
 Built for abuse and race conditions, the ETK guards hard-earned shaders, custom tunings, and game saves from SD card failure, OS flashing, data corruption, device failure, loss or theft. The ETK includes an emergency cooldown that automatically puts your device in PIT mode as needed, protecting your engine from overheating.
 
 # Launch ETK Edition: GTP5 SPEC
-Specifically designed to make Gran Turismo 5 Prologue playable on a Flip2 Snapdragon, the ETK adopts the racing metaphor throughout but should work for any type of PS3 game. The long term vision is a shader swarm system where the your device automatically seeds and leeches shaders and proven emulation tunings through a tight-knit device-centric P2P network during a battery charge.
+Specifically designed to make Gran Turismo 5 Prologue playable on a Flip2 Snapdragon, the ETK adopts the racing metaphor throughout but should work for any type of PS3 game. 
+
+# Final Mission
+The long term vision for the ETK is an integrated shader swarm system where the your device automatically seeds and leeches shaders and proven emulation tunings over auto-subscribing device-centric bittorrent whisper nets during a battery charge.
 
 # Screenshots
 ToDo.
@@ -19,7 +22,7 @@ ToDo.
 - Sample ETK Pitstop app TUNING screen
 - Sample ETK Pitstop app TOOLS PKG installer sequence screenshots
 
-# The Kit Features
+# The Kit Contents
 1. Native Rocknix ETK Pitstop App for on-device config editing, per game telemetry analysis over time, and simple PS3 game installation (drop .pkg and .rap in `roms/etk/pkg_install_drop/`)
 1. Customized in-game overlay dashbard with ETK telematics inside native Rocknix MangoHUD
 1. Hardware and driver tunings for maximum performance going beyond config settings
@@ -61,10 +64,11 @@ ToDo.
 - `/vault`: Large archive of Vulkan precompiled shader bins organized by chipset and gameID
 
 # ETK System Requirements
-- **System:** Retroid Pocket Flip 2 (SM8250)
+- **Host System** macOS or Linux (experimental Windows/PC support)
+- **Handheld System:** Retroid Pocket Flip 2 (SM8250)
 - **OS:** ROCKNIX (Nightly Build: 20260525)
 - **Driver** MESA Turnip 26.1.0
-- **Target/Status:** Gran Turismo series: HD (playable/race audio), Prologue (playable/menu audio), 5 (menus only), 6 (playable/menu audio) (RPCS3)
+- **Target/Status:** Gran Turismo series: HD (playable/race audio), Prologue Spec II (playable/menu audio), 5 (menus only), 6 Version 1.0 (playable/menu audio) (RPCS3)
 - **Shell:** BusyBox v1.36.1
 - **Custom Overlay:** MangoHUD
 

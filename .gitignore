@@ -5,6 +5,13 @@
 vault/
 **/vault/
 
+# 1b. Ignore the Tier-B host snapshot tree (addendum: install.sh backs up
+# rig-side telemetry ledgers, tuned RPCS3 configs, and the RPCS3 user-profile
+# tree — saves, trophies, .rap licenses — here on every install run).
+# Mirrors the vault/ precedent: never auto-deleted, never committed.
+state/
+**/state/
+
 # 2. Ignore Live Data / Shared Memory
 # We don't want to track etk_mode.txt or the command queue
 shm/
