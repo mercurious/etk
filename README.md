@@ -105,17 +105,17 @@ ToDo.
 - Phase 2: Modular professional grade deployable ETK: shader cache successfully upscaled
 - Phase 3: Enabled on-board MangoHUD DDU: integrated live instrumentation
 - Phase 4: Enabled Gamepad ETK pit controls: full un-tethered racing and shader harvesting
-- Phase 5: Solved treadwear problem on SD card with RAM disk support
+- Phase 5: Solved SD card treadwear and boost persistence with RAM disk support
 - Phase 6: Rocknix OS migrated to May 11 Nightly, dependency updated, preserved into repo, 
 - Phase 7: Enabled robust crash reporting, diagnosis, advisory, ETK install tiers
 - Phase 8: Attempted experimental incremental audio support
 - Phase 9: Enabled game agnostic ETK
-- Phase 10: Onboard ETK Command: `R3` as Recovery Panic Button
-- Phase 11: Develop External Networking Gemini Dev Analytics Workflow Tools
-- ***Phase 12:** Developing native Rocknix ETK app for utilities (Tools or carousel UI)
-- Phase 13: Develop shader sharing and shader swarming features per device/per game serial
-- Phase 14: Beta Testing
-- Phase 15: Release
+- Phase 10: Onboard ETK Commands: `R3` as Recovery Panic Button and 
+- Phase 11: Onboard ETK Commands: `L3` as MangoHUD screen position toggle
+- **Phase 12:** Developing native Rocknix ETK app for utilities (Tools or carousel UI)
+- Phase 13: Alpha Testing
+- Phase 14: Develop tuning and shader sharing; Rig self-updates ETK from GitHub in Pitstop App
+- Phase 15: Beta Testing
 
 # Easy Install Guide on macOS and Linux (FULL Kit)
 1. Create a local `~/etk` for the kit's extracted code and navigate to it `cd ~/etk`
