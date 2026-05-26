@@ -78,14 +78,12 @@ Snapshot of per-game status from on-device testing. Full tuning history, panic-l
 
 | ID | Game | Status | FPS | Audio | Vault | Notes |
 |---|---|---|---|---|---|---|
-| NPUA80075 | Gran Turismo Prologue | Playable | ~30 | Menus only | Highly saturated | Primary ETK target. Track surface flickers; can't finish Fuji. |
+| NPUA80075 | Gran Turismo Prologue | Playable | ~30 | Menus only | Highly saturated | Primary ETK target. Track surface flickers; Unstable over time. |
 | NPEA90002 | Gran Turismo HD | Playable | 20–30 | Good (some race stutter) | 16 MB / 1551 | Ideal baseline — small, fast, durable. Black sky artifacting; menus SPU-sensitive. |
-| NPUB30457 | Ridge Racer 7 | Playable | — | Impressive | 5 MB / 266 | Stunning contrast with the GT titles. Distant backgrounds sometimes don't load. |
-| NPUA80472 | LittleBigPlanet | Playable | Low | Impressive | 11 MB / 767 | No issues discovered yet. |
-| NPEA00502 | Gran Turismo 6 | Playable\* | <30 | Menus good | 192 MB / 21256 (growing) | Full Nürburgring Nordschleife lap clean 2026-05-26. Rear-view mirror does not render. Requires `Write/Read Color Buffers: false` — wiki-recommended `true` causes hallucinatory track-element layering on Turnip. |
+| NPUB30457 | Ridge Racer 7 | Semi-Playable | 20-30 | Playable | 5 MB / 266 | No progress, not durable for 3 lap min. Distant backgrounds sometimes don't load. |
+| NPUA80472 | LittleBigPlanet | Playable | Low | 12-24 | 11 MB / 767 | No issues discovered yet beyond shader storm glitching. |
+| NPEA00502 | Gran Turismo 6 | Playable | <12 | Menus good | 192 MB / 21256 (growing) | Full Nürburgring Nordschleife lap clean 2026-05-26. Tuning for FPS is deferred until the shader vault saturates. Rear-view mirror does not render. |
 | BCUS98114 | Gran Turismo 5 | Menus only | — | Menus only | 38 MB / 4133 | Tracks kernel-panic. Menus stable, eventual freeze. |
-
-\* GT6 plays sub-30 FPS but is stable on a marquee track. Tuning for FPS is deferred until the shader vault saturates.
 
 # What is the ETK and How Does it Really Work?
 - **To enhance how the built-in PS3 emulator handles shader caching,** the ETK intercepts the Vulkan shader cache with a simple symlink and safely stores these files into a vault folder on your SD card organized by device and game ID so they can be archived and shared. Even when you crash during a shader harvesting run, the vault has saved the shaders for the next run.
