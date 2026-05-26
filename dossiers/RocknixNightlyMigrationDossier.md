@@ -251,23 +251,35 @@ Confirm `thermal_zone14` still tracks the prime-core/CPU hot spot (probe labels 
 
 ---
 
-## §13. PRE-FLIGHT CHECKLIST (do not skip the backup expansion)
+## §13. PRE-FLIGHT CHECKLIST
 
-`install.sh` Step 2 pulls **only** `vault/$CHIPSET/` to the host. A full SD reflash also destroys, **with no ETK backup**:
-- `etk_telemetry/` — career ledgers, session history, config-change ledger, pit notes
-- `bios/rpcs3/custom_configs/` — your per-game tuned configs
-- `roms/ps3/` + `bios/rpcs3/dev_hdd0/game/` — installed PS3 games (full reinstall via TOOLS tab otherwise)
+**SUPERSEDED 2026-05-26 by `ADDENDUM_install_sh_tiered_backup.md`.** `install.sh`
+now captures Tier-B state (telemetry ledgers, tuned RPCS3 configs, RPCS3 user
+profile — saves, trophies, `.rap` licenses, last-played ID) into `./state/` on
+**every** run, alongside the existing `./vault/` shader pull. The old manual
+rsync block here is no longer needed.
+
+Game blobs (`bios/rpcs3/dev_hdd0/game/`) and `.psn` launchers remain Tier-C
+(operator decision): re-install from `.pkg`/`.rap` via the TOOLS tab is the
+accepted recovery path. **Precondition:** keep `.pkg`/`.rap` originals in your
+off-device library — the TOOLS installer deletes staged files from
+`$PKG_STAGING_DIR` on success.
 
 **Before flashing:**
-1. `cd ~/etk && ./install.sh` once against the *current* rig (or just run the Step-2 pull) so the host vault holds your freshest shaders.
-2. Manually pull the unprotected state to the host:
-   ```sh
-   rsync -az root@10.0.0.40:/storage/games-internal/roms/etk/etk_telemetry/ ./backup_20260524/etk_telemetry/
-   rsync -az root@10.0.0.40:/storage/games-internal/roms/bios/rpcs3/custom_configs/ ./backup_20260524/custom_configs/
-   rsync -az root@10.0.0.40:/storage/games-internal/roms/ps3/ ./backup_20260524/ps3_launchers/
-   ```
-3. Archive the current **20260516 image** locally (it's about to leave the mirror — it's your only rollback).
-4. Confirm host has the 20260524 image verified against its checksum.
+1. `cd ~/etk && ./install.sh` once against the *current* rig — pulls the
+   freshest shaders into `./vault/` AND the freshest Tier-B state into
+   `./state/`.
+2. Archive the outgoing OS image locally (e.g. the **20260516** image before it
+   leaves the Rocknix mirror — it's your only rollback).
+3. Confirm host has the incoming image verified against its checksum.
+
+**After flashing a fresh rig:**
+- `./install.sh --restore-state` once — overwrite-pushes `./state/` back to the
+  rig so telemetry / configs / saves return to the tuned-up baseline. This is
+  the ONLY supported way to consume the Tier-B backup; never run it as part of
+  a routine update (it overwrites live rig-side state). See `§7` for the
+  scenarios that actually force a reflash and `ADDENDUM_install_sh_tiered_backup.md`
+  for the full restore semantics.
 
 ---
 
@@ -285,7 +297,7 @@ Confirm `thermal_zone14` still tracks the prime-core/CPU hot spot (probe labels 
 10. **Audio:** Cubeb output works, or fall back via TUNING tab (§8).
 11. **Thermal:** run `etk_probe.sh`, re-validate zone 14 + thresholds (§12).
 12. **Vault:** confirm "NEW" counter increments during harvest (cache→vault symlink intact); adapter string still Turnip 26.1.0 (§6).
-13. **Re-install games** from `backup_20260524/` if you did a clean flash, restore custom_configs + telemetry.
+13. **Re-install games** from your off-device `.pkg`/`.rap` library if you did a clean flash; restore Tier-B state (custom_configs + telemetry + RPCS3 user profile) with `./install.sh --restore-state` (see §13 and `ADDENDUM_install_sh_tiered_backup.md`).
 14. **Docs:** bump version strings to 20260524 across `README.md` / `AI_MANIFEST.md` / `env.sh` comment; update gamepad spec if native binds moved.
 
 ---

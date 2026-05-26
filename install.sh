@@ -177,7 +177,9 @@ ETKMAKO
 # STEP 2: VAULT PULL — RIG -> HOST PC (SAFEGUARD HARVEST)
 # Always pull before pushing so no session's banked shaders
 # are lost if the rig is about to be reflashed or repaired.
-# --update skips files where the rig copy is older than host.
+# --ignore-existing: shader files are content-fixed (cache key
+# == filename), so a banked .bin is immutable; never overwrite a
+# host copy with a rig copy of the same name.
 # ==========================================================
 echo -e "${C}>>> [2/${TOTAL_STEPS}] SAFEGUARDING HARVEST (PULLING SHADERS: RIG -> HOST PC)...${N}"
 # Scoped to $CHIPSET/ so anything outside the structured
@@ -231,9 +233,10 @@ ssh $RIG_SSH "chmod +x $ETK_ROOT/bin/* $ETK_ROOT/scripts/*"
 # Pushes any shaders from the host vault that the rig doesn't
 # have yet. This is the repair/post-flash recovery path that
 # saves re-harvesting after an OS reflash or SD card swap.
-# --update skips files already newer on the rig.
-# --ignore-existing would be safer if you never want to overwrite
-# rig shaders with host copies, but --update handles version drift.
+# --ignore-existing: same reasoning as Step 2 — shader files are
+# content-fixed; we only add what the rig is missing, never overwrite.
+# Bidirectional --ignore-existing is the property that makes the
+# Tier-A vault sync safe to run on every install (addendum §B).
 # ==========================================================
 echo -e "${C}>>> [4/${TOTAL_STEPS}] RESTORING BANKED SHADERS (PUSHING VAULT: HOST PC -> RIG)...${N}"
 # Scoped to $CHIPSET/ — see step 2 rationale.
