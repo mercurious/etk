@@ -2,7 +2,7 @@
 
 The Emulation Tuning Kit for Rocknix supports experimental PS3 emulation on ARM64 Retrogaming Handhelds for the production of highly tuned game and device-specific emulation configurations and shader vaults. It works by equipping your compatible handheld with special features to become a track day rig to literally and figuratively crash your way into making a game such as Gran Turismo 6 playable. Push your handheld to its limits while collecting shaders with tools to recover from crashes so the game plays well after several attempts. ETK automatically tracks sessions on a per-game race ledger.
 
-In the style of a racer car Driver Data Unit (DDU) dashboard, the ETK instruments provide shader counts in real-time in a custom in-game overly using MangoHUD support built-in to Rocknix. The kit also adds a custom Rocknix Tool app for on-board telemetry analysis, quick tuning of Adreno-centric emulation settings, and simplified game package installation. 
+In the style of a race car Driver Data Unit (DDU) dashboard, the ETK instruments provide shader counts in real-time in a custom in-game overly using MangoHUD support built-in to Rocknix. The kit also adds a custom Rocknix Tool app for on-board telemetry analysis, quick tuning of Adreno-centric emulation settings, and simplified game package installation. 
 
 More technically, ETK is a custom Rocknix middleware composed of shell scripts and python curses that employ brute-force optimization, shader cache management, advanced in-game telematics, and operates an automated file-drop headless install of PS3 PKG installations inside of RPSC3. 
 
@@ -69,9 +69,23 @@ ToDo.
 - **Handheld System:** Retroid Pocket Flip 2 (SM8250) (other SM8250 devices testable)
 - **OS:** ROCKNIX (Nightly Build: 20260525)
 - **Driver** MESA Turnip 26.1.0
-- **Target/Status:** Gran Turismo series: HD (playable/race audio), Prologue Spec II (playable/menu audio), 5 (menus only), 6 Version 1.0 (playable/menu audio) (RPCS3)
+- **Target/Status:** Multiple PS3 titles tested under RPCS3 — see `# Tested Games` below.
 - **Shell:** BusyBox v1.36.1
 - **Custom Overlay:** MangoHUD
+
+# Tested Games (RPCS3)
+Snapshot of per-game status from on-device testing. Full tuning history, panic-ledger context, and the critical config dials per game live in [dossiers/etk_gametest_status_sheet.md](dossiers/etk_gametest_status_sheet.md).
+
+| ID | Game | Status | FPS | Audio | Vault | Notes |
+|---|---|---|---|---|---|---|
+| NPUA80075 | Gran Turismo Prologue | Playable | ~30 | Menus only | Highly saturated | Primary ETK target. Track surface flickers; can't finish Fuji. |
+| NPEA90002 | Gran Turismo HD | Playable | 20–30 | Good (some race stutter) | 16 MB / 1551 | Ideal baseline — small, fast, durable. Black sky artifacting; menus SPU-sensitive. |
+| NPUB30457 | Ridge Racer 7 | Playable | — | Impressive | 5 MB / 266 | Stunning contrast with the GT titles. Distant backgrounds sometimes don't load. |
+| NPUA80472 | LittleBigPlanet | Playable | Low | Impressive | 11 MB / 767 | No issues discovered yet. |
+| NPEA00502 | Gran Turismo 6 | Playable\* | <30 | Menus good | 192 MB / 21256 (growing) | Full Nürburgring Nordschleife lap clean 2026-05-26. Rear-view mirror does not render. Requires `Write/Read Color Buffers: false` — wiki-recommended `true` causes hallucinatory track-element layering on Turnip. |
+| BCUS98114 | Gran Turismo 5 | Menus only | — | Menus only | 38 MB / 4133 | Tracks kernel-panic. Menus stable, eventual freeze. |
+
+\* GT6 plays sub-30 FPS but is stable on a marquee track. Tuning for FPS is deferred until the shader vault saturates.
 
 # What is the ETK and How Does it Really Work?
 - **To enhance how the built-in PS3 emulator handles shader caching,** the ETK intercepts the Vulkan shader cache with a simple symlink and safely stores these files into a vault folder on your SD card organized by device and game ID so they can be archived and shared. Even when you crash during a shader harvesting run, the vault has saved the shaders for the next run.
