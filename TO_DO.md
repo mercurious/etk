@@ -8,6 +8,8 @@
 
 - Still finding orphan shaders in /vault so can't blame an old ETK script
 
+- **PANIC sessions credit zero shaders harvested (GT6, 2026-05-26).** Orphan PANIC synthesis in `01-etk-sentry.sh` hardcodes the 12th `shaders_harvested` column to `0` because SHM (`vault_new.txt`) was wiped by the reboot — so a session that compiled hundreds of new shaders before the panic reads as zero-yield, understating productive crashes in the ledger. **Proposed fix:** persist an ignition-time vault file-count baseline alongside `$SESSION_ANCHOR` in `$TELEMETRY_DIR` (e.g. `vault_baseline.txt`, written when the breadcrumb is written, removed by `session_postmortem.sh` on clean RUNNING→IDLE rollup). On orphan synthesis at next boot, count current vault files for `$BC_GAME` and subtract the baseline → that delta is the panic'd session's harvest. Conservative bound: if the count went down (e.g. operator ran `vault_sweep.sh` mid-panic-window), fall back to `0` rather than report a negative. Mirrors the `$SESSION_ANCHOR` breadcrumb pattern that already closes the orphan-row gap.
+
 - **MangoHUD native BATT broken on Rocknix nightly-20260520:** reads ~50% high vs Rocknix front-end, plugged-in/charging icon stale and doesn't update accurately. Workaround applied locally (hidden BATT, swapped in GPU + frametime graph). Investigate whether MangoHUD package itself needs bumping, our `config/MangoHud.conf` syntax needs updating, or Rocknix changed the power-supply sysfs paths. Hold the GPU/frametime swap as a separate eval — they may be keepers for the HUD DDU even after BATT is fixed. (See `RocknixNightlyMigrationCloseout.md` §4.2.)
 
 ## Enhancements
