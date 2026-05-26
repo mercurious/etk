@@ -8,17 +8,19 @@ More technically, ETK is a custom Rocknix middleware composed of shell scripts a
 
 Built for abuse and race conditions, the ETK guards hard-earned shaders, custom tunings, and game saves from SD card failure, OS flashing, data corruption, device failure, loss or theft. The ETK includes an emergency cooldown that automatically puts your device in PIT mode as needed, protecting your engine from overheating.
 
-# Launch ETK Edition: GTP5 SPEC
-Specifically designed to make Gran Turismo 5 Prologue playable on a Flip2 Snapdragon, the ETK adopts the racing metaphor throughout but should work for any type of PS3 game. Surprisingly, the project has enabled Gran Turismo 6 for shader harvesting at 10fps and 75% 720p resolution.
-
-# Final Mission
-The long term vision for the ETK is an integrated shader swarm system where your device automatically seeds and leeches shaders and proven emulation tunings over auto-subscribing device-centric bittorrent whisper nets during a battery charge.
-
 # Screenshots
 
-<img src="docs/screenshots/etk_NPEA00502_20260526_124051.png" width="600" alt="GT6 — Mini Cooper chase cam exiting the Deep Forest tunnel at 97mph, with the ETK HUD strip live across the bottom of the frame" />
+<img src="docs/screenshots/etk_NPEA00502_20260526_124051.png" width="600" alt="GT6 — Mini Cooper chase cam exiting the Trial Mountain tunnel at 97mph, with the ETK HUD strip live across the bottom of the frame" />
 
-*GT6 — Deep Forest, Lap 2, Position 2/6. Bottom strip: `VULKAN 15FPS 68.9ms BATT 66% ETK 79° 11.96 96% 138+ 28.6k 261MB` — live FPS, frametime, battery, GPU temp + load, and the `138+` shader counter all rendered in the same frame as the gameplay. The `+` is the productive-crashing pitch made literal: even when frames stutter on shader storms, the rig is still banking shaders for the next run.*
+*GT6 — Trial Mountain, Lap 2, Position 2/6. Bottom strip: `VULKAN 15FPS 68.9ms BATT 66% ETK 79° 11.96 96% 138+ 28.6k 261MB` — live FPS, frametime, battery, GPU temp + load, and the `138+` shader counter all rendered in the same frame as the gameplay. The `+` is the productive-crashing pitch made literal: even when frames stutter on shader storms, the rig is still banking shaders for the next run.*
+
+<img src="docs/screenshots/etk_NPUA80075_20260526_132550.png" width="600" alt="GT5P — Bayside Blue Nissan Skyline GT-R R34 V-Spec II Nür chase cam climbing toward Degner at Suzuka, ETK HUD strip live across the top of the frame" />
+
+*GT5P — Suzuka, Lap 2, climbing into Degner in a Bayside Blue R34 Skyline V-Spec II Nür. Top strip: `VULKAN 24FPS 41.2ms BATT 46% ETK 76° 9.10 97% 0+ 19.0k 172MB`. Same kit, same rig, almost-identical GPU load (97% vs the GT6 shot's 96%) — but the **`0+` shader counter** is the entire other half of the story: this is what a **mature vault** looks like. No new shaders compiling, no compile stutters, FPS climbs from 15 to 24. Crash today (GT6, above), smooth tomorrow (GT5P, here). The ETK is the loop that connects them.*
+
+<img src="docs/screenshots/etk_NPUA80075_20260526_132352.png" width="600" alt="GT5P — Suzuka main straight under the iconic SUZUKA CIRCUIT overhead bridge at 101mph, bumper cam, HONDA and BRIDGESTONE trackside banners visible" />
+
+*GT5P — Suzuka start/finish straight, 101mph bumper cam under the iconic overhead bridge. Real-world landmark recognition: this is the same view real drivers get on lap 1 of any Suzuka session.*
 
 More to come:
 - Sample GT5P in-game screen with HUD DDU with shader harvesting.
@@ -27,6 +29,12 @@ More to come:
 - Sample ETK Pitstop app TELEMETRY ledger screen
 - Sample ETK Pitstop app TUNING screen
 - Sample ETK Pitstop app TOOLS PKG installer sequence screenshots
+
+# Launch ETK Edition: GTP5 SPEC
+Specifically designed to make Gran Turismo 5 Prologue playable on a Flip2 Snapdragon, the ETK adopts the racing metaphor throughout but should work for any type of PS3 game. Surprisingly, the project has enabled Gran Turismo 6 for shader harvesting at 10fps and 75% 720p resolution.
+
+# Final Mission
+The long term vision for the ETK is an integrated shader swarm system where your device automatically seeds and leeches shaders and proven emulation tunings over auto-subscribing device-centric bittorrent whisper nets during a battery charge.
 
 # The Kit Contents
 1. Native Rocknix ETK Pitstop App for on-device config editing, per game telemetry analysis over time, and simple PS3 game installation (drop .pkg and .rap in `roms/etk/pkg_install_drop/`)
@@ -115,7 +123,7 @@ Snapshot of per-game status from on-device testing. Full tuning history, panic-l
 - Implemented:
 	- `R3` = PANIC BUTTON RECOVERY COMMAND (headless on-device Nuclear Recovery, single press)
 	- `L3` = MangoHUD position toggle (top-left ⇄ bottom-left), auto-remembered per game. Bottom-left is the dashboard default; flip to top-left for games whose HUD elements crowd the bottom edge (e.g. GT5P). Sentry applies the per-game preference at ignition.
-	- `L1` = ETK SCREENSHOT (in-race recommended). Silent `grim` capture of the full Wayland surface — **MangoHUD overlay included**, which is the whole point (RPCS3's internal screenshot strips the HUD). Single-button trigger so no chord pass-through to the game. **Onboarding pre-flight:** unbind `L1` in each PS3 game's controls (in GT5P/GT6 it defaults to Rear View camera toggle, which doesn't render anyway on Turnip — see `# Tested Games`). Doing this is a natural part of the first-launch settings pass operators do for audio anyway. Shots land in `/storage/games-internal/roms/etk/screenshots/` as `etk_<gameID>_<YYYYMMDD>_<HHMMSS>.png`, instantly visible via the `[games-internal]` SMB share at `\\<rig-ip>\games-internal\roms\etk\screenshots\`. Backed up to the host on every `install.sh` (Tier-B).
+	- `L1` = ETK SCREENSHOT (in-race recommended). Silent `grim` capture of the full Wayland surface — **MangoHUD overlay included**, which is the whole point (RPCS3's internal screenshot strips the HUD). Single-button trigger so no chord pass-through to the game. **Onboarding pre-flight:** unbind `L1` in each PS3 game's controls (in GT5P/GT6 it defaults to Rear View camera toggle. Doing this is a natural part of the first-launch settings to disable audio. Shots land in `/storage/games-internal/roms/etk/screenshots/` as `etk_<gameID>_<YYYYMMDD>_<HHMMSS>.png`, instantly visible via the `[games-internal]` SMB share at `\\<rig-ip>\games-internal\roms\etk\screenshots\`. Backed up to the host on every `install.sh`.
 	- `SELECT` + `D-pad Up` = ETK SCREENSHOT (UI/menu fallback). Same capture as L1 above; use this in Pitstop / EmulationStation / dealership / pause menu contexts where L1 has unwanted side effects (Pitstop tab nav). Not recommended in-race — SELECT also triggers the game's camera view toggle, so the captured frame will catch mid-transition.
 	- `SELECT` + `D-pad Right` = manual VAULT command (force a shader-vault tick)
 	- `SELECT` + `D-pad Left` = MangoHUD config reload signal
