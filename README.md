@@ -77,7 +77,7 @@ ToDo.
 Snapshot of per-game status from on-device testing. Full tuning history, panic-ledger context, and the critical config dials per game live in [dossiers/etk_gametest_status_sheet.md](dossiers/etk_gametest_status_sheet.md).
 
 | ID | Game | Status | FPS | Audio| Notes |
-|---|---|---|---|---|---|---|
+|---|---|---|---|---|---|
 | NPUA80075 | Gran Turismo Prologue | Playable | ~30 | Menus only | Primary ETK target. Track surface flickers; Unstable over time. |
 | NPEA90002 | Gran Turismo HD | Playable | 20–30 | Good (some race stutter) | Ideal baseline — small, fast, durable. Black sky artifacting; menus SPU-sensitive. |
 | NPUB30457 | Ridge Racer 7 | Semi-Playable | 20-30 | Good (some race stutter) | No progress, not durable for 3 lap min. Distant backgrounds sometimes don't load. |
