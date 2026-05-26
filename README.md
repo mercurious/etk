@@ -19,7 +19,11 @@ These images were created by the ETK.
 
 *GT5P - Main Menu Garage showing game progression.*
 
-<img src ="docs/screenshots/etk_NPEA00502_20260526_170526.png" width="600" alt="GT6 — BMW GT3 courtesy car at Spa in cockpit view." />
+<img src ="docs/screenshots/etk_NPEA00502_20260526_170526.png" width="600" alt="GT6 — Nurbrigring Nordschielfe at night" />
+
+*GT6 - Nurbrigring Nordschielfe at night*
+
+<img src = "docs/screenshots/etk_NPEA00502_20260526_164147.png" width="600" alt="GT6 — Cockpick courtesy car BMW GT3 at Spa" />
 
 *GT6 - BMW GT3 courtesy car at Spa*
 
