@@ -41,3 +41,8 @@ __pycache__/
 # 5 Ignore the dev _archive
 _archive/
 /os-install
+
+# 6. Operator config — generated locally by install.sh's first-run
+# wizard. Tracks the rig SSH target, build tier, HUD preferences, etc.
+# The canonical template is `etk.conf.example` (committed).
+etk.conf

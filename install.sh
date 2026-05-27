@@ -12,9 +12,114 @@
 # FIX: Final systemctl status check so DEPLOYMENT COMPLETE is honest
 # ==========================================================
 
-source ./scripts/env.sh
-
 C='\033[0;36m'; G='\033[0;32m'; Y='\033[1;33m'; R='\033[0;31m'; N='\033[0m'
+
+# ==========================================================
+# FIRST-RUN: OPERATOR CONFIG WIZARD
+# ==========================================================
+# etk.conf is the operator's gitignored preferences file (rig SSH target,
+# build tier, HUD options). On first run we generate it from
+# etk.conf.example, auto-discovering the rig via mDNS — Rocknix publishes
+# itself as <SOC>.local out of the box (avahi-daemon + ssh.service). On
+# every subsequent run we just use the existing etk.conf.
+# ==========================================================
+if [ ! -f "./etk.conf" ]; then
+    echo -e "${C}>>> First run — generating etk.conf...${N}"
+
+    if [ ! -f "./etk.conf.example" ]; then
+        echo -e "    ${R}[FAIL] etk.conf.example missing — repo is incomplete.${N}"
+        exit 1
+    fi
+
+    # The wizard prompts the operator interactively. Bail loudly if there's
+    # no controlling terminal so the install doesn't silently corrupt
+    # etk.conf with an empty/garbage answer.
+    if [ ! -r /dev/tty ]; then
+        echo -e "    ${R}[FAIL] No interactive terminal — cannot run first-run wizard.${N}"
+        echo -e "    ${R}       Run from a terminal, or copy etk.conf.example -> etk.conf${N}"
+        echo -e "    ${R}       manually and re-run.${N}"
+        exit 1
+    fi
+
+    # Self-name for filtering our own host out of the mDNS browse list.
+    # macOS publishes the "Computer Name" from System Preferences (which
+    # may contain spaces and punctuation — `hostname -s` returns the
+    # different LocalHostName form, so the BSD hostname won't match).
+    HOST_NAME=""
+    if [ "$(uname)" = "Darwin" ] && command -v scutil >/dev/null 2>&1; then
+        HOST_NAME=$(scutil --get ComputerName 2>/dev/null)
+    fi
+    [ -z "$HOST_NAME" ] && HOST_NAME=$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo "")
+
+    CANDIDATES=""
+    if command -v dns-sd >/dev/null 2>&1; then
+        # macOS native Bonjour. Background browse for 2s, kill, parse Add
+        # rows. Split on "_ssh._tcp." so instance names containing spaces
+        # survive ("Dave's MacBook Air" would lose words on whitespace awk).
+        BROWSE=$( ( dns-sd -B _ssh._tcp local. 2>/dev/null & DPID=$!; sleep 2; kill $DPID 2>/dev/null; wait 2>/dev/null ) )
+        CANDIDATES=$(printf '%s\n' "$BROWSE" \
+            | awk -F'_ssh\\._tcp\\.[ \t]+' '/Add/ && NF > 1 { print $2 }' \
+            | awk '{ sub(/[ \t]+$/, ""); print }' \
+            | sort -u \
+            | grep -vFx "$HOST_NAME" 2>/dev/null)
+    elif command -v avahi-browse >/dev/null 2>&1; then
+        CANDIDATES=$(avahi-browse -rtp _ssh._tcp 2>/dev/null \
+            | awk -F';' '/^=/ { print $4 }' \
+            | sort -u \
+            | grep -vFx "$HOST_NAME" 2>/dev/null)
+    else
+        echo -e "    ${Y}[INFO] No mDNS browser (dns-sd / avahi-browse) found.${N}"
+        echo -e "    ${Y}       Auto-discovery skipped; please enter the rig manually.${N}"
+    fi
+
+    N_CAND=$(printf '%s\n' "$CANDIDATES" | grep -c . 2>/dev/null || echo 0)
+    CHOSEN=""
+    case "$N_CAND" in
+        0)
+            echo -e "    ${Y}[INFO] No SSH hosts discovered on the LAN.${N}"
+            printf "    Enter rig hostname or IP (e.g. SM8250.local, 192.168.1.53): "
+            IFS= read -r ANSWER </dev/tty
+            CHOSEN="$ANSWER"
+            ;;
+        1)
+            CHOSEN=$(printf '%s\n' "$CANDIDATES" | head -n 1)
+            echo -e "    ${G}[OK] Discovered rig: ${CHOSEN}.local${N}"
+            CHOSEN="${CHOSEN}.local"
+            ;;
+        *)
+            echo -e "    Multiple SSH hosts found on the LAN:"
+            printf '%s\n' "$CANDIDATES" | awk '{ printf "      %d) %s.local\n", NR, $0 }'
+            printf "    Pick rig number (1-%s) or 'q' to enter manually: " "$N_CAND"
+            IFS= read -r PICK </dev/tty
+            if [ "$PICK" = "q" ] || [ "$PICK" = "Q" ]; then
+                printf "    Enter rig hostname or IP: "
+                IFS= read -r ANSWER </dev/tty
+                CHOSEN="$ANSWER"
+            else
+                MATCH=$(printf '%s\n' "$CANDIDATES" | sed -n "${PICK}p")
+                [ -n "$MATCH" ] && CHOSEN="${MATCH}.local"
+            fi
+            ;;
+    esac
+
+    # Validate: non-empty, single line, no newlines or sed-breaking chars.
+    if [ -z "$CHOSEN" ] || printf '%s' "$CHOSEN" | grep -q '[[:cntrl:]]'; then
+        echo -e "    ${R}[FAIL] Invalid rig target (empty or contains control chars).${N}"
+        exit 1
+    fi
+
+    # Generate etk.conf from example, substituting RIG_SSH.
+    # macOS sed and GNU sed differ on `-i`; the .bak-then-delete pattern is
+    # portable across both.
+    cp ./etk.conf.example ./etk.conf
+    sed -i.bak "s|^RIG_SSH=.*|RIG_SSH=\"root@${CHOSEN}\"|" ./etk.conf
+    rm -f ./etk.conf.bak
+    echo -e "    ${G}[OK] Wrote etk.conf with RIG_SSH=\"root@${CHOSEN}\"${N}"
+    echo -e "    Edit ./etk.conf later to change tier, mode, or HUD options."
+    echo ""
+fi
+
+source ./scripts/env.sh
 
 # --- FLAG PARSE ---
 # --restore-state: GATED Tier-B restore (host -> rig). Default off; this is
@@ -274,6 +379,14 @@ echo -e "${C}>>> [3/${TOTAL_STEPS}] DEPLOYING GUARDIAN DAEMONS & SCRIPTS...${N}"
 $RSYNC_CMD --delete --exclude='*.pyc' --exclude='__pycache__' --exclude='.DS_Store' ./bin/ $RIG_SSH:$ETK_ROOT/bin/
 $RSYNC_CMD --delete --exclude='.DS_Store' ./scripts/ $RIG_SSH:$ETK_ROOT/scripts/
 $RSYNC_CMD --exclude='.DS_Store' ./config/MangoHud.conf $RIG_SSH:/storage/.config/MangoHud/MangoHud.conf
+# Operator config: the Sentry's env.sh source on the rig reads this file
+# for ETK_BUILD_TYPE, DEFAULT_MODE, HUD_HEADER_HOLD_S. Without this push
+# the rig would silently use the baked-in defaults regardless of operator
+# edits on the host. --checksum forces content-based comparison because
+# operator edits often swap byte-identical values (HUD_HEADER_HOLD_S=15
+# vs =42 are the same size) and rsync's default mtime+size check would
+# silently skip such "same-size" edits when mtimes happen to match.
+$RSYNC_CMD --checksum --exclude='.DS_Store' ./etk.conf $RIG_SSH:$ETK_ROOT/etk.conf
 ssh $RIG_SSH "chmod +x $ETK_ROOT/bin/* $ETK_ROOT/scripts/*"
 
 # ==========================================================
