@@ -36,7 +36,7 @@ run_diagnostics() {
 
 while true; do
     # 1. REFRESH TELEMETRY (BusyBox Optimized)
-    T_RAW=$(cat /sys/class/thermal/thermal_zone14/temp 2>/dev/null || echo "0")
+    T_RAW=$(cat /sys/class/thermal/thermal_zone${THERMAL_ZONE_GOVERNING}/temp 2>/dev/null || echo "0")
     TEMP=$((T_RAW / 1000))
     LOAD=$(cat /proc/loadavg | cut -d' ' -f1)
     V_COUNT=$(cat "$VAULT_COUNT" 2>/dev/null || echo "0")

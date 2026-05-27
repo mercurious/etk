@@ -14,11 +14,11 @@
 # RAW for system optimizations and custom HUD only
 export ETK_BUILD_TYPE="FULL"
 # City WiFi
-export RIG_IP="192.168.1.53"
-export RIG_SSH="root@192.168.1.53"
+# export RIG_IP="192.168.1.53"
+# export RIG_SSH="root@192.168.1.53"
 # Country WiFi
-# export RIG_IP="10.0.0.40"
-# export RIG_SSH="root@10.0.0.40"
+export RIG_IP="10.0.0.40"
+export RIG_SSH="root@10.0.0.40"
 
 # --- [ SHM & STATE ] ---
 export SHM_DIR="/dev/shm/etk_shm"
@@ -32,6 +32,12 @@ export CMD_QUEUE="$SHM_DIR/etk_cmd_queue"
 # Persistent anchor for the last successfully resolved Game ID
 export RECENT_ID_FILE="/storage/games-internal/roms/etk/vault/last_played_id.txt"
 
+# --- [ HOISTED PATH ANCHOR ] ---
+# ETK_ROOT defined here (above the immutable block) so the DEVICE PROFILE
+# block below the immutable block can resolve $ETK_ROOT/scripts/profiles/.
+# Per Law #2 there is a SINGLE definition; the historical second site in
+# PATH RESOLUTION was removed. Do not re-introduce a duplicate.
+export ETK_ROOT="/storage/games-internal/roms/etk"
 
 # =========================================================
 # [CRITICAL: NON-NEGOTIABLE GAME AGNOSTIC ETK LOGIC]
@@ -87,9 +93,64 @@ resolve_game_id() {
     echo "$id"
 }
 
+# --- [ DEVICE PROFILE ] ---
+# Immutable Law #2: env.sh is the SOLE exporter of canonical env vars.
+# Profiles in scripts/profiles/<soc>.sh contain VALUES ONLY (plain
+# assignments, no `export`, no logic). Do NOT promote exports into
+# profile files; env.sh re-exports the canonical names from profile values.
+# Operator escape hatch: ETK_PROFILE_OVERRIDE=<soc> forces a profile.
+#
+# Profile dir resolves relative to THIS file's location (BASH_SOURCE)
+# rather than $ETK_ROOT — env.sh is sourced from BOTH the host (install.sh)
+# and the rig, and the rig path doesn't exist on the host. Self-anchoring
+# keeps both call sites working.
+ETK_PROFILE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/profiles"
+ETK_PROFILE_OVERRIDE="${ETK_PROFILE_OVERRIDE:-}"
+
+detect_soc() {
+    # POSIX/BusyBox-safe. Returns a token like SM8250, or empty.
+    # `cat 2>/dev/null` (instead of `< file 2>/dev/null`) lets us swallow
+    # the file-not-found that bash emits BEFORE the pipeline runs — needed
+    # so env.sh sources cleanly on the host (no devicetree there).
+    soc=$(cat /sys/firmware/devicetree/base/compatible 2>/dev/null \
+          | tr '\0' '\n' \
+          | grep -oiE 'sm8[0-9]{3}|rk3[0-9]{3}|s922x|h700' | head -n 1 \
+          | tr 'a-z' 'A-Z')
+    echo "$soc"
+}
+
+if [ -n "$ETK_PROFILE_OVERRIDE" ]; then
+    PROFILE_FILE="$ETK_PROFILE_DIR/$ETK_PROFILE_OVERRIDE.sh"
+else
+    DETECTED_SOC=$(detect_soc)
+    PROFILE_FILE="$ETK_PROFILE_DIR/${DETECTED_SOC:-SM8250}.sh"
+fi
+
+# Never hard-fail env.sh on a missing profile (env.sh is sourced by
+# everything; a hard exit bricks the kit). Warn, fall back to SM8250.
+# Empty override + empty detection = host context (no devicetree) — silent
+# fallback. Only warn when someone had a SoC token in hand.
+if [ ! -f "$PROFILE_FILE" ]; then
+    if [ -n "$ETK_PROFILE_OVERRIDE" ] || [ -n "$DETECTED_SOC" ]; then
+        echo "ETK env: no profile for '${ETK_PROFILE_OVERRIDE:-$DETECTED_SOC}', using SM8250 reference" >&2
+    fi
+    PROFILE_FILE="$ETK_PROFILE_DIR/SM8250.sh"
+fi
+. "$PROFILE_FILE"
+
+# Canonical exports from profile values. CHIPSET re-assignment here
+# supersedes the literal set inside the immutable block above — purely
+# additive (the marked block is not modified, per Law #2 dossier note).
+export CHIPSET="${PROFILE_SOC:-SM8250}"
+export PROFILE_SOC GPU_DRIVER_FAMILY RPCS3_CAPABLE
+export THERMAL_ZONE_GOVERNING THERMAL_ZONE_MAP
+export CPU_POLICY_SILVER CPU_POLICY_GOLD CPU_POLICY_PRIME CPU_PIT_CAP_KHZ
+export GPU_DEVFREQ_NODE GPU_GOVERNOR_PATH GPU_ADAPTER_STRING
+export ALARM_TEMP PIT_THRESHOLD RACE_THRESHOLD
+export FOOT_FONT_SIZE MANGOHUD_FONT_SIZE
+
 # --- [ PATH RESOLUTION ] ---
 export RPCS3_CACHE_DIR="/storage/.cache/mesa_shader_cache"
-export ETK_ROOT="/storage/games-internal/roms/etk"
 export VAULT_DIR="$ETK_ROOT/vault/$CHIPSET/$TARGET_ID/shaders"
 export RIG_MANGO_CONF="/storage/.config/MangoHud/MangoHud.conf"
 
@@ -102,12 +163,11 @@ export LAST_ANALYSIS="$SHM_DIR/last_analysis.txt"
 # Consumed by tools/vault_doctor.sh §6.
 export TRIPWIRE_LOG="/storage/etk_tripwire.log"
 
-# --- [ RESTORED THERMAL BOUNDARIES ] ---
-# Recalibrating to Rocknix nightly-20260520 changed thermals; re-validate
-# zone14 + thresholds with scripts/etk_probe.sh after the in-place update.
-export ALARM_TEMP=83
-export PIT_THRESHOLD=65
-export RACE_THRESHOLD=86
+# --- [ THERMAL BOUNDARIES ] ---
+# Calibrated PER-DEVICE; values live in scripts/profiles/<soc>.sh.
+# env.sh re-exports ALARM_TEMP / PIT_THRESHOLD / RACE_THRESHOLD via the
+# DEVICE PROFILE block above. Bootstrap re-calibration recipe lives in
+# scripts/etk_probe.sh (see dossier §G).
 
 # --- [ RESTORED STEALTH DETECTION ] ---
 if grep -q "mangohud=0" /storage/.config/rocknix/system.conf 2>/dev/null; then

@@ -25,8 +25,10 @@ INTERVAL=1
 mkdir -p "$PROBE_DIR"
 
 # Zones we care about: idx:label format
-# Selected from full thermal map to cover compute hot spots, memory, and battery
-ZONES="1:cpu0 5:cluster0 6:cluster1 10:cpu7_top 14:cpu7_bot 15:gpu_top 19:mem 24:gpu_bot 25:battery"
+# Sourced from the active device profile (scripts/profiles/<soc>.sh).
+# Curated subset for sampling; full enumeration is `etk_probe.sh discover`
+# (Phase 5).
+ZONES="$THERMAL_ZONE_MAP"
 
 probe_loop() {
     local outfile="$1"
@@ -52,11 +54,11 @@ probe_loop() {
         done
         
         # GPU frequency (Hz -> MHz)
-        local gpu=$(cat /sys/class/devfreq/3d00000.gpu/cur_freq 2>/dev/null || echo 0)
+        local gpu=$(cat ${GPU_DEVFREQ_NODE}/cur_freq 2>/dev/null || echo 0)
         # CPU frequencies (kHz -> MHz) for each cluster
-        local s=$(cat /sys/devices/system/cpu/cpufreq/policy0/scaling_cur_freq 2>/dev/null || echo 0)
-        local g=$(cat /sys/devices/system/cpu/cpufreq/policy4/scaling_cur_freq 2>/dev/null || echo 0)
-        local p=$(cat /sys/devices/system/cpu/cpufreq/policy7/scaling_cur_freq 2>/dev/null || echo 0)
+        local s=$(cat /sys/devices/system/cpu/cpufreq/policy${CPU_POLICY_SILVER}/scaling_cur_freq 2>/dev/null || echo 0)
+        local g=$(cat /sys/devices/system/cpu/cpufreq/policy${CPU_POLICY_GOLD}/scaling_cur_freq 2>/dev/null || echo 0)
+        local p=$(cat /sys/devices/system/cpu/cpufreq/policy${CPU_POLICY_PRIME}/scaling_cur_freq 2>/dev/null || echo 0)
         row="$row,$((gpu / 1000000)),$((s / 1000)),$((g / 1000)),$((p / 1000))"
         
         echo "$row" >> "$outfile"

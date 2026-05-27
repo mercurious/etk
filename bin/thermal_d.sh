@@ -3,7 +3,9 @@
 # ETK PHASE 13.5: THERMAL GOVERNOR (v13.1.1 - SILENT PRODUCER)
 # ==========================================================
 # ARCHITECTURE: Proactive GPU Clearing & Hard CPU Anchoring
-# HARDWARE: SM8250 (Adreno 650 / Policies 4 & 7)
+# HARDWARE: per active device profile (scripts/profiles/<soc>.sh)
+# All hardware paths / policy IDs / freq caps are profile-driven; the
+# SM8250 reference values are the historical Flip 2 / RP5 calibration.
 # MERGE LOG: 
 # - SILENT PRODUCER: Relinquished $LIVE_STAT to mango_bridge.sh
 # - Writes telemetry to $SHM_DIR/thermal_stat to stop HUD flicker
@@ -23,7 +25,7 @@ chmod 777 "$SHM_DIR" 2>/dev/null
 
 while true; do
     # 2. HARDWARE SENSING
-    read -r T_RAW < /sys/class/thermal/thermal_zone14/temp 2>/dev/null || T_RAW="0"
+    read -r T_RAW < /sys/class/thermal/thermal_zone${THERMAL_ZONE_GOVERNING}/temp 2>/dev/null || T_RAW="0"
     TEMP=$((T_RAW / 1000))
 
     # 2b. TELEMETRY SAMPLE (throttled)
@@ -83,12 +85,12 @@ while true; do
         if [ "$CURRENT_MODE" == "RACE" ]; then
             # UPSHIFT: Full Performance
             # CPU: Unleash Gold & Silver Cores
-            echo "performance" > /sys/devices/system/cpu/cpufreq/policy4/scaling_governor 2>/dev/null
-            echo "performance" > /sys/devices/system/cpu/cpufreq/policy7/scaling_governor 2>/dev/null
-            cat /sys/devices/system/cpu/cpufreq/policy7/cpuinfo_max_freq > /sys/devices/system/cpu/cpufreq/policy7/scaling_max_freq 2>/dev/null
-            
+            echo "performance" > /sys/devices/system/cpu/cpufreq/policy${CPU_POLICY_GOLD}/scaling_governor 2>/dev/null
+            echo "performance" > /sys/devices/system/cpu/cpufreq/policy${CPU_POLICY_PRIME}/scaling_governor 2>/dev/null
+            cat /sys/devices/system/cpu/cpufreq/policy${CPU_POLICY_PRIME}/cpuinfo_max_freq > /sys/devices/system/cpu/cpufreq/policy${CPU_POLICY_PRIME}/scaling_max_freq 2>/dev/null
+
             # GPU: Set to high-performance profile
-            echo "performance" > /sys/class/kgsl/kgsl-3d0/devfreq/governor 2>/dev/null
+            echo "performance" > ${GPU_GOVERNOR_PATH} 2>/dev/null
             
             # [LIVE_STAT output removed - Handled by Bridge]
         else
@@ -97,13 +99,13 @@ while true; do
             echo 3 > /proc/sys/vm/drop_caches 2>/dev/null 
             
             # 2. GPU ANCHOR: Force low power state to clear the command ring
-            echo "powersave" > /sys/class/kgsl/kgsl-3d0/devfreq/governor 2>/dev/null
-            
-            # 3. CPU ANCHOR: Hard cap at 800MHz-1.2GHz
-            echo 1200000 > /sys/devices/system/cpu/cpufreq/policy4/scaling_max_freq 2>/dev/null
-            echo 1200000 > /sys/devices/system/cpu/cpufreq/policy7/scaling_max_freq 2>/dev/null
-            echo "powersave" > /sys/devices/system/cpu/cpufreq/policy4/scaling_governor 2>/dev/null
-            echo "schedutil" > /sys/devices/system/cpu/cpufreq/policy7/scaling_governor 2>/dev/null
+            echo "powersave" > ${GPU_GOVERNOR_PATH} 2>/dev/null
+
+            # 3. CPU ANCHOR: Hard cap at profile PIT freq
+            echo ${CPU_PIT_CAP_KHZ} > /sys/devices/system/cpu/cpufreq/policy${CPU_POLICY_GOLD}/scaling_max_freq 2>/dev/null
+            echo ${CPU_PIT_CAP_KHZ} > /sys/devices/system/cpu/cpufreq/policy${CPU_POLICY_PRIME}/scaling_max_freq 2>/dev/null
+            echo "powersave" > /sys/devices/system/cpu/cpufreq/policy${CPU_POLICY_GOLD}/scaling_governor 2>/dev/null
+            echo "schedutil" > /sys/devices/system/cpu/cpufreq/policy${CPU_POLICY_PRIME}/scaling_governor 2>/dev/null
             
             # 4. VBLANK MOMENTARY STALL (Optional: clears HUD flicker)
             # echo 1 > /sys/class/graphics/fb0/blank 2>/dev/null && sleep 0.1 && echo 0 > /sys/class/graphics/fb0/blank 2>/dev/null
