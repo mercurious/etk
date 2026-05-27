@@ -48,7 +48,7 @@ More to come:
 
 ## Handheld System Support
 | Make | Model | Chipset | Compatible | Road Tested |
-|---|---|---|---|
+|---|---|---|---|---|
 | Retroid Pocket | Flip2 | SM8250 Adreno 650 | * | * |
 | Retroid Pocket | 5 | SM8250 Adreno 650 | * | - |
 | Retroid Pocket | Mini | SM8250 Adreno 650 | * | - |
