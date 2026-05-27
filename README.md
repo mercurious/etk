@@ -49,12 +49,12 @@ More to come:
 ## Handheld System Support
 | Make | Model | Chipset | Compatible | Road Tested |
 |---|---|---|---|---|
-| Retroid Pocket | Flip2 | SM8250 Adreno 650 | * | * |
-| Retroid Pocket | 5 | SM8250 Adreno 650 | * | - |
-| Retroid Pocket | Mini | SM8250 Adreno 650 | * | - |
-| Retroid Pocket | Mini V2 | SM8250 Adreno 650 | * | - |
-| AYN | Thor Lite | SM8250 Adreno 650 | * | - |
-| Retroid Pocket | 6 | New Tuning Required for Adreno 740 | > | - |
+| Retroid Pocket | Flip2 | SM8250 Adreno 650 | ✔︎ | 🏁 |
+| Retroid Pocket | 5 | SM8250 Adreno 650 | ✔︎ | - |
+| Retroid Pocket | Mini | SM8250 Adreno 650 | ✔︎ | - |
+| Retroid Pocket | Mini V2 | SM8250 Adreno 650 | ✔︎ | - |
+| AYN | Thor Lite | SM8250 Adreno 650 | ✔︎ | - |
+| Retroid Pocket | 6 | New Tuning Required for Adreno 740 | - | - |
 
 ## Tested Games (RPCS3)
 Snapshot of per-game status from on-device testing. Full tuning history, panic-ledger context, and the critical config dials per game live in [dossiers/etk_gametest_status_sheet.md](dossiers/etk_gametest_status_sheet.md).
