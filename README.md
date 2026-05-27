@@ -18,7 +18,7 @@ These images were created by the ETK's screenshot tool `L1` as a camera shutter 
 <img src="docs/screenshots/etk_NPEA00502_20260526_195230.png" width="600" alt="GT6 — Mini Cooper chase cam at Trial Mountain" />
 <img src="docs/screenshots/etk_NPEA00502_20260526_195239.png" width="600" alt="GT6 — Mini Cooper chase cam at Trial Mountain" />
 <img src="docs/screenshots/etk_NPEA00502_20260526_195242.png" width="600" alt="GT6 — Mini Cooper chase cam at Trial Mountain" />
-*GT6 race and replay shots at Trial Mountain in the MINI Cooper S**
+*GT6 race and replay shots at Trial Mountain in the MINI Cooper S*
 <img src="docs/screenshots/etk_NPUA80075_20260526_132301.png" width="600" alt="GT5P Garage Menu showing game progression." />
 *GT5P - Main Menu Garage showing game progression.*
 <img src="docs/screenshots/etk_NPUA80075_20260526_174936.png" width="600" alt="GT5P Garage Menu showing game progression." />
