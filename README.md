@@ -9,7 +9,7 @@ More technically, ETK is a custom Rocknix middleware composed of shell scripts a
 Built for abuse and race conditions, the ETK guards hard-earned shaders, custom tunings, screenshots, and game saves from SD card failure, OS flashing, data corruption, device failure, loss or theft. The ETK includes an emergency cooldown that automatically puts your device in PIT mode as needed, protecting your engine from overheating.
 
 # Screenshots
-These images were created by the ETK.
+These images were created by the ETK's screenshot tool `L1` as a camera shutter function.
 
 <img src="docs/screenshots/etk_NPEA00502_20260526_124051.png" width="600" alt="GT6 — Mini Cooper chase cam exiting the Deep Forest tunnel at 97mph, with the ETK HUD strip live across the bottom of the frame" />
 
@@ -23,7 +23,7 @@ These images were created by the ETK.
 
 *GT6 - Nurbrigring Nordschielfe at night*
 
-<img src = "docs/screenshots/etk_NPEA00502_20260526_164147.png" width="600" alt="GT6 — Cockpick courtesy car BMW GT3 at Spa" />
+<img src = "docs/screenshots/etk_NPEA00502_20260526_164147.png" width="600" alt="GT6 — Cockpit view courtesy car BMW GT3 at Spa" />
 
 *GT6 - BMW GT3 courtesy car at Spa*
 
@@ -43,10 +43,10 @@ Specifically designed to make Gran Turismo 5 Prologue playable on a Flip2 Snapdr
 - **Requires in-game un-binding/un-mapping**
 - Screenshots stored at `/storage/roms/etk/screenshots`
 - `install.sh` syncs `etk/screenshots`
-1. `L3` **DDU HUD**
+2. `L3` **DDU HUD**
 - left analog button
 - Toggles ETK DDU dashboard between top and bottom of screen
-1. `R3` **PANIC RECOVERY**
+3. `R3` **PANIC RECOVERY**
 - right analog button
 - Recover from a crash or freeze.
 - Reboot recommended after returning to Rocknix ES frontend.
@@ -97,7 +97,7 @@ The long term vision for the ETK is an integrated shader swarm system where your
 
 # ETK System Requirements
 - **Host System** macOS or Linux (experimental Windows/PC support)
-- **Handheld System:** Retroid Pocket Flip 2 (SM8250) (other SM8250 devices testable)
+- **Handheld System:** Retroid Pocket Flip 2 (SM8250)
 - **OS:** ROCKNIX (Nightly Build: 20260525)
 - **Driver** MESA Turnip 26.1.0
 - **Target/Status:** Multiple PS3 titles tested under RPCS3 — see `# Tested Games` below.

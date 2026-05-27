@@ -9,9 +9,9 @@ source /storage/games-internal/roms/etk/scripts/env.sh
   echo "ID: $TARGET_ID | MODE: $ETK_BUILD_TYPE"
   
   echo -e "\n[1] GPU ARCHITECTURE (DRM/FREEDRENO)"
-  if [ -d "/sys/class/devfreq/3d00000.gpu" ]; then
-    echo "Governor: $(cat /sys/class/devfreq/3d00000.gpu/governor 2>/dev/null)"
-    echo "Cur Freq: $(cat /sys/class/devfreq/3d00000.gpu/cur_freq 2>/dev/null) Hz"
+  if [ -d "${GPU_DEVFREQ_NODE}" ]; then
+    echo "Governor: $(cat ${GPU_DEVFREQ_NODE}/governor 2>/dev/null)"
+    echo "Cur Freq: $(cat ${GPU_DEVFREQ_NODE}/cur_freq 2>/dev/null) Hz"
   fi
 
   echo -e "\n[2] KERNEL FAULT ANALYSIS"
