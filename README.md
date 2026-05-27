@@ -14,28 +14,25 @@ Built for abuse and race conditions, the ETK guards hard-earned shaders, custom 
 ## Screenshots
 These images were created by the ETK's screenshot tool `L1` as a camera shutter function.
 
-<img src="docs/screenshots/etk_NPEA00502_20260526_124051.png" width="600" alt="GT6 — Mini Cooper chase cam exiting the Deep Forest tunnel at 97mph, with the ETK HUD strip live across the bottom of the frame" />
-
-*GT6 — Trial Mountain, Lap 2, Position 2/6. Top Mounted DDU strip: `VULKAN 15FPS 68.9ms BATT 66% ETK 79° 11.96 96% 138+ 28.6k 261MB` — live FPS, frametime, battery, GPU temp + load, and the `138+` shader counter all rendered in the same frame as the gameplay. The `+` is the productive-crashing pitch made literal: even when frames stutter on shader storms, the rig is still banking shaders for the next run.*
-
+<img src="docs/screenshots/etk_NPEA00502_20260526_194915.png" width="600" alt="GT6 — Mini Cooper chase cam at Trial Mountain" />
+<img src="docs/screenshots/etk_NPEA00502_20260526_195230.png" width="600" alt="GT6 — Mini Cooper chase cam at Trial Mountain" />
+<img src="docs/screenshots/etk_NPEA00502_20260526_195239.png" width="600" alt="GT6 — Mini Cooper chase cam at Trial Mountain" />
+<img src="docs/screenshots/etk_NPEA00502_20260526_195242.png" width="600" alt="GT6 — Mini Cooper chase cam at Trial Mountain" />
+*GT6 race and replay shots at Trial Mountain in the MINI Cooper S**
 <img src="docs/screenshots/etk_NPUA80075_20260526_132301.png" width="600" alt="GT5P Garage Menu showing game progression." />
-
 *GT5P - Main Menu Garage showing game progression.*
-
+<img src="docs/screenshots/etk_NPUA80075_20260526_174936.png" width="600" alt="GT5P Garage Menu showing game progression." />
+*GT5P High Speed Loop Single Race*
 <img src="docs/screenshots/etk_NPEA00502_20260526_170526.png" width="600" alt="GT6 — Nurbrigring Nordschielfe at night" />
-
 *GT6 - Nurbrigring Nordschielfe at night*
-
 <img src="docs/screenshots/etk_NPEA00502_20260526_164147.png" width="600" alt="GT6 — Cockpit view courtesy car BMW GT3 at Spa" />
-
 *GT6 - BMW GT3 courtesy car at Spa*
-
-More to come:
-- Sample GT5P at 100% 720p
-- Sample GT6 Nürburgring Nordschleife clean-lap screen.
-- Sample ETK Pitstop app TELEMETRY ledger screen
-- Sample ETK Pitstop app TUNING screen
-- Sample ETK Pitstop app TOOLS PKG installer sequence screenshots
+<img src="docs/screenshots/etk_ROCKNIX_20260526_132108.png" width="600" alt="GT6 — Cockpit view courtesy car BMW GT3 at Spa" />
+<img src="docs/screenshots/etk_ROCKNIX_20260526_132606.png" width="600" alt="GT6 — Cockpit view courtesy car BMW GT3 at Spa" />
+<img src="docs/screenshots/etk_ROCKNIX_20260526_132607.png" width="600" alt="GT6 — Cockpit view courtesy car BMW GT3 at Spa" />
+*ETK PITSTOP Native Rocknix app*
+<img src="docs/screenshots/etk_install_screenshot.png" width="600" alt="GT6 — Cockpit view courtesy car BMW GT3 at Spa" />
+*ETK `install.sh` tool*
 
 ## ETK System Requirements
 | Type | Detail |
@@ -67,9 +64,6 @@ Snapshot of per-game status from on-device testing. Full tuning history, panic-l
 | NPUA80472 | [LittleBigPlanet](config/config_NPUA80472.yml) | Playable | 12-24 | Good (some stutter) | No issues discovered yet beyond shader storm glitching. |
 | NPEA00502 | [Gran Turismo 6](config/config_NPEA00502.yml) | Playable | <12 | Menus good | Full Nürburgring Nordschleife lap clean 2026-05-26. Tuning for FPS is deferred until the shader vault saturates. Rear-view mirror does not render. |
 | BCUS98114 | [Gran Turismo 5](config/config_BCUS98114.yml) | Menus only | — | Menus only | Tracks kernel-panic. Menus stable, eventual freeze. |
-
-## Launch ETK Edition: GTP5 SPEC
-Specifically designed to make Gran Turismo 5 Prologue playable on a Flip2 Snapdragon, the ETK adopts the racing metaphor throughout but should work for any type of PS3 game. Surprisingly, the project has enabled Gran Turismo 6 for shader harvesting at 10fps and 75% 720p resolution.
 
 ## ETK Features
 1. Native Rocknix ETK Pitstop App for on-device config editing, per game telemetry analysis over time, and simple PS3 game installation (drop .pkg and .rap in `roms/etk/pkg_install_drop/`)
