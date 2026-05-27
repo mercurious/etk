@@ -40,7 +40,7 @@ More to come:
 ## ETK System Requirements
 | Type | Detail |
 |---|---|
-| Host System | macOS or Linux (experimental Windows/PC support) |
+| Host System | macOS or Linux ([experimental Windows/PC support](#windows-install-guide)) |
 | OS | ROCKNIX (Nightly Build: 20260525) |
 | Driver | MESA Turnip 26.1.0 |
 | Shell |  BusyBox v1.36.1 |
@@ -71,6 +71,17 @@ Snapshot of per-game status from on-device testing. Full tuning history, panic-l
 ## Launch ETK Edition: GTP5 SPEC
 Specifically designed to make Gran Turismo 5 Prologue playable on a Flip2 Snapdragon, the ETK adopts the racing metaphor throughout but should work for any type of PS3 game. Surprisingly, the project has enabled Gran Turismo 6 for shader harvesting at 10fps and 75% 720p resolution.
 
+## ETK Features
+1. Native Rocknix ETK Pitstop App for on-device config editing, per game telemetry analysis over time, and simple PS3 game installation (drop .pkg and .rap in `roms/etk/pkg_install_drop/`)
+1. Customized in-game overlay dashbard with ETK telematics inside native Rocknix MangoHUD
+1. Hardware and driver tunings for maximum performance going beyond config settings
+1. Optimized emulator game configurations tuned to the device hardware
+1. Smart thermal protection to safely overdrive the device during shader harvesting
+1. Automatic shader backup from your device to computer to shield hard earned work from loss and to share with other ETK users
+1. Pit wall remote terminal screen to monitor and control device (`scripts/commander.sh`)
+1. Install, configure, repair, and uninstall the kit remotely from a computer (`install.sh` and `uninstall.sh`) with mDNS autodiscovery of supported devices on your local network.
+1. Multi-Installation Options: FULL installation for initial shader harvesting and tuning, LITE installation for saturated shader sets with thermal protection only, RAW for stress testing without shader and thermal protections (`ETK_BUILD_TYPE` in `etk.conf`)
+
 ## ETK Quick Commands
 | Gamepad Button | ETK Command | Button Description | Details |
 |---|---|---|---|
@@ -88,6 +99,16 @@ You can also download the code as a `.zip` from the GitHub `<> Code` menu and ex
 Using mDNS, Rocknix advertises itself on the LAN as `<SOC>.local` (e.g. `SM8250.local` for SD865 devices like the Retroid Pocket Flip 2 / Pocket 5).
 4. Reboot and start harvesting shaders. 
 
+## How to Install PS3 Games with the ETK
+The ETK solves the problem of installing PS3 Packages on Rocknix which is otherwise a ridiculous process.
+1. Place a single PS3 `.pkg` and `.rap` into `/storage/roms/etk/pkg_install_drop/`
+1. In Rocknick Tools > ETK Pistop > TOOLS > Install a stage PS3 package
+1. Wait for the automated process where ETK will handle RPCS3 installation for you and follow the on screen overlay instructions
+1. Quit ETK Pitstop after installation and Update Gamelists in Rocknix
+
+## How to Use Simple Telemetry
+The ETK Pitstop Rocknix Tools app records your sessions for each game. You must launch a game and quit to switch which app the ETK Pitstop app will display. It records your tuning changes in a session ledger with summary statistics to help you determine which settings have resulted in better play results.
+
 ## Customizing the ETK
 1. The first run generates `etk.conf`from `etk.conf.example` 
    - `RIG_SSH` — auto-populated to `root@<SOC>.local`; replace with a literal IP if your LAN blocks mDNS
@@ -96,17 +117,6 @@ Using mDNS, Rocknix advertises itself on the LAN as `<SOC>.local` (e.g. `SM8250.
    - `ETK_VERBOSE` — 0 = Pit Wall console TUI (default), 1 = raw rsync output for debugging. Pass `--verbose` / `-v` on the install.sh CLI to force verbose for a single run.
 2. Re-run `./install.sh` after any `etk.conf` edit to push changes to the rig.
 3. Reboot the rig once to activate the ETK Pitstop entry in the Rocknix Tools menu.
-
-## ETK Features
-1. Native Rocknix ETK Pitstop App for on-device config editing, per game telemetry analysis over time, and simple PS3 game installation (drop .pkg and .rap in `roms/etk/pkg_install_drop/`)
-1. Customized in-game overlay dashbard with ETK telematics inside native Rocknix MangoHUD
-1. Hardware and driver tunings for maximum performance going beyond config settings
-1. Optimized emulator game configurations tuned to the device hardware
-1. Smart thermal protection to safely overdrive the device during shader harvesting
-1. Automatic shader backup from your device to computer to shield hard earned work from loss and to share with other ETK users
-1. Pit wall remote terminal screen to monitor and control device (`scripts/commander.sh`)
-1. Install, configure, repair, and uninstall the kit remotely from a computer (`install.sh` and `uninstall.sh`) with mDNS autodiscovery of supported devices on your local network.
-1. Multi-Installation Options: FULL installation for initial shader harvesting and tuning, LITE installation for saturated shader sets with thermal protection only, RAW for stress testing without shader and thermal protections (`ETK_BUILD_TYPE` in `etk.conf`)
 
 ## ETK File Structure
 - `AI_MANIFEST.md`: System Manual and Immutable Laws of ETK Development for AI
@@ -153,16 +163,6 @@ Using mDNS, Rocknix advertises itself on the LAN as `<SOC>.local` (e.g. `SM8250.
 	- `SELECT` + `D-pad Left` = MangoHUD config reload signal
 	- Thermal failsafe (internal): on overheat, the rig auto-drops to PIT (capped CPU/GPU), the HUD reads `OVERHEAT - REBOOT`, and a cold-boot is the prescribed recovery path to fully restore overdrive performance.
 	
-## How to Install PS3 Games with the ETK
-The ETK solves the problem of installing PS3 Packages on Rocknix which is otherwise a ridiculous process.
-1. Place a single PS3 `.pkg` and `.rap` into `/storage/roms/etk/pkg_install_drop/`
-1. In Rocknick Tools > ETK Pistop > TOOLS > Install a stage PS3 package
-1. Wait for the automated process where ETK will handle RPCS3 installation for you and follow the on screen overlay instructions
-1. Quit ETK Pitstop after installation and Update Gamelists in Rocknix
-
-## How to Use Simple Telemetry
-The ETK Pitstop Rocknix Tools app records your sessions for each game. You must launch a game and quit to switch which app the ETK Pitstop app will display. It records your tuning changes in a session ledger with summary statistics to help you determine which settings have resulted in better play results.
-
 # FAQ: What is the ETK and How Does it Really Work?
 - **To enhance how the built-in PS3 emulator handles shader caching,** the ETK intercepts the Vulkan shader cache with a simple symlink and safely stores these files into a vault folder on your SD card organized by device and game ID so they can be archived and shared. Even when you crash during a shader harvesting run, the vault has saved the shaders for the next run.
 - **To enhance how the device handles high demand games during the shader compiling process and high performance gaming,** the ETK manages the system temp and performance to safely overtax the device when it needs to work the hardest while preventing a total meltdown. It also modifies how the OS manages virtual memory and fine tunes the video driver.
