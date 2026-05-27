@@ -72,18 +72,11 @@ Snapshot of per-game status from on-device testing. Full tuning history, panic-l
 Specifically designed to make Gran Turismo 5 Prologue playable on a Flip2 Snapdragon, the ETK adopts the racing metaphor throughout but should work for any type of PS3 game. Surprisingly, the project has enabled Gran Turismo 6 for shader harvesting at 10fps and 75% 720p resolution.
 
 ## ETK Quick Commands
-1. `L1` **screenshot**
-- left top trigger button 
-- **Requires in-game un-binding/un-mapping**
-- Screenshots stored at `/storage/roms/etk/screenshots`
-- `install.sh` syncs `etk/screenshots`
-2. `L3` **DDU HUD**
-- left analog button
-- Toggles ETK DDU dashboard between top and bottom of screen
-3. `R3` **PANIC RECOVERY**
-- right analog button
-- Recover from a crash or freeze.
-- Reboot recommended after returning to Rocknix ES frontend.
+| Gamepad Button | ETK Command | Button Description | Details |
+|---|---|---|---|
+| `L1` | **screenshot** | left top trigger button | **Requires in-game un-binding/un-mapping**, Screenshots stored at `/storage/roms/etk/screenshots`, `install.sh` syncs `etk/screenshots` |
+| `L3` | **DDU HUD** | left analog button | Toggles ETK DDU dashboard between top and bottom of screen |
+| `R3` | **PANIC RECOVERY** | right analog button | Recover from a crash or freeze. Reboot recommended after returning to Rocknix ES frontend. |
 
 # Getting Started
 1. Flash a Rocknix nightly build (see the exact build in [ETK System Requirements](#etk-system-requirements) above) to your handheld's SD card and complete its first-time setup so the rig joins your WiFi. 
