@@ -31,7 +31,9 @@ DEFAULT_MODE="RACE"
 # collapses to telemetry-only.
 HUD_HEADER_HOLD_S=15
 
-# --- rsync verbosity during ./install.sh ---
-# 1 = full per-file progress (recommended for first-run debugging)
-# 0 = quieter output
-ETK_VERBOSE=1
+# --- install.sh output mode ---
+# 0 = Pit Wall console TUI (recommended; dashboard with progress bars +
+#     2-line scrolling datalog, evokes commander.sh aesthetic)
+# 1 = raw rsync per-file output (for diagnosing failed installs)
+# The --verbose / -v CLI flag forces 1 regardless of this setting.
+ETK_VERBOSE=0
