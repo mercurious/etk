@@ -12,27 +12,19 @@ More technically, ETK is a custom Rocknix middleware composed of shell scripts a
 Built for abuse and race conditions, the ETK guards hard-earned shaders, custom tunings, screenshots, and game saves from SD card failure, OS flashing, data corruption, device failure, loss or theft. The ETK includes an emergency cooldown that automatically puts your device in PIT mode as needed, protecting your engine from overheating.
 
 ## Screenshots
-These images were created by the ETK's screenshot tool `L1` as a camera shutter function.
-
-<img src="docs/screenshots/etk_NPEA00502_20260526_194915.png" width="600" alt="GT6 — Mini Cooper chase cam at Trial Mountain" />
-<img src="docs/screenshots/etk_NPEA00502_20260526_195230.png" width="600" alt="GT6 — Mini Cooper chase cam at Trial Mountain" />
-<img src="docs/screenshots/etk_NPEA00502_20260526_195239.png" width="600" alt="GT6 — Mini Cooper chase cam at Trial Mountain" />
-<img src="docs/screenshots/etk_NPEA00502_20260526_195242.png" width="600" alt="GT6 — Mini Cooper chase cam at Trial Mountain" />
-*GT6 race and replay shots at Trial Mountain in the MINI Cooper S*
+Captured by the ETK's screenshot tool that enables `L1` as a high-speed camera shutter function.
+<img src="docs/screenshots/etk_NPEA00502_20260526_194915.png" width="600" alt="GT6 — Mini Cooper at Trial Mountain" />
+<img src="docs/screenshots/etk_NPEA00502_20260526_195230.png" width="600" alt="GT6 — Mini Cooper at Trial Mountain" />
+<img src="docs/screenshots/etk_NPEA00502_20260526_195239.png" width="600" alt="GT6 — Mini Cooper at Trial Mountain" />
+<img src="docs/screenshots/etk_NPEA00502_20260526_195242.png" width="600" alt="GT6 — Mini Cooper at Trial Mountain" />
 <img src="docs/screenshots/etk_NPUA80075_20260526_132301.png" width="600" alt="GT5P Garage Menu showing game progression." />
-*GT5P - Main Menu Garage showing game progression.*
-<img src="docs/screenshots/etk_NPUA80075_20260526_174936.png" width="600" alt="GT5P Garage Menu showing game progression." />
-*GT5P High Speed Loop Single Race*
+<img src="docs/screenshots/etk_NPUA80075_20260526_174936.png" width="600" alt="GT5P" />
 <img src="docs/screenshots/etk_NPEA00502_20260526_170526.png" width="600" alt="GT6 — Nurbrigring Nordschielfe at night" />
-*GT6 - Nurbrigring Nordschielfe at night*
 <img src="docs/screenshots/etk_NPEA00502_20260526_164147.png" width="600" alt="GT6 — Cockpit view courtesy car BMW GT3 at Spa" />
-*GT6 - BMW GT3 courtesy car at Spa*
-<img src="docs/screenshots/etk_ROCKNIX_20260526_132108.png" width="600" alt="GT6 — Cockpit view courtesy car BMW GT3 at Spa" />
-<img src="docs/screenshots/etk_ROCKNIX_20260526_132606.png" width="600" alt="GT6 — Cockpit view courtesy car BMW GT3 at Spa" />
-<img src="docs/screenshots/etk_ROCKNIX_20260526_132607.png" width="600" alt="GT6 — Cockpit view courtesy car BMW GT3 at Spa" />
-*ETK PITSTOP Native Rocknix app*
-<img src="docs/screenshots/etk_install_screenshot.png" width="600" alt="GT6 — Cockpit view courtesy car BMW GT3 at Spa" />
-*ETK `install.sh` tool*
+<img src="docs/screenshots/etk_ROCKNIX_20260526_132108.png" width="600" alt="ETK Toolkit" />
+<img src="docs/screenshots/etk_ROCKNIX_20260526_132606.png" width="600" alt="ETK Toolkit" />
+<img src="docs/screenshots/etk_ROCKNIX_20260526_132607.png" width="600" alt="ETK Toolkit" />
+<img src="docs/screenshots/etk_install_screenshot.png" width="600" alt="ETK Toolkit" />
 
 ## ETK System Requirements
 | Type | Detail |
