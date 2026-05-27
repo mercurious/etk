@@ -54,6 +54,17 @@ Specifically designed to make Gran Turismo 5 Prologue playable on a Flip2 Snapdr
 # Final Mission
 The long term vision for the ETK is an integrated shader swarm system where your device automatically seeds and leeches shaders and proven emulation tunings over auto-subscribing device-centric bittorrent whisper nets during a battery charge.
 
+# Getting Started
+1. Flash a Rocknix nightly build (see the exact build in [ETK System Requirements](#etk-system-requirements) below) to your handheld's SD card and complete its first-time setup so the rig joins your WiFi.
+2. Clone this repo to your computer (macOS or Linux; experimental Windows via WSL2).
+3. From the repo root, run `./install.sh`. On the first run the installer auto-discovers the rig via mDNS — Rocknix advertises itself on the LAN as `<SOC>.local` (e.g. `SM8250.local` for SD865 devices like the Retroid Pocket Flip 2 / Pocket 5). You may be prompted once to accept the rig's SSH host key.
+4. The first run generates `etk.conf` (gitignored) from `etk.conf.example`. Edit it to tweak operator preferences:
+   - `RIG_SSH` — auto-populated to `root@<SOC>.local`; replace with a literal IP if your LAN blocks mDNS
+   - `ETK_BUILD_TYPE` — `FULL` (shaders + thermal + HUD) / `LITE` (thermal + HUD) / `RAW` (HUD only)
+   - `DEFAULT_MODE`, `HUD_HEADER_HOLD_S`, `ETK_VERBOSE`
+5. Re-run `./install.sh` after any `etk.conf` edit to push changes to the rig.
+6. Reboot the rig once to activate the ETK Pitstop entry in the Rocknix Tools menu.
+
 # The Kit Contents
 1. Native Rocknix ETK Pitstop App for on-device config editing, per game telemetry analysis over time, and simple PS3 game installation (drop .pkg and .rap in `roms/etk/pkg_install_drop/`)
 1. Customized in-game overlay dashbard with ETK telematics inside native Rocknix MangoHUD
@@ -63,12 +74,13 @@ The long term vision for the ETK is an integrated shader swarm system where your
 1. Automatic shader backup from your device to computer to shield hard earned work from loss and to share with other ETK users
 1. Pit wall remote terminal screen to monitor and control device (`scripts/commander.sh`)
 1. Install, configure, repair, and uninstall the kit remotely from a computer (`install.sh` and `uninstall.sh`)
-1. Multi-Installation Options: FULL installation for initial shader harvesting and tuning, LITE installation for saturated shader sets with thermal protection only, RAW for stress testing without shader and thermal protections (`ETK_BUILD_TYPE` in `scripts/env.sh`)
+1. Multi-Installation Options: FULL installation for initial shader harvesting and tuning, LITE installation for saturated shader sets with thermal protection only, RAW for stress testing without shader and thermal protections (`ETK_BUILD_TYPE` in `etk.conf`)
 
 # ETK Project Structure
 - `AI_MANIFEST.md`: System Manual and Immutable Laws of ETK Development for AI
 - `README.md`: You are reading it now.
-- `install.sh`: Flashes the ETK onto your handheld from a computer
+- `etk.conf.example`: Operator config template — committed. `install.sh` generates `etk.conf` from this on first run.
+- `install.sh`: Flashes the ETK onto your handheld from a computer; auto-discovers the rig via mDNS on first run.
 - `uninstall.sh`: Removes the ETK from your handheld from a computer
 - `/bin`:
   - `etk_modules_inject.py`: Handles installing native Rocknix PITSTOP app persistently

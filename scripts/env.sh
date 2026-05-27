@@ -8,17 +8,24 @@
 # - Maintained Shared-Truth ID resolution and Thermal Boundaries
 # ==========================================================
 
-# --- [ CUSTOMIZE YOUR SETUP HERE ] ---
-# FULL for thermal and shader protection
-# LITE for thermal protection only
-# RAW for system optimizations and custom HUD only
-export ETK_BUILD_TYPE="FULL"
-# City WiFi
-# export RIG_IP="192.168.1.53"
-# export RIG_SSH="root@192.168.1.53"
-# Country WiFi
-export RIG_IP="10.0.0.40"
-export RIG_SSH="root@10.0.0.40"
+# --- [ OPERATOR CONFIG ] ---
+# Personal / preference settings live in etk.conf at the repo root,
+# NOT in this file. install.sh's first-run wizard generates etk.conf
+# (gitignored) from etk.conf.example, auto-discovering the rig via
+# mDNS. Edit etk.conf to change rig target, build tier, or HUD options.
+#
+# This block sources etk.conf if present, then applies baked-in defaults
+# via ${VAR:-default} so the kit functions before anyone runs install.sh.
+# The path resolves relative to THIS file's location (BASH_SOURCE), so
+# both host (install.sh) and rig (Sentry) find the same etk.conf.
+ETK_CONF_FILE="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)/etk.conf"
+[ -f "$ETK_CONF_FILE" ] && . "$ETK_CONF_FILE"
+
+export RIG_SSH="${RIG_SSH:-root@SM8250.local}"
+export ETK_BUILD_TYPE="${ETK_BUILD_TYPE:-FULL}"
+export DEFAULT_MODE="${DEFAULT_MODE:-RACE}"
+export HUD_HEADER_HOLD_S="${HUD_HEADER_HOLD_S:-15}"
+export ETK_VERBOSE="${ETK_VERBOSE:-1}"
 
 # --- [ SHM & STATE ] ---
 export SHM_DIR="/dev/shm/etk_shm"
@@ -179,16 +186,11 @@ fi
 # --- [ RESTORED UI & ENGINES ] ---
 export PYTHONPATH="${PYTHONPATH}:/storage/etk/lib/python3.13/site-packages"
 export G='\033[0;32m'; export R='\033[0;31m'; export Y='\033[1;33m'; export C='\033[0;36m'; export N='\033[0m'
-export DEFAULT_MODE="RACE"
+# DEFAULT_MODE is sourced via OPERATOR CONFIG block (etk.conf).
 
 # --- [ HUD ] ---
-# Seconds the HUD shows the MODE|GAMEID launch header before collapsing to
-# pure telemetry. Sourced by mango_bridge.sh.
-export HUD_HEADER_HOLD_S=15
-
-# --- [ PIPELINE CONTROLS ] ---
-# Set to 1 for verbose Rsync output, 0 for clean output
-export ETK_VERBOSE=1
+# HUD_HEADER_HOLD_S (mango_bridge.sh banner hold) is sourced via OPERATOR
+# CONFIG block above (etk.conf). Same for ETK_VERBOSE (install.sh rsync).
 
 # --- [ SIMPLE TELEMETRY ] ---
 # Post-mortem ledger + career stats layer (dossier: BuildSimpleTelemetry.md §4).
