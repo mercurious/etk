@@ -8,7 +8,16 @@ More technically, ETK is a custom Rocknix middleware composed of shell scripts a
 
 Built for abuse and race conditions, the ETK guards hard-earned shaders, custom tunings, screenshots, and game saves from SD card failure, OS flashing, data corruption, device failure, loss or theft. The ETK includes an emergency cooldown that automatically puts your device in PIT mode as needed, protecting your engine from overheating.
 
-# Screenshots
+# ETK System Requirements
+- **Host System** macOS or Linux (experimental Windows/PC support)
+- **Handheld System:** Retroid Pocket Flip 2 (SM8250) tested, Retroid Pocket 5 (SM8250) supported, untested
+- **OS:** ROCKNIX (Nightly Build: 20260525)
+- **Driver** MESA Turnip 26.1.0
+- **Target/Status:** Multiple PS3 titles tested under RPCS3 — see `# Tested Games` below.
+- **Shell:** BusyBox v1.36.1
+- **Custom Overlay:** MangoHUD
+
+## Screenshots
 These images were created by the ETK's screenshot tool `L1` as a camera shutter function.
 
 <img src="docs/screenshots/etk_NPEA00502_20260526_124051.png" width="600" alt="GT6 — Mini Cooper chase cam exiting the Deep Forest tunnel at 97mph, with the ETK HUD strip live across the bottom of the frame" />
@@ -34,7 +43,7 @@ More to come:
 - Sample ETK Pitstop app TUNING screen
 - Sample ETK Pitstop app TOOLS PKG installer sequence screenshots
 
-# Launch ETK Edition: GTP5 SPEC
+## Launch ETK Edition: GTP5 SPEC
 Specifically designed to make Gran Turismo 5 Prologue playable on a Flip2 Snapdragon, the ETK adopts the racing metaphor throughout but should work for any type of PS3 game. Surprisingly, the project has enabled Gran Turismo 6 for shader harvesting at 10fps and 75% 720p resolution.
 
 # ETK Quick Commands
@@ -51,19 +60,23 @@ Specifically designed to make Gran Turismo 5 Prologue playable on a Flip2 Snapdr
 - Recover from a crash or freeze.
 - Reboot recommended after returning to Rocknix ES frontend.
 
-# Final Mission
-The long term vision for the ETK is an integrated shader swarm system where your device automatically seeds and leeches shaders and proven emulation tunings over auto-subscribing device-centric bittorrent whisper nets during a battery charge.
-
 # Getting Started
-1. Flash a Rocknix nightly build (see the exact build in [ETK System Requirements](#etk-system-requirements) below) to your handheld's SD card and complete its first-time setup so the rig joins your WiFi.
-2. Clone this repo to your computer (macOS or Linux; experimental Windows via WSL2).
-3. From the repo root, run `./install.sh`. On the first run the installer auto-discovers the rig via mDNS — Rocknix advertises itself on the LAN as `<SOC>.local` (e.g. `SM8250.local` for SD865 devices like the Retroid Pocket Flip 2 / Pocket 5). You may be prompted once to accept the rig's SSH host key.
-4. The first run generates `etk.conf` (gitignored) from `etk.conf.example`. Edit it to tweak operator preferences:
+1. Flash a Rocknix nightly build (see the exact build in [ETK System Requirements](#etk-system-requirements) above) to your handheld's SD card and complete its first-time setup so the rig joins your WiFi. 
+If you've already installed Rocknix, simply press `START` `UPDATES & DOWNLOADS` `UPDATE BRANCH` and switch to `NIGHTLY` and then let the auto-update complete and reboot first. 
+**Do not update to the next Rocknix nightly after this** without checking the latest README.md for the last known ETK supported Rocknix release.
+2. Clone this repo to your computer (macOS or Linux; experimental Windows via WSL2). 
+You can also download the code as a `.zip` from the GitHub `<> Code` menu and extract as `/~etk/`
+3. From the repo root, run `./install.sh`. **On the first run the installer auto-discovers your handheld as the rig.** You may be prompted once to accept the rig's SSH host key.
+Using mDNS, Rocknix advertises itself on the LAN as `<SOC>.local` (e.g. `SM8250.local` for SD865 devices like the Retroid Pocket Flip 2 / Pocket 5).
+4. Reboot and start harvesting shaders. 
+
+## Customizing the ETK
+1. The first run generates `etk.conf`from `etk.conf.example` 
    - `RIG_SSH` — auto-populated to `root@<SOC>.local`; replace with a literal IP if your LAN blocks mDNS
    - `ETK_BUILD_TYPE` — `FULL` (shaders + thermal + HUD) / `LITE` (thermal + HUD) / `RAW` (HUD only)
-   - `DEFAULT_MODE`, `HUD_HEADER_HOLD_S`, `ETK_VERBOSE`
-5. Re-run `./install.sh` after any `etk.conf` edit to push changes to the rig.
-6. Reboot the rig once to activate the ETK Pitstop entry in the Rocknix Tools menu.
+   - `DEFAULT_MODE`, `HUD_HEADER_HOLD_S` tweaks the HUD startup sequence delay, `ETK_VERBOSE` tweaks how much the installer floods your terminal with shaders
+2. Re-run `./install.sh` after any `etk.conf` edit to push changes to the rig.
+3. Reboot the rig once to activate the ETK Pitstop entry in the Rocknix Tools menu.
 
 # The Kit Contents
 1. Native Rocknix ETK Pitstop App for on-device config editing, per game telemetry analysis over time, and simple PS3 game installation (drop .pkg and .rap in `roms/etk/pkg_install_drop/`)
@@ -73,7 +86,7 @@ The long term vision for the ETK is an integrated shader swarm system where your
 1. Smart thermal protection to safely overdrive the device during shader harvesting
 1. Automatic shader backup from your device to computer to shield hard earned work from loss and to share with other ETK users
 1. Pit wall remote terminal screen to monitor and control device (`scripts/commander.sh`)
-1. Install, configure, repair, and uninstall the kit remotely from a computer (`install.sh` and `uninstall.sh`)
+1. Install, configure, repair, and uninstall the kit remotely from a computer (`install.sh` and `uninstall.sh`) with mDNS autodiscovery of supported devices on your local network.
 1. Multi-Installation Options: FULL installation for initial shader harvesting and tuning, LITE installation for saturated shader sets with thermal protection only, RAW for stress testing without shader and thermal protections (`ETK_BUILD_TYPE` in `etk.conf`)
 
 # ETK Project Structure
@@ -107,14 +120,6 @@ The long term vision for the ETK is an integrated shader swarm system where your
 - `/tools`: various utilities used during ETK development
 - `/vault`: Large archive of Vulkan precompiled shader bins organized by chipset and gameID
 
-# ETK System Requirements
-- **Host System** macOS or Linux (experimental Windows/PC support)
-- **Handheld System:** Retroid Pocket Flip 2 (SM8250)
-- **OS:** ROCKNIX (Nightly Build: 20260525)
-- **Driver** MESA Turnip 26.1.0
-- **Target/Status:** Multiple PS3 titles tested under RPCS3 — see `# Tested Games` below.
-- **Shell:** BusyBox v1.36.1
-- **Custom Overlay:** MangoHUD
 
 # Tested Games (RPCS3)
 Snapshot of per-game status from on-device testing. Full tuning history, panic-ledger context, and the critical config dials per game live in [dossiers/etk_gametest_status_sheet.md](dossiers/etk_gametest_status_sheet.md).
@@ -171,19 +176,12 @@ Snapshot of per-game status from on-device testing. Full tuning history, panic-l
 - Phase 9: Enabled game agnostic ETK
 - Phase 10: Onboard ETK Commands: `R3` as Recovery Panic Button and 
 - Phase 11: Onboard ETK Commands: `L3` as MangoHUD screen position toggle
-- **Phase 12:** Developing native Rocknix ETK app for utilities (Tools or carousel UI)
+- Phase 12: Developing native Rocknix ETK app for utilities (Tools or carousel UI)
 - Phase 13: Alpha Testing
 - Phase 14: Develop tuning and shader sharing; Rig self-updates ETK from GitHub in Pitstop App
 - Phase 15: Beta Testing
 
-# Easy Install Guide on macOS and Linux (FULL Kit)
-1. Create a local `~/etk` for the kit's extracted code and navigate to it `cd ~/etk`
-1. Edit `scripts/env.sh` in a text editor so `RIG_IP` and `RIG_SSH` match your device's IP address found on your Rocknix device: `START button` > `Network Settings` > `IP ADDRESS`
-1. Run `chmod +x install.sh` one time in your terminal to make it executable.
-1. Run `./install.sh` to flash your device with the ETK. 
-1. Run this command frequently to backup your shaders, configs, telemetry, and game saves to `~/etk`
-
-# Windows Install Guide (alpha-tester preview)
+# Windows Install Guide (alpha-tester preview, needs testing)
 A native PowerShell installer is in early prototype (`windows_installer/`). Until it ships, the recommended Windows path is **WSL2**: install WSL2 + Ubuntu, clone the kit, and follow the `# Easy Install Guide (FULL Kit)` above unchanged. `install.sh` runs in WSL2 with no modifications and Tier-B auto-backup works the same as on macOS/Linux.
 
 For the one-time fresh-card flash, use the official Rocknix  [ImageBurner](https://github.com/ROCKNIX/ImageBurner/releases) — Windows-native, no dependency to install the correct nightly (not official) required for the ETK.
