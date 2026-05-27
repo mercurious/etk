@@ -74,7 +74,8 @@ Using mDNS, Rocknix advertises itself on the LAN as `<SOC>.local` (e.g. `SM8250.
 1. The first run generates `etk.conf`from `etk.conf.example` 
    - `RIG_SSH` — auto-populated to `root@<SOC>.local`; replace with a literal IP if your LAN blocks mDNS
    - `ETK_BUILD_TYPE` — `FULL` (shaders + thermal + HUD) / `LITE` (thermal + HUD) / `RAW` (HUD only)
-   - `DEFAULT_MODE`, `HUD_HEADER_HOLD_S` tweaks the HUD startup sequence delay, `ETK_VERBOSE` tweaks how much the installer floods your terminal with shaders
+   - `DEFAULT_MODE`, `HUD_HEADER_HOLD_S` (HUD launch-banner hold)
+   - `ETK_VERBOSE` — 0 = Pit Wall console TUI (default), 1 = raw rsync output for debugging. Pass `--verbose` / `-v` on the install.sh CLI to force verbose for a single run.
 2. Re-run `./install.sh` after any `etk.conf` edit to push changes to the rig.
 3. Reboot the rig once to activate the ETK Pitstop entry in the Rocknix Tools menu.
 

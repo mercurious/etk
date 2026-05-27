@@ -126,28 +126,29 @@ source ./scripts/env.sh
 # the only path that writes to rig telemetry/configs/saves and is intended
 # ONLY for standing a fresh/reflashed rig back up. Mirrors uninstall.sh's
 # --zap-vault gating idiom. Tolerated in any arg position.
+# --verbose / -v: bypass the Pit Wall TUI; use raw rsync progress output.
+# Useful for diagnosing failed installs (per-file rsync detail surfaces).
 RESTORE_STATE=0
 for arg in "$@"; do
     case "$arg" in
         --restore-state) RESTORE_STATE=1 ;;
+        --verbose|-v) ETK_VERBOSE=1 ;;
     esac
 done
+
+# Source the install-time TUI library (host-only; never pushed to rig).
+# Provides tui_step_start, tui_step_progress, tui_step_done, tui_rsync, etc.
+# Falls back to no-op stubs / passthrough behaviour in verbose / non-tty mode.
+source ./tools/tui.sh 2>/dev/null || true
 
 # Tier-B host snapshot tree (local to install.sh, mirroring how ./vault
 # is already a literal here). Never auto-deleted (cf. ./vault philosophy).
 HOST_STATE_DIR="./state"
 
-if [ "$RESTORE_STATE" = "1" ]; then
-    echo -e "${R}>>> WARNING: --restore-state passed.${N}"
-    echo -e "${R}    Host-side Tier-B state ($HOST_STATE_DIR) will OVERWRITE rig"
-    echo -e "    telemetry ledgers, tuned RPCS3 configs, and the RPCS3 user-profile"
-    echo -e "    tree (saves, trophies, .rap licenses). Intended ONLY for a"
-    echo -e "    fresh/reflashed rig. NEVER run this as part of a routine update.${N}"
-    echo ""
-fi
-
 # --- PIPELINE CONTROLS ---
-if [ "$ETK_VERBOSE" == "1" ]; then
+# RSYNC_CMD is the verbose-mode rsync invocation. In TUI mode, tui_rsync
+# wraps rsync directly with --info=progress2 and bypasses RSYNC_CMD.
+if [ "$ETK_VERBOSE" = "1" ]; then
     RSYNC_CMD="rsync -avzI --progress"
 else
     # FIX: Added --modify-window=2 to account for exFAT/FAT32 2-second timestamp drift
@@ -155,6 +156,27 @@ else
 fi
 
 TOTAL_STEPS=6
+
+# --- TUI ACTIVATION ---
+# Console mode (Pit Wall TUI) is the default for terminal installs.
+# Verbose flag, non-tty stdout, or terminal narrower than 76 cols all
+# fall through to the historical raw output path.
+if tui_should_activate; then
+    tui_init
+fi
+
+if [ "$RESTORE_STATE" = "1" ]; then
+    if [ "$TUI_ACTIVE" = "1" ]; then
+        tui_log "[--restore-state] will OVERWRITE rig Tier-B state on this run"
+    else
+        echo -e "${R}>>> WARNING: --restore-state passed.${N}"
+        echo -e "${R}    Host-side Tier-B state ($HOST_STATE_DIR) will OVERWRITE rig"
+        echo -e "    telemetry ledgers, tuned RPCS3 configs, and the RPCS3 user-profile"
+        echo -e "    tree (saves, trophies, .rap licenses). Intended ONLY for a"
+        echo -e "    fresh/reflashed rig. NEVER run this as part of a routine update.${N}"
+        echo ""
+    fi
+fi
 
 # ==========================================================
 # STEP 0: PROBE & QUIESCE
@@ -164,9 +186,11 @@ TOTAL_STEPS=6
 # mango_bridge.sh is included because it writes to SHM continuously.
 # The Sentry service itself is left running — it will respawn cleanly.
 # ==========================================================
-echo -e "${C}>>> [0/${TOTAL_STEPS}] PROBING & QUIESCING REMOTE RIG...${N}"
+tui_step_start 0
+tui_log "Probing rig SSH and quiescing daemons"
 ssh $RIG_SSH "pkill -f vault_d.sh; pkill -f thermal_d.sh; pkill -f mango_bridge.sh; pkill -f input_d.py" 2>/dev/null
 sleep 1
+tui_step_progress 0 15
 
 # --- MESA REBUILD FINGERPRINT (addendum §G.5) ---
 # Every Rocknix nightly rebuilds Mesa from source even when upstream is
@@ -185,11 +209,11 @@ if [ -n "$MESA_HASH_NEW" ]; then
         # First run: seed the fingerprint silently. Nothing prior to compare.
         ssh $RIG_SSH "mkdir -p $ETK_ROOT/vault && printf '%s\n' '$MESA_HASH_NEW' > $MESA_HASH_FILE"
     elif [ "$MESA_HASH_OLD" != "$MESA_HASH_NEW" ]; then
-        echo -e "    ${Y}[INFO] MESA REBUILT — vault layer keyed against new build ID.${N}"
-        echo -e "    ${Y}       Run \`tools/vault_sweep.sh\` (on the rig) to prune orphaned shaders.${N}"
+        say "${Y}[INFO] MESA REBUILT — run tools/vault_sweep.sh to prune orphaned shaders${N}"
         ssh $RIG_SSH "echo \"[\$(date '+%H:%M:%S.%N')] MESA REBUILD DETECTED (was $MESA_HASH_OLD, now $MESA_HASH_NEW)\" >> $TRIPWIRE_LOG && printf '%s\n' '$MESA_HASH_NEW' > $MESA_HASH_FILE"
     fi
 fi
+tui_step_progress 0 30
 
 # --- SCREENSHOT FEATURE DEPENDENCY CHECK ---
 # `grim` is the Wayland screenshot tool that bin/screenshot.sh shells out
@@ -197,9 +221,9 @@ fi
 # and the L1 chord would then silently produce zero output. Probe at
 # install time so any breakage surfaces here, not at first L1 press.
 if ! ssh $RIG_SSH "command -v grim >/dev/null 2>&1"; then
-    echo -e "    ${Y}[WARN] \`grim\` not available on rig — ETK screenshot feature (L1) will not work${N}"
-    echo -e "    ${Y}       until grim is reinstalled. Check Rocknix package state.${N}"
+    say "${Y}[WARN] grim not available on rig — L1 screenshot disabled until reinstalled${N}"
 fi
+tui_step_progress 0 40
 
 # Resolve current game ID from rig (for vault path construction)
 RIG_ID=$(ssh $RIG_SSH "cat $ID_FILE 2>/dev/null || pgrep -f rpcs3 | xargs -I{} cat /proc/{}/cmdline /proc/{}/environ 2>/dev/null | tr '\0' '\n' | grep -oE '[A-Z]{4}[0-9]{5}' | head -n 1")
@@ -214,8 +238,13 @@ case "$RIG_ID" in
 esac
 export TARGET_ID
 export VAULT_DIR="$ETK_ROOT/vault/$CHIPSET/$TARGET_ID/shaders"
-echo -e "    RIG ID   : ${Y}${TARGET_ID}${N}"
-echo -e "    VAULT DIR: ${Y}${VAULT_DIR}${N}"
+if [ "$TUI_ACTIVE" = "1" ]; then
+    tui_log "Rig ID: ${TARGET_ID}  •  Vault: $VAULT_DIR"
+else
+    echo -e "    RIG ID   : ${Y}${TARGET_ID}${N}"
+    echo -e "    VAULT DIR: ${Y}${VAULT_DIR}${N}"
+fi
+tui_step_progress 0 55
 
 # ==========================================================
 # STEP 1: PROVISION RIG DIRECTORIES
@@ -223,7 +252,7 @@ echo -e "    VAULT DIR: ${Y}${VAULT_DIR}${N}"
 # Provisions the correct RPCS3 custom config path (bios tree),
 # not the legacy /storage/.config/rpcs3 path.
 # ==========================================================
-echo -e "${C}>>> [1/${TOTAL_STEPS}] PROVISIONING RIG DIRECTORIES...${N}"
+tui_log "Provisioning rig directories ($ETK_ROOT, modules, RPCS3 dirs)"
 ssh $RIG_SSH "mkdir -p \
     $VAULT_DIR \
     $ETK_ROOT/bin \
@@ -243,6 +272,7 @@ ssh $RIG_SSH "mkdir -p \
     $RPCS3_HOME_DIR \
     $PS3_LAUNCHER_DIR \
     $TELEMETRY_DIR"
+tui_step_progress 0 80
 
 # Document the PKG install drop folder so a user browsing the SD card
 # understands what it is and that staged files are consumed on success.
@@ -300,7 +330,9 @@ SHOTREADME
 # ETK mako notification style: a criteria section scoped to app-name
 # "ETK Pitstop" so ETK toasts are wide and readable WITHOUT altering
 # Rocknix's own notifications. Idempotent -- appended only once.
-ssh $RIG_SSH 'bash -s' <<'ETKMAKO'
+# Output captured + summarized so the [OK]/[SKIP] echo doesn't break the TUI.
+tui_log "Installing ETK mako notification style"
+MAKO_OUT=$(ssh $RIG_SSH 'bash -s' 2>&1 <<'ETKMAKO'
 MCFG=/storage/.config/mako/config
 if [ -f "$MCFG" ] && ! grep -q 'app-name="ETK Pitstop"' "$MCFG"; then
 cat >> "$MCFG" <<'MK'
@@ -324,6 +356,17 @@ else
 echo "    [SKIP] ETK mako style already present (or mako config absent)."
 fi
 ETKMAKO
+)
+if [ "$TUI_ACTIVE" = "1" ]; then
+    if echo "$MAKO_OUT" | grep -q '\[OK\]'; then
+        tui_log "ETK mako notification style installed"
+    else
+        tui_log "ETK mako style already present"
+    fi
+else
+    echo "$MAKO_OUT"
+fi
+tui_step_done 0
 
 # ==========================================================
 # STEP 2: VAULT PULL — RIG -> HOST PC (SAFEGUARD HARVEST)
@@ -333,13 +376,13 @@ ETKMAKO
 # == filename), so a banked .bin is immutable; never overwrite a
 # host copy with a rig copy of the same name.
 # ==========================================================
-echo -e "${C}>>> [2/${TOTAL_STEPS}] SAFEGUARDING HARVEST (PULLING SHADERS: RIG -> HOST PC)...${N}"
+tui_step_start 1
 # Scoped to $CHIPSET/ so anything outside the structured
 # vault/$CHIPSET/<gameID>/shaders/ tree (e.g. RPCS3 ppu-* per-binary
 # caches that landed at vault root from a legacy tool or a manual op)
 # cannot propagate between rig and host on subsequent installs.
 mkdir -p "./vault/$CHIPSET"
-$RSYNC_CMD --ignore-existing --exclude='.DS_Store' "$RIG_SSH:$ETK_ROOT/vault/$CHIPSET/" "./vault/$CHIPSET/"
+tui_rsync 1 0 70 "Pulling vault shaders (rig → host)" --ignore-existing --exclude='.DS_Store' "$RIG_SSH:$ETK_ROOT/vault/$CHIPSET/" "./vault/$CHIPSET/"
 
 # --- TIER-B BACKUP: rig -> host (addendum §C) ---
 # Mutable-precious state: telemetry ledgers, tuned RPCS3 configs, RPCS3
@@ -347,19 +390,26 @@ $RSYNC_CMD --ignore-existing --exclude='.DS_Store' "$RIG_SSH:$ETK_ROOT/vault/$CH
 # --ignore-existing — host must track edits; no --delete — host snapshot is
 # an archive, never pruned). Read-only on the rig: zero SD writes. Skipped
 # per-rule when the rig source is absent (fresh rig, first run).
-echo -e "${C}    [Tier-B] Backing up telemetry / configs / RPCS3 home / screenshots (RIG -> HOST PC)...${N}"
+tui_log "Tier-B backup: telemetry, configs, RPCS3 home, screenshots (rig → host)"
 mkdir -p "$HOST_STATE_DIR/etk_telemetry" "$HOST_STATE_DIR/custom_configs" "$HOST_STATE_DIR/rpcs3_home" "$HOST_STATE_DIR/screenshots"
+TIER_B_IDX=0
 for pair in \
-    "$TELEMETRY_DIR|$HOST_STATE_DIR/etk_telemetry" \
-    "$RPCS3_CUSTOM_CONFIGS|$HOST_STATE_DIR/custom_configs" \
-    "$RPCS3_HOME_DIR|$HOST_STATE_DIR/rpcs3_home" \
-    "$ETK_ROOT/screenshots|$HOST_STATE_DIR/screenshots"; do
+    "$TELEMETRY_DIR|$HOST_STATE_DIR/etk_telemetry|telemetry" \
+    "$RPCS3_CUSTOM_CONFIGS|$HOST_STATE_DIR/custom_configs|custom_configs" \
+    "$RPCS3_HOME_DIR|$HOST_STATE_DIR/rpcs3_home|rpcs3_home" \
+    "$ETK_ROOT/screenshots|$HOST_STATE_DIR/screenshots|screenshots"; do
     SRC="${pair%%|*}"
-    DST="${pair##*|}"
+    REST="${pair#*|}"
+    DST="${REST%%|*}"
+    NAME="${REST##*|}"
+    TIER_B_IDX=$((TIER_B_IDX + 1))
+    PCT_LO=$(( 70 + (TIER_B_IDX - 1) * 7 ))
+    PCT_HI=$(( 70 + TIER_B_IDX * 7 ))
     if ssh $RIG_SSH "[ -d $SRC ]" 2>/dev/null; then
-        $RSYNC_CMD --exclude='.DS_Store' "$RIG_SSH:$SRC/" "$DST/"
+        tui_rsync 1 $PCT_LO $PCT_HI "Mirroring $NAME" --exclude='.DS_Store' "$RIG_SSH:$SRC/" "$DST/"
     else
-        echo -e "    ${Y}[SKIP] rig source absent: $SRC${N}"
+        say "${Y}[SKIP] rig source absent: $SRC${N}"
+        tui_step_progress 1 $PCT_HI
     fi
 done
 # RECENT_ID_FILE lives at vault root (outside the $CHIPSET/ scope Step 2
@@ -367,18 +417,19 @@ done
 # the first launch after --restore-state (seed_id falls back to NPUA80075
 # otherwise — wrong game's HUD position, wrong cache pre-seed link).
 if ssh $RIG_SSH "[ -f $RECENT_ID_FILE ]" 2>/dev/null; then
-    $RSYNC_CMD --exclude='.DS_Store' "$RIG_SSH:$RECENT_ID_FILE" "./vault/last_played_id.txt"
+    tui_rsync 1 98 100 "Pulling last_played_id" --exclude='.DS_Store' "$RIG_SSH:$RECENT_ID_FILE" "./vault/last_played_id.txt"
 fi
+tui_step_done 1
 
 # ==========================================================
 # STEP 3: DEPLOY SCRIPTS, DAEMONS & OVERLAYS
 # --delete removes stale files from previous versions so
 # renamed/removed scripts don't linger and cause ghost invocations.
 # ==========================================================
-echo -e "${C}>>> [3/${TOTAL_STEPS}] DEPLOYING GUARDIAN DAEMONS & SCRIPTS...${N}"
-$RSYNC_CMD --delete --exclude='*.pyc' --exclude='__pycache__' --exclude='.DS_Store' ./bin/ $RIG_SSH:$ETK_ROOT/bin/
-$RSYNC_CMD --delete --exclude='.DS_Store' ./scripts/ $RIG_SSH:$ETK_ROOT/scripts/
-$RSYNC_CMD --exclude='.DS_Store' ./config/MangoHud.conf $RIG_SSH:/storage/.config/MangoHud/MangoHud.conf
+tui_step_start 2
+tui_rsync 2 0 25 "Pushing /bin daemons" --delete --exclude='*.pyc' --exclude='__pycache__' --exclude='.DS_Store' ./bin/ $RIG_SSH:$ETK_ROOT/bin/
+tui_rsync 2 25 50 "Pushing /scripts (env, profiles, probes)" --delete --exclude='.DS_Store' ./scripts/ $RIG_SSH:$ETK_ROOT/scripts/
+tui_rsync 2 50 70 "Pushing MangoHud.conf" --exclude='.DS_Store' ./config/MangoHud.conf $RIG_SSH:/storage/.config/MangoHud/MangoHud.conf
 # Operator config: the Sentry's env.sh source on the rig reads this file
 # for ETK_BUILD_TYPE, DEFAULT_MODE, HUD_HEADER_HOLD_S. Without this push
 # the rig would silently use the baked-in defaults regardless of operator
@@ -386,8 +437,10 @@ $RSYNC_CMD --exclude='.DS_Store' ./config/MangoHud.conf $RIG_SSH:/storage/.confi
 # operator edits often swap byte-identical values (HUD_HEADER_HOLD_S=15
 # vs =42 are the same size) and rsync's default mtime+size check would
 # silently skip such "same-size" edits when mtimes happen to match.
-$RSYNC_CMD --checksum --exclude='.DS_Store' ./etk.conf $RIG_SSH:$ETK_ROOT/etk.conf
+tui_rsync_checksum 2 70 90 "Pushing etk.conf (operator config)" --exclude='.DS_Store' ./etk.conf $RIG_SSH:$ETK_ROOT/etk.conf
+tui_log "chmod +x daemons and scripts"
 ssh $RIG_SSH "chmod +x $ETK_ROOT/bin/* $ETK_ROOT/scripts/*"
+tui_step_done 2
 
 # ==========================================================
 # STEP 4: VAULT PUSH — HOST PC -> RIG (RESTORE BANKED SHADERS)
@@ -399,12 +452,13 @@ ssh $RIG_SSH "chmod +x $ETK_ROOT/bin/* $ETK_ROOT/scripts/*"
 # Bidirectional --ignore-existing is the property that makes the
 # Tier-A vault sync safe to run on every install (addendum §B).
 # ==========================================================
-echo -e "${C}>>> [4/${TOTAL_STEPS}] RESTORING BANKED SHADERS (PUSHING VAULT: HOST PC -> RIG)...${N}"
+tui_step_start 3
 # Scoped to $CHIPSET/ — see step 2 rationale.
 if [ -d "./vault/$CHIPSET" ] && [ "$(ls -A "./vault/$CHIPSET" 2>/dev/null)" ]; then
-    $RSYNC_CMD --ignore-existing --exclude='.DS_Store' "./vault/$CHIPSET/" "$RIG_SSH:$ETK_ROOT/vault/$CHIPSET/"
+    tui_rsync 3 0 100 "Pushing vault shaders (host → rig)" --ignore-existing --exclude='.DS_Store' "./vault/$CHIPSET/" "$RIG_SSH:$ETK_ROOT/vault/$CHIPSET/"
 else
-    echo -e "    ${Y}[SKIP] No local vault found — nothing to push.${N}"
+    say "${Y}[SKIP] No local vault found — nothing to push${N}"
+    tui_step_progress 3 100
 fi
 
 # --- TIER-B RESTORE: host -> rig (addendum §C, gated) ---
@@ -416,24 +470,36 @@ fi
 # No --delete: a fresh rig has nothing extra; --delete is pure downside.
 # Inert on default runs (no flag = no host->rig state write).
 if [ "$RESTORE_STATE" = "1" ]; then
-    echo -e "${C}    [Tier-B] Restoring telemetry / configs / RPCS3 home / screenshots (HOST PC -> RIG, OVERWRITE)...${N}"
+    tui_log "[Tier-B RESTORE] Overwriting rig state with host snapshot"
     for pair in \
-        "$HOST_STATE_DIR/etk_telemetry|$TELEMETRY_DIR" \
-        "$HOST_STATE_DIR/custom_configs|$RPCS3_CUSTOM_CONFIGS" \
-        "$HOST_STATE_DIR/rpcs3_home|$RPCS3_HOME_DIR" \
-        "$HOST_STATE_DIR/screenshots|$ETK_ROOT/screenshots"; do
+        "$HOST_STATE_DIR/etk_telemetry|$TELEMETRY_DIR|telemetry" \
+        "$HOST_STATE_DIR/custom_configs|$RPCS3_CUSTOM_CONFIGS|custom_configs" \
+        "$HOST_STATE_DIR/rpcs3_home|$RPCS3_HOME_DIR|rpcs3_home" \
+        "$HOST_STATE_DIR/screenshots|$ETK_ROOT/screenshots|screenshots"; do
         SRC="${pair%%|*}"
-        DST="${pair##*|}"
+        REST="${pair#*|}"
+        DST="${REST%%|*}"
+        NAME="${REST##*|}"
         if [ -d "$SRC" ] && [ "$(ls -A "$SRC" 2>/dev/null)" ]; then
-            $RSYNC_CMD --exclude='.DS_Store' "$SRC/" "$RIG_SSH:$DST/"
+            tui_log "Restoring $NAME (host → rig OVERWRITE)"
+            if [ "$TUI_ACTIVE" = "1" ]; then
+                rsync -az --info=progress2 --info=stats0 --exclude='.DS_Store' "$SRC/" "$RIG_SSH:$DST/" >/dev/null 2>&1
+            else
+                $RSYNC_CMD --exclude='.DS_Store' "$SRC/" "$RIG_SSH:$DST/"
+            fi
         else
-            echo -e "    ${Y}[SKIP] host source empty: $SRC${N}"
+            say "${Y}[SKIP] host source empty: $SRC${N}"
         fi
     done
     if [ -f "./vault/last_played_id.txt" ]; then
-        $RSYNC_CMD --exclude='.DS_Store' "./vault/last_played_id.txt" "$RIG_SSH:$RECENT_ID_FILE"
+        if [ "$TUI_ACTIVE" = "1" ]; then
+            rsync -az --exclude='.DS_Store' "./vault/last_played_id.txt" "$RIG_SSH:$RECENT_ID_FILE" >/dev/null 2>&1
+        else
+            $RSYNC_CMD --exclude='.DS_Store' "./vault/last_played_id.txt" "$RIG_SSH:$RECENT_ID_FILE"
+        fi
     fi
 fi
+tui_step_done 3
 
 # ==========================================================
 # STEP 5: DEPLOY ETK PITSTOP ROCKNIX INTERFACE
@@ -446,52 +512,57 @@ fi
 # intermediate path construction that can silently misfire.
 # Verify immediately and abort loudly if the file didn't land.
 # ==========================================================
-echo -e "${C}>>> [5/${TOTAL_STEPS}] DEPLOYING ETK PITSTOP ROCKNIX INTERFACE...${N}"
+tui_step_start 4
 
 # Python engine and field schema
-$RSYNC_CMD --exclude='.DS_Store' ./bin/etk_pitstop.py            $RIG_SSH:$ETK_ROOT/bin/
-$RSYNC_CMD --exclude='.DS_Store' ./config/pitstop_fields.json    $RIG_SSH:$ETK_ROOT/config/
-$RSYNC_CMD --exclude='.DS_Store' ./config/crash_signatures.json  $RIG_SSH:$ETK_ROOT/config/
+tui_rsync 4 0 12 "Deploying Pitstop engine (etk_pitstop.py)" --exclude='.DS_Store' ./bin/etk_pitstop.py            $RIG_SSH:$ETK_ROOT/bin/
+tui_rsync 4 12 24 "Deploying field schema (pitstop_fields.json)" --exclude='.DS_Store' ./config/pitstop_fields.json    $RIG_SSH:$ETK_ROOT/config/
+tui_rsync 4 24 36 "Deploying crash signatures" --exclude='.DS_Store' ./config/crash_signatures.json  $RIG_SSH:$ETK_ROOT/config/
 # ETK default per-game RPCS3 config template (TOOLS-tab installer copies this
 # to custom_configs/config_<ID>.yml for each newly installed game).
-$RSYNC_CMD --exclude='.DS_Store' ./config/etk_template.yml       $RIG_SSH:$ETK_ROOT/config/
+tui_rsync 4 36 48 "Deploying RPCS3 template (etk_template.yml)" --exclude='.DS_Store' ./config/etk_template.yml       $RIG_SSH:$ETK_ROOT/config/
 # SVG icon master for the polished Tools-menu app entry (dossier addendum R1).
-$RSYNC_CMD --exclude='.DS_Store' ./config/etk_pitstop.svg        $RIG_SSH:$ETK_ROOT/config/
+tui_rsync 4 48 60 "Deploying Tools-menu SVG icon" --exclude='.DS_Store' ./config/etk_pitstop.svg        $RIG_SSH:$ETK_ROOT/config/
 
 # THE MASTER COPY: Push to the persistent safe zone
-$RSYNC_CMD --exclude='.DS_Store' ./config/etk_pitstop.sh      $RIG_SSH:$ETK_ROOT/config/
+tui_rsync 4 60 72 "Deploying launcher master copy" --exclude='.DS_Store' ./config/etk_pitstop.sh      $RIG_SSH:$ETK_ROOT/config/
 ssh $RIG_SSH "sed -i 's/\r$//' $ETK_ROOT/config/etk_pitstop.sh && chmod +x $ETK_ROOT/config/etk_pitstop.sh"
 
 # Deploy the initial launcher directly to modules for immediate use without reboot
-echo -e "    Deploying launcher to /storage/.config/modules/..."
-$RSYNC_CMD --exclude='.DS_Store' ./config/etk_pitstop.sh $RIG_SSH:/storage/.config/modules/etk_pitstop.sh
+tui_rsync 4 72 80 "Installing launcher into /storage/.config/modules/" --exclude='.DS_Store' ./config/etk_pitstop.sh $RIG_SSH:/storage/.config/modules/etk_pitstop.sh
 
 # THE KILL SHOT: Sanitize, Arm, and Weld to Disk
 ssh $RIG_SSH "sed -i 's/\r$//' /storage/.config/modules/etk_pitstop.sh && \
               chmod +x /storage/.config/modules/etk_pitstop.sh && \
               sync"
+tui_step_progress 4 85
 
 # Verify the launcher actually landed
 LAUNCHER_CHECK=$(ssh $RIG_SSH "[ -x /storage/.config/modules/etk_pitstop.sh ] && echo OK || echo MISSING")
 if [ "$LAUNCHER_CHECK" = "OK" ]; then
-    echo -e "    ${G}[OK] Launcher verified and locked to disk.${N}"
+    say "${G}[OK] Launcher verified and locked to disk${N}"
 else
-    echo -e "    ${R}[FAIL] Launcher missing or lacks +x permissions — aborting.${N}"
-    exit 1
+    if [ "$TUI_ACTIVE" = "1" ]; then
+        tui_fail "Launcher missing or lacks +x permissions"
+    else
+        echo -e "    ${R}[FAIL] Launcher missing or lacks +x permissions — aborting.${N}"
+        exit 1
+    fi
 fi
 
 # Register ETK Pitstop as a polished Tools-menu app: run the modules
 # injector so the launcher + SVG icon + enriched gamelist <game> entry
 # land immediately. /storage/.config/modules is boot-volatile, so the
 # Sentry re-asserts all three every boot — this is just the first pass.
-echo -e "    Registering ETK Pitstop in the Tools menu..."
-ssh $RIG_SSH "python3 $ETK_ROOT/bin/etk_modules_inject.py"
+tui_log "Registering ETK Pitstop in the Tools menu"
+ssh $RIG_SSH "python3 $ETK_ROOT/bin/etk_modules_inject.py" >/dev/null 2>&1
 GAMELIST_CHECK=$(ssh $RIG_SSH "grep -c '>ETK Pitstop<' /storage/.config/modules/gamelist.xml 2>/dev/null || echo 0")
 if [ "${GAMELIST_CHECK:-0}" -ge 1 ] 2>/dev/null; then
-    echo -e "    ${G}[OK] ETK Pitstop registered as a Tools-menu app.${N}"
+    say "${G}[OK] ETK Pitstop registered as a Tools-menu app${N}"
 else
-    echo -e "    ${Y}[WARN] Tools-menu entry not confirmed — the Sentry will re-inject it.${N}"
+    say "${Y}[WARN] Tools-menu entry not confirmed — Sentry will re-inject it${N}"
 fi
+tui_step_done 4
 # ==========================================================
 # STEP 6: WRITE & RESTART THE SENTRY (ROCKNIX SYSTEMD)
 # The Sentry is written fresh on every install/repair so any
@@ -504,9 +575,18 @@ fi
 # both permanently dead. Every install since the sentry was
 # introduced has had this bug.
 # ==========================================================
-echo -e "${C}>>> [6/${TOTAL_STEPS}] DEPLOYING ROCKNIX-NATIVE SYSTEMD SENTRY...${N}"
+tui_step_start 5
+tui_log "Writing Sentry script + systemd unit, restarting etk.service"
 
-ssh $RIG_SSH << 'REMOTE'
+# Capture the entire heredoc output so the TUI isn't clobbered by remote
+# bash echoes (daemon-reload messages, the SENTRY_OK marker, etc.).
+# Use a temp file (not $(...) command substitution) because the Sentry
+# heredoc body contains literal `)` characters in ${VAR:-x} expansions
+# and case-statement bodies that confuse bash's parser when nested inside
+# command substitution. In verbose mode we replay the capture after for
+# fidelity with the historical install.sh behaviour.
+SENTRY_OUTPUT_FILE=$(mktemp /tmp/etk_sentry_XXXXXX)
+ssh $RIG_SSH > "$SENTRY_OUTPUT_FILE" 2>&1 << 'REMOTE'
     BOOT_SENTRY="/storage/.config/custom_scripts/01-etk-sentry.sh"
     mkdir -p /storage/.config/custom_scripts/ /storage/.config/system.d/
 
@@ -921,10 +1001,43 @@ SVC
     sleep 2
     systemctl is-active --quiet etk.service && echo "SENTRY_OK" || echo "SENTRY_FAIL"
 REMOTE
+SENTRY_OUTPUT=$(cat "$SENTRY_OUTPUT_FILE")
+rm -f "$SENTRY_OUTPUT_FILE"
 
-# Check the sentry status signal written by the remote block
-echo ""
-echo -e "${G}>>> DEPLOYMENT COMPLETE. REBOOT THE DEVICE TO ACTIVATE THE ETK PITSTOP APP IN ROCKNIX TOOLS.${N}"
-echo -e "    (EmulationStation reads the Tools gamelist at startup, so the polished"
-echo -e "     ETK Pitstop entry appears after a reboot — Update Gamelists does not refresh it.)"
-echo -e "    Run ${Y}ssh $RIG_SSH 'systemctl status etk.service'${N} to confirm sentry health."
+# Verbose mode: replay the captured remote output for fidelity with the
+# historical install.sh experience. TUI mode keeps it suppressed.
+if [ "$TUI_ACTIVE" != "1" ]; then
+    echo "$SENTRY_OUTPUT"
+fi
+
+# Parse for SENTRY_OK / SENTRY_FAIL marker
+if echo "$SENTRY_OUTPUT" | grep -q SENTRY_OK; then
+    tui_step_progress 5 100
+    tui_step_done 5
+elif echo "$SENTRY_OUTPUT" | grep -q SENTRY_FAIL; then
+    if [ "$TUI_ACTIVE" = "1" ]; then
+        tui_fail "Sentry failed to start — last lines: $(echo "$SENTRY_OUTPUT" | tail -3 | tr '\n' ' ')"
+    else
+        echo -e "${R}>>> SENTRY FAILED TO START${N}"
+        exit 1
+    fi
+else
+    # Neither marker appeared — heredoc may have errored before the check
+    if [ "$TUI_ACTIVE" = "1" ]; then
+        tui_fail "Sentry deploy produced no status marker: $(echo "$SENTRY_OUTPUT" | tail -3 | tr '\n' ' ')"
+    else
+        echo -e "${Y}>>> WARNING: Sentry status marker missing from remote output${N}"
+    fi
+fi
+
+# Final banner. tui_finish renders the caller-supplied content in both
+# console and verbose modes.
+TUI_FINISH_BANNER='━━━ KIT ARMED ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+TUI_FINISH_LINE1='\033[32mSENTRY ONLINE\033[0m  •  \033[32mPITSTOP REGISTERED\033[0m  •  \033[32mVAULT MIRRORED\033[0m'
+TUI_FINISH_LINE2='Reboot the rig once to surface ETK Pitstop in the Tools menu.'
+TUI_FINISH_LINE3="Health:  ssh $RIG_SSH 'systemctl status etk.service'"
+TUI_FINISH_VERBOSE_HEAD='DEPLOYMENT COMPLETE. REBOOT THE DEVICE TO ACTIVATE THE ETK PITSTOP APP IN ROCKNIX TOOLS.'
+TUI_FINISH_VERBOSE_BODY="    (EmulationStation reads the Tools gamelist at startup, so the polished
+     ETK Pitstop entry appears after a reboot — Update Gamelists does not refresh it.)
+    Run \033[1;33mssh $RIG_SSH 'systemctl status etk.service'\033[0m to confirm sentry health."
+tui_finish
