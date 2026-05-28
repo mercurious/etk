@@ -11,7 +11,7 @@
 # Move this to scripts/env.sh and use rig SSH from there
 GDRIVE_PATH="$HOME/Google Drive/My Drive/ETK_Telemetry"
 # LOCAL_ETK_PATH="~/etk"
-RIG_SSH="root@192.168.1.53" # Your rig's IP from env.sh
+RIG_SSH="root@SM8250.local" # Rocknix mDNS hostname; or substitute a literal IP
 
 echo "🏁 ETK PIT WALL SYNC INITIATED"
 echo "📡 Target Rig: $RIG_SSH"

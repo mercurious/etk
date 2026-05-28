@@ -225,7 +225,7 @@ This is **not a failure** — it's the swarm's renewal cycle, mapping cleanly to
 - PADDOCK live (`PaddockSwarmFeasibility.md` Phase 1-7)
 - Legal review of shader-distribution posture complete (see §H)
 
-**Network:** rig is on standard home NAT (probed: 192.168.1.x with public 108.41.0.x). Syncthing's Global Relay handles this natively at zero extra ops cost.
+**Network:** rig is on standard home NAT (private LAN behind a residential ISP). Syncthing's Global Relay handles NAT traversal natively at zero extra ops cost.
 
 ---
 
