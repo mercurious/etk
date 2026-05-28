@@ -258,6 +258,7 @@ ssh $RIG_SSH "mkdir -p \
     $VAULT_DIR \
     $ETK_ROOT/bin \
     $ETK_ROOT/scripts \
+    $ETK_ROOT/tools \
     $ETK_ROOT/vault \
     $ETK_ROOT/logs \
     $ETK_ROOT/config \
@@ -429,8 +430,12 @@ tui_step_done 1
 # ==========================================================
 tui_step_start 2
 tui_rsync 2 0 25 "Pushing /bin daemons" --delete --exclude='*.pyc' --exclude='__pycache__' --exclude='.DS_Store' ./bin/ $RIG_SSH:$ETK_ROOT/bin/
-tui_rsync 2 25 50 "Pushing /scripts (env, profiles, probes)" --delete --exclude='.DS_Store' ./scripts/ $RIG_SSH:$ETK_ROOT/scripts/
-tui_rsync 2 50 70 "Pushing MangoHud.conf" --exclude='.DS_Store' ./config/MangoHud.conf $RIG_SSH:/storage/.config/MangoHud/MangoHud.conf
+tui_rsync 2 25 45 "Pushing /scripts (env, profiles, probes)" --delete --exclude='.DS_Store' ./scripts/ $RIG_SSH:$ETK_ROOT/scripts/
+# etk_drift.py is the only tools/ entry that runs ON the rig (reads /sys, banks
+# OS profiles under $ETK_ROOT/vault/os_profiles). The rest of tools/ is host-side
+# (tui.sh is sourced by install.sh), so this is a single-file push, not ./tools/.
+tui_rsync 2 45 55 "Pushing tools/etk_drift.py (OS-drift detector)" --exclude='.DS_Store' ./tools/etk_drift.py $RIG_SSH:$ETK_ROOT/tools/etk_drift.py
+tui_rsync 2 55 70 "Pushing MangoHud.conf" --exclude='.DS_Store' ./config/MangoHud.conf $RIG_SSH:/storage/.config/MangoHud/MangoHud.conf
 # Operator config: the Sentry's env.sh source on the rig reads this file
 # for ETK_BUILD_TYPE, DEFAULT_MODE, HUD_HEADER_HOLD_S. Without this push
 # the rig would silently use the baked-in defaults regardless of operator
@@ -440,7 +445,7 @@ tui_rsync 2 50 70 "Pushing MangoHud.conf" --exclude='.DS_Store' ./config/MangoHu
 # silently skip such "same-size" edits when mtimes happen to match.
 tui_rsync_checksum 2 70 90 "Pushing etk.conf (operator config)" --exclude='.DS_Store' ./etk.conf $RIG_SSH:$ETK_ROOT/etk.conf
 tui_log "chmod +x daemons and scripts"
-ssh $RIG_SSH "chmod +x $ETK_ROOT/bin/* $ETK_ROOT/scripts/*"
+ssh $RIG_SSH "chmod +x $ETK_ROOT/bin/* $ETK_ROOT/scripts/* $ETK_ROOT/tools/etk_drift.py"
 tui_step_done 2
 
 # ==========================================================

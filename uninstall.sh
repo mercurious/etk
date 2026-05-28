@@ -203,12 +203,13 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
         # Preserve vault, remove everything else under ETK_ROOT.
         rm -rf $ETK_ROOT/bin
         rm -rf $ETK_ROOT/scripts
+        rm -rf $ETK_ROOT/tools
         rm -rf $ETK_ROOT/config
         rm -rf $ETK_ROOT/logs
         rm -f  $ETK_ROOT/telemetry.log
         rm -f  $ETK_ROOT/etk.conf
-        echo "    Preserved: $ETK_ROOT/vault (shader bank intact)"
-        echo "    Removed:   ETK_ROOT scripts, bin, config, logs, etk.conf"
+        echo "    Preserved: $ETK_ROOT/vault (shader bank intact, incl. os_profiles baselines)"
+        echo "    Removed:   ETK_ROOT scripts, bin, tools, config, logs, etk.conf"
     fi
 CLEAN
 [ "$TUI_ACTIVE" != "1" ] && cat /tmp/etk_uninstall_clean.log
