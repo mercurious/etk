@@ -47,7 +47,7 @@ Captured on-device with the ETK's `L1` screenshot shutter — MangoHUD overlay i
 <img src="docs/screenshots/etk_NPUA80075_20260526_132301.png" width="600"
      alt="Gran Turismo 5 Prologue 'My Page' menu showing a player's garage with eight cars; current car highlighted as Nissan Skyline GT-R V-spec II Nür '02" />
 
-*GT5P — My Page / Garage. Player profile and car collection (`Skyline R34 GT-R V-spec II '02` selected). HUD: `VULKAN 18FPS 54.7ms BATT 49% ETK 72° 6.69 -96% 0+ 19.0k 172MB` — menus run on the cached shader set; the negative GPU value is a known quirk of the GT5P menu renderer, not a fault.*
+*GT5P — My Page / Garage. Player profile and car collection (`Skyline R34 GT-R V-spec II '02` selected). HUD: `VULKAN 18FPS 54.7ms BATT 49% ETK 72° 6.69 -96% 0+ 19.0k 172MB` — menus run on the cached shader set.*
 
 <img src="docs/screenshots/etk_NPEA00502_20260526_170526.png" width="600"
      alt="GT6 Nürburgring Nordschleife at night, cockpit view headlights catching a white opponent car ahead through a dark turn; ETK HUD on top showing 132 shaders" />
