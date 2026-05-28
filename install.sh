@@ -55,7 +55,8 @@ if [ ! -f "./etk.conf" ]; then
     if command -v dns-sd >/dev/null 2>&1; then
         # macOS native Bonjour. Background browse for 2s, kill, parse Add
         # rows. Split on "_ssh._tcp." so instance names containing spaces
-        # survive ("Dave's MacBook Air" would lose words on whitespace awk).
+        # survive (a ComputerName like "Operator's MacBook Air" would lose
+        # words on whitespace awk).
         BROWSE=$( ( dns-sd -B _ssh._tcp local. 2>/dev/null & DPID=$!; sleep 2; kill $DPID 2>/dev/null; wait 2>/dev/null ) )
         CANDIDATES=$(printf '%s\n' "$BROWSE" \
             | awk -F'_ssh\\._tcp\\.[ \t]+' '/Add/ && NF > 1 { print $2 }' \

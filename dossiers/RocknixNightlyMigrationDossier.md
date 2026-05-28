@@ -220,9 +220,9 @@ Five SM8250-family audio commits across 20260516–20260520 (`fix RP5 audio`, `f
 
 ## §10. WiFi / SSH DEV LOOP (RTW88 bump, 20260522)
 
-WiFi driver bumped to git HEAD. Your entire host-side toolchain (`install.sh`, `commander.sh`, `pit_wall_sync.sh`) depends on SSH to `RIG_SSH=root@10.0.0.40`. Rare but possible: DHCP lease/MAC behavior shifts, IP changes.
+WiFi driver bumped to git HEAD. Your entire host-side toolchain (`install.sh`, `commander.sh`, `pit_wall_sync.sh`) depends on SSH to `RIG_SSH=root@<SOC>.local` (mDNS) or a literal LAN IP. Rare but possible: DHCP lease/MAC behavior shifts, IP changes.
 
-**VERIFY:** `START > Network Settings > IP ADDRESS` on the rig, reconcile against `RIG_IP`/`RIG_SSH` in `scripts/env.sh` (you keep a City and Country profile commented there — make sure the active one matches the new build's lease). If you use a VPN, note `Update VPN services to wait for network connectivity` (20260520) may change first-boot timing.
+**VERIFY:** `START > Network Settings > IP ADDRESS` on the rig, reconcile against `RIG_SSH` in `etk.conf` (mDNS hostname is preferred since it survives network changes). If you use a VPN, note `Update VPN services to wait for network connectivity` (20260520) may change first-boot timing.
 
 ---
 
