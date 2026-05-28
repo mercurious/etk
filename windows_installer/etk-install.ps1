@@ -7,7 +7,7 @@
 #   - Step 4 (vault PUSH host->rig)  : SKIPPED
 # The rig still vaults shaders locally; only the host-side backup is gone.
 # To protect a vault on Windows, copy <ETK_ROOT>/vault off the device over
-# SMB before reflashing — see WINDOWS_HOST_README.md.
+# SMB before reflashing - see WINDOWS_HOST_README.md.
 #
 # The Sentry, systemd unit, PKG drop README, and mako style are read
 # verbatim from install.sh at runtime (Get-Heredoc), so install.sh stays
@@ -93,7 +93,7 @@ if ($makoOut) { $makoOut | ForEach-Object { Write-Note $_ } }
 # ==========================================================
 # STEP 2: VAULT PULL  ->  SKIPPED on Windows (no host vault)
 # ==========================================================
-Write-Step 2 $TOTAL "SAFEGUARD HARVEST (vault pull) — SKIPPED on Windows host."
+Write-Step 2 $TOTAL "SAFEGUARD HARVEST (vault pull) - SKIPPED on Windows host."
 Write-Note "No host-side vault backup on Windows. Copy <ETK_ROOT>/vault over SMB if you want to shield it."
 
 # ==========================================================
@@ -112,14 +112,14 @@ if (Test-Path -LiteralPath $driftLocal) {
     Send-File -LocalPath $driftLocal -RemotePath "$EtkRoot/tools/etk_drift.py"
     Write-Ok "OS-drift detector (etk_drift.py) deployed."
 } else {
-    Write-Warn "tools\etk_drift.py not found locally — skipping (verify the path)."
+    Write-Warn "tools\etk_drift.py not found locally - skipping (verify the path)."
 }
 
 $mangoLocal = Join-Path $RepoRoot "config\MangoHud.conf"
 if (Test-Path -LiteralPath $mangoLocal) {
     Send-File -LocalPath $mangoLocal -RemotePath "/storage/.config/MangoHud/MangoHud.conf"
 } else {
-    Write-Warn "config\MangoHud.conf not found locally — skipping overlay push (verify the filename)."
+    Write-Warn "config\MangoHud.conf not found locally - skipping overlay push (verify the filename)."
 }
 Invoke-Rig "chmod +x $EtkRoot/bin/* $EtkRoot/scripts/* $EtkRoot/tools/etk_drift.py 2>/dev/null; true" | Out-Null
 
@@ -139,7 +139,7 @@ Write-Ok "Daemons + scripts deployed (CRLF normalised)."
 # ==========================================================
 # STEP 4: VAULT PUSH  ->  SKIPPED on Windows (no host vault)
 # ==========================================================
-Write-Step 4 $TOTAL "RESTORE BANKED SHADERS (vault push) — SKIPPED on Windows host."
+Write-Step 4 $TOTAL "RESTORE BANKED SHADERS (vault push) - SKIPPED on Windows host."
 
 # ==========================================================
 # STEP 5: DEPLOY ETK PITSTOP ROCKNIX INTERFACE  (install.sh Step 5)
@@ -165,7 +165,7 @@ Invoke-Rig "sed -i 's/\r$//' /storage/.config/modules/etk_pitstop.sh && chmod +x
 # Verify the launcher landed and is executable
 $check = (Invoke-Rig "[ -x /storage/.config/modules/etk_pitstop.sh ] && echo OK || echo MISSING").Trim()
 if ($check -ne "OK") {
-    Write-ErrLine "Launcher missing or lacks +x — aborting."
+    Write-ErrLine "Launcher missing or lacks +x - aborting."
     exit 1
 }
 Write-Ok "Launcher verified and locked to disk."
@@ -177,7 +177,7 @@ $glCount = (Invoke-Rig "grep -c '>ETK Pitstop<' /storage/.config/modules/gamelis
 if (($glCount -as [int]) -ge 1) {
     Write-Ok "ETK Pitstop registered as a Tools-menu app."
 } else {
-    Write-Warn "Tools-menu entry not confirmed — the Sentry will re-inject it on boot."
+    Write-Warn "Tools-menu entry not confirmed - the Sentry will re-inject it on boot."
 }
 
 # ==========================================================
@@ -201,6 +201,6 @@ else { Write-Warn "Sentry not confirmed active (reported '$active'). Check: ssh 
 Write-Host ""
 Write-Host ">>> DEPLOYMENT COMPLETE. REBOOT THE DEVICE TO ACTIVATE ETK PITSTOP IN ROCKNIX TOOLS." -ForegroundColor Green
 Write-Note "(EmulationStation reads the Tools gamelist at startup, so the polished"
-Write-Note " ETK Pitstop entry appears after a reboot — Update Gamelists does not refresh it.)"
+Write-Note " ETK Pitstop entry appears after a reboot - Update Gamelists does not refresh it.)"
 Write-Note "Confirm sentry health: ssh $RigSsh 'systemctl status etk.service'"
 Write-Host ""
