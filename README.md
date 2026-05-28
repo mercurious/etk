@@ -1,9 +1,9 @@
 # The Emulation Tuning Kit
 
-<img src="docs/screenshots/etk_NPEA00502_20260526_124051.png" width="900"
-     alt="Gran Turismo 6 chase-cam: Mini Cooper approaching the ivy-covered tunnel at Trial Mountain at 97 mph, second place lap 2 of 2; ETK telemetry HUD strip across the top of the frame" />
+<img src="docs/screenshots/etk_NPEA00502_20260526_194915.png" width="900"
+     alt="Gran Turismo 6 chase-cam: Mini Cooper approaching the ivy-covered tunnel at Trial Mountain at 62 mph, fifth place lap 2 of 2, opponents listed; ETK telemetry HUD strip across the top of the frame" />
 
-*GT6 — Trial Mountain, Lap 2 of 2, Position 2/6, Mini Cooper at 97 mph approaching the ivy-covered tunnel. DDU strip on top: `VULKAN 15FPS 68.9ms BATT 66% ETK 79° 11.96 96% 138+ 28.6k 261MB` — backend, framerate, frametime, battery, GPU temp, system load, GPU utilisation, new shaders harvested this session (`138+`), vault total (`28.6k`), live RAM. The `+` is the productive-crashing pitch made literal: even at 15 fps in a shader storm, the rig is still banking shaders for the next run.*
+*GT6 — Trial Mountain, Lap 2 of 2, Position 5/6, Mini Cooper at 62 mph approaching the ivy-covered tunnel. DDU strip on top: `VULKAN 8FPS 126.6ms BATT 49% ETK 79° 12.46 96% 12+ 29.5k 269MB` — backend, framerate, frametime, battery, GPU temp, system load, GPU utilisation, new shaders harvested this session (`12+`), vault total (`29.5k`), live RAM. The `+` is the productive-crashing pitch made literal: the GPU is grinding hard, and the kit is banking every new shader for the next run.*
 
 The Emulation Tuning Kit for Rocknix supports experimental PS3 emulation on ARM64 Retrogaming Handhelds. It excels at tuning games with device-specific emulation configurations while harvesting shaders into vaults. It also works by equipping your compatible handheld with special features to become a track day rig to literally and figuratively crash your way into making a game such as Gran Turismo 6 playable. Push your handheld to its limits while collecting shaders with tools to recover from crashes so the game plays well after several attempts. ETK automatically tracks sessions on a per-game race ledger.
 
@@ -18,6 +18,11 @@ Built for abuse and race conditions, the ETK guards hard-earned shaders, custom 
 
 ## Gallery
 Captured on-device with the ETK's `L1` screenshot shutter — MangoHUD overlay included (which is the whole point; RPCS3's built-in screenshot strips it).
+
+<img src="docs/screenshots/etk_NPEA00502_20260526_124051.png" width="600"
+     alt="GT6 chase cam: Mini Cooper at the same Trial Mountain tunnel a different lap, position 2 of 6 at 97 mph, 138 shaders banked this session" />
+
+*GT6 — Trial Mountain, same ivy tunnel as the hero shot but a different race: Position 2/6, Lap 2/2, Mini Cooper at 97 mph. HUD: `VULKAN 15FPS 68.9ms BATT 66% ETK 79° 11.96 96% 138+ 28.6k 261MB` — **138 shaders harvested** by lap 2 because the cache from earlier laps is already paying out.*
 
 <img src="docs/screenshots/etk_NPUA80075_20260526_174936.png" width="600"
      alt="Gran Turismo 5 Prologue race start at a bridge section; tachometer prominent, gear 4 at 100 mph, position 15 of 16 lap 1 of 1" />
@@ -59,14 +64,16 @@ Captured on-device with the ETK's `L1` screenshot shutter — MangoHUD overlay i
 | Custom Overlay |  MangoHUD |
 
 ## Handheld System Support
-| Make | Model | Chipset | Compatible | Road Tested |
+The kit ships with one calibrated device profile (`SM8250`) which architecturally covers every SD865 / Adreno 650 / Turnip handheld. Only the Flip 2 has been on-rig verified so far; the other SD865 devices share the chipset and should run on the same profile, but each needs a real-world calibration pass to confirm thermal headroom and panel DPI. The RP6 needs a new SM8550 profile and a separate shader vault (Adreno 740 produces different cache binaries).
+
+| Make | Model | Chipset | Profile | Status |
 |---|---|---|---|---|
-| Retroid Pocket | Flip2 | SM8250 Adreno 650 | ✔︎ | 🏁 |
-| Retroid Pocket | 5 | SM8250 Adreno 650 | ✔︎ | - |
-| Retroid Pocket | Mini | SM8250 Adreno 650 | ✔︎ | - |
-| Retroid Pocket | Mini V2 | SM8250 Adreno 650 | ✔︎ | - |
-| AYN | Thor Lite | SM8250 Adreno 650 | ✔︎ | - |
-| Retroid Pocket | 6 | New Tuning Required for Adreno 740 | - | - |
+| Retroid Pocket | Flip 2 | SM8250 Adreno 650 | `SM8250` | 🏁 Verified |
+| Retroid Pocket | 5 | SM8250 Adreno 650 | `SM8250` | Expected (untested) |
+| Retroid Pocket | Mini | SM8250 Adreno 650 | `SM8250` | Expected (untested) |
+| Retroid Pocket | Mini V2 | SM8250 Adreno 650 | `SM8250` | Expected (untested) |
+| AYN | Thor Lite | SM8250 Adreno 650 | `SM8250` | Expected (untested) |
+| Retroid Pocket | 6 | SM8550 Adreno 740 | (needs new profile + vault) | Not yet supported |
 
 ## Tested Games (RPCS3)
 Snapshot of per-game status from on-device testing. Full tuning history, panic-ledger context, and the critical config dials per game live in [dossiers/etk_gametest_status_sheet.md](dossiers/etk_gametest_status_sheet.md).
@@ -82,7 +89,7 @@ Snapshot of per-game status from on-device testing. Full tuning history, panic-l
 
 ## ETK Features
 1. Native Rocknix ETK Pitstop App for on-device config editing, per game telemetry analysis over time, and simple PS3 game installation (drop .pkg and .rap in `roms/etk/pkg_install_drop/`)
-1. Customized in-game overlay dashbard with ETK telematics inside native Rocknix MangoHUD
+1. Customized in-game overlay dashboard with ETK telematics inside native Rocknix MangoHUD
 1. Hardware and driver tunings for maximum performance going beyond config settings
 1. Optimized emulator game configurations tuned to the device hardware
 1. Smart thermal protection to safely overdrive the device during shader harvesting
@@ -98,12 +105,14 @@ Snapshot of per-game status from on-device testing. Full tuning history, panic-l
 | `L3` | **DDU HUD** | left analog button | Toggles ETK DDU dashboard between top and bottom of screen |
 | `R3` | **PANIC RECOVERY** | right analog button | Recover from a crash or freeze. Reboot recommended after returning to Rocknix ES frontend. |
 
+Full chord reference (SELECT combos, screenshot fallback, thermal failsafe details) in [Custom ETK Gamepad Specifications](#custom-etk-gamepad-specifications) below.
+
 # Getting Started
 1. Flash a Rocknix nightly build (see the exact build in [ETK System Requirements](#etk-system-requirements) above) to your handheld's SD card and complete its first-time setup so the rig joins your WiFi. 
 If you've already installed Rocknix, simply press `START` `UPDATES & DOWNLOADS` `UPDATE BRANCH` and switch to `NIGHTLY` and then let the auto-update complete and reboot first. 
 **Do not update to the next Rocknix nightly after this** without checking the latest README.md for the last known ETK supported Rocknix release.
-2. Clone this repo to your computer (macOS or Linux; experimental Windows via WSL2). 
-You can also download the code as a `.zip` from the GitHub `<> Code` menu and extract as `/~etk/`
+2. Clone this repo to your computer (macOS or Linux; experimental Windows via WSL2).
+You can also download the code as a `.zip` from the GitHub `<> Code` menu and extract as `~/etk/`
 3. From the repo root, run `./install.sh`. **On the first run the installer auto-discovers your handheld as the rig.** You may be prompted once to accept the rig's SSH host key.
 Using mDNS, Rocknix advertises itself on the LAN as `<SOC>.local` (e.g. `SM8250.local` for SD865 devices like the Retroid Pocket Flip 2 / Pocket 5).
 
@@ -152,34 +161,41 @@ In-place tuning happens on-device — the Pitstop TUNING tab exposes the RPCS3 s
 
 ## ETK File Structure
 - `AI_MANIFEST.md`: System Manual and Immutable Laws of ETK Development for AI
+- `LICENSE`: GNU GPL v2.0 — matches Rocknix
 - `README.md`: You are reading it now.
-- `etk.conf.example`: Operator config template — committed. `install.sh` generates `etk.conf` from this on first run.
+- `etk.conf.example`: Operator config template (committed). `install.sh` generates `etk.conf` from this on first run.
 - `install.sh`: Flashes the ETK onto your handheld from a computer; auto-discovers the rig via mDNS on first run.
-- `uninstall.sh`: Removes the ETK from your handheld from a computer
+- `uninstall.sh`: Removes the ETK from your handheld from a computer; restores stock CPU/GPU governors before exiting.
 - `/bin`:
-  - `etk_modules_inject.py`: Handles installing native Rocknix PITSTOP app persistently
-  - `etk_pitstop.py`: Handles native Rocknix Tools App TELEMTRY, TUNING, TOOLS
-  - `input_d.py`: Handles custom gamepad controls
-  - `mango_bridge.sh`: Manages live telemetry and overlay display
+  - `etk_modules_inject.py`: Handles installing the native Rocknix Pitstop app persistently
+  - `etk_pitstop.py`: Native Rocknix Tools App — TELEMETRY, TUNING, TOOLS tabs
+  - `gamepad_probe.py`: Gamepad inventory + mapping probe (dev utility)
+  - `input_d.py`: Handles custom gamepad controls (R3 panic, L3 HUD toggle, L1 screenshot, SELECT chords)
+  - `mango_bridge.sh`: Manages live telemetry and the in-game overlay display
   - `recovery.sh`: Headless Nuclear Recovery, invoked on-device by the `R3` panic button
-  - `session_postmortem.sh`: Handles recording Simple Telemetry to PITSTOP session ledger
-  - `thermal_d.sh`: Handles system conditions and emergency cooldown
-  - `vault_d.sh`: Handles archival of compiled shaders
+  - `screenshot.sh`: `grim` Wayland capture, invoked by `L1` and `SELECT`+`D-pad Up`
+  - `session_postmortem.sh`: Records Simple Telemetry to the Pitstop session ledger on game exit
+  - `thermal_d.sh`: Manages system conditions and emergency PIT-mode cooldown
+  - `vault_d.sh`: Archives compiled shaders to the per-game vault
 - `/config`:
-  - `crash_signatures.json`: Defines crash reporting analytics
-  - `etk_pitsop.sh`: Native Rocknix app launcher gets installed into device
-  - `etk_pitsop.svg`: Native Rocknix app icon gets installed into device
-  - `etk_template.yml`: Default emulator template for game packages installed with TOOLS
-  - `MangoHud.config`: Handles custom in-game on-screen overlay
-  - `pistop_fields.json`: The subset of RPCS3 config settings for on-device edits
-  - `rsyncd.config`: Handles deployment and backup between handheld and computer
+  - `crash_signatures.json`: Defines crash classification patterns for forensics
+  - `etk_pitstop.sh`: Native Rocknix app launcher (deployed to `/storage/.config/modules/`)
+  - `etk_pitstop.svg`: Native Rocknix app icon
+  - `etk_template.yml`: Default RPCS3 per-game config template (used by the TOOLS-tab installer)
+  - `MangoHud.conf`: ETK's custom in-game DDU overlay configuration
+  - `pitstop_fields.json`: Subset of RPCS3 config keys exposed in the TUNING tab
+  - `rsyncd.config`: Optional rsyncd configuration for backup paths
 - `/scripts`:
-  - `career_aggregate.sh`: Handles summarizing session ledger into stats for PITSTOP app
-  - `commander.sh`: Pit Wall DDU UI for the terminal interface
-  - `env.sh`: Establishes pit and race environment variables
-  - `probe.sh`: Provides error logs
-- `/tools`: various utilities used during ETK development
-- `/vault`: Large archive of Vulkan precompiled shader bins organized by chipset and gameID
+  - `career_aggregate.sh`: Summarises the session ledger into career stats for the Pitstop TELEMETRY tab
+  - `commander.sh`: Pit Wall DDU UI for the terminal interface (the live dashboard's voice and look)
+  - `env.sh`: Establishes pit and race environment variables; sources the active device profile
+  - `etk_probe.sh`: Three-mode thermal / freq probe for empirical thermal calibration
+  - `probe.sh`: Provides forensic error logs from RPCS3 + dmesg
+  - `/profiles`: Device profiles (one file per SoC family — `SM8250.sh` is the Tier-1 reference for SD865 handhelds)
+- `/tools`: Host-side dev utilities. `tui.sh` is the Pit Wall console library shared by `install.sh` and `uninstall.sh`; the rest (`vault_doctor.sh`, `vault_sweep.sh`, `agnostify.sh`, `etk_compatibility_check.py`, etc.) are operator helpers.
+- `/dossiers`: Design dossiers driving the architecture (device-agnostic profile, rig self-update feasibility, telemetry, etc.).
+- `/docs`: Public-facing assets including the screenshot gallery used by this README.
+- `/vault`: Local mirror of the harvested shader bank, organised as `vault/<CHIPSET>/<GAME_ID>/shaders/` (gitignored; populated by `install.sh` Tier-A sync).
 
 ## Custom ETK Gamepad Specifications
 - Reserved:
@@ -205,33 +221,28 @@ In-place tuning happens on-device — the Pitstop TUNING tab exposes the RPCS3 s
 - ETK does all of this while trying to maintain a **minimal system footprint without subjecting your SD card to abuse.**
 
 ### Shader storm — the vault writes even when frames fall
-Four consecutive moments in the same GT6 race, same Mini Cooper, as the GPU floods compiling new shaders for the tunnel lighting. FPS bottoms out at 5 (`194.9 ms` frametime) yet the kit keeps the vault writing — `48+` shaders banked across the storm, ETK temp holds 78–81°C, battery flat at 49%. The next lap through this tunnel runs on the harvested cache.
-
-<img src="docs/screenshots/etk_NPEA00502_20260526_194915.png" width="600"
-     alt="GT6 chase cam: Mini Cooper approaching a tunnel mouth on a forested mountain road; race info shows position 5/6 lap 2/2; ETK HUD top reads 8 FPS, 12 shaders banked this session" />
-
-*Frame 1 — Position 5/6, approaching tunnel mouth, 62 mph. `VULKAN 8FPS 126.6ms BATT 49% ETK 79° 12.46 96% 12+ 29.5k 269MB`.*
+Picking up from the hero shot at the top of this README — same race, same Mini Cooper, twenty seconds later. The GPU floods compiling new shaders for the tunnel lighting and frametime climbs. FPS bottoms out at 5 (`194.9 ms` frametime) yet the kit keeps the vault writing — shader count jumps from `12+` (at the hero shot) to `48+` across the storm, ETK temp holds 78–81°C, battery flat at 49%. The next lap through this tunnel runs on the harvested cache.
 
 <img src="docs/screenshots/etk_NPEA00502_20260526_195230.png" width="600"
      alt="GT6 chase cam inside the tunnel: motion-blurred opponents in yellow tunnel lights; ETK HUD bottom shows 9 FPS, 48 shaders banked" />
 
-*Frame 2 — inside the tunnel, opponents motion-blurred at speed. `VULKAN 9FPS 109.9ms BATT 49% ETK 79° 13.13 97% 48+ 29.5k 270MB`.*
+*Inside the tunnel, opponents motion-blurred at speed. `VULKAN 9FPS 109.9ms BATT 49% ETK 79° 13.13 97% 48+ 29.5k 270MB`.*
 
 <img src="docs/screenshots/etk_NPEA00502_20260526_195239.png" width="600"
      alt="GT6 chase cam closing on two opponents deep in the tunnel; deepest stutter of the sequence at 5 FPS, ETK HUD shows 48 shaders banked, GPU 81 degrees" />
 
-*Frame 3 — peak shader storm, 5 FPS / **194.9 ms frametime**, still rendering. `VULKAN 5FPS 194.9ms BATT 49% ETK 81° 12.40 97% 48+ 29.5k 270MB`.*
+*Peak shader storm, 5 FPS / **194.9 ms frametime**, still rendering. `VULKAN 5FPS 194.9ms BATT 49% ETK 81° 12.40 97% 48+ 29.5k 270MB`.*
 
 <img src="docs/screenshots/etk_NPEA00502_20260526_195242.png" width="600"
      alt="GT6 chase cam emerging from the tunnel onto dappled sunlit tarmac; ETK HUD shows recovery to 8 FPS, 48 shaders still banked, GPU dropping back to 78 degrees" />
 
-*Frame 4 — emerging onto open tarmac, frame budget recovers to 127 ms. `VULKAN 8FPS 127.0ms BATT 49% ETK 78° 11.89 97% 48+ 29.5k 270MB`. The cache is now permanent.*
+*Emerging onto open tarmac, frame budget recovers to 127 ms. `VULKAN 8FPS 127.0ms BATT 49% ETK 78° 11.89 97% 48+ 29.5k 270MB`. The cache is now permanent.*
 
 # Warnings and Recommendations
 - Requires the patience and dedication of race car drivers. You will crash. But you will also win races that could otherwise not be played. ETK doesn't magically make your device run PS3 emulation, it only gives it a fighting chance with professional grade tools and system tunings. Shader sharing spares other players the harvest.
 - Requires the exact Rocknix Nightly specified above. This does not work on the official release nor has it been tested or updated for other Rocknix nightly builds.
 - Do not use your main ROM library SD card for this Rocknix install. Instead, use a reasonably sized (256GB or less) high quality dev card that you don't mind wearing out or needing to reflash. Put your favorite PS3 games on this card and wait until the ETK can be upgraded for a Rocknix (official) release before using on your main card.
-- Do not install on your handheld device if you intend to use the warranty coverage or otherwise would protect it from track day abuse. If you wouldn't take your daily driver to the track, do not install highly experimental software on your only retro handeld the could potentially damage or brick it.
+- Do not install on your handheld device if you intend to use the warranty coverage or otherwise would protect it from track day abuse. If you wouldn't take your daily driver to the track, do not install highly experimental software on your only retro handheld that could potentially damage or brick it.
 - OS updates, ETK uninstalls and other major system events may require a PPU recompilation which do take time. Putting the device on an ice pack or in the refrigerator will reduce thermal stress on the system during these intensive operations. 
 - The ETK is designed with community shader sharing in mind.
 	  
@@ -245,7 +256,7 @@ Four consecutive moments in the same GT6 race, same Mini Cooper, as the GPU floo
 - Phase 7: Enabled robust crash reporting, diagnosis, advisory, ETK install tiers
 - Phase 8: Attempted experimental incremental audio support
 - Phase 9: Enabled game agnostic ETK
-- Phase 10: Onboard ETK Commands: `R3` as Recovery Panic Button and 
+- Phase 10: Onboard ETK Commands: `R3` as Recovery Panic Button and headless Nuclear Recovery from crashes
 - Phase 11: Onboard ETK Commands: `L3` as MangoHUD screen position toggle
 - Phase 12: Developing native Rocknix ETK app for utilities (Tools or carousel UI)
 - Phase 13: Alpha Testing
@@ -254,7 +265,7 @@ Four consecutive moments in the same GT6 race, same Mini Cooper, as the GPU floo
 
 # Windows Install Guide 
 - (alpha-tester preview, needs testing)
-A native PowerShell installer is in early prototype (`windows_installer/`). Until it ships, the recommended Windows path is **WSL2**: install WSL2 + Ubuntu, clone the kit, and follow the `# Easy Install Guide (FULL Kit)` above unchanged. `install.sh` runs in WSL2 with no modifications and Tier-B auto-backup works the same as on macOS/Linux.
+A native PowerShell installer is in early prototype (`windows_installer/`). Until it ships, the recommended Windows path is **WSL2**: install WSL2 + Ubuntu, clone the kit, and follow [Getting Started](#getting-started) above unchanged. `install.sh` runs in WSL2 with no modifications and Tier-B auto-backup works the same as on macOS/Linux.
 
 For the one-time fresh-card flash, use the official Rocknix  [ImageBurner](https://github.com/ROCKNIX/ImageBurner/releases) — Windows-native, no dependency to install the correct nightly (not official) required for the ETK.
 
