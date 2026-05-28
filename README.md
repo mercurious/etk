@@ -76,7 +76,7 @@ The kit ships with one calibrated device profile (`SM8250`) which architecturall
 | Retroid Pocket | 6 | SM8550 Adreno 740 | (needs new profile + vault) | Not yet supported |
 
 ## Tested Games (RPCS3)
-Snapshot of per-game status from on-device testing. Full tuning history, panic-ledger context, and the critical config dials per game live in [dossiers/etk_gametest_status_sheet.md](dossiers/etk_gametest_status_sheet.md).
+Snapshot of per-game status from on-device testing. Full tuning history, panic-ledger context, and the critical config dials per game live in [dossiers/etk_gametest_status_sheet.md](dossiers/etk_gametest_status_sheet.md). Extract sample shaders as `~/etk/vault/SM8250/[GameID]` and use `install.sh` to push them to the rig.
 
 | ID | Game Config | Status | FPS | Audio| Notes | Shader Set |
 |---|---|---|---|---|---|---|
