@@ -55,10 +55,11 @@ Captured on-device with the ETK's `L1` screenshot shutter — MangoHUD overlay i
 *GT6 — Nürburgring Nordschleife at night, Lap 1 of 2, cockpit view at 40 mph into a moonlit corner. HUD: `VULKAN 8FPS 131.9ms BATT 54% ETK 79° 11.99 96% 132+ 29.4k 269MB`. The Green Hell at night, on a handheld, running PS3. **A clean lap landed 2026-05-26.***
 
 ## ETK System Requirements
+ETK is developed and structurally verified against Rocknix nightly 20260525–20260528 on SM8250 (Retroid Pocket Flip 2), with a hard architectural floor at 20260520 (DS5 gamepad era). No version yet certified as race stable, meaning five consecutive crash-free runs of the same target race to a graceful emulator exit.
 | Type | Detail |
 |---|---|
 | Host System | macOS or Linux ([experimental Windows/PC support](#windows-install-guide)) |
-| OS | ROCKNIX (Nightly Build: 20260525) |
+| OS | ROCKNIX (Nightly Build: 20260528) |
 | Driver | MESA Turnip 26.1.0 |
 | Shell |  BusyBox v1.36.1 |
 | Custom Overlay |  MangoHUD |

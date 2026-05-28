@@ -1,0 +1,13 @@
+# Force LF on everything that runs on the rig, so a Windows checkout
+# (git autocrlf=true) never injects CRLF into shell/python scripts.
+# Without this, scripts can fail on the rig with: $'\r': command not found
+*.sh   text eol=lf
+*.py   text eol=lf
+*.yml  text eol=lf
+*.json text eol=lf
+*.conf text eol=lf
+*.config text eol=lf
+*.service text eol=lf
+
+# PowerShell host scripts are fine either way, but keep them stable:
+*.ps1  text eol=crlf
