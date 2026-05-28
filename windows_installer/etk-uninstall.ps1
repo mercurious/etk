@@ -8,7 +8,7 @@
 #
 # Vault handling: the rig's local shader vault is PRESERVED by default
 # (it survives a later reinstall). Because the Windows host keeps no
-# backup, destroying it would be unrecoverable — so destruction is
+# backup, destroying it would be unrecoverable - so destruction is
 # opt-in via -ZapVault, exactly like uninstall.sh's --zap-vault.
 #
 # Run from the repo root:
@@ -29,7 +29,7 @@ $zap = if ($ZapVault) { "1" } else { "0" }
 
 Write-Host ""
 Write-Host "==========================================================" -ForegroundColor Red
-Write-Host "  ETK RETIREMENT — REMOTE CLEAN & ZAP (Windows host)" -ForegroundColor Red
+Write-Host "  ETK RETIREMENT - REMOTE CLEAN & ZAP (Windows host)" -ForegroundColor Red
 Write-Host "==========================================================" -ForegroundColor Red
 Write-Host ""
 
@@ -37,7 +37,7 @@ if ($zap -eq "1") {
     Write-Host ">>> WARNING: -ZapVault passed. The rig's banked shaders will be DESTROYED." -ForegroundColor Red
     Write-Host "    There is no host-side backup on Windows. This cannot be undone." -ForegroundColor Red
     $confirm = Read-Host "    Type ZAP to confirm vault destruction"
-    if ($confirm -ne "ZAP") { Write-Host "    Aborted — vault left intact." -ForegroundColor Yellow; exit 1 }
+    if ($confirm -ne "ZAP") { Write-Host "    Aborted - vault left intact." -ForegroundColor Yellow; exit 1 }
 } else {
     Write-Host ">>> Your rig's shader vault will be PRESERVED on this uninstall." -ForegroundColor Yellow
     Write-Host "    To destroy the vault too, re-run with:  -ZapVault" -ForegroundColor Yellow
@@ -77,7 +77,7 @@ if ($out3) { $out3 | ForEach-Object { Write-Note $_ } }
 
 # ==========================================================
 # STEP 4: HOST-SIDE STATUS
-# No host vault on Windows — nothing to report or delete locally.
+# No host vault on Windows - nothing to report or delete locally.
 # ==========================================================
 Write-Step 4 $TOTAL "HOST-SIDE STATUS..."
 if ($zap -eq "1") {
@@ -92,6 +92,6 @@ Write-Host "==========================================================" -Foregro
 Write-Host "  RETIREMENT COMPLETE. RIG RESTORED." -ForegroundColor Green
 Write-Host "==========================================================" -ForegroundColor Green
 if ($zap -ne "1") {
-    Write-Host "    Reinstall anytime with .\etk-install.ps1 — the preserved rig vault is reused." -ForegroundColor Yellow
+    Write-Host "    Reinstall anytime with .\etk-install.ps1 - the preserved rig vault is reused." -ForegroundColor Yellow
 }
 Write-Host ""

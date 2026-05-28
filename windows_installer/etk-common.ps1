@@ -1,5 +1,5 @@
 # ==========================================================
-# ETK WINDOWS HOST — SHARED HELPERS
+# ETK WINDOWS HOST - SHARED HELPERS
 # ==========================================================
 # Dot-sourced by etk-install.ps1 and etk-uninstall.ps1 AFTER etk-env.ps1.
 # Everything here is host-side plumbing. No rig logic lives in this file.
