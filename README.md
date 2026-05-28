@@ -78,14 +78,14 @@ The kit ships with one calibrated device profile (`SM8250`) which architecturall
 ## Tested Games (RPCS3)
 Snapshot of per-game status from on-device testing. Full tuning history, panic-ledger context, and the critical config dials per game live in [dossiers/etk_gametest_status_sheet.md](dossiers/etk_gametest_status_sheet.md).
 
-| ID | Game | Status | FPS | Audio| Notes |
-|---|---|---|---|---|---|
-| NPUA80075 | [Gran Turismo Prologue](config/config_NPUA80075.yml) | Playable | ~30 | Menus only | Primary ETK target. Track surface flickers; Unstable over time. |
-| NPEA90002 | [Gran Turismo HD](config/config_NPEA90002.yml) | Playable | 20–30 | Good (some race stutter) | Ideal baseline — small, fast, durable. Black sky artifacting; menus SPU-sensitive. |
-| NPUB30457 | [Ridge Racer 7](config/config_NPUB30457.yml) | Semi-Playable | 20-30 | Good (some race stutter) | No progress, not durable for 3 lap min. Distant backgrounds sometimes don't load. |
-| NPUA80472 | [LittleBigPlanet](config/config_NPUA80472.yml) | Playable | 12-24 | Good (some stutter) | No issues discovered yet beyond shader storm glitching. |
-| NPEA00502 | [Gran Turismo 6](config/config_NPEA00502.yml) | Playable | <12 | Menus good | Full Nürburgring Nordschleife lap clean 2026-05-26. Tuning for FPS is deferred until the shader vault saturates. Rear-view mirror does not render. |
-| BCUS98114 | [Gran Turismo 5](config/config_BCUS98114.yml) | Menus only | — | Menus only | Tracks kernel-panic. Menus stable, eventual freeze. |
+| ID | Game Config | Status | FPS | Audio| Notes | Shader Set |
+|---|---|---|---|---|---|---|
+| NPUA80075 | [Gran Turismo Prologue](config/config_NPUA80075.yml) | Playable | ~30 | Menus only | Primary ETK target. Track surface flickers; Unstable over time. | [.zip](https://drive.google.com/file/d/1gC7eTlfWRMuwYSIoMQuhzpyWujcWbv3Q/view) 151MB |
+| NPEA90002 | [Gran Turismo HD](config/config_NPEA90002.yml) | Playable | 20–30 | Good (some race stutter) | Ideal baseline — small, fast, durable. Black sky artifacting; menus SPU-sensitive. | [.zip](https://drive.google.com/file/d/1c8Exq5Xlq2hikBlkVIFdu6Nw3TfsGoKB/view) 11 MB |
+| NPUB30457 | [Ridge Racer 7](config/config_NPUB30457.yml) | Semi-Playable | 20-30 | Good (some race stutter) | No progress, not durable for 3 lap min. Distant backgrounds sometimes don't load. | - |
+| NPUA80472 | [LittleBigPlanet](config/config_NPUA80472.yml) | Playable | 12-24 | Good (some stutter) | No issues discovered yet beyond shader storm glitching. | [.zip](https://drive.google.com/file/d/1BJuDP3bK57Z-rl2lOK-o0LDgGnXOL7N3/view) 7MB |
+| NPEA00502 | [Gran Turismo 6](config/config_NPEA00502.yml) | Playable | <12 | Menus good | Full Nürburgring Nordschleife lap clean 2026-05-26. Tuning for FPS is deferred until the shader vault saturates. Rear-view mirror does not render. | [.zip](https://drive.google.com/file/d/1AUfvVzxwLCrTB31eDt_STqMMy5jPtKd1/view) 334MB |
+| BCUS98114 | [Gran Turismo 5](config/config_BCUS98114.yml) | Menus only | — | Menus only | Tracks kernel-panic. Menus stable, eventual freeze. | [.zip](https://drive.google.com/file/d/1Jbex9koepwoSQNA0qqPhS9aseMufAKYp/view) 31MB |
 
 ## ETK Features
 1. Native Rocknix ETK Pitstop App for on-device config editing, per game telemetry analysis over time, and simple PS3 game installation (drop .pkg and .rap in `roms/etk/pkg_install_drop/`)
