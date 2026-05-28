@@ -1,30 +1,53 @@
 # The Emulation Tuning Kit
 
-The Emulation Tuning Kit for Rocknix supports experimental PS3 emulation on ARM64 Retrogaming Handhelds. It excels a tuning games with device-specific emulation configurations while harvesting shaders into vaults. It also works by equipping your compatible handheld with special features to become a track day rig to literally and figuratively crash your way into making a game such as Gran Turismo 6 playable. Push your handheld to its limits while collecting shaders with tools to recover from crashes so the game plays well after several attempts. ETK automatically tracks sessions on a per-game race ledger.
+<img src="docs/screenshots/etk_NPEA00502_20260526_124051.png" width="900"
+     alt="Gran Turismo 6 chase-cam: Mini Cooper approaching the ivy-covered tunnel at Trial Mountain at 97 mph, second place lap 2 of 2; ETK telemetry HUD strip across the top of the frame" />
+
+*GT6 — Trial Mountain, Lap 2 of 2, Position 2/6, Mini Cooper at 97 mph approaching the ivy-covered tunnel. DDU strip on top: `VULKAN 15FPS 68.9ms BATT 66% ETK 79° 11.96 96% 138+ 28.6k 261MB` — backend, framerate, frametime, battery, GPU temp, system load, GPU utilisation, new shaders harvested this session (`138+`), vault total (`28.6k`), live RAM. The `+` is the productive-crashing pitch made literal: even at 15 fps in a shader storm, the rig is still banking shaders for the next run.*
+
+The Emulation Tuning Kit for Rocknix supports experimental PS3 emulation on ARM64 Retrogaming Handhelds. It excels at tuning games with device-specific emulation configurations while harvesting shaders into vaults. It also works by equipping your compatible handheld with special features to become a track day rig to literally and figuratively crash your way into making a game such as Gran Turismo 6 playable. Push your handheld to its limits while collecting shaders with tools to recover from crashes so the game plays well after several attempts. ETK automatically tracks sessions on a per-game race ledger.
 
 ## Racing UI
-In the style of a race car Driver Data Unit (DDU) dashboard, the ETK instruments provide shader counts in real-time in a custom in-game overly using MangoHUD support built-in to Rocknix. The kit also adds a custom ETK Pitstop app in the Rocknix Tools carousel menu for on-board telemetry analysis, quick tuning of Adreno-centric emulation settings, and simplified game package installation. 
+In the style of a race car Driver Data Unit (DDU) dashboard, the ETK instruments provide shader counts in real-time in a custom in-game overlay using MangoHUD support built-in to Rocknix. The kit also adds a custom ETK Pitstop app in the Rocknix Tools carousel menu for on-board telemetry analysis, quick tuning of Adreno-centric emulation settings, and simplified game package installation.
 
 ## Race Engineering
-More technically, ETK is a custom Rocknix middleware composed of shell scripts and python curses that employ brute-force optimization, shader cache management, advanced in-game telematics, on-board screenshot tooling the includes the MangoHUD overlay, and operates an automated file-drop headless install of PS3 PKG installations inside of RPSC3. 
+More technically, ETK is a custom Rocknix middleware composed of shell scripts and python curses that employ brute-force optimization, shader cache management, advanced in-game telematics, on-board screenshot tooling that includes the MangoHUD overlay, and operates an automated file-drop headless install of PS3 PKG installations inside of RPCS3.
 
 ## Race Durability
 Built for abuse and race conditions, the ETK guards hard-earned shaders, custom tunings, screenshots, and game saves from SD card failure, OS flashing, data corruption, device failure, loss or theft. The ETK includes an emergency cooldown that automatically puts your device in PIT mode as needed, protecting your engine from overheating.
 
-## Screenshots
-Captured by the ETK's screenshot tool that enables `L1` as a high-speed camera shutter function.
-<img src="docs/screenshots/etk_NPEA00502_20260526_194915.png" width="600" alt="GT6 — Mini Cooper at Trial Mountain" />
-<img src="docs/screenshots/etk_NPEA00502_20260526_195230.png" width="600" alt="GT6 — Mini Cooper at Trial Mountain" />
-<img src="docs/screenshots/etk_NPEA00502_20260526_195239.png" width="600" alt="GT6 — Mini Cooper at Trial Mountain" />
-<img src="docs/screenshots/etk_NPEA00502_20260526_195242.png" width="600" alt="GT6 — Mini Cooper at Trial Mountain" />
-<img src="docs/screenshots/etk_NPUA80075_20260526_132301.png" width="600" alt="GT5P Garage Menu showing game progression." />
-<img src="docs/screenshots/etk_NPUA80075_20260526_174936.png" width="600" alt="GT5P" />
-<img src="docs/screenshots/etk_NPEA00502_20260526_170526.png" width="600" alt="GT6 — Nurbrigring Nordschielfe at night" />
-<img src="docs/screenshots/etk_NPEA00502_20260526_164147.png" width="600" alt="GT6 — Cockpit view courtesy car BMW GT3 at Spa" />
-<img src="docs/screenshots/etk_ROCKNIX_20260526_132108.png" width="600" alt="ETK Toolkit" />
-<img src="docs/screenshots/etk_ROCKNIX_20260526_132606.png" width="600" alt="ETK Toolkit" />
-<img src="docs/screenshots/etk_ROCKNIX_20260526_132607.png" width="600" alt="ETK Toolkit" />
-<img src="docs/screenshots/etk_install_screenshot.png" width="600" alt="ETK Toolkit" />
+## Gallery
+Captured on-device with the ETK's `L1` screenshot shutter — MangoHUD overlay included (which is the whole point; RPCS3's built-in screenshot strips it).
+
+<img src="docs/screenshots/etk_NPUA80075_20260526_174936.png" width="600"
+     alt="Gran Turismo 5 Prologue race start at a bridge section; tachometer prominent, gear 4 at 100 mph, position 15 of 16 lap 1 of 1" />
+
+*GT5P — High Speed Ring start, Position 15/16, Lap 1/1, gear 4 at 100 mph. HUD: `VULKAN 13FPS 79.8ms BATT 75% ETK 75° 9.13 98% 0+ 19.0k 172MB`. The ETK primary target — 19.0k shaders already in the vault from prior sessions, so the `0+` confirms a fully-cached run.*
+
+<img src="docs/screenshots/etk_NPUA80075_20260526_132352.png" width="600"
+     alt="GT5P Suzuka start grid, position 6 of 12 lap 1 of 3, red sedan rival ahead, Honda and Bridgestone trackside signage, speed 101" />
+
+*GT5P — Suzuka Circuit start grid, Position 6/12, Lap 1/3, gear 3 at 101 mph. HUD: `VULKAN 22FPS 45.9ms BATT 48% ETK 75° 7.66 -95% 0+ 19.0k 172MB`. Honda / Bridgestone / Potenza trackside — daylight Suzuka renders cleanly on the cached set.*
+
+<img src="docs/screenshots/etk_NPEA00502_20260526_164147.png" width="600"
+     alt="GT6 cockpit view from inside a BMW GT3-style car at Spa-Francorchamps; analog dashboard at speed 83, ETK HUD strip on top reading 238 shaders banked" />
+
+*GT6 — Spa-Francorchamps, Lap 1 of 2, BMW GT3 cockpit at 83 mph. HUD: `VULKAN 8FPS 127.5ms BATT 68% ETK 75° 11.42 97% 238+ 29.2k 267MB` — **238 new shaders this session.** The in-cockpit digital dashboard and the ETK DDU strip cohabit the frame; two telemetry systems, one for the simulated car, one for the real one underneath it.*
+
+<img src="docs/screenshots/etk_NPUA80075_20260526_132550.png" width="600"
+     alt="GT5P Suzuka chase cam, blue Nissan Skyline GT-R approaching a sweeping corner, mini-map visible, position 12 of 12 lap 2 of 3" />
+
+*GT5P — Suzuka, Position 12/12, Lap 2/3, blue Skyline GT-R at 71 mph into a sweeper. HUD: `VULKAN 23FPS 44.4ms BATT 46% ETK 75° 9.03 97% 0+ 19.0k 172MB`. Open daylight track on a saturated shader set is where the kit feels most like a stock console.*
+
+<img src="docs/screenshots/etk_NPUA80075_20260526_132301.png" width="600"
+     alt="Gran Turismo 5 Prologue 'My Page' menu showing a player's garage with eight cars; current car highlighted as Nissan Skyline GT-R V-spec II Nür '02" />
+
+*GT5P — My Page / Garage. Player profile and car collection (`Skyline R34 GT-R V-spec II '02` selected). HUD: `VULKAN 18FPS 54.7ms BATT 49% ETK 72° 6.69 -96% 0+ 19.0k 172MB` — menus run on the cached shader set; the negative GPU value is a known quirk of the GT5P menu renderer, not a fault.*
+
+<img src="docs/screenshots/etk_NPEA00502_20260526_170526.png" width="600"
+     alt="GT6 Nürburgring Nordschleife at night, cockpit view headlights catching a white opponent car ahead through a dark turn; ETK HUD on top showing 132 shaders" />
+
+*GT6 — Nürburgring Nordschleife at night, Lap 1 of 2, cockpit view at 40 mph into a moonlit corner. HUD: `VULKAN 8FPS 131.9ms BATT 54% ETK 79° 11.99 96% 132+ 29.4k 269MB`. The Green Hell at night, on a handheld, running PS3. **A clean lap landed 2026-05-26.***
 
 ## ETK System Requirements
 | Type | Detail |
@@ -83,26 +106,49 @@ If you've already installed Rocknix, simply press `START` `UPDATES & DOWNLOADS` 
 You can also download the code as a `.zip` from the GitHub `<> Code` menu and extract as `/~etk/`
 3. From the repo root, run `./install.sh`. **On the first run the installer auto-discovers your handheld as the rig.** You may be prompted once to accept the rig's SSH host key.
 Using mDNS, Rocknix advertises itself on the LAN as `<SOC>.local` (e.g. `SM8250.local` for SD865 devices like the Retroid Pocket Flip 2 / Pocket 5).
+
+<img src="docs/screenshots/etk_install_screenshot.png" width="600"
+     alt="Pit Wall console TUI mid-install: 6-step dashboard, OVERALL 30%, HARVEST SHADERS at 84%, DATALOG showing 'Mirroring custom_configs'" />
+
+*The `./install.sh` Pit Wall console — `RIG: SM8250.local`, `TIER: FULL`. Six steps deploy bottom-up; the OVERALL bar aggregates them. The 2-line DATALOG at the bottom surfaces what's happening right now without firehosing per-file rsync output. Pass `--verbose` to swap this for the raw rsync stream when something needs diagnosis.*
+
 4. Reboot and start harvesting shaders. 
 
 ## How to Install PS3 Games with the ETK
 The ETK solves the problem of installing PS3 Packages on Rocknix which is otherwise a ridiculous process.
 1. Place a single PS3 `.pkg` and `.rap` into `/storage/roms/etk/pkg_install_drop/`
-1. In Rocknick Tools > ETK Pistop > TOOLS > Install a stage PS3 package
+1. In Rocknix Tools > ETK Pitstop > TOOLS > Install a staged PS3 Package
 1. Wait for the automated process where ETK will handle RPCS3 installation for you and follow the on screen overlay instructions
-1. Quit ETK Pitstop after installation and Update Gamelists in Rocknix
+1. Quit ETK Pitstop after installation and run **Update Gamelists** in Rocknix so the newly-installed PS3 game appears in the PS3 system list. (Note: this does NOT refresh the ETK Pitstop entry itself — that's installed once by `./install.sh` and persisted by the Sentry.)
+
+<img src="docs/screenshots/etk_ROCKNIX_20260526_132606.png" width="600"
+     alt="ETK Pitstop TOOLS tab: 'Install a staged PS3 Package' highlighted, 'Uninstall a Game' below; staging drop folder path shown" />
+
+*ETK Pitstop TOOLS tab — headless PS3 `.pkg` installer. Drop one `.pkg` (plus a `.rap` licence if needed) into the staging folder shown, select **Install a staged PS3 Package**, and ETK drives RPCS3 through the install with overlay prompts. Solves the "you can't operate the RPCS3 desktop UI with just a gamepad" problem.*
 
 ## How to Use Simple Telemetry
-The ETK Pitstop Rocknix Tools app records your sessions for each game. You must launch a game and quit to switch which app the ETK Pitstop app will display. It records your tuning changes in a session ledger with summary statistics to help you determine which settings have resulted in better play results.
+ETK Pitstop's TELEMETRY tab shows the per-game session ledger of the last game launched. To switch the visible game, launch a different game in RPCS3, quit back to ROCKNIX, then reopen ETK Pitstop — it will show that game's career rollup and tuning history. Every session, every crash, and every config change is recorded so you can correlate tuning experiments with outcomes.
+
+<img src="docs/screenshots/etk_ROCKNIX_20260526_132108.png" width="600"
+     alt="ETK Pitstop TELEMETRY tab showing GT5 career: 6 sessions, 50% clean, 3 crashes, 7639 shaders banked, recent session log with RECOVERY:Adreno and config-change events" />
+
+*ETK Pitstop TELEMETRY tab for Gran Turismo 5 (BCUS98114). Career rollup: **6 sessions · 50% clean · 3 crashes · 7,639 shaders banked · +1,273 avg/session**. The session log shows the full ledger schema — duration, RAM peak, load, GPU temp, battery drain, new-shader count, and the recovery signature (`RECOVERY:Adreno` = fence timeout, `RECOVERY:Silent` = soft hang). Config changes are logged inline so every tuning experiment is reproducible.*
 
 ## Customizing the ETK
-1. The first run generates `etk.conf`from `etk.conf.example` 
+1. The first run generates `etk.conf` from `etk.conf.example`
    - `RIG_SSH` — auto-populated to `root@<SOC>.local`; replace with a literal IP if your LAN blocks mDNS
    - `ETK_BUILD_TYPE` — `FULL` (shaders + thermal + HUD) / `LITE` (thermal + HUD) / `RAW` (HUD only)
    - `DEFAULT_MODE`, `HUD_HEADER_HOLD_S` (HUD launch-banner hold)
    - `ETK_VERBOSE` — 0 = Pit Wall console TUI (default), 1 = raw rsync output for debugging. Pass `--verbose` / `-v` on the install.sh CLI to force verbose for a single run.
 2. Re-run `./install.sh` after any `etk.conf` edit to push changes to the rig.
 3. Reboot the rig once to activate the ETK Pitstop entry in the Rocknix Tools menu.
+
+In-place tuning happens on-device — the Pitstop TUNING tab exposes the RPCS3 settings most useful for per-game tuning, gamepad-editable in place:
+
+<img src="docs/screenshots/etk_ROCKNIX_20260526_132607.png" width="600"
+     alt="ETK Pitstop TUNING tab for GT5P: RPCS3 settings list including Audio Backend FAudio, PPU Threads 2, Resolution Scale 75, Frame Limit 30, Shader Mode Async Recompiler with Shader Interpreter" />
+
+*ETK Pitstop TUNING tab for GT5P. The on-board subset of RPCS3 settings most relevant to per-game tuning, gamepad-editable in place. The exposed field set is defined in `config/pitstop_fields.json` — extend or trim per device. `B` saves to the per-game config; `L1`/`R1` cycle tabs.*
 
 ## ETK File Structure
 - `AI_MANIFEST.md`: System Manual and Immutable Laws of ETK Development for AI
@@ -157,6 +203,29 @@ The ETK Pitstop Rocknix Tools app records your sessions for each game. You must 
 - **To solve the problem of installing `.pkg` files with the desktop version of RCPS3 inside of Rocknix with only a gamepad,** the ETK automates the process for you. All you do is drop files in a folder on your card and use ETK Pitstop Tools to start the process.
 - **To simplify managing game shader vaults and software updates,** the ETK includes a simple command-line utility to install, repair, update, and automatically sync shader vaults as you harvest from games or trade device and game-specific shader folders with others. It also includes an uninstall utility to retire from the league. A typical game 300+ MB shader vault will involve tens of thousands of binary files so an efficient transfer mechanism to manage shader sets between a computer and the handheld devices is essential.
 - ETK does all of this while trying to maintain a **minimal system footprint without subjecting your SD card to abuse.**
+
+### Shader storm — the vault writes even when frames fall
+Four consecutive moments in the same GT6 race, same Mini Cooper, as the GPU floods compiling new shaders for the tunnel lighting. FPS bottoms out at 5 (`194.9 ms` frametime) yet the kit keeps the vault writing — `48+` shaders banked across the storm, ETK temp holds 78–81°C, battery flat at 49%. The next lap through this tunnel runs on the harvested cache.
+
+<img src="docs/screenshots/etk_NPEA00502_20260526_194915.png" width="600"
+     alt="GT6 chase cam: Mini Cooper approaching a tunnel mouth on a forested mountain road; race info shows position 5/6 lap 2/2; ETK HUD top reads 8 FPS, 12 shaders banked this session" />
+
+*Frame 1 — Position 5/6, approaching tunnel mouth, 62 mph. `VULKAN 8FPS 126.6ms BATT 49% ETK 79° 12.46 96% 12+ 29.5k 269MB`.*
+
+<img src="docs/screenshots/etk_NPEA00502_20260526_195230.png" width="600"
+     alt="GT6 chase cam inside the tunnel: motion-blurred opponents in yellow tunnel lights; ETK HUD bottom shows 9 FPS, 48 shaders banked" />
+
+*Frame 2 — inside the tunnel, opponents motion-blurred at speed. `VULKAN 9FPS 109.9ms BATT 49% ETK 79° 13.13 97% 48+ 29.5k 270MB`.*
+
+<img src="docs/screenshots/etk_NPEA00502_20260526_195239.png" width="600"
+     alt="GT6 chase cam closing on two opponents deep in the tunnel; deepest stutter of the sequence at 5 FPS, ETK HUD shows 48 shaders banked, GPU 81 degrees" />
+
+*Frame 3 — peak shader storm, 5 FPS / **194.9 ms frametime**, still rendering. `VULKAN 5FPS 194.9ms BATT 49% ETK 81° 12.40 97% 48+ 29.5k 270MB`.*
+
+<img src="docs/screenshots/etk_NPEA00502_20260526_195242.png" width="600"
+     alt="GT6 chase cam emerging from the tunnel onto dappled sunlit tarmac; ETK HUD shows recovery to 8 FPS, 48 shaders still banked, GPU dropping back to 78 degrees" />
+
+*Frame 4 — emerging onto open tarmac, frame budget recovers to 127 ms. `VULKAN 8FPS 127.0ms BATT 49% ETK 78° 11.89 97% 48+ 29.5k 270MB`. The cache is now permanent.*
 
 # Warnings and Recommendations
 - Requires the patience and dedication of race car drivers. You will crash. But you will also win races that could otherwise not be played. ETK doesn't magically make your device run PS3 emulation, it only gives it a fighting chance with professional grade tools and system tunings. Shader sharing spares other players the harvest.
