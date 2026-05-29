@@ -1,5 +1,11 @@
 # The Emulation Tuning Kit
+- [Download latest release](https://github.com/mercurious/etk/releases)
+- [System Requirements](https://github.com/mercurious/etk#etk-system-requirements)
+- [Device Support](https://github.com/mercurious/etk#handheld-system-support)
+- [Tested Games](https://github.com/mercurious/etk#tested-games-rpcs3)
+- [Getting Started](https://github.com/mercurious/etk#getting-started)
 
+# ETK Introduction
 <img src="docs/screenshots/etk_NPEA00502_20260526_194915.png" width="900"
      alt="Gran Turismo 6 chase-cam: Mini Cooper approaching the ivy-covered tunnel at Trial Mountain at 62 mph, fifth place lap 2 of 2, opponents listed; ETK telemetry HUD strip across the top of the frame" />
 
@@ -109,12 +115,13 @@ Snapshot of per-game status from on-device testing. Full tuning history, panic-l
 Full chord reference (SELECT combos, screenshot fallback, thermal failsafe details) in [Custom ETK Gamepad Specifications](#custom-etk-gamepad-specifications) below.
 
 # Getting Started
-1. Flash a Rocknix nightly build (see the exact build in [ETK System Requirements](#etk-system-requirements) above) to your handheld's SD card and complete its first-time setup so the rig joins your WiFi. 
+1. [Flash](https://rocknix.org/play/install/) a [Rocknix nightly build](https://github.com/ROCKNIX/distribution-nightly/releases) (see the exact build in [ETK System Requirements](#etk-system-requirements) above) to your handheld's SD card and complete its first-time setup so the rig joins your WiFi. 
 If you've already installed Rocknix, simply press `START` `UPDATES & DOWNLOADS` `UPDATE BRANCH` and switch to `NIGHTLY` and then let the auto-update complete and reboot first. 
 **Do not update to the next Rocknix nightly after this** without checking the latest README.md for the last known ETK supported Rocknix release.
-2. Clone this repo to your computer (macOS or Linux; experimental Windows via WSL2).
-You can also download the code as a `.zip` from the GitHub `<> Code` menu and extract as `~/etk/`
-3. From the repo root, run `./install.sh`. **On the first run the installer auto-discovers your handheld as the rig.** You may be prompted once to accept the rig's SSH host key.
+2. Clone this repo to your computer. 
+You can also download the code as a `.zip` and extract as `~/etk/`
+3. For macOS, WLS2, Linux: from the repo root, run `./install.sh`. For Windows, use the port installer [ETK PowerShell installer](https://github.com/mercurious/etk#windows-install-guide) and SMB backup.
+**On the first run the installer auto-discovers your handheld as the rig.** You may be prompted once to accept the rig's SSH host key and enter the default root password unless you've changed it.
 Using mDNS, Rocknix advertises itself on the LAN as `<SOC>.local` (e.g. `SM8250.local` for SD865 devices like the Retroid Pocket Flip 2 / Pocket 5).
 
 <img src="docs/screenshots/etk_install_screenshot.png" width="600"
