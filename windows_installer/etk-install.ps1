@@ -34,6 +34,9 @@ Write-Host "==========================================================" -Foregro
 Write-Host ""
 
 Assert-Tooling
+# Establish passwordless SSH first (test-first + idempotent; <=1 password on a
+# fresh rig, zero thereafter). Without this every ssh/scp below would prompt.
+Invoke-EtkPair
 Assert-RigConnection
 
 # ==========================================================

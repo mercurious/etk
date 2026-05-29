@@ -34,6 +34,22 @@ for arg in "$@"; do
     esac
 done
 
+# ==========================================================
+# SSH PAIRING (host -> rig)
+# Ensure passwordless auth before the remote teardown — and BEFORE the TUI
+# activates, so the (at most one) password prompt is clean. etk_pair.sh is
+# test-first + idempotent: a paired host pays zero passwords. Mirrors the
+# install.sh gate so uninstall works even from a host that never installed.
+# ==========================================================
+if [ -f "./scripts/etk_pair.sh" ]; then
+    bash ./scripts/etk_pair.sh "$RIG_SSH"
+    if [ $? -ne 0 ]; then
+        echo -e "${R}>>> SSH pairing failed — cannot reach the rig passwordlessly.${N}"
+        echo -e "${R}    Fix the handshake (README / WINDOWS_HOST_README.md), then re-run.${N}"
+        exit 1
+    fi
+fi
+
 # Source the install-time TUI library (host-only). Falls back to plain
 # output when stdout isn't a tty or ETK_VERBOSE=1.
 source ./tools/tui.sh 2>/dev/null || true
