@@ -45,6 +45,10 @@ if ($zap -eq "1") {
 Write-Host ""
 
 Assert-Tooling
+# Establish passwordless SSH first (test-first + idempotent); without it the
+# remote teardown below would prompt for the rig password repeatedly. Mirrors
+# the installer's pairing gate.
+Invoke-EtkPair
 Assert-RigConnection
 
 # ==========================================================

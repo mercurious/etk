@@ -12,8 +12,11 @@
 # ==========================================================
 
 # --- CONNECTION -------------------------------------------------------
-# Same as RIG_SSH in env.sh, e.g. "root@192.168.1.50"
-$RigSsh = "root@192.168.1.50"            # <<< EDIT to match RIG_SSH
+# Rig SSH target (mirrors RIG_SSH in env.sh / etk.conf.example). Defaults to
+# the mDNS name virtually every stock Rocknix device publishes, so MOST setups
+# need no change. Edit ONLY if your handheld is a different SoC (e.g.
+# "root@SM8550.local") or you must use a literal IP (e.g. "root@192.168.1.53").
+$RigSsh = "root@SM8250.local"
 
 # --- CORE PATHS (on the rig) -----------------------------------------
 # ETK_ROOT in env.sh. The Sentry sources env.sh from here, so it must

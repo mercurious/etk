@@ -164,6 +164,7 @@ In-place tuning happens on-device — the Pitstop TUNING tab exposes the RPCS3 s
 - `AI_MANIFEST.md`: System Manual and Immutable Laws of ETK Development for AI
 - `LICENSE`: GNU GPL v2.0 — matches Rocknix
 - `README.md`: You are reading it now.
+- `CHANGELOG.md`: Release notes, newest first (current: 0.1.1 — Windows installer + auto SSH pairing).
 - `etk.conf.example`: Operator config template (committed). `install.sh` generates `etk.conf` from this on first run.
 - `install.sh`: Flashes the ETK onto your handheld from a computer; auto-discovers the rig via mDNS on first run.
 - `uninstall.sh`: Removes the ETK from your handheld from a computer; restores stock CPU/GPU governors before exiting.
@@ -264,15 +265,24 @@ Picking up from the hero shot at the top of this README — same race, same Mini
 - Phase 14: Develop tuning and shader sharing; Rig self-updates ETK from GitHub in Pitstop App
 - Phase 15: Beta Testing
 
-# Windows Install Guide 
-- (alpha-tester preview, needs testing)
-A native PowerShell installer is in early prototype (`windows_installer/`). Until it ships, the recommended Windows path is **WSL2**: install WSL2 + Ubuntu, clone the kit, and follow [Getting Started](#getting-started) above unchanged. `install.sh` runs in WSL2 with no modifications and Tier-B auto-backup works the same as on macOS/Linux.
+# Windows Install Guide
+- (alpha-tester preview)
 
-For the one-time fresh-card flash, use the official Rocknix  [ImageBurner](https://github.com/ROCKNIX/ImageBurner/releases) — Windows-native, no dependency to install the correct nightly (not official) required for the ETK.
+Two ways to run the ETK host tooling from Windows:
+
+**1. Native PowerShell installer (`windows_installer/`) — no WSL required.** A dependency-free port of `install.sh` / `uninstall.sh`. On first run it **auto-pairs over SSH** — you type the rig password once (Rocknix default `rocknix`), and every call after that is silent. The rig-side logic (Sentry, systemd unit, and the SSH key-install) is read verbatim out of the bash scripts, so there is no second copy to drift. Full guide: **[windows_installer/WINDOWS_HOST_README.md](windows_installer/WINDOWS_HOST_README.md)**.
+```powershell
+powershell -ExecutionPolicy Bypass -File .\windows_installer\etk-install.ps1
+```
+This path is **no-vault** — it does not back your shaders up to the PC (the rig still vaults locally; see [Manual SMB Backup](#manual-smb-backup)). Pairing and a full install are verified on a real SM8250 rig; treat the rest as alpha and use a dev card.
+
+**2. WSL2 (full-featured).** For the complete experience including host-side shader-vault backup/restore (Tier-B), install WSL2 + Ubuntu, clone the kit, and follow [Getting Started](#getting-started) above unchanged — `install.sh` runs in WSL2 with no modifications.
+
+For the one-time fresh-card flash, use the official Rocknix [ImageBurner](https://github.com/ROCKNIX/ImageBurner/releases) — Windows-native, no dependency, to install the correct nightly (not official) required for the ETK.
 
 ## Manual SMB Backup
-- (stand-in until the PowerShell installer ships)
-If you are on the PowerShell installer prototype (no Tier-B yet) or want belt-and-suspenders, Rocknix exposes Samba shares natively. In File Explorer, `Map network drive...` → `\\<rig-ip>\games-internal` → assign a letter (e.g. `R:`). Then save this as `etk_backup.bat` and run it before any reflash or risky migration:
+- (the native PowerShell installer is no-vault, so use this for shader backups on Windows)
+If you are on the PowerShell installer (no Tier-B host backup) or want belt-and-suspenders, Rocknix exposes Samba shares natively. In File Explorer, `Map network drive...` → `\\<rig-ip>\games-internal` → assign a letter (e.g. `R:`). Then save this as `etk_backup.bat` and run it before any reflash or risky migration:
 
 ```bat
 robocopy R:\roms\etk\vault                  C:\etk_backup\vault           /MIR /R:1 /W:1

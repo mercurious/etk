@@ -129,13 +129,45 @@ source ./scripts/env.sh
 # --zap-vault gating idiom. Tolerated in any arg position.
 # --verbose / -v: bypass the Pit Wall TUI; use raw rsync progress output.
 # Useful for diagnosing failed installs (per-file rsync detail surfaces).
+# --pair: run ONLY the host->rig SSH pairing wizard, then exit. Use to
+# (re)establish passwordless auth without a full install (e.g. after a card
+# reflash invalidates the rig's host key / authorized_keys).
 RESTORE_STATE=0
+DO_PAIR_ONLY=0
 for arg in "$@"; do
     case "$arg" in
         --restore-state) RESTORE_STATE=1 ;;
         --verbose|-v) ETK_VERBOSE=1 ;;
+        --pair) DO_PAIR_ONLY=1 ;;
     esac
 done
+
+# ==========================================================
+# SSH PAIRING (host -> rig)
+# Must run BEFORE the TUI activates and BEFORE STEP 0's first ssh, so the
+# (at most one) rig password prompt happens cleanly. scripts/etk_pair.sh is
+# test-first + idempotent: an already-reachable host pays ZERO passwords; a
+# fresh/reflashed rig pairs with exactly one. Without it, every ssh/scp below
+# would prompt for the rig password (the bug this wizard exists to kill).
+# Single source of truth: the rig-side key-install logic lives once in
+# etk_pair.sh and is shared with the PowerShell port via Get-Heredoc.
+# ==========================================================
+if [ -f "./scripts/etk_pair.sh" ]; then
+    bash ./scripts/etk_pair.sh "$RIG_SSH"
+    PAIR_RC=$?
+    if [ "$DO_PAIR_ONLY" = "1" ]; then
+        exit $PAIR_RC
+    fi
+    if [ "$PAIR_RC" -ne 0 ]; then
+        echo -e "${R}>>> SSH pairing failed — cannot reach the rig passwordlessly.${N}"
+        echo -e "${R}    Fix the handshake (README / WINDOWS_HOST_README.md), then re-run,${N}"
+        echo -e "${R}    or run './install.sh --pair' to retry pairing on its own.${N}"
+        exit 1
+    fi
+elif [ "$DO_PAIR_ONLY" = "1" ]; then
+    echo -e "${R}>>> scripts/etk_pair.sh not found — cannot --pair.${N}"
+    exit 1
+fi
 
 # Source the install-time TUI library (host-only; never pushed to rig).
 # Provides tui_step_start, tui_step_progress, tui_step_done, tui_rsync, etc.

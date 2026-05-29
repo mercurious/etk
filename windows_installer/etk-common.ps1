@@ -39,6 +39,13 @@ function Assert-RigConnection {
 # --- run a remote command, return its stdout (caller may check $LASTEXITCODE) ---
 function Invoke-Rig {
     param([Parameter(Mandatory)][string]$Command)
+    # .ps1 files are CRLF (enforced by .gitattributes: *.ps1 eol=crlf), so any
+    # MULTI-LINE command literal (e.g. a here-string for/sed loop) carries \r.
+    # Sent verbatim, the rig's sh chokes ("syntax error near `do\r'") and a
+    # trailing \r turns a path into 'file.sh\r' -> "No such file or directory".
+    # Strip CR so multi-line remote commands run; single-line commands are
+    # unaffected. (Send-Text/Invoke-RigBash already LF-normalise via temp file.)
+    $Command = $Command -replace "`r", ""
     return (& ssh $RigSsh $Command)
 }
 
@@ -152,4 +159,150 @@ function Invoke-RigTemplate {
     param([Parameter(Mandatory)][string]$Template)
     $cmd = $Template -replace "__ETKROOT__", $EtkRoot
     return (Invoke-Rig $cmd)
+}
+
+# ==========================================================
+# SSH PAIRING (host -> rig) — PowerShell mirror of scripts/etk_pair.sh
+# ==========================================================
+# Establishes passwordless auth BEFORE any deploy. Test-first + idempotent:
+# an already-reachable host pays ZERO passwords; a fresh/reflashed rig pairs
+# with exactly one. The rig-side key-install logic is NOT duplicated here —
+# it is pulled verbatim from scripts/etk_pair.sh's ETKPAIRKEY heredoc via
+# Get-Heredoc (the single source of truth shared with install.sh) and shipped
+# in ONE ssh call, base64-wrapped so no PowerShell newline/quoting/CRLF can
+# corrupt it in transit. The pubkey arrives as the $ETK_PUBKEY env var, which
+# is exactly how the bash path feeds the same body.
+# ==========================================================
+
+# Append the marker-guarded ETK Host block (never clobbers; honours §G.4).
+# The multi-pattern `Host <host> etk-rig` is what makes the BARE target
+# (root@<host>, which install.sh/the PS port actually call) offer the
+# dedicated key. ~/.ssh/etk_rig is portable across Windows OpenSSH, Git's
+# ssh, and Mac/Linux.
+function Write-EtkSshConfigBlock {
+    param(
+        [Parameter(Mandatory)][string]$CfgFile,
+        [Parameter(Mandatory)][string]$Marker,
+        [Parameter(Mandatory)][string]$RigHost,
+        [Parameter(Mandatory)][string]$RigUser
+    )
+    $sshDir = Split-Path $CfgFile -Parent
+    if (-not (Test-Path -LiteralPath $sshDir)) {
+        New-Item -ItemType Directory -Path $sshDir -Force | Out-Null
+    }
+    $existing = ""
+    if (Test-Path -LiteralPath $CfgFile) {
+        $existing = [System.IO.File]::ReadAllText($CfgFile)
+        if ($existing.Contains($Marker)) { return }
+    }
+    $block = @(
+        $Marker,
+        "Host $RigHost etk-rig",
+        "    HostName $RigHost",
+        "    User $RigUser",
+        "    IdentityFile ~/.ssh/etk_rig",
+        "    IdentitiesOnly yes"
+    ) -join "`n"
+    $sep = ""
+    if ($existing.Length -gt 0) { $sep = "`n" }
+    $out = $existing + $sep + $block + "`n"
+    [System.IO.File]::WriteAllText($CfgFile, $out, (New-Object System.Text.UTF8Encoding($false)))
+    Write-Ok "Added ETK block to $CfgFile (routes $RigHost -> etk_rig)."
+}
+
+function Invoke-EtkPair {
+    param([string]$Target = $RigSsh)
+
+    # ssh.exe writes to stderr on a (deliberately) failed BatchMode probe.
+    # Under the caller's $ErrorActionPreference='Stop', PowerShell turns that
+    # native stderr into a TERMINATING NativeCommandError even with 2>$null —
+    # which would abort the wizard at its first probe. We drive all control
+    # flow off $LASTEXITCODE and explicit throws, so relax EAP here. This is
+    # function-scoped (auto-restored on return) and 'throw' still terminates.
+    $ErrorActionPreference = 'Continue'
+
+    if ([string]::IsNullOrWhiteSpace($Target)) {
+        throw "No rig target. Set `$RigSsh in windows_installer\etk-env.ps1 (e.g. root@SM8250.local)."
+    }
+
+    # Normalise user@host; default user root if a bare host was given.
+    if ($Target -match '@') {
+        $parts = $Target -split '@', 2
+        $rigUser = $parts[0]; $rigHost = $parts[1]
+    } else {
+        $rigUser = 'root'; $rigHost = $Target; $Target = "root@$rigHost"
+    }
+
+    $sshDir  = Join-Path $env:USERPROFILE ".ssh"
+    $keyFile = Join-Path $sshDir "etk_rig"
+    $pubFile = "$keyFile.pub"
+    $cfgFile = Join-Path $sshDir "config"
+    $marker  = "# ETK pairing (etk_pair.sh) -- do not edit by hand"
+    # No -i / IdentitiesOnly on the bare probe: it must mirror exactly what the
+    # installer runs (ssh root@host ...), letting ~/.ssh/config + default keys
+    # decide. accept-new suppresses the first-connect fingerprint prompt.
+    $probe   = @("-o","BatchMode=yes","-o","ConnectTimeout=6","-o","StrictHostKeyChecking=accept-new")
+
+    Write-Host ">>> ETK SSH pairing - target: $Target" -ForegroundColor Cyan
+
+    # STEP 1: test-first (the bare-target path the installer actually uses).
+    $r = & ssh @probe $Target "echo ETK_OK" 2>$null
+    if ($LASTEXITCODE -eq 0 -and "$r" -match "ETK_OK") {
+        Write-Ok "Already reachable passwordlessly - nothing to do."
+        return
+    }
+
+    # STEP 2: ensure the dedicated, no-passphrase key (never clobbers id_*).
+    if (-not (Test-Path -LiteralPath $keyFile)) {
+        if (-not (Test-Path -LiteralPath $sshDir)) {
+            New-Item -ItemType Directory -Path $sshDir -Force | Out-Null
+        }
+        Write-Note "Generating dedicated key $keyFile (no passphrase)..."
+        & ssh-keygen -t ed25519 -N '""' -C "etk-host" -f $keyFile -q
+        if (-not (Test-Path -LiteralPath $keyFile)) { throw "ssh-keygen failed (no key produced)." }
+    }
+    if (-not (Test-Path -LiteralPath $pubFile)) { throw "Public key $pubFile missing after keygen." }
+
+    # STEP 3: key already accepted (so STEP 1 only failed because the bare
+    # target wasn't routed yet)? Then skip the password, just fix the config.
+    $o = & ssh @probe -o IdentitiesOnly=yes -i $keyFile $Target "echo ETK_OK" 2>$null
+    if ($LASTEXITCODE -eq 0 -and "$o" -match "ETK_OK") {
+        Write-Ok "Dedicated key already accepted by rig - no password needed."
+    } else {
+        # THE one password. Pull the SHARED rig-side body; ship it in ONE ssh,
+        # base64-wrapped (transport-safe). The pubkey rides as $ETK_PUBKEY.
+        $pub = (Get-Content -LiteralPath $pubFile -TotalCount 1).Trim()
+        if ([string]::IsNullOrWhiteSpace($pub)) { throw "Empty public key." }
+        $repoRoot = Split-Path $PSScriptRoot -Parent
+        $pairSh   = Join-Path $repoRoot "scripts\etk_pair.sh"
+        $body     = Get-Heredoc -Path $pairSh -Marker "ETKPAIRKEY"
+        $full     = "ETK_PUBKEY='$pub'`n$body"
+        $b64      = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($full))
+        Write-Host "    >>> Pairing - you will be asked for the rig password ONCE" -ForegroundColor Yellow
+        Write-Host "        (Rocknix default is 'rocknix' unless you changed it)." -ForegroundColor Yellow
+        $pairOut = & ssh -o StrictHostKeyChecking=accept-new $Target "echo $b64 | base64 -d | bash"
+        if ($LASTEXITCODE -ne 0 -or "$pairOut" -notmatch "ETK_PAIR_OK") {
+            if ($pairOut) { Write-Note "rig said: $pairOut" }
+            throw "Key install did not complete (wrong password, or no SSH route to $Target)."
+        }
+        Write-Ok "Key installed on rig."
+    }
+
+    # STEP 4: config block so the BARE target offers the dedicated key.
+    Write-EtkSshConfigBlock -CfgFile $cfgFile -Marker $marker -RigHost $rigHost -RigUser $rigUser
+
+    # STEP 5: verify the real path — bare target, passwordless.
+    $v = & ssh @probe $Target "echo ETK_OK" 2>$null
+    if ($LASTEXITCODE -eq 0 -and "$v" -match "ETK_OK") {
+        Write-Ok "Verified: 'ssh $Target' is passwordless. Pairing complete."
+        return
+    }
+    # Diagnose precisely (§G.7).
+    $o2 = & ssh @probe -o IdentitiesOnly=yes -i $keyFile $Target "echo ETK_OK" 2>$null
+    if ($LASTEXITCODE -eq 0 -and "$o2" -match "ETK_OK") {
+        Write-Warn "The key works, but the bare target isn't routed to it. Check the ETK block in $cfgFile."
+    } else {
+        Write-Warn "The rig is not accepting the key (perms/path). See WINDOWS_HOST_README.md 'First-time SSH handshake'."
+    }
+    throw "SSH pairing verification failed - 'ssh $Target' still needs a password."
 }
