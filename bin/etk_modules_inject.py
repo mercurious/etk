@@ -33,8 +33,18 @@ SH_DEST = f"{MODULES_DIR}/etk_pitstop.sh"
 SVG_DEST = f"{MODULES_DIR}/etk_pitstop.svg"
 
 # The enriched Tools-menu entry. ASCII-only — Rocknix ES has no Unicode
-# text rendering (dossier addendum invariant). <image> is relative to the
-# modules system path, as ES expects (and rewrites to) for game images.
+# text rendering (dossier addendum invariant). All three artwork fields are
+# relative to the modules system path, as ES expects for game images.
+#
+# WHY THREE ARTWORK TAGS: the default Rocknix theme (es-theme-art-book-next)
+# HIDES the standard <image> mapping (md_image) and renders Tools art only
+# through a subset-gated element bound to {game:thumbnail} (boxart) /
+# {game:marquee} (logo) / {game:image} (image). Stock tool entries set only
+# <image>, so under the default subset they show NO icon at all. We emit
+# <thumbnail> + <marquee> + <image> (all -> the same SVG) so the Pitstop tile
+# renders whichever artwork subset is active, independent of the platform-wide
+# Rocknix bug. Proven on-rig 2026-05-29; see dossiers/ToolsMenuArtworkDiagnosis.md
+# and dossiers/RocknixToolsArtworkBugReport.md.
 GAME_BLOCK = """    <game>
         <path>./etk_pitstop.sh</path>
         <name>ETK Pitstop</name>
@@ -46,6 +56,8 @@ GAME_BLOCK = """    <game>
         <genre>Tool</genre>
         <players>1</players>
         <image>./etk_pitstop.svg</image>
+        <thumbnail>./etk_pitstop.svg</thumbnail>
+        <marquee>./etk_pitstop.svg</marquee>
     </game>
 """
 
@@ -54,7 +66,12 @@ GAME_BLOCK = """    <game>
 # A BYTES pattern: the gamelist is edited in byte mode so every other
 # tool's entry is preserved byte-for-byte, even if Rocknix's stock list
 # carries a non-UTF-8 byte or strict-invalid XML (its touchHLE <desc> has
-# a raw '&'). ES's lenient parser tolerates that; we must not "fix" it.
+# a raw '&'). We still must NOT rewrite other entries — sanitizing the whole
+# file is Rocknix's job (reported upstream, see RocknixToolsArtworkBugReport.md).
+# NOTE: the ES `next` branch is stricter and rejects that raw '&' (older ES
+# tolerated it); but the malformed '&' is NOT what blanks the Tools icons —
+# that's the theme field-mismatch handled by GAME_BLOCK above. Confirmed
+# on-rig 2026-05-29.
 _ETK_GAME = re.compile(
     rb'[ \t]*<game>(?:(?!</game>).)*?<path>\s*\./etk_pitstop\.sh\s*</path>'
     rb'.*?</game>\n?',
