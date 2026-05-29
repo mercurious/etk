@@ -15,11 +15,13 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 - `./install.sh --pair` and `etk-pair.ps1` run pairing **standalone** (e.g. to re-pair after a card reflash). The installers also auto-pair before their first remote call.
 - The rig-side key-install logic lives **once** in `etk_pair.sh` and is pulled into the PowerShell port via `Get-Heredoc` — single source of truth, exactly like the Sentry/systemd-unit blocks.
 - **Verified the Windows PowerShell installer end-to-end** on a real SM8250 rig (no-vault): cold pair → full deploy → live Sentry, zero passwords after the first.
+- **OS-migration drift detector** — `tools/etk_drift.py` (repurposed from the unused recon tool). Banks nightly-keyed OS profiles and diffs a live Rocknix nightly against your pinned baseline and the device profile's pinned assumptions (`--save-baseline` / `--diff` / `--check` / `--list`), so you can tell whether a nightly is safe to adopt before committing to it.
 
 ### Fixed
 - **`Invoke-Rig` CRLF bug (Windows port):** multi-line remote commands built from PowerShell here-strings (`.ps1` is `eol=crlf`) were shipped with `\r`, so the rig's `sh` died on `syntax error near 'do\r'` — silently, because the exit code wasn't checked. This had been breaking the on-rig CRLF normalization and the Pitstop launcher arming. `Invoke-Rig` now strips CR from every command.
 - **PowerShell pairing abort:** `ssh.exe` stderr on a deliberately-failing probe became a *terminating* `NativeCommandError` under `$ErrorActionPreference='Stop'`. Pairing now scopes the error preference so probes fail gracefully and control flows off the exit code.
 - The generated SSH config uses `IdentityFile ~/.ssh/etk_rig` (portable across Windows OpenSSH, Git's bundled ssh, and Mac/Linux) — an absolute MSYS path had made the bare target unusable from Windows OpenSSH.
+- **PowerShell 5.1 parser break:** em-dashes in the `.ps1` files decoded as curly quotes under Windows PowerShell's ANSI codepage (BOM-less UTF-8), desyncing the string tokenizer; the scripts are now pure ASCII.
 
 ### Changed
 - `windows_installer/etk-env.ps1` `$RigSsh` now defaults to `root@SM8250.local` (matching `env.sh` / `etk.conf.example`), so most setups need **no configuration** at all.
@@ -33,4 +35,4 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ## [0.1.0]
 
-Initial tagged release: bash `install.sh` / `uninstall.sh` host tooling (macOS / Linux / WSL2) with mDNS rig auto-discovery, the native Rocknix ETK Pitstop app (telemetry / tuning / PS3 `.pkg` installer), the systemd Sentry, the per-game shader vault with host-side backup, Simple Telemetry, and the OS-migration drift detector.
+Initial tagged release: bash `install.sh` / `uninstall.sh` host tooling (macOS / Linux / WSL2) with mDNS rig auto-discovery, the native Rocknix ETK Pitstop app (telemetry / tuning / PS3 `.pkg` installer), the systemd Sentry, the per-game shader vault with host-side backup, and Simple Telemetry.
