@@ -1,9 +1,9 @@
 # The Emulation Tuning Kit
 - [Download latest release](https://github.com/mercurious/etk/releases)
-- [System Requirements](https://github.com/mercurious/etk#etk-system-requirements)
-- [Device Support](https://github.com/mercurious/etk#handheld-system-support)
-- [Tested Games](https://github.com/mercurious/etk#tested-games-rpcs3)
-- [Getting Started](https://github.com/mercurious/etk#getting-started)
+- [System Requirements](#etk-system-requirements)
+- [Device Support](#handheld-system-support)
+- [Tested Games](#tested-games-rpcs3)
+- [Getting Started](#getting-started)
 
 # ETK Introduction
 <img src="docs/screenshots/etk_NPEA00502_20260526_194915.png" width="900"
@@ -130,6 +130,22 @@ Using mDNS, Rocknix advertises itself on the LAN as `<SOC>.local` (e.g. `SM8250.
 *The `./install.sh` Pit Wall console — `RIG: SM8250.local`, `TIER: FULL`. Six steps deploy bottom-up; the OVERALL bar aggregates them. The 2-line DATALOG at the bottom surfaces what's happening right now without firehosing per-file rsync output. Pass `--verbose` to swap this for the raw rsync stream when something needs diagnosis.*
 
 4. Reboot and start harvesting shaders. 
+
+## Getting Started with Rocknix Pro-tips
+- To boot into Rocknix running on an SD card with Android as the default OS:
+1. Start the device in Android and reboot. 
+1. Before Retroid Pocket logo appears, hold down the Volume-Up button and let go as soon as you see the U-Boot logo (a little submarine icon in the corner)
+- To always boot into Rocknix as the default OS
+1. Hold Volume-Down button while starting device to open loader menu
+1. Use volume button to switch `Android` to `bootloader` and use the power button to set it.
+1. Use the same process to revert back to Android.
+- To share games between Rocknix and Android
+1. Store your games in `/storage/games-internal/roms/` and see [Rocknix documentation](https://rocknix.org/play/add-games/) for further details.
+1. Let your Android apps gain permissions for this folder.
+- To access your card after installing Rocknix, your PC or Mac will no longer read the card through an SD card reader over USB because of its Rocknix partition. Try one of these options instead: 
+1. Use SMB in Windows or macOS to mount SM8250 as a drive
+1. Use an SFTP client
+1. Use [Rocknix USB-GADGET mode](https://rocknix.org/play/add-games/#option-2-usb-gaget-modes).
 
 ## How to Install PS3 Games with the ETK
 The ETK solves the problem of installing PS3 Packages on Rocknix which is otherwise a ridiculous process.
