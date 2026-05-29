@@ -28,9 +28,57 @@ The PowerShell installer does **not** contain its own copy of the Sentry, the sy
 ## Prerequisites
 
 - Windows 10 (1809+) or 11 with the **OpenSSH Client** optional feature (provides `ssh.exe` / `scp.exe` — installed by default on most modern Windows; if missing, Settings > Apps > Optional Features > Add > OpenSSH Client).
-- SSH access to the rig working from a normal terminal: `ssh <user>@<rig-ip>` should connect. A key is smoother than a password since the scripts make several SSH calls.
+- Passwordless SSH to the rig (the installer makes many SSH/SCP calls). If `ssh root@<rig> "echo ETK_OK"` doesn't return instantly without a prompt, do the one-time **First-time SSH handshake** below first.
 - The ETK repo cloned locally, **with `.gitattributes` in place** (ships alongside these scripts) so shell scripts stay LF. The installer also strips CRLF on the rig as a backstop, but the `.gitattributes` is the real fix.
 - `python3` available on the rig (it is, under Rocknix) for the Tools-menu injector.
+
+## First-time SSH handshake (PC -> rig)
+
+The installer makes many SSH/SCP calls, so set up **key-based (passwordless) auth once** before running it. Do everything below from a normal PowerShell window.
+
+**1. Confirm the OpenSSH client is present** (Win10 1809+/Win11 usually ship it):
+```powershell
+ssh -V      # prints an OpenSSH version, or "not recognized"
+```
+If missing: Settings > Apps > Optional Features > Add a feature > OpenSSH Client.
+
+**2. Find the rig on the network.** Rocknix ships with SSH enabled and joins your WiFi during first-time setup. Address it two ways:
+- mDNS hostname: `<SOC>.local` (e.g. `SM8250.local` for the Flip 2 / Pocket 5).
+- Literal IP: on the handheld, `START > Network Settings > IP ADDRESS`.
+
+**3. First connection (password) to accept the host key:**
+```powershell
+ssh root@SM8250.local        # or  ssh root@<rig-ip>
+```
+Type `yes` to accept the fingerprint (one time). The Rocknix default password is `rocknix` (unless you changed it). You should land at a `<SOC>:~ #` prompt; type `exit` to return.
+
+> If `SM8250.local` won't resolve (Windows mDNS can be flaky), just use the literal IP everywhere instead.
+
+**4. Generate a key** (skip if you already have `~/.ssh/id_ed25519`):
+```powershell
+ssh-keygen -t ed25519 -C "etk-host"
+```
+Press Enter through the prompts. An **empty passphrase** keeps the installer fully non-interactive.
+
+**5. Install your public key on the rig.** Root's home is `/storage`, which is the persistent partition, so the key survives reboots and OS updates:
+```powershell
+scp $env:USERPROFILE\.ssh\id_ed25519.pub root@SM8250.local:/storage/.ssh/etk_host.pub
+ssh root@SM8250.local "mkdir -p /storage/.ssh && cat /storage/.ssh/etk_host.pub >> /storage/.ssh/authorized_keys && chmod 700 /storage/.ssh && chmod 600 /storage/.ssh/authorized_keys && rm /storage/.ssh/etk_host.pub"
+```
+You'll enter the `rocknix` password for these two calls - the last time you should need it.
+
+**6. Verify passwordless login:**
+```powershell
+ssh root@SM8250.local "echo ETK_OK"
+```
+It must print `ETK_OK` with **no password prompt**. If so, the handshake is done.
+
+**7. Point the installer at the rig:** set `$RigSsh` in `windows_installer\etk-env.ps1` to exactly what worked above (`root@SM8250.local` or `root@<rig-ip>`).
+
+Handshake troubleshooting:
+- **Still prompted for a password** -> the key didn't land. Re-run step 5, then check `ssh root@<rig> "cat /storage/.ssh/authorized_keys"` shows your key.
+- **`scp` fails with an sftp / "subsystem request failed" error** -> set `$EtkScpLegacy = "1"` in `etk-env.ps1` (forces the legacy SCP protocol), and for step 5 append the key by piping instead: `type $env:USERPROFILE\.ssh\id_ed25519.pub | ssh root@<rig> "cat >> /storage/.ssh/authorized_keys"`.
+- **`Permission denied (publickey,password)` after a card reflash** -> the rig's host key changed; clear the stale entry with `ssh-keygen -R SM8250.local` (and `-R <rig-ip>`), then redo step 3.
 
 ## Setup
 
