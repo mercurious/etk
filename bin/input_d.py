@@ -32,6 +32,16 @@ RIG_MANGO_CONF = os.environ.get('RIG_MANGO_CONF',
 HUD_POSITIONS_FILE = os.environ.get(
     'HUD_POSITIONS_FILE',
     '/storage/games-internal/roms/etk/etk_telemetry/hud_positions.tsv')
+SCREENSHOT_MODE_FILE = os.environ.get(
+    'SCREENSHOT_MODE_FILE',
+    '/storage/games-internal/roms/etk/etk_telemetry/screenshot_mode.txt')
+
+# L1-screenshot gating. 'always' fires on any L1 press, 'in-game' fires only
+# while a PS3 game is resolved, 'disabled' never fires (frees L1 for the game).
+# in-game is the default whenever the mode file is absent / unreadable /
+# unrecognized -- the conservative choice that keeps L1 out of the frontend.
+SCREENSHOT_MODES = ('always', 'in-game', 'disabled')
+SCREENSHOT_MODE_DEFAULT = 'in-game'
 
 # HUD toggle pair. bottom-left is the dashboard default — sits down by
 # the physical controls on the Flip 2, below the typical "rear view mirror"
@@ -99,6 +109,34 @@ def send_cmd(cmd):
 def fire_recovery():
     """R3 PANIC: invoke the shared headless recovery, detached."""
     os.system(f"bash {RECOVERY} >/dev/null 2>&1 &")
+
+def fire_screenshot():
+    """Silent grim capture (incl. MangoHUD overlay), detached so the input
+    loop never blocks on grim latency."""
+    os.system("nohup bash /storage/games-internal/roms/etk/bin/screenshot.sh >/dev/null 2>&1 &")
+
+def _read_screenshot_mode():
+    """Return the L1-screenshot mode, one of SCREENSHOT_MODES. Re-read on
+    every press (a single small file read, human-paced) so a Pitstop toggle
+    takes effect with no daemon restart. Any error / unrecognized value
+    falls back to SCREENSHOT_MODE_DEFAULT -- never raises into the loop."""
+    try:
+        with open(SCREENSHOT_MODE_FILE) as f:
+            mode = f.read().strip().lower()
+        return mode if mode in SCREENSHOT_MODES else SCREENSHOT_MODE_DEFAULT
+    except Exception:
+        return SCREENSHOT_MODE_DEFAULT
+
+def _l1_screenshot_allowed():
+    """Gate the L1 trigger by the current mode. 'disabled' never fires;
+    'in-game' fires only when a real game id is resolved; 'always' fires
+    unconditionally. (The SELECT+DPAD-Up chord is NOT gated -- see loop.)"""
+    mode = _read_screenshot_mode()
+    if mode == 'disabled':
+        return False
+    if mode == 'in-game':
+        return _read_active_game_id() is not None
+    return True  # 'always'
 
 def _read_active_game_id():
     """Returns the active game ID, or None if the rig is idle / unresolved.
@@ -244,15 +282,20 @@ def event_loop(device):
                 # 310 = BTN_TL (L1): ETK SCREENSHOT (in-race recommended).
                 # Single-button trigger so the chord can't pass-through any
                 # in-game side effect (cf. SELECT-clutch chord which fires
-                # GT6's camera toggle alongside the screenshot). Requires the
-                # operator to unbind L1 in each PS3 game's controls — for the
-                # ETK target titles (GT5P/GT6) L1 defaults to rear-view camera
-                # toggle, which doesn't render anyway on Turnip (see
-                # dossiers/etk_gametest_status_sheet.md). Documented as a
-                # pre-flight onboarding step in the README. Backgrounded so
-                # the input loop never blocks on grim latency.
-                if code == 310 and val == 1:
-                    os.system("nohup bash /storage/games-internal/roms/etk/bin/screenshot.sh >/dev/null 2>&1 &")
+                # GT6's camera toggle alongside the screenshot).
+                #
+                # GATED by SCREENSHOT_MODE_FILE (always / in-game / disabled,
+                # default in-game), cycled from Pitstop's TOOLS tab. We never
+                # EVIOCGRAB, so L1 always passes through to the game regardless
+                # -- 'disabled' simply stops us ALSO firing a screenshot,
+                # genuinely freeing L1 for a game that binds it (e.g. rear-view
+                # camera; on GT5P/GT6 that view doesn't render on Turnip anyway,
+                # see dossiers/etk_gametest_status_sheet.md). The default
+                # 'in-game' suppresses accidental frontend/Pitstop captures.
+                # Only this L1 trigger is gated; the SELECT+DPAD-Up chord below
+                # is a deliberate fallback and always fires.
+                if code == 310 and val == 1 and _l1_screenshot_allowed():
+                    fire_screenshot()
 
                 # 314 = BTN_SELECT (clutch modifier for DPAD)
                 if code == 314: clutch = (val == 1)
@@ -265,8 +308,10 @@ def event_loop(device):
                     elif val == -1: os.system("pkill -USR1 mangohud") # Left
                 elif code == 17: # Vertical Axis
                     # Up: ETK SCREENSHOT (silent grim capture incl. MangoHUD).
-                    # Backgrounded so the input loop never blocks on capture I/O.
-                    if val == -1: os.system("nohup bash /storage/games-internal/roms/etk/bin/screenshot.sh >/dev/null 2>&1 &")
+                    # Deliberate chord, NOT gated by SCREENSHOT_MODE_FILE -- the
+                    # mode governs only the bare-L1 trigger above. Lets an
+                    # operator who set L1 'disabled' still grab a shot on demand.
+                    if val == -1: fire_screenshot()
 
 if __name__ == "__main__":
     # SELF-HEAL: the virtual controller may not exist yet when the

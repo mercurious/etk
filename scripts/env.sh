@@ -219,6 +219,15 @@ export SESSION_ANCHOR="$TELEMETRY_DIR/session_anchor.txt"
 # (bottom-left, the dashboard convention).
 export HUD_POSITIONS_FILE="$TELEMETRY_DIR/hud_positions.tsv"
 
+# L1-screenshot gating mode. One of: always | in-game | disabled.
+#  - always   : L1 fires a screenshot whenever pressed (incl. frontend / Pitstop)
+#  - in-game  : L1 fires only while a PS3 game is resolved (the default)
+#  - disabled : L1 never fires a screenshot, freeing the button for the game
+# Read live by bin/input_d.py on each L1 press; cycled from Pitstop's TOOLS
+# tab (atomic tmp+mv). Absent / unreadable / invalid file = in-game default.
+# Gates ONLY the L1 trigger -- the SELECT+DPAD-Up chord is always live.
+export SCREENSHOT_MODE_FILE="$TELEMETRY_DIR/screenshot_mode.txt"
+
 # Minimum session length (seconds) to count as a real attempt. Sessions
 # shorter than this are force-quit/fat-finger aborts: career_aggregate.sh
 # excludes them and session_postmortem.sh reclassifies a sub-threshold

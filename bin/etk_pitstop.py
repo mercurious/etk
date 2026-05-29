@@ -135,6 +135,12 @@ ROCKNIX_SYSTEM_CFG = os.environ.get(
     'ROCKNIX_SYSTEM_CFG', '/storage/.config/system/configs/system.cfg')
 SHM_DIR = os.environ.get('SHM_DIR', '/dev/shm/etk_shm')
 ETK_INSTALL_LOCK = os.environ.get('ETK_INSTALL_LOCK', f"{SHM_DIR}/etk_install_lock")
+# L1-screenshot gating mode, shared with bin/input_d.py (which reads it live
+# on each L1 press). Cycled from the TOOLS tab. See env.sh for semantics.
+SCREENSHOT_MODE_FILE = os.environ.get(
+    'SCREENSHOT_MODE_FILE', f"{TELEMETRY_DIR}/screenshot_mode.txt")
+SCREENSHOT_MODES = ("always", "in-game", "disabled")
+SCREENSHOT_MODE_DEFAULT = "in-game"
 
 
 # === COLOR PAIRS ===
@@ -1469,7 +1475,38 @@ def handle_telemetry_pad(state, etype, code, val):
 # install; this curses UI is only visible before and after.
 # ============================================================
 
-_TOOLS_MENU = ["Install a staged PS3 Package", "Uninstall a Game"]
+_TOOLS_MENU = ["Install a staged PS3 Package", "Uninstall a Game",
+               "Screenshot on L1"]
+# Index of the in-place toggle item (label gets ": <mode>" appended at draw).
+_TOOLS_SCREENSHOT_IDX = 2
+
+
+def _read_screenshot_mode():
+    """Current L1-screenshot mode. Absent / unreadable / unrecognized file
+    falls back to the in-game default -- matches input_d.py's reader."""
+    try:
+        with open(SCREENSHOT_MODE_FILE) as f:
+            mode = f.read().strip().lower()
+        return mode if mode in SCREENSHOT_MODES else SCREENSHOT_MODE_DEFAULT
+    except Exception:
+        return SCREENSHOT_MODE_DEFAULT
+
+
+def _cycle_screenshot_mode():
+    """Advance always -> in-game -> disabled -> always and persist atomically
+    (H2 tmp+mv idiom). Returns the new mode, or the unchanged current mode if
+    the write failed (so the UI status can report honestly)."""
+    cur = _read_screenshot_mode()
+    nxt = SCREENSHOT_MODES[(SCREENSHOT_MODES.index(cur) + 1) % len(SCREENSHOT_MODES)]
+    try:
+        os.makedirs(os.path.dirname(SCREENSHOT_MODE_FILE), exist_ok=True)
+        tmp = SCREENSHOT_MODE_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            f.write(nxt + "\n")
+        os.replace(tmp, SCREENSHOT_MODE_FILE)
+        return nxt
+    except Exception:
+        return cur
 
 
 def _tools_env():
@@ -2103,6 +2140,8 @@ def draw_tools(stdscr, state):
         put(y, 2, "TOOLS", curses.A_BOLD); y += 1
         put(y, 2, "-" * (w - 4), curses.A_DIM); y += 2
         for i, label in enumerate(_TOOLS_MENU):
+            if i == _TOOLS_SCREENSHOT_IDX:
+                label = f"{label}: {_read_screenshot_mode()}"
             sel = (i == state.get("tools_cursor", 0))
             put(y, 4, "> " if sel else "  ",
                 curses.color_pair(1) if sel else curses.A_NORMAL)
@@ -2110,6 +2149,8 @@ def draw_tools(stdscr, state):
                 curses.A_REVERSE if sel else curses.A_NORMAL)
             y += 2
         y += 1
+        put(y, 4, "Screenshot on L1: always / in-game / disabled "
+                  "(CONFIRM cycles)", curses.A_DIM); y += 2
         put(y, 4, "Staging drop folder (place ONE .pkg + .rap):",
             curses.A_DIM); y += 1
         put(y, 6, PKG_STAGING_DIR, curses.A_DIM)
@@ -2222,10 +2263,12 @@ def _tools_select(state):
                 rap = raps[0] if raps else None
                 state["tools_pkg"] = (pkg, rap, _pkg_title_id(pkg) or "unknown")
                 state["tools_mode"] = "install_confirm"
-        else:                                        # Uninstall
+        elif state.get("tools_cursor", 0) == 1:      # Uninstall
             state["tools_games"] = _list_psn_games()
             state["tools_cursor"] = 0
             state["tools_mode"] = "uninstall_list"
+        else:                                        # Screenshot-on-L1 toggle
+            state["status"] = f"Screenshot on L1: {_cycle_screenshot_mode()}"
 
     elif mode == "install_confirm":
         pkg, rap, _tid = state["tools_pkg"]

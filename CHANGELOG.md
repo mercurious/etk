@@ -2,6 +2,20 @@
 
 All notable changes to the ETK are documented here. This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.2] - Unreleased
+
+**Screenshot trigger is now operator-controlled.** The `L1` screenshot shutter no longer fires unconditionally — it has a three-state mode so you can scope it to gameplay or free the button for the game entirely.
+
+### Added
+- **Three-state `L1` screenshot mode** — `in-game` (default) / `always` / `disabled`, cycled live from **Pitstop → TOOLS → "Screenshot on L1"**. Persisted to `etk_telemetry/screenshot_mode.txt` and read by `bin/input_d.py` on every L1 press, so a toggle takes effect with **no daemon restart**. The mode is shared via `$SCREENSHOT_MODE_FILE` (`scripts/env.sh`).
+
+### Fixed
+- **ETK Pitstop Tools-menu icon now renders on the stock theme.** The default Rocknix theme (`es-theme-art-book-next`) hides the standard `<image>` mapping and draws Tools art from `<thumbnail>`/`<marquee>` instead, so our image-only entry showed no icon. `etk_modules_inject.py` now emits all three artwork fields (→ `etk_pitstop.svg`), so the tile appears regardless of which artwork subset the theme uses — independent of the platform-wide Rocknix bug where *no* stock Tools icon renders (diagnosed on-rig, reported upstream; see `dossiers/ToolsMenuArtworkDiagnosis.md`). The SVG was never the problem — a PNG in the same field was equally blank.
+- **`L1` screenshot fired in every context, with no way to disable it.** It now respects the mode above: `disabled` stops ETK shooting on L1 — genuinely freeing the button for a game that binds it (ETK never `EVIOCGRAB`s the pad, so L1 always reaches the game regardless); `in-game` suppresses accidental frontend/Pitstop captures. The deliberate `SELECT` + `D-pad Up` chord is **not** gated and always works as a manual shutter.
+
+### Changed
+- **Default screenshot behavior is now `in-game`** (was effectively `always`). Existing rigs with no mode file inherit `in-game` on first boot after upgrade. Set `always` in Pitstop → TOOLS if you capture the frontend / Pitstop UI (e.g. for README shots).
+
 ## [0.1.1] - 2026-05-29
 
 **Windows installer port + automatic SSH pairing.** A Windows PC can now act as the ETK host without WSL, and first-run SSH setup is automatic — type the rig password once, never again.
