@@ -1,9 +1,9 @@
 # The Emulation Tuning Kit
 - [Download latest release](https://github.com/mercurious/etk/releases)
-- [System Requirements](#etk-system-requirements)
-- [Device Support](#handheld-system-support)
-- [Tested Games](#tested-games-rpcs3)
-- [Getting Started](#getting-started)
+- [System Requirements](https://github.com/mercurious/etk/#etk-system-requirements)
+- [Device Support](https://github.com/mercurious/etk/#handheld-system-support)
+- [Tested Games](https://github.com/mercurious/etk/#tested-games-rpcs3)
+- [Getting Started](https://github.com/mercurious/etk/#getting-started)
 
 # ETK Introduction
 <img src="docs/screenshots/etk_NPEA00502_20260526_194915.png" width="900"
@@ -108,7 +108,7 @@ Snapshot of per-game status from on-device testing. Full tuning history, panic-l
 ## ETK Quick Commands
 | Gamepad Button | ETK Command | Button Description | Details |
 |---|---|---|---|
-| `L1` | **screenshot** | left top trigger button | **Requires in-game un-binding/un-mapping**, Screenshots stored at `/storage/roms/etk/screenshots`, `install.sh` syncs `etk/screenshots` |
+| `L1` | **screenshot** | left top trigger button | **Requires in-game un-binding/un-mapping**. Screenshots stored at `/storage/roms/etk/screenshots`, `install.sh` syncs `etk/screenshots`. Disable `L1` one-finger trigger feature in ETK Pitstop > TOOLS > `3. Screeshot on L1: disabled` and use two-handed `SELECT` + `D-pad-up` instead. |
 | `L3` | **DDU HUD** | left analog button | Toggles ETK DDU dashboard between top and bottom of screen |
 | `R3` | **PANIC RECOVERY** | right analog button | Recover from a crash or freeze. Reboot recommended after returning to Rocknix ES frontend. |
 
@@ -120,7 +120,15 @@ If you've already installed Rocknix, simply press `START` `UPDATES & DOWNLOADS` 
 **Do not update to the next Rocknix nightly after this** without checking the latest README.md for the last known ETK supported Rocknix release.
 2. Clone this repo to your computer. 
 You can also download the code as a `.zip` and extract as `~/etk/`
-3. For macOS, WLS2, Linux: from the repo root, run `./install.sh`. For Windows, use the port installer [ETK PowerShell installer](https://github.com/mercurious/etk#windows-install-guide) and SMB backup.
+3. Install the ETK onto your handheld rig
+
+**For macOS, WLS2, Linux:** from the repo root
+- run `chmod +x install.sh` to make it executable
+- run `./install.sh` to install the ETK on your handheld rig
+- Run `./install.sh` whenever you want to update, repair, or sync your rig.
+
+**For Windows,** use the [PowerShell installer](https://github.com/mercurious/etk#windows-install-guide) which is a direct port of `install.sh` but use SMB backup to substitute for its file sync features.
+
 **On the first run the installer auto-discovers your handheld as the rig.** You may be prompted once to accept the rig's SSH host key and enter the default root password unless you've changed it.
 Using mDNS, Rocknix advertises itself on the LAN as `<SOC>.local` (e.g. `SM8250.local` for SD865 devices like the Retroid Pocket Flip 2 / Pocket 5).
 
@@ -187,7 +195,7 @@ In-place tuning happens on-device — the Pitstop TUNING tab exposes the RPCS3 s
 - `AI_MANIFEST.md`: System Manual and Immutable Laws of ETK Development for AI
 - `LICENSE`: GNU GPL v2.0 — matches Rocknix
 - `README.md`: You are reading it now.
-- `CHANGELOG.md`: Release notes, newest first (current: 0.1.1 — Windows installer + auto SSH pairing).
+- `CHANGELOG.md`: Release notes, newest first.
 - `etk.conf.example`: Operator config template (committed). `install.sh` generates `etk.conf` from this on first run.
 - `install.sh`: Flashes the ETK onto your handheld from a computer; auto-discovers the rig via mDNS on first run.
 - `uninstall.sh`: Removes the ETK from your handheld from a computer; restores stock CPU/GPU governors before exiting.
@@ -276,8 +284,8 @@ Picking up from the hero shot at the top of this README — same race, same Mini
 - Phase 2: Modular professional grade deployable ETK: shader cache successfully upscaled
 - Phase 3: Enabled on-board MangoHUD DDU: integrated live instrumentation
 - Phase 4: Enabled Gamepad ETK pit controls: full un-tethered racing and shader harvesting
-- Phase 5: Solved SD card treadwear and boost persistence with RAM disk support
-- Phase 6: Rocknix OS migrated to May 11 Nightly, dependency updated, preserved into repo, 
+- Phase 5: Solved SD card treadwear and Rocknix reboot persistence with RAM disk support
+- Phase 6: First successful Rocknix OS nightly migration 20260511
 - Phase 7: Enabled robust crash reporting, diagnosis, advisory, ETK install tiers
 - Phase 8: Attempted experimental incremental audio support
 - Phase 9: Enabled game agnostic ETK
@@ -289,7 +297,7 @@ Picking up from the hero shot at the top of this README — same race, same Mini
 - Phase 15: Beta Testing
 
 # Windows Install Guide
-- (alpha-tester preview)
+## (alpha-tester preview)
 
 Two ways to run the ETK host tooling from Windows:
 
