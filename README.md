@@ -1,9 +1,9 @@
 # The Emulation Tuning Kit
 - [Download latest release](https://github.com/mercurious/etk/releases)
-- [System Requirements](#etk-system-requirements)
-- [Device Support](#handheld-system-support)
-- [Tested Games](#tested-games-rpcs3)
-- [Getting Started](#getting-started)
+- [System Requirements](https://github.com/mercurious/etk/#etk-system-requirements)
+- [Device Support](https://github.com/mercurious/etk/#handheld-system-support)
+- [Tested Games](https://github.com/mercurious/etk/#tested-games-rpcs3)
+- [Getting Started](https://github.com/mercurious/etk/#getting-started)
 
 # ETK Introduction
 <img src="docs/screenshots/etk_NPEA00502_20260526_194915.png" width="900"
