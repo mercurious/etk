@@ -120,7 +120,7 @@ If you've already installed Rocknix, simply press `START` `UPDATES & DOWNLOADS` 
 **Do not update to the next Rocknix nightly after this** without checking the latest README.md for the last known ETK supported Rocknix release.
 2. Clone this repo to your computer. 
 You can also download the code as a `.zip` and extract as `~/etk/`
-3. For macOS, WLS2, Linux: from the repo root, run `./install.sh`. For Windows, use the port installer [ETK PowerShell installer](https://github.com/mercurious/etk#windows-install-guide) and SMB backup.
+3. For macOS, WLS2, Linux: from the repo root, run `chmod +x install.sh` to make it executable and then run `./install.sh` whenever you want to update, repair, or sync your rig. For Windows, use the port installer [ETK PowerShell installer](https://github.com/mercurious/etk#windows-install-guide) and SMB backup.
 **On the first run the installer auto-discovers your handheld as the rig.** You may be prompted once to accept the rig's SSH host key and enter the default root password unless you've changed it.
 Using mDNS, Rocknix advertises itself on the LAN as `<SOC>.local` (e.g. `SM8250.local` for SD865 devices like the Retroid Pocket Flip 2 / Pocket 5).
 
