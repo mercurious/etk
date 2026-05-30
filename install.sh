@@ -795,7 +795,7 @@ if [ -f "$SESSION_ANCHOR" ]; then
     # state machine resume).
     if [ "$BC_EPOCH" -gt 0 ] \
        && [ "$BOOT_EPOCH" -gt "$BC_EPOCH" ] \
-       && ! pgrep -x rpcs3 >/dev/null && ! pgrep -x AppRun.wrapped >/dev/null; then
+       && ! pgrep -f "rpcs3-sa|AppRun.wrapped" >/dev/null; then
 
         # Last-alive proxy: RPCS3 writes its log continuously, so its
         # mtime tracks the last moment the process was responsive. RPCS3
@@ -885,16 +885,18 @@ while true; do
     CUR_STATE="IDLE"
 
     # --- STATE DETECTION ---
-    # Match the emulator by EXACT process name (comm), NOT a -f cmdline
-    # substring. `-f "rpcs3"` also matched any process whose argv merely
-    # referenced an rpcs3 PATH -- notably session_postmortem.sh's
-    # `strings /storage/.cache/rpcs3/RPCS3.log`. On a verbose game (Ridge
-    # Racer 7's log hits ~288MB) that strings call outlived a 2s tick, so the
-    # Sentry mistook its own log-parser for a running emulator, igniting a
-    # self-reinforcing loop of phantom sub-threshold sessions -> bogus ABORTED
-    # ledger rows. `-x` matches the same comms recovery.sh tears down
-    # (rpcs3 / AppRun.wrapped) and nothing else.
-    if pgrep -x rpcs3 > /dev/null || pgrep -x AppRun.wrapped > /dev/null; then
+    # Match the emulator by cmdline (-f) on a token specific enough to NOT
+    # match an rpcs3 PATH. The bare "rpcs3" pattern also matched any process
+    # whose argv referenced /storage/.cache/rpcs3/RPCS3.log -- notably
+    # session_postmortem.sh's old `strings "$RPCS3_LOG"` -- which on a verbose
+    # game (Ridge Racer 7's log hits ~288MB) outlived a 2s tick and self-
+    # ignited phantom ABORTED sessions. "rpcs3-sa" is the actual
+    # /usr/bin/rpcs3-sa binary: it appears in the emulator's launch argv but
+    # never in the log path. (AppRun.wrapped covers older AppImage builds.)
+    # DO NOT use `pgrep -x rpcs3` -- /usr/bin/rpcs3-sa is a static ELF whose
+    # comm is "rpcs3-sa", so exact-comm match misses it and ignition never
+    # fires (VAULT:ERROR / thermal-WAIT regression, caught 2026-05-30).
+    if pgrep -f "rpcs3-sa|AppRun.wrapped" > /dev/null; then
         CUR_STATE="RUNNING"
     else
         CUR_STATE="IDLE"

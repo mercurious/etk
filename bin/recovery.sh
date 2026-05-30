@@ -20,9 +20,20 @@ source /storage/games-internal/roms/etk/scripts/env.sh
 
 echo -e "\n\033[31m[!] INITIATING NUCLEAR RECOVERY...\033[0m"
 
-# 1. Break the GPU Deadlock by killing the emulator
-killall -9 rpcs3 2>/dev/null
+# 1. Break the GPU Deadlock by killing the emulator.
+#    On this build RPCS3 launches as an AppImage with TWO matchable processes:
+#    the launcher (comm "rpcs3-sa", /usr/bin/rpcs3-sa) and the runtime
+#    (comm "AppRun.wrapped"). BOTH must die or the Sentry's
+#    `pgrep -f "rpcs3-sa|AppRun.wrapped"` keeps seeing RUNNING, the
+#    RUNNING->IDLE handoff (rule 3) never fires, and the post-mortem never
+#    rolls up the recovered session. killall keys on comm and (BusyBox) has
+#    missed these names in testing, so the `pkill -9 -f` line below is the
+#    authoritative kill — it mirrors the Sentry's exact detection pattern,
+#    guaranteeing the next tick observes IDLE.
+killall -9 rpcs3-sa 2>/dev/null
 killall -9 AppRun.wrapped 2>/dev/null
+killall -9 rpcs3 2>/dev/null
+pkill -9 -f "rpcs3-sa|AppRun.wrapped" 2>/dev/null
 
 # 2. Kill worker daemons ONLY (Leave the Sentry alive to respawn them)
 pkill -9 -f "mango_bridge.sh" 2>/dev/null

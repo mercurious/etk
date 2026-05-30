@@ -141,6 +141,9 @@ SCREENSHOT_MODE_FILE = os.environ.get(
     'SCREENSHOT_MODE_FILE', f"{TELEMETRY_DIR}/screenshot_mode.txt")
 SCREENSHOT_MODES = ("always", "in-game", "disabled")
 SCREENSHOT_MODE_DEFAULT = "in-game"
+# Crash-signature catalog (id -> summary/explanation/suggested_changes), shared
+# with the Sentry. Backs the TELEMETRY session-detail crash card.
+CRASH_SIG_FILE = os.environ.get("SIGNATURES_FILE", f"{ETK_ROOT}/config/crash_signatures.json")
 
 
 # === COLOR PAIRS ===
@@ -755,7 +758,7 @@ def _draw_footer(stdscr, h, w, current_tab, status):
         if current_tab == CURRENT_TAB_TUNING:
             footer = "DPAD UP/DN: Move  LT/RT: Change  B: Save  A: Quit  L1/R1: Tabs"
         elif current_tab == CURRENT_TAB_TELEMETRY:
-            footer = "DPAD UP/DN: Scroll  B: Refresh  A: Quit  L1/R1: Tabs"
+            footer = "DPAD: Select  A: Detail  B: Back/Quit  L1/R1: Tabs"
         else:
             footer = "DPAD UP/DN: Move  B: Select  A: Back  L1/R1: Tabs"
         stdscr.addstr(h - 2, 4, footer[:w - 6], curses.A_BOLD)
@@ -1148,6 +1151,11 @@ def draw_telemetry(stdscr, state):
     career = state["_career_cache"]
     pit_note = state["_pit_note_cache"]
 
+    # === DETAIL SUB-MODE === full-screen card for the selected row.
+    if state.get("telemetry_mode", "table") == "detail":
+        _draw_session_detail(stdscr, state, sessions, config_changes)
+        return
+
     # === CAREER ANCHOR ===
     y = 5
     stdscr.addstr(y, 2, f"CAREER - {GAME_NAME} ({TARGET_ID})", curses.A_BOLD)
@@ -1218,10 +1226,20 @@ def draw_telemetry(stdscr, state):
         merged.append(c)
     merged.sort(key=lambda r: r["epoch"], reverse=True)
 
-    # Clamp scroll cursor to current dataset extent.
-    max_scroll = max(0, len(merged) - table_capacity)
-    state["telemetry_scroll"] = min(state.get("telemetry_scroll", 0), max_scroll)
-    scroll = state["telemetry_scroll"]
+    # Cursor-follows-scroll. telemetry_cursor is an absolute index into
+    # merged; derive the scroll window so the cursor stays on-screen (same
+    # idiom as the TOOLS uninstall list).
+    n = len(merged)
+    cursor = max(0, min(state.get("telemetry_cursor", 0), n - 1)) if n else 0
+    state["telemetry_cursor"] = cursor
+    scroll = state.get("telemetry_scroll", 0)
+    if cursor < scroll:
+        scroll = cursor
+    elif cursor >= scroll + table_capacity:
+        scroll = cursor - table_capacity + 1
+    max_scroll = max(0, n - table_capacity)
+    scroll = max(0, min(scroll, max_scroll))
+    state["telemetry_scroll"] = scroll
     visible = merged[scroll: scroll + table_capacity]
 
     if not visible:
@@ -1229,7 +1247,7 @@ def draw_telemetry(stdscr, state):
         y += 1
     else:
         prev_day = None
-        for row in visible:
+        for vis_i, row in enumerate(visible):
             if y >= table_bottom:
                 break
             day = _day_label(row["epoch"])
@@ -1242,10 +1260,11 @@ def draw_telemetry(stdscr, state):
                     break
             prev_day = day
 
+            sel = (scroll + vis_i == cursor)
             if row["_kind"] == "session":
-                _draw_session_row(stdscr, y, w, row)
+                _draw_session_row(stdscr, y, w, row, selected=sel)
             else:
-                _draw_config_row(stdscr, y, w, row)
+                _draw_config_row(stdscr, y, w, row, selected=sel)
             y += 1
 
     # === PAGE INDICATOR ===
@@ -1289,6 +1308,46 @@ _TEL_W_DRAIN = 5
 _TEL_W_SHD = 4
 
 
+# --- Session-detail data-viz (ASCII; no Unicode — Pitstop renders pure ASCII,
+#     no locale.setlocale, so block glyphs are unsafe) -----------------------
+
+def _envint(key, default):
+    try:
+        return int(float(os.environ.get(key, default)))
+    except (TypeError, ValueError):
+        return default
+
+# Gauge ceilings. Temp from the device profile's RACE_THRESHOLD where env.sh
+# exported it (SM8250.sh RACE_THRESHOLD=86); fixed sane fallbacks otherwise.
+_GAUGE_TEMP_MAX = _envint("RACE_THRESHOLD", 90)
+_GAUGE_LOAD_MAX = 16          # ~8 cores * 2.0 loadavg
+_GAUGE_RAM_MAX_MB = 8192      # 8 GB reference
+_GAUGE_DRAIN_MAX = 30         # |drain%| over a session
+_GAUGE_W = 18
+
+_CRASH_SIG_CACHE = None
+
+def _load_crash_sigs():
+    """id -> signature dict from crash_signatures.json (cached once). Returns
+    {} on any error so the detail view always degrades gracefully."""
+    global _CRASH_SIG_CACHE
+    if _CRASH_SIG_CACHE is None:
+        try:
+            data = json.load(open(CRASH_SIG_FILE, encoding="utf-8"))
+            _CRASH_SIG_CACHE = {s["id"]: s for s in data if isinstance(s, dict) and "id" in s}
+        except Exception:
+            _CRASH_SIG_CACHE = {}
+    return _CRASH_SIG_CACHE
+
+def _gauge_bar(value, vmax, width=_GAUGE_W):
+    """ASCII proportional bar '[####......]', clamped to [0, vmax]."""
+    if vmax <= 0:
+        vmax = 1
+    frac = max(0.0, min(1.0, float(value) / vmax))
+    filled = int(round(frac * width))
+    return "[" + "#" * filled + "." * (width - filled) + "]"
+
+
 def _telemetry_header():
     """Build the session-table column header from the shared _TEL_W_*
     width constants so it can never drift from the data rows."""
@@ -1305,7 +1364,7 @@ def _telemetry_header():
     )
 
 
-def _draw_session_row(stdscr, y, w, row):
+def _draw_session_row(stdscr, y, w, row, selected=False):
     """Render one session row. Builds the full line as a single clipped
     string from the shared _TEL_W_* constants, writes it once, then
     overlays the colored STATUS column. Single-write + overlay is
@@ -1378,6 +1437,8 @@ def _draw_session_row(stdscr, y, w, row):
     )
     base = base[:w - 4]
     base_attr = curses.A_DIM if low_conf else curses.A_NORMAL
+    if selected:
+        base_attr |= curses.A_REVERSE
     try:
         stdscr.addstr(y, 2, base, base_attr)
     except curses.error:
@@ -1389,6 +1450,8 @@ def _draw_session_row(stdscr, y, w, row):
     status_col = 2 + _TEL_W_TIME + _TEL_W_MARK
     status_text = status[:_TEL_W_STATUS]
     status_attr = curses.A_DIM if low_conf else _status_attr(status)
+    if selected:
+        status_attr |= curses.A_REVERSE
     if status_col + len(status_text) <= w - 1:
         try:
             stdscr.addstr(y, status_col, status_text, status_attr)
@@ -1396,7 +1459,111 @@ def _draw_session_row(stdscr, y, w, row):
             pass
 
 
-def _draw_config_row(stdscr, y, w, row):
+def _draw_session_detail(stdscr, state, sessions, config_changes):
+    """Full-screen card for the cursor-selected row (telemetry_mode='detail').
+    CLEAN/ABORTED -> ASCII gauges; RECOVERY/PANIC -> crash_signatures.json
+    summary/explanation + fence + suggested fix, degrading gracefully when no
+    signature matches (R3_PANIC / PANIC_REBOOT / empty). B returns to table."""
+    h, w = stdscr.getmaxyx()
+    merged = sorted(list(sessions) + list(config_changes),
+                    key=lambda r: r["epoch"], reverse=True)
+    cur = state.get("telemetry_cursor", 0)
+    y = 5
+
+    def put(row_y, col, text, attr=curses.A_NORMAL):
+        try:
+            stdscr.addstr(row_y, col, text[:max(0, w - col - 1)], attr)
+        except curses.error:
+            pass
+
+    def rule(row_y):
+        put(row_y, 2, "-" * (w - 4), curses.A_DIM)
+
+    if not merged or cur >= len(merged):
+        put(y, 2, "No session selected.  (B: back)", curses.A_DIM)
+        return
+    row = merged[cur]
+
+    def ram_str(mb):
+        if mb >= 1000:
+            return f"{mb / 1000:.1f}GB"
+        return f"{mb}MB" if mb > 0 else "----"
+
+    # --- CONFIG-change row: minimal card ---
+    if row.get("_kind") == "config":
+        put(y, 2, "CONFIG CHANGE", curses.A_BOLD); y += 1
+        rule(y); y += 2
+        put(y, 4, f"{_day_label(row['epoch'])}  {_time_label(row['epoch'])}", curses.A_DIM); y += 2
+        put(y, 4, row["field_label"], curses.A_BOLD); y += 1
+        put(y, 4, f"{row['old_value']}  ->  {row['new_value']}", curses.color_pair(PAIR_CONFIG))
+        return
+
+    # --- SESSION row ---
+    status = row["status"]
+    is_crash = status.startswith("RECOVERY") or status == "PANIC"
+    # crash_sig may stack multiple signatures, comma-joined (e.g.
+    # "R3_PANIC,GPU_FENCE_TIMEOUT"). Resolve each component against the
+    # catalog; the first match is primary (drives summary + severity).
+    _cat = _load_crash_sigs()
+    _components = [c.strip() for c in row.get("crash_sig", "").split(",") if c.strip()] if is_crash else []
+    _matched = [_cat[c] for c in _components if c in _cat]
+    sig = _matched[0] if _matched else None
+    sev = f"   [{sig['severity'].upper()}]" if sig and sig.get("severity") else ""
+
+    put(y, 2, f"{GAME_NAME} - {TARGET_ID}    {_day_label(row['epoch'])} {_time_label(row['epoch'])}",
+        curses.A_BOLD); y += 1
+    put(y, 2, f"{status}{sev}", _status_attr(status) | curses.A_BOLD); y += 1
+    rule(y); y += 1
+
+    dur_h = _format_duration(row["duration_s"])
+    peak_t, avg_t = row["peak_temp"], row["avg_temp"]
+    load, ram = row["peak_load"], row["peak_ram_mb"]
+
+    if is_crash:
+        if _matched:
+            put(y, 2, sig.get("summary", ""), curses.A_BOLD); y += 1
+            for ln in _wrap_text(sig.get("explanation", ""), w - 6, max_lines=4):
+                put(y, 2, ln, curses.A_DIM); y += 1
+            if len(_components) > 1:
+                put(y, 2, "Signatures: " + ", ".join(_components), curses.A_DIM); y += 1
+        else:
+            put(y, 2, f"No crash-signature record for '{row.get('crash_sig','') or 'unknown'}'.",
+                curses.A_BOLD); y += 1
+            put(y, 2, "Manual recovery (R3) or kernel panic - no diagnostic detail captured.",
+                curses.A_DIM); y += 1
+        y += 1; rule(y); y += 1
+        fence = row.get("fence_at_crash", 0)
+        put(y, 4, f"Died at fence: {fence if fence else 'n/a'}     Ran: {dur_h}"
+                  f"     Temp peak: {peak_t}C     RAM peak: {ram_str(ram)}"); y += 2
+        # Union of suggested changes across every matched signature, deduped
+        # by yaml_key (first wins) — a multi-cause crash gets the combined dials.
+        seen, changes = set(), []
+        for m in _matched:
+            for ch in (m.get("suggested_changes") or []):
+                k = ch.get("yaml_key", "").strip()
+                if k and k not in seen:
+                    seen.add(k); changes.append(ch)
+        if changes:
+            put(y, 2, "SUGGESTED FIX  (TUNING tab):",
+                curses.color_pair(PAIR_CLEAN) | curses.A_BOLD); y += 1
+            for ch in changes:
+                put(y, 4, f"* {ch.get('yaml_key','').strip()}  ->  {ch.get('new_value','')}"); y += 1
+    else:
+        put(y, 4, f"Duration   {dur_h}", curses.A_BOLD); y += 1
+        put(y, 4, f"Shaders +  {row['shaders_harvested']}    (vault delta this run)"); y += 2
+        put(y, 4, f"{'Temp':<8}{('peak '+str(peak_t)+'C avg '+str(avg_t)+'C'):<20}"
+                  f"{_gauge_bar(peak_t, _GAUGE_TEMP_MAX)}"); y += 1
+        put(y, 4, f"{'Load':<8}{('peak '+format(load,'.1f')):<20}"
+                  f"{_gauge_bar(load, _GAUGE_LOAD_MAX)}"); y += 1
+        put(y, 4, f"{'RAM':<8}{('peak '+ram_str(ram)):<20}"
+                  f"{_gauge_bar(ram, _GAUGE_RAM_MAX_MB)}"); y += 1
+        drain = row["drain_pct"]
+        put(y, 4, f"{'Drain':<8}{(str(drain)+'%'):<20}"
+                  f"{_gauge_bar(abs(drain), _GAUGE_DRAIN_MAX)}"); y += 1
+        put(y, 4, f"Thermal overrides: {row['thermal_overrides']}"); y += 1
+
+
+def _draw_config_row(stdscr, y, w, row, selected=False):
     """Render one CONFIG row: time, marker, field label, old->new
     transition. Other columns blank. Single-write + colored overlay
     pattern matches _draw_session_row for overflow safety."""
@@ -1407,8 +1574,9 @@ def _draw_config_row(stdscr, y, w, row):
 
     base = f"{time_str:<6} > {body}"
     base = base[:w - 4]
+    base_attr = curses.A_REVERSE if selected else curses.A_NORMAL
     try:
-        stdscr.addstr(y, 2, base)
+        stdscr.addstr(y, 2, base, base_attr)
     except curses.error:
         return
     # Overlay just the body text with the CONFIG color so the row is
@@ -1418,46 +1586,59 @@ def _draw_config_row(stdscr, y, w, row):
     overlay_text = body[: max(0, (w - 4) - 9)]
     if overlay_text:
         try:
-            stdscr.addstr(y, overlay_col, overlay_text, curses.color_pair(PAIR_CONFIG))
+            stdscr.addstr(y, overlay_col, overlay_text,
+                          curses.color_pair(PAIR_CONFIG) | (curses.A_REVERSE if selected else 0))
         except curses.error:
             pass
 
 
 def handle_telemetry_kb(state, ch):
-    """Keyboard input for TELEMETRY. Scroll via arrows + page keys.
-    Tab-switch keys [/] intercepted upstream."""
+    """Keyboard input for TELEMETRY. table mode: arrows/page move the row
+    cursor, Enter opens the detail card, 'r' refreshes. detail mode:
+    Backspace/Enter return to the table. Tab keys [/] intercepted upstream."""
     if ch == ord('q') or ch == ord('Q'):
         return "quit"
+    if state.get("telemetry_mode", "table") == "detail":
+        if ch in (curses.KEY_BACKSPACE, 8, 127, ord('\n'), ord('\r')):
+            state["telemetry_mode"] = "table"
+        return "continue"
     if ch == curses.KEY_UP:
-        state["telemetry_scroll"] = max(0, state.get("telemetry_scroll", 0) - 1)
+        state["telemetry_cursor"] = max(0, state.get("telemetry_cursor", 0) - 1)
     elif ch == curses.KEY_DOWN:
-        # Upper-bound clamp happens in draw_telemetry once it knows
-        # the capacity vs total — no need to clamp aggressively here.
-        state["telemetry_scroll"] = state.get("telemetry_scroll", 0) + 1
+        # Upper bound is clamped in draw_telemetry once it knows the count.
+        state["telemetry_cursor"] = state.get("telemetry_cursor", 0) + 1
     elif ch == curses.KEY_PPAGE:
-        state["telemetry_scroll"] = max(0, state.get("telemetry_scroll", 0) - 5)
+        state["telemetry_cursor"] = max(0, state.get("telemetry_cursor", 0) - 5)
     elif ch == curses.KEY_NPAGE:
-        state["telemetry_scroll"] = state.get("telemetry_scroll", 0) + 5
+        state["telemetry_cursor"] = state.get("telemetry_cursor", 0) + 5
+    elif ch in (ord('\n'), ord('\r'), ord('s')):
+        state["telemetry_mode"] = "detail"
     elif ch == ord('r') or ch == ord('R'):
-        # Manual refresh: useful when a session post-mortem just landed
-        # while Pitstop was open.
+        # Manual refresh: useful when a post-mortem lands while Pitstop is open.
         _refresh_telemetry_caches(state)
     return "continue"
 
 
 def handle_telemetry_pad(state, etype, code, val):
-    """Gamepad input for TELEMETRY. D-pad vertical = scroll. BTN_CONFIRM
-    refreshes from disk. Tab-switch buttons intercepted upstream."""
+    """Gamepad input for TELEMETRY. table mode: D-pad vertical moves the row
+    cursor, CONFIRM opens the detail card, BACK quits. detail mode: CONFIRM or
+    BACK return to the table. (Manual refresh on tab re-entry is automatic, so
+    CONFIRM is repurposed from refresh -> open-detail per the dossier.)"""
+    mode = state.get("telemetry_mode", "table")
+    if mode == "detail":
+        if etype == EV_KEY and val == 1 and code in (BTN_BACK, BTN_CONFIRM):
+            state["telemetry_mode"] = "table"
+        return "continue"
     if etype == EV_KEY and val == 1 and code == BTN_BACK:
         return "quit"
     if etype == EV_KEY and val == 1 and code == BTN_CONFIRM:
-        _refresh_telemetry_caches(state)
+        state["telemetry_mode"] = "detail"
         return "continue"
     if etype == EV_ABS and code == ABS_HAT0Y:
         if val == -1:
-            state["telemetry_scroll"] = max(0, state.get("telemetry_scroll", 0) - 1)
+            state["telemetry_cursor"] = max(0, state.get("telemetry_cursor", 0) - 1)
         elif val == 1:
-            state["telemetry_scroll"] = state.get("telemetry_scroll", 0) + 1
+            state["telemetry_cursor"] = state.get("telemetry_cursor", 0) + 1
     return "continue"
 
 
@@ -2343,6 +2524,9 @@ def _switch_tab(state, target_tab):
     if state["current_tab"] != target_tab:
         state["current_tab"] = target_tab
         state["status"] = ""
+        # Always return to the TELEMETRY table on a tab switch — never strand
+        # the user in a stale detail card after they navigate away and back.
+        state["telemetry_mode"] = "table"
         if target_tab == CURRENT_TAB_TELEMETRY:
             state["_sessions_cache"] = None
             state["_config_changes_cache"] = None
@@ -2444,6 +2628,11 @@ def main(stdscr):
         "status": "",
         "gamepad_status": gamepad_status,
         "telemetry_scroll": 0,
+        # TELEMETRY row selection + sub-mode. telemetry_cursor is an absolute
+        # index into the merged (sessions+config) list; telemetry_scroll is
+        # derived to keep it on-screen. CONFIRM on a row opens the detail view.
+        "telemetry_cursor": 0,
+        "telemetry_mode": "table",   # "table" | "detail"
         # Telemetry data caches — populated lazily on first TELEMETRY
         # render, invalidated on every tab-switch into TELEMETRY so a
         # CONFIG save or new post-mortem appears without a relaunch.
