@@ -1,6 +1,6 @@
 # Rocknix Nightly Migration Certification — nightly-20260529
 
-**Status:** PROPOSED — not yet certified. On-rig protocol below pending.
+**Status:** ✅ **CERTIFIED 2026-05-29** — in-place migration 20260528→20260529 on SM8250. `--check` clean; the 10 `--diff` input CRITICALs were benign node renumbering (DualSense buttons `event9→event8`, `find_gamepad()` self-healed by name); gamepad codes unchanged; **R3 survives suspend/resume**; RPCS3 binds Adreno 650 (RPCS3.log); v0.1.2 screenshot + Tools-icon features confirmed; `20260529.json` saved as the new `*PIN`. Shipped in ETK v0.1.2.
 **Candidate nightly:** `nightly-20260529` (Pre-release)
 **Current pin (last verified):** SM8250 profile re-cal note = `nightly-20260525`; gamepad codes last probe-verified `2026-05-24` (DS5 std mapping). Closeout dossier covers `20260516/17 → 20260520`.
 **Tier-1 target:** SM8250 (Retroid Pocket Flip 2, Adreno 650 / Turnip).

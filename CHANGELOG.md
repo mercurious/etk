@@ -2,9 +2,9 @@
 
 All notable changes to the ETK are documented here. This project adheres to [Semantic Versioning](https://semver.org/).
 
-## [0.1.2] - Unreleased
+## [0.1.2] - 2026-05-29
 
-**Screenshot trigger is now operator-controlled.** The `L1` screenshot shutter no longer fires unconditionally — it has a three-state mode so you can scope it to gameplay or free the button for the game entirely.
+**Screenshot trigger is now operator-controlled, Tools-menu icon fixed, and certified against Rocknix nightly-20260529.** The `L1` screenshot shutter no longer fires unconditionally — it has a three-state mode so you can scope it to gameplay or free the button for the game entirely.
 
 ### Added
 - **Three-state `L1` screenshot mode** — `in-game` (default) / `always` / `disabled`, cycled live from **Pitstop → TOOLS → "Screenshot on L1"**. Persisted to `etk_telemetry/screenshot_mode.txt` and read by `bin/input_d.py` on every L1 press, so a toggle takes effect with **no daemon restart**. The mode is shared via `$SCREENSHOT_MODE_FILE` (`scripts/env.sh`).
@@ -15,6 +15,9 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ### Changed
 - **Default screenshot behavior is now `in-game`** (was effectively `always`). Existing rigs with no mode file inherit `in-game` on first boot after upgrade. Set `always` in Pitstop → TOOLS if you capture the frontend / Pitstop UI (e.g. for README shots).
+
+### Verified
+- **Certified on Rocknix nightly-20260529** (in-place migration from 20260528, SM8250). `etk_drift.py --check` clean (no structural drift); the 10 `--diff` input CRITICALs were benign node renumbering (the DualSense buttons device moved `event9→event8`; `find_gamepad()` self-healed by name). Manual headless gate passed: gamepad codes unchanged (R3=318/L3=317/L1=310/SELECT=314/D-pad=16,17), **R3 panic survives suspend/resume** (29's fake-suspend rewrite), RPCS3 binds `Turnip Adreno (TM) 650`, and the v0.1.2 screenshot + Tools-icon features work on 29. Profile re-cal notes bumped to 20260529. See `dossiers/RocknixNightly20260529CertificationDossier.md`.
 
 ## [0.1.1] - 2026-05-29
 

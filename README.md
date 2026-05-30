@@ -61,11 +61,11 @@ Captured on-device with the ETK's `L1` screenshot shutter — MangoHUD overlay i
 *GT6 — Nürburgring Nordschleife at night, Lap 1 of 2, cockpit view at 40 mph into a moonlit corner. HUD: `VULKAN 8FPS 131.9ms BATT 54% ETK 79° 11.99 96% 132+ 29.4k 269MB`. The Green Hell at night, on a handheld, running PS3. **A clean lap landed 2026-05-26.***
 
 ## ETK System Requirements
-ETK is developed and structurally verified against Rocknix nightly 20260525–20260528 on SM8250 (Retroid Pocket Flip 2), with a hard architectural floor at 20260520 (DS5 gamepad era). No version yet certified as race stable, meaning five consecutive crash-free runs of the same target race to a graceful emulator exit.
+ETK is developed and structurally verified against Rocknix nightly 20260525–20260529 on SM8250 (Retroid Pocket Flip 2), with a hard architectural floor at 20260520 (DS5 gamepad era). No version yet certified as race stable, meaning five consecutive crash-free runs of the same target race to a graceful emulator exit.
 | Type | Detail |
 |---|---|
 | Host System | macOS or Linux ([experimental Windows/PC support](#windows-install-guide)) |
-| OS | ROCKNIX (Nightly Build: 20260528) |
+| OS | ROCKNIX (Nightly Build: 20260529) |
 | Driver | MESA Turnip 26.1.0 |
 | Shell |  BusyBox v1.36.1 |
 | Custom Overlay |  MangoHUD |
@@ -132,17 +132,17 @@ Using mDNS, Rocknix advertises itself on the LAN as `<SOC>.local` (e.g. `SM8250.
 4. Reboot and start harvesting shaders. 
 
 ## Getting Started with Rocknix Pro-tips
-- To boot into Rocknix running on an SD card with Android as the default OS:
+### To boot into Rocknix running on an SD card with Android as the default OS:
 1. Start the device in Android and reboot. 
 1. Before Retroid Pocket logo appears, hold down the Volume-Up button and let go as soon as you see the U-Boot logo (a little submarine icon in the corner)
-- To always boot into Rocknix as the default OS
+### To always boot into Rocknix as the default OS
 1. Hold Volume-Down button while starting device to open loader menu
 1. Use volume button to switch `Android` to `bootloader` and use the power button to set it.
 1. Use the same process to revert back to Android.
-- To share games between Rocknix and Android
+### To share games between Rocknix and Android
 1. Store your games in `/storage/games-internal/roms/` and see [Rocknix documentation](https://rocknix.org/play/add-games/) for further details.
 1. Let your Android apps gain permissions for this folder.
-- To access your card after installing Rocknix, your PC or Mac will no longer read the card through an SD card reader over USB because of its Rocknix partition. Try one of these options instead: 
+### To access your card after installing Rocknix, your PC or Mac will no longer read the card through an SD card reader over USB because of its Rocknix partition. Try one of these options instead: 
 1. Use SMB in Windows or macOS to mount SM8250 as a drive
 1. Use an SFTP client
 1. Use [Rocknix USB-GADGET mode](https://rocknix.org/play/add-games/#option-2-usb-gaget-modes).
