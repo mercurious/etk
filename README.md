@@ -127,7 +127,7 @@ You can also download the code as a `.zip` and extract as `~/etk/`
 - run `./install.sh` to install the ETK on your handheld rig
 - Run `./install.sh` whenever you want to update, repair, or sync your rig.
 
-**For Windows,** use the port installer [ETK PowerShell installer](https://github.com/mercurious/etk#windows-install-guide) and SMB backup.
+**For Windows,** use the [PowerShell installer](https://github.com/mercurious/etk#windows-install-guide) which is a direct port of `install.sh` but use SMB backup to substitute for its file sync features.
 
 **On the first run the installer auto-discovers your handheld as the rig.** You may be prompted once to accept the rig's SSH host key and enter the default root password unless you've changed it.
 Using mDNS, Rocknix advertises itself on the LAN as `<SOC>.local` (e.g. `SM8250.local` for SD865 devices like the Retroid Pocket Flip 2 / Pocket 5).
