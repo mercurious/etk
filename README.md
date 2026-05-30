@@ -187,7 +187,7 @@ In-place tuning happens on-device — the Pitstop TUNING tab exposes the RPCS3 s
 - `AI_MANIFEST.md`: System Manual and Immutable Laws of ETK Development for AI
 - `LICENSE`: GNU GPL v2.0 — matches Rocknix
 - `README.md`: You are reading it now.
-- `CHANGELOG.md`: Release notes, newest first (current: 0.1.1 — Windows installer + auto SSH pairing).
+- `CHANGELOG.md`: Release notes, newest first.
 - `etk.conf.example`: Operator config template (committed). `install.sh` generates `etk.conf` from this on first run.
 - `install.sh`: Flashes the ETK onto your handheld from a computer; auto-discovers the rig via mDNS on first run.
 - `uninstall.sh`: Removes the ETK from your handheld from a computer; restores stock CPU/GPU governors before exiting.
