@@ -289,7 +289,7 @@ Picking up from the hero shot at the top of this README — same race, same Mini
 - Phase 15: Beta Testing
 
 # Windows Install Guide
-- (alpha-tester preview)
+## (alpha-tester preview)
 
 Two ways to run the ETK host tooling from Windows:
 
