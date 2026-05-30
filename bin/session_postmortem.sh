@@ -135,7 +135,12 @@ DMESG_OUT=$(dmesg 2>/dev/null | awk -v t="$DMESG_WINDOW_START" '
         if (ts >= t) print
     }
 ')
-RPCS3_TAIL=$(strings "$RPCS3_LOG" 2>/dev/null | tail -n 200)
+# Read via stdin redirect + bounded tail (NOT `strings "$RPCS3_LOG"`): the
+# reader processes' argv no longer carries the rpcs3 log PATH, so the Sentry's
+# emulator-detection can't mistake this parser for a running game; and we scan
+# only the last 4MB instead of strings-ing a multi-hundred-MB log (RR7 hits
+# ~288MB) on every postmortem. Defense-in-depth alongside the Sentry's -x fix.
+RPCS3_TAIL=$(tail -c 4194304 <"$RPCS3_LOG" 2>/dev/null | strings | tail -n 200)
 HAYSTACK=$(printf '%s\n%s\n' "$DMESG_OUT" "$RPCS3_TAIL")
 
 # --- SEVERITY-RANKED SIGNATURE SCAN ---
