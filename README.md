@@ -170,6 +170,8 @@ The ETK solves the problem of installing PS3 Packages on Rocknix which is otherw
 ## How to Use Simple Telemetry
 ETK Pitstop's TELEMETRY tab shows the per-game session ledger of the last game launched. To switch the visible game, launch a different game in RPCS3, quit back to ROCKNIX, then reopen ETK Pitstop — it will show that game's career rollup and tuning history. Every session, every crash, and every config change is recorded so you can correlate tuning experiments with outcomes.
 
+**Session detail:** in the TELEMETRY tab, move the row cursor with the **D-pad** and press the **confirm** button to open a full-screen detail card for that session (**back** returns). A clean run shows duration, shaders harvested, and ASCII gauges for temp / load / RAM / battery drain; a crash shows what failed, where it died, and the suggested tuning fix pulled from the crash-signature catalog.
+
 <img src="docs/screenshots/etk_ROCKNIX_20260526_132108.png" width="600"
      alt="ETK Pitstop TELEMETRY tab showing GT5 career: 6 sessions, 50% clean, 3 crashes, 7639 shaders banked, recent session log with RECOVERY:Adreno and config-change events" />
 

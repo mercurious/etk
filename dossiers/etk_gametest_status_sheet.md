@@ -16,13 +16,13 @@
 - Known Issues: Black artifacting in the sky. Menus sensitive to SPU threads, can get real clunky.
 - Comment: Ideal testing and baseline game because it's small, loads fast, and relatively durable. Never pushes the chipset hard.
 
-## PNUB30457 RIDGE RACER 7
-- Saturation: 5 MB 266 Somewhat saturated
-- Playability: Highly playable but difficult to finish races.
-- Durability: Works quite well until it doesn't well into the set of laps.
-- Audio: Impressive
+## NPUB30457 RIDGE RACER 7
+- Saturation: 5 MB 266 Somewhat saturated. **Needs almost no shader compilation** — near fully-cached from the first run; sessions read `0+` / single-digit shader deltas (stark contrast to GT6's shader storms).
+- Playability: **Most playable game tested.** On nightly-20260529 a full **3-lap race finishes at ~30 FPS** with race audio (only slight stutter).
+- Durability: **Strong on latest nightly.** Earlier note ("works quite well until it doesn't, well into the laps") superseded 2026-05-30 — three laps to a graceful finish on 20260529. (Aside: this title's verbose ~288 MB RPCS3.log was the trigger for the v0.1.3 phantom-ABORTED Sentry bug — now fixed.)
+- Audio: Impressive. Holds up across a full race with only slight stutter.
 - Known Issues: Sometimes the distant backgrounds don't load in.
-- Comment: Stunning contrast with the Gran Turismo games. If you're looking to get racing, this is the answer.
+- Comment: Stunning contrast with the Gran Turismo games. **Instant gratification** — the title to hand a player who just wants to *race now* without tackling GT's massive shader-storm onboarding. If you're looking to get racing, this is the answer.
 
 ## NPUA80472 LITTLEBIGPLANET
 - Saturation: 11 MB 767 Not very saturated.
