@@ -7,6 +7,11 @@
 # Sourced ONLY by scripts/env.sh per Immutable Law #2.
 # VALUES ONLY — no `export`, no logic. env.sh is the sole
 # exporter of the canonical names defined below.
+#
+# Structurally re-certified against Rocknix nightly-20260529 on 2026-05-29
+# via `etk_drift.py --check` (no structural drift) + manual headless-gate pass
+# (gamepad codes unchanged, R3 survives suspend/resume, RPCS3 binds Adreno 650).
+# Input-node renumbering on 20260529 is benign — find_gamepad() matches by name.
 # ==========================================================
 
 # --- Identity ---
