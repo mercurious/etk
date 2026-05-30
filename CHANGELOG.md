@@ -2,6 +2,11 @@
 
 All notable changes to the ETK are documented here. This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.3] - Unreleased
+
+### Fixed
+- **Phantom `ABORTED` sessions polluting the ledger (crash-analytics integrity).** The Sentry detected a running emulator with `pgrep -f "rpcs3|AppRun.wrapped"`, where `-f` matches the whole command line — so it also matched any process whose argv merely referenced an **rpcs3 path**, notably `session_postmortem.sh`'s `strings /storage/.cache/rpcs3/RPCS3.log`. On a log-verbose title (Ridge Racer 7's `RPCS3.log` reaches ~288 MB) that `strings` outlived the Sentry's 2 s tick, so the Sentry mistook its own log-parser for a live game and ignited a **self-reinforcing loop** of phantom sub-threshold sessions — each <60 s, reclassified `ABORTED` — burying the real `CLEAN`/`RECOVERY` rows (RR7 read 21 ABORTED vs 4 CLEAN). Fixes: (1) the Sentry now matches the emulator by **exact process name** — `pgrep -x rpcs3 || pgrep -x AppRun.wrapped` (the same comms `recovery.sh` tears down) — at both the state-detection and orphan-PANIC-guard sites; (2) `session_postmortem.sh` reads the log via bounded stdin redirect (`tail -c 4M <"$RPCS3_LOG" | strings`) so the parser's argv no longer carries the rpcs3 path and the scan is bounded. Verified on-rig: the log-parser no longer registers as a running emulator.
+
 ## [0.1.2] - 2026-05-29
 
 **Screenshot trigger is now operator-controlled, Tools-menu icon fixed, and certified against Rocknix nightly-20260529.** The `L1` screenshot shutter no longer fires unconditionally — it has a three-state mode so you can scope it to gameplay or free the button for the game entirely.

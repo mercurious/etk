@@ -795,7 +795,7 @@ if [ -f "$SESSION_ANCHOR" ]; then
     # state machine resume).
     if [ "$BC_EPOCH" -gt 0 ] \
        && [ "$BOOT_EPOCH" -gt "$BC_EPOCH" ] \
-       && ! pgrep -f "rpcs3|AppRun.wrapped" >/dev/null; then
+       && ! pgrep -x rpcs3 >/dev/null && ! pgrep -x AppRun.wrapped >/dev/null; then
 
         # Last-alive proxy: RPCS3 writes its log continuously, so its
         # mtime tracks the last moment the process was responsive. RPCS3
@@ -885,7 +885,16 @@ while true; do
     CUR_STATE="IDLE"
 
     # --- STATE DETECTION ---
-    if pgrep -f "rpcs3|AppRun.wrapped" > /dev/null; then
+    # Match the emulator by EXACT process name (comm), NOT a -f cmdline
+    # substring. `-f "rpcs3"` also matched any process whose argv merely
+    # referenced an rpcs3 PATH -- notably session_postmortem.sh's
+    # `strings /storage/.cache/rpcs3/RPCS3.log`. On a verbose game (Ridge
+    # Racer 7's log hits ~288MB) that strings call outlived a 2s tick, so the
+    # Sentry mistook its own log-parser for a running emulator, igniting a
+    # self-reinforcing loop of phantom sub-threshold sessions -> bogus ABORTED
+    # ledger rows. `-x` matches the same comms recovery.sh tears down
+    # (rpcs3 / AppRun.wrapped) and nothing else.
+    if pgrep -x rpcs3 > /dev/null || pgrep -x AppRun.wrapped > /dev/null; then
         CUR_STATE="RUNNING"
     else
         CUR_STATE="IDLE"
