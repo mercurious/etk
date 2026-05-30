@@ -108,7 +108,7 @@ Snapshot of per-game status from on-device testing. Full tuning history, panic-l
 ## ETK Quick Commands
 | Gamepad Button | ETK Command | Button Description | Details |
 |---|---|---|---|
-| `L1` | **screenshot** | left top trigger button | **Requires in-game un-binding/un-mapping**, Screenshots stored at `/storage/roms/etk/screenshots`, `install.sh` syncs `etk/screenshots` |
+| `L1` | **screenshot** | left top trigger button | **Requires in-game un-binding/un-mapping**. Screenshots stored at `/storage/roms/etk/screenshots`, `install.sh` syncs `etk/screenshots`. Disable `L1` one-finger trigger feature in ETK Pitstop > TOOLS > `3. Screeshot on L1: disabled` and use two-handed `SELECT` + `D-pad-up` instead. |
 | `L3` | **DDU HUD** | left analog button | Toggles ETK DDU dashboard between top and bottom of screen |
 | `R3` | **PANIC RECOVERY** | right analog button | Recover from a crash or freeze. Reboot recommended after returning to Rocknix ES frontend. |
 
