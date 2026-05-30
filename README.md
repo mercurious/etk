@@ -284,8 +284,8 @@ Picking up from the hero shot at the top of this README — same race, same Mini
 - Phase 2: Modular professional grade deployable ETK: shader cache successfully upscaled
 - Phase 3: Enabled on-board MangoHUD DDU: integrated live instrumentation
 - Phase 4: Enabled Gamepad ETK pit controls: full un-tethered racing and shader harvesting
-- Phase 5: Solved SD card treadwear and boost persistence with RAM disk support
-- Phase 6: Rocknix OS migrated to May 11 Nightly, dependency updated, preserved into repo, 
+- Phase 5: Solved SD card treadwear and Rocknix reboot persistence with RAM disk support
+- Phase 6: First successful Rocknix OS nightly migration 20260511
 - Phase 7: Enabled robust crash reporting, diagnosis, advisory, ETK install tiers
 - Phase 8: Attempted experimental incremental audio support
 - Phase 9: Enabled game agnostic ETK
