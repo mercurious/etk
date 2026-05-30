@@ -25,6 +25,13 @@ state/
 shm/
 **/shm/
 
+# 2b. Probe capture output — scripts/etk_probe.sh writes timestamped CSVs to
+# $ETK_ROOT/etk_probe at runtime (thermal-calibration sweeps). Runtime data,
+# same precedent as vault/ and state/ — never committed. The historical
+# 20260521 captures were archived under _archive/etk_probe/ (also ignored).
+etk_probe/
+**/etk_probe/
+
 # 3. macOS Pollution
 .DS_Store
 .AppleDouble
@@ -46,3 +53,8 @@ _archive/
 # wizard. Tracks the rig SSH target, build tier, HUD preferences, etc.
 # The canonical template is `etk.conf.example` (committed).
 etk.conf
+
+# 7. Claude Code machine-local settings — personal, not shared. The `.claude/`
+# dir stays at the project root (Claude Code requires it there); only the
+# per-machine local settings file is untracked.
+.claude/settings.local.json
