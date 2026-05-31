@@ -51,11 +51,11 @@ Captured on-device with the ETK's `L1` screenshot shutter — MangoHUD overlay i
 *GT6 — Nürburgring Nordschleife at night, Lap 1 of 2, cockpit view at 40 mph into a moonlit corner. HUD: `VULKAN 8FPS 131.9ms BATT 54% ETK 79° 11.99 96% 132+ 29.4k 269MB`. The Green Hell at night, on a handheld, running PS3. **A clean lap landed 2026-05-26.***
 
 ## ETK System Requirements
-ETK is developed and structurally verified against Rocknix nightly 20260525–20260529 on SM8250 (Retroid Pocket Flip 2), with a hard architectural floor at 20260520 (DS5 gamepad era). No version yet certified as race stable, meaning five consecutive crash-free runs of the same target race to a graceful emulator exit.
+ETK is developed and structurally verified against Rocknix nightly 20260525–20260531 on SM8250 (Retroid Pocket Flip 2), with a hard architectural floor at 20260520 (DS5 gamepad era). No version yet certified as race stable, meaning five consecutive crash-free runs of the same target race to a graceful emulator exit.
 | Type | Detail |
 |---|---|
 | Host System | macOS or Linux ([experimental Windows/PC support](#windows-install-guide)) |
-| OS | ROCKNIX (Nightly Build: 20260529) |
+| OS | ROCKNIX (Nightly Build: 20260531) |
 | Driver | MESA Turnip 26.1.0 |
 | Shell |  BusyBox v1.36.1 |
 | Custom Overlay |  MangoHUD |
@@ -136,7 +136,8 @@ Getting installed is the hard part. Now you have a track-day setup to attempt th
 Designed to feel like a race car Driver Data Unit style dashboard (DDU). From left-to-right, the instruments are:
 frametime|framerate|battery|ETK|temp|load|ram|shaders
 
-### The custom display has a 3-step startup sequence. The duration can be edited in `etk.conf`
+### ETK DDU Startup Sequence
+The custom display has a 3-step startup sequence. The duration can be edited in `etk.conf`
 1. Shows the installation mode of the ETK: FULL, LITE or RAW|the game ID number|and the shader vault being loaded.
 2. Shows the labels of the main instruments without shader info.
 3. Minimizes instrument labels to include shader count and vault size.
@@ -150,26 +151,24 @@ frametime|framerate|battery|ETK|temp|load|ram|shaders
 
 ## The ETK Punch Box
 Custom buttons to get you around the track at dangerous speeds.
-`L3` toggles the HUD to top or bottom
-`R3` is your crash panic button. Reboot when you return to Rocknix ES front-end to prep for another race attempt.
-`L1` is your single-finger camera-shutter screenshot, configurable in ETK Pitstop app.
-If you cause a *kernel panic* the ETK Recovery function will not work. Hold the `POWER` button down until the device reboots to the Retroid Pocket logo. 
+- `L3` toggles the HUD to top or bottom
+- `R3` is your crash panic button. Reboot when you return to Rocknix ES front-end to prep for another race attempt.
+- `L1` is your single-finger camera-shutter screenshot, configurable in ETK Pitstop app.
+- `POWER` If you cause a *kernel panic* the ETK Recovery function will not work. Hold the `POWER` button down until the device reboots to the Retroid Pocket logo. 
 
 ## The ETK Pitstop Rocknix App
 Found in the Rocknix ES front-end Tools carousel item.
 
 ### ETK Telemetry
-#### Career
-Shows total playtime, number of sessions, percent clean (no crashes), crash stats (recovery/panic)
-Number of shaders banked, avg shaders per session, clean streak (best streak)
-#### Ledger
-TIME|STATUS|DURATION|RAM|LOAD|TEMP|BATTERY DRAIN|SHADERS HARVESTED
-Records every session and tuning change from the Tuning tab.
-#### Session Detail View
-##### Clean View
-Shows Duration and telemetry summary
-##### Crash View
-Shows crash type with explanation, peak stats, and **suggested Tuning fixes**.
+- Career
+  - Shows total playtime, number of sessions, percent clean (no crashes), crash stats (recovery/panic)
+  - Number of shaders banked, avg shaders per session, clean streak (best streak)
+- Ledger: Shows session history at a glance
+  - TIME|STATUS|DURATION|RAM|LOAD|TEMP|BATTERY DRAIN|SHADERS HARVESTED
+  - Records every session and tuning change from the Tuning tab.
+- Session Detail View
+  - Clean View: Shows Duration and telemetry summary
+  - Crash View: Shows crash type with explanation, peak stats, and **suggested Tuning fixes**.
 
 ### ETK Tuning
 Easily tweak emulation settings on the device. The subset of RPSC3 settings included can be customized in `config/pitstop_fields.json`

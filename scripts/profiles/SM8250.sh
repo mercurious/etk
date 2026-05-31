@@ -8,10 +8,13 @@
 # VALUES ONLY — no `export`, no logic. env.sh is the sole
 # exporter of the canonical names defined below.
 #
-# Structurally re-certified against Rocknix nightly-20260529 on 2026-05-29
+# Structurally re-certified against Rocknix nightly-20260531 on 2026-05-31
 # via `etk_drift.py --check` (no structural drift) + manual headless-gate pass
 # (gamepad codes unchanged, R3 survives suspend/resume, RPCS3 binds Adreno 650).
-# Input-node renumbering on 20260529 is benign — find_gamepad() matches by name.
+# Input-node renumbering across nightlies is benign — find_gamepad() matches by
+# name, not index (DualSense buttons node drifted event8->event9 on 20260531).
+# 20260531 also bumped the Turnip driver — per-game render behavior re-validated
+# on GT5P (vault re-layered cleanly, +10k shaders, HUD nominal).
 # ==========================================================
 
 # --- Identity ---
