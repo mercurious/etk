@@ -8,8 +8,8 @@
       "drm:recover_worker.*offending task.*rpcs3"
     ],
     "severity": "high",
-    "summary": "GPU stalled waiting on render completion",
-    "explanation": "The Adreno driver gave up waiting for the GPU to finish a frame. Often caused by per-frame complexity exceeding the watchdog window (lap-2 tunnel territory in GT5P).",
+    "summary": "GPU stalled rendering a frame",
+    "explanation": "The graphics chip couldn't finish a frame in time and the driver reset it. Usually a burst of scene complexity (e.g. the lap-2 tunnel in GT5P). The dials below ease the load.",
     "suggested_changes": [
       {"yaml_key": "  Driver Wake-Up Delay", "new_value": "50"},
       {"yaml_key": "  Resolution Scale", "new_value": "75"}
@@ -24,8 +24,8 @@
       "Killed process.*rpcs3"
     ],
     "severity": "critical",
-    "summary": "Kernel killed RPCS3 - out of RAM",
-    "explanation": "System exhausted memory. Reduce graphical fidelity to lower RAM footprint.",
+    "summary": "Ran out of memory",
+    "explanation": "The system used up all its RAM and had to close the emulator. Lower graphical fidelity to shrink the memory footprint.",
     "suggested_changes": [
       {"yaml_key": "  Resolution Scale", "new_value": "66"},
       {"yaml_key": "  Write Color Buffers", "new_value": "false"}
@@ -40,8 +40,8 @@
       "Predecessor not found for target"
     ],
     "severity": "medium",
-    "summary": "SPU recompiler tripped on an instruction",
-    "explanation": "Aggressive SPU block size couldn't trace a code path cleanly. Safer block size usually resolves.",
+    "summary": "Hit a bad code path (SPU)",
+    "explanation": "The emulator's fast SPU mode couldn't translate a section of game code. A safer SPU block size usually fixes it.",
     "suggested_changes": [
       {"yaml_key": "  SPU Block Size", "new_value": "Safe"}
     ]
@@ -53,8 +53,8 @@
       "^F .*VK_ERROR_DEVICE_LOST"
     ],
     "severity": "high",
-    "summary": "Vulkan device lost - GPU stopped responding",
-    "explanation": "RPCS3 reported VK_ERROR_DEVICE_LOST as a fatal. Usually the userspace twin of an Adreno fence timeout, but also fires for Vulkan validation crashes and driver bugs. Pattern matches only the fatal F-line so non-terminal device-lost reports don't promote a still-running session.",
+    "summary": "Graphics device stopped responding",
+    "explanation": "The GPU dropped out mid-frame and the emulator couldn't continue. Usually the same root cause as an Adreno stall.",
     "suggested_changes": [
       {"yaml_key": "  Driver Wake-Up Delay", "new_value": "50"}
     ]
@@ -66,8 +66,8 @@
       "VkPresent returned unexpected error code -4"
     ],
     "severity": "medium",
-    "summary": "Vulkan swapchain died mid-present",
-    "explanation": "vkQueuePresentKHR returned -4 (VK_ERROR_DEVICE_LOST). RPCS3 tries to recreate the swapchain - if that fails the session dies. Often correlates with GPU fence pressure.",
+    "summary": "Display pipeline failed mid-frame",
+    "explanation": "The GPU lost its display surface while presenting a frame and couldn't rebuild it. Often follows heavy GPU strain.",
     "suggested_changes": []
   },
   {
@@ -77,8 +77,8 @@
       "_sys_lwmutex_lock.*failed.*CELL_ESRCH"
     ],
     "severity": "low",
-    "summary": "PPU livelock - lwmutex acquire spamming CELL_ESRCH",
-    "explanation": "Light-weight mutex acquisition spammed CELL_ESRCH (Invalid ID). A single hit is normal at startup; postmortem requires >=10 occurrences in the windowed RPCS3.log tail before treating as a signature, to stay above baseline noise.",
+    "summary": "Game thread got stuck (PPU)",
+    "explanation": "A game thread spun trying to grab a lock and couldn't make progress. Often a transient timing hiccup.",
     "suggested_changes": []
   },
   {
@@ -86,8 +86,8 @@
     "label": "Silent",
     "patterns": [],
     "severity": "high",
-    "summary": "User invoked R3 nuclear recovery",
-    "explanation": "Operator pressed R3 (BTN_THUMBR) to fire bin/recovery.sh. The sentinel at $SHM_DIR/r3_pressed.txt is the source of truth; pattern-matching does not apply. R3 origin is recorded in crash_sig as R3_PANIC; STATUS column shows RECOVERY:<sig_label> when a signature also fired, or RECOVERY:Silent when no signature matched (user-initiated recovery with no detected cause).",
+    "summary": "Manual recovery (R3)",
+    "explanation": "You pressed the R3 panic button to recover from a freeze or hang. No automatic crash cause was detected for this session.",
     "suggested_changes": []
   },
   {
@@ -95,8 +95,8 @@
     "label": "Thermal",
     "patterns": [],
     "severity": "medium",
-    "summary": "Possible thermal-related instability",
-    "explanation": "No specific crash signature matched, but peak temperature exceeded ALARM_TEMP. Could be thermal-induced.",
+    "summary": "Likely overheating",
+    "explanation": "No specific crash was detected, but the device hit its thermal alarm temperature during this session - heat was the probable cause. Lower resolution to cut heat output.",
     "suggested_changes": [
       {"yaml_key": "  Resolution Scale", "new_value": "75"}
     ]

@@ -121,7 +121,7 @@
     "type": "int",
     "min": 1,
     "max": 800,
-    "step": 50
+    "step": 25
   },
   {
     "label": "Relaxed ZCULL Sync",

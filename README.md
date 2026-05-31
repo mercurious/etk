@@ -30,20 +30,10 @@ Captured on-device with the ETK's `L1` screenshot shutter — MangoHUD overlay i
 
 *GT6 — Trial Mountain, same ivy tunnel as the hero shot but a different race: Position 2/6, Lap 2/2, Mini Cooper at 97 mph. HUD: `VULKAN 15FPS 68.9ms BATT 66% ETK 79° 11.96 96% 138+ 28.6k 261MB` — **138 shaders harvested** by lap 2 because the cache from earlier laps is already paying out.*
 
-<img src="docs/screenshots/etk_NPUA80075_20260526_174936.png" width="600"
-     alt="Gran Turismo 5 Prologue race start at a bridge section; tachometer prominent, gear 4 at 100 mph, position 15 of 16 lap 1 of 1" />
-
-*GT5P — High Speed Ring start, Position 15/16, Lap 1/1, gear 4 at 100 mph. HUD: `VULKAN 13FPS 79.8ms BATT 75% ETK 75° 9.13 98% 0+ 19.0k 172MB`. The ETK primary target — 19.0k shaders already in the vault from prior sessions, so the `0+` confirms a fully-cached run.*
-
 <img src="docs/screenshots/etk_NPUA80075_20260526_132352.png" width="600"
      alt="GT5P Suzuka start grid, position 6 of 12 lap 1 of 3, red sedan rival ahead, Honda and Bridgestone trackside signage, speed 101" />
 
 *GT5P — Suzuka Circuit start grid, Position 6/12, Lap 1/3, gear 3 at 101 mph. HUD: `VULKAN 22FPS 45.9ms BATT 48% ETK 75° 7.66 -95% 0+ 19.0k 172MB`. Honda / Bridgestone / Potenza trackside — daylight Suzuka renders cleanly on the cached set.*
-
-<img src="docs/screenshots/etk_NPEA00502_20260526_164147.png" width="600"
-     alt="GT6 cockpit view from inside a BMW GT3-style car at Spa-Francorchamps; analog dashboard at speed 83, ETK HUD strip on top reading 238 shaders banked" />
-
-*GT6 — Spa-Francorchamps, Lap 1 of 2, BMW GT3 cockpit at 83 mph. HUD: `VULKAN 8FPS 127.5ms BATT 68% ETK 75° 11.42 97% 238+ 29.2k 267MB` — **238 new shaders this session.** The in-cockpit digital dashboard and the ETK DDU strip cohabit the frame; two telemetry systems, one for the simulated car, one for the real one underneath it.*
 
 <img src="docs/screenshots/etk_NPUA80075_20260526_132550.png" width="600"
      alt="GT5P Suzuka chase cam, blue Nissan Skyline GT-R approaching a sweeping corner, mini-map visible, position 12 of 12 lap 2 of 3" />
@@ -139,18 +129,69 @@ Using mDNS, Rocknix advertises itself on the LAN as `<SOC>.local` (e.g. `SM8250.
 
 4. Reboot and start harvesting shaders. 
 
+# How to use the ETK
+Getting installed is the hard part. Now you have a track-day setup to attempt the previously impossible. You might not make it across the finish line your first attempt. But keep at it and you will.
+
+## The Heads-Up Display
+Designed to feel like a race car Driver Data Unit style dashboard (DDU). From left-to-right, the instruments are:
+frametime|framerate|battery|ETK|temp|load|ram|shaders
+
+### The custom display has a 3-step startup sequence. The duration can be edited in `etk.conf`
+1. Shows the installation mode of the ETK: FULL, LITE or RAW|the game ID number|and the shader vault being loaded.
+2. Shows the labels of the main instruments without shader info.
+3. Minimizes instrument labels to include shader count and vault size.
+
+### Gauge Indicators
+- The TEMP gauge will show `HOT` when you are getting close to overheating.
+  - It will show `OVERHEAT - REBOOT` when you trigger the thermal protection system.
+- The core LOAD and RAM gauges have 3-step meters: `»--` `»»-` `»»»`
+   - Don't think of these as proportional to the numbers,
+   - Instead, think of these as your "system overhead" and when you are maxed out with all three segments, you are pushing the device to its known limits.
+
+## The ETK Punch Box
+Custom buttons to get you around the track at dangerous speeds.
+`L3` toggles the HUD to top or bottom
+`R3` is your crash panic button. Reboot when you return to Rocknix ES front-end to prep for another race attempt.
+`L1` is your single-finger camera-shutter screenshot, configurable in ETK Pitstop app.
+If you cause a *kernel panic* the ETK Recovery function will not work. Hold the `POWER` button down until the device reboots to the Retroid Pocket logo. 
+
+## The ETK Pitstop Rocknix App
+Found in the Rocknix ES front-end Tools carousel item.
+
+### ETK Telemetry
+#### Career
+Shows total playtime, number of sessions, percent clean (no crashes), crash stats (recovery/panic)
+Number of shaders banked, avg shaders per session, clean streak (best streak)
+#### Ledger
+TIME|STATUS|DURATION|RAM|LOAD|TEMP|BATTERY DRAIN|SHADERS HARVESTED
+Records every session and tuning change from the Tuning tab.
+#### Session Detail View
+##### Clean View
+Shows Duration and telemetry summary
+##### Crash View
+Shows crash type with explanation, peak stats, and **suggested Tuning fixes**.
+
+### ETK Tuning
+Easily tweak emulation settings on the device. The subset of RPSC3 settings included can be customized in `config/pitstop_fields.json`
+
+### ETK Tools
+1. Easily install PS3 packages. Follow the on screen instructions and overlays during the automated process.
+2. Easily uninstall PS3 packages
+3. Configure the screenshot tool's `L1` single-finger camera-shutter feature to work always, on in-game, or never. The `SELECT` + `dpad-up` combo will continue to take ETK style screenshots.
+
 ## Getting Started with Rocknix Pro-tips
 ### To boot into Rocknix running on an SD card with Android as the default OS:
 1. Start the device in Android and reboot. 
 1. Before Retroid Pocket logo appears, hold down the Volume-Up button and let go as soon as you see the U-Boot logo (a little submarine icon in the corner)
-### To always boot into Rocknix as the default OS
+### To always boot into Rocknix as the default OS:
 1. Hold Volume-Down button while starting device to open loader menu
 1. Use volume button to switch `Android` to `bootloader` and use the power button to set it.
 1. Use the same process to revert back to Android.
-### To share games between Rocknix and Android
+### To share games between Rocknix and Android:
 1. Store your games in `/storage/games-internal/roms/` and see [Rocknix documentation](https://rocknix.org/play/add-games/) for further details.
 1. Let your Android apps gain permissions for this folder.
-### To access your card after installing Rocknix, your PC or Mac will no longer read the card through an SD card reader over USB because of its Rocknix partition. Try one of these options instead: 
+### To access your card after installing Rocknix:
+Your PC or Mac will no longer read the card through an SD card reader over USB because of its Rocknix partition. Try one of these options instead: 
 1. Use SMB in Windows or macOS to mount SM8250 as a drive
 1. Use an SFTP client
 1. Use [Rocknix USB-GADGET mode](https://rocknix.org/play/add-games/#option-2-usb-gaget-modes).

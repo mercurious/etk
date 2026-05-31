@@ -758,7 +758,7 @@ def _draw_footer(stdscr, h, w, current_tab, status):
         if current_tab == CURRENT_TAB_TUNING:
             footer = "DPAD UP/DN: Move  LT/RT: Change  B: Save  A: Quit  L1/R1: Tabs"
         elif current_tab == CURRENT_TAB_TELEMETRY:
-            footer = "DPAD: Select  A: Detail  B: Back/Quit  L1/R1: Tabs"
+            footer = "DPAD: Select  A: Back/Quit  B: Detail  L1/R1: Tabs"
         else:
             footer = "DPAD UP/DN: Move  B: Select  A: Back  L1/R1: Tabs"
         stdscr.addstr(h - 2, 4, footer[:w - 6], curses.A_BOLD)
@@ -1502,11 +1502,15 @@ def _draw_session_detail(stdscr, state, sessions, config_changes):
     status = row["status"]
     is_crash = status.startswith("RECOVERY") or status == "PANIC"
     # crash_sig may stack multiple signatures, comma-joined (e.g.
-    # "R3_PANIC,GPU_FENCE_TIMEOUT"). Resolve each component against the
-    # catalog; the first match is primary (drives summary + severity).
+    # "R3_PANIC,GPU_FENCE_TIMEOUT"). Resolve each against the catalog, then
+    # float the real CAUSE to the front: R3_PANIC ("how recovery fired") and
+    # THERMAL_INFERRED ("a guess") are meta-signals, not diagnoses, so they
+    # never headline a card when a concrete cause is also present.
+    _META_SIGS = ("R3_PANIC", "THERMAL_INFERRED")
     _cat = _load_crash_sigs()
     _components = [c.strip() for c in row.get("crash_sig", "").split(",") if c.strip()] if is_crash else []
     _matched = [_cat[c] for c in _components if c in _cat]
+    _matched.sort(key=lambda s: s.get("id") in _META_SIGS)  # stable: causes first, meta last
     sig = _matched[0] if _matched else None
     sev = f"   [{sig['severity'].upper()}]" if sig and sig.get("severity") else ""
 
@@ -1524,8 +1528,15 @@ def _draw_session_detail(stdscr, state, sessions, config_changes):
             put(y, 2, sig.get("summary", ""), curses.A_BOLD); y += 1
             for ln in _wrap_text(sig.get("explanation", ""), w - 6, max_lines=4):
                 put(y, 2, ln, curses.A_DIM); y += 1
-            if len(_components) > 1:
-                put(y, 2, "Signatures: " + ", ".join(_components), curses.A_DIM); y += 1
+            # Friendly secondary line: labels of any OTHER concrete causes,
+            # plus an explicit manual-recovery note when R3 fired but isn't
+            # the headline. No raw signature IDs in the player-facing card.
+            others = [m.get("label") or m.get("id") for m in _matched
+                      if m is not sig and m.get("id") not in _META_SIGS]
+            if others:
+                put(y, 2, "Also flagged: " + ", ".join(others), curses.A_DIM); y += 1
+            if sig.get("id") != "R3_PANIC" and any(m.get("id") == "R3_PANIC" for m in _matched):
+                put(y, 2, "Recovered manually (R3).", curses.A_DIM); y += 1
         else:
             put(y, 2, f"No crash-signature record for '{row.get('crash_sig','') or 'unknown'}'.",
                 curses.A_BOLD); y += 1
