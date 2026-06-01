@@ -171,7 +171,8 @@ Found in the Rocknix ES front-end Tools carousel item.
 <img src="docs/screenshots/etk_ROCKNIX_20260531_191740.png" width="600" alt="ETK Pitstop App Crash Detail View" />
  
 ### ETK Tuning
-Easily tweak emulation settings on the device. The subset of RPSC3 settings included can be customized in `config/pitstop_fields.json`
+Easily tweak emulation settings on the device. The subset of RPSC3 settings can be customized in `config/pitstop_fields.json`
+
 <img src="docs/screenshots/etk_ROCKNIX_20260526_132607.png" width="600"
      alt="ETK Pitstop TUNING tab for GT5P: RPCS3 settings list including Audio Backend FAudio, PPU Threads 2, Resolution Scale 75, Frame Limit 30, Shader Mode Async Recompiler with Shader Interpreter" />
 
