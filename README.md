@@ -95,15 +95,6 @@ Snapshot of per-game status from on-device testing. Full tuning history, panic-l
 1. Install, configure, repair, and uninstall the kit remotely from a computer (`install.sh` and `uninstall.sh`) with mDNS autodiscovery of supported devices on your local network.
 1. Multi-Installation Options: FULL installation for initial shader harvesting and tuning, LITE installation for saturated shader sets with thermal protection only, RAW for stress testing without shader and thermal protections (`ETK_BUILD_TYPE` in `etk.conf`)
 
-## ETK Quick Commands
-| Gamepad Button | ETK Command | Button Description | Details |
-|---|---|---|---|
-| `L1` | **screenshot** | left top trigger button | **Requires in-game un-binding/un-mapping**. Screenshots stored at `/storage/roms/etk/screenshots`, `install.sh` syncs `etk/screenshots`. Disable `L1` one-finger trigger feature in ETK Pitstop > TOOLS > `3. Screeshot on L1: disabled` and use two-handed `SELECT` + `D-pad-up` instead. |
-| `L3` | **DDU HUD** | left analog button | Toggles ETK DDU dashboard between top and bottom of screen |
-| `R3` | **PANIC RECOVERY** | right analog button | Recover from a crash or freeze. Reboot recommended after returning to Rocknix ES frontend. |
-
-Full chord reference (SELECT combos, screenshot fallback, thermal failsafe details) in [Custom ETK Gamepad Specifications](#custom-etk-gamepad-specifications) below.
-
 # Getting Started
 1. [Flash](https://rocknix.org/play/install/) a [Rocknix nightly build](https://github.com/ROCKNIX/distribution-nightly/releases) (see the exact build in [ETK System Requirements](#etk-system-requirements) above) to your handheld's SD card and complete its first-time setup so the rig joins your WiFi. 
 If you've already installed Rocknix, simply press `START` `UPDATES & DOWNLOADS` `UPDATE BRANCH` and switch to `NIGHTLY` and then let the auto-update complete and reboot first. 
@@ -129,7 +120,7 @@ Using mDNS, Rocknix advertises itself on the LAN as `<SOC>.local` (e.g. `SM8250.
 
 4. Reboot and start harvesting shaders. 
 
-# How to use the ETK
+# ETK Track Manual
 Getting installed is the hard part. Now you have a track-day setup to attempt the previously impossible. You might not make it across the finish line your first attempt. But keep at it and you will.
 
 ## The Heads-Up Display
@@ -151,10 +142,17 @@ The custom display has a 3-step startup sequence. The duration can be edited in 
 
 ## The ETK Punch Box
 Custom buttons to get you around the track at dangerous speeds.
-- `L3` toggles the HUD to top or bottom
-- `R3` is your crash panic button. Reboot when you return to Rocknix ES front-end to prep for another race attempt.
-- `L1` is your single-finger camera-shutter screenshot, configurable in ETK Pitstop app.
-- `POWER` If you cause a *kernel panic* the ETK Recovery function will not work. Hold the `POWER` button down until the device reboots to the Retroid Pocket logo. 
+| Gamepad Button | ETK Command | Button Description | Details |
+|---|---|---|---|
+| `L1` | **single-finger screenshot** | left top trigger button | **Requires in-game un-binding/un-mapping**. Screenshots stored at `/storage/roms/etk/screenshots`, `install.sh` syncs `etk/screenshots`. Disable `L1` one-finger trigger feature in ETK Pitstop > TOOLS > `3. Screeshot on L1: disabled` and use two-handed `SELECT` + `D-pad-up` instead. |
+| `L3` | **DDU HUD** | left analog button | Toggles ETK DDU dashboard between top and bottom of screen |
+| `R3` | **PANIC RECOVERY** | right analog button | Recover from a crash or freeze. Reboot recommended after returning to Rocknix ES frontend. |
+| `POWER` | **Kernel Panic** | device's power button | If you cause a *kernel panic* the ETK Recovery function will not work. Hold the `POWER` button down until the device reboots to the Retroid Pocket logo. |
+
+### Full chord reference:
+- `SELECT` + `D-pad Up`: ETK SCREENSHOT (UI/menu fallback). Same capture as `L1` above; use this in Pitstop / EmulationStation / dealership / pause menu contexts where L1 has unwanted side effects (Pitstop tab nav). Not recommended in-race — SELECT also triggers the game's camera view toggle, so the captured frame will catch mid-transition.
+- `SELECT` + `D-pad Right`: manual VAULT command (force a shader-vault tick)
+- `SELECT` + `D-pad Left`: MangoHUD config reload signal
 
 ## The ETK Pitstop Rocknix App
 Found in the Rocknix ES front-end Tools carousel item.
@@ -168,10 +166,17 @@ Found in the Rocknix ES front-end Tools carousel item.
   - Records every session and tuning change from the Tuning tab.
 - Session Detail View
   - Clean View: Shows Duration and telemetry summary
+  <img src="docs/screenshots/etk_ROCKNIX_20260531_191734.png" width="600 alt="ETK Pitstop App Clean Detail View" />  
   - Crash View: Shows crash type with explanation, peak stats, and **suggested Tuning fixes**.
-
+  <img src="docs/screenshots/etk_ROCKNIX_20260531_191740.png" width="600 alt="ETK Pitstop App Crash Detail View" />
+ 
 ### ETK Tuning
 Easily tweak emulation settings on the device. The subset of RPSC3 settings included can be customized in `config/pitstop_fields.json`
+<img src="docs/screenshots/etk_ROCKNIX_20260526_132607.png" width="600"
+     alt="ETK Pitstop TUNING tab for GT5P: RPCS3 settings list including Audio Backend FAudio, PPU Threads 2, Resolution Scale 75, Frame Limit 30, Shader Mode Async Recompiler with Shader Interpreter" />
+
+*ETK Pitstop TUNING tab for GT5P. The on-board subset of RPCS3 settings most relevant to per-game tuning, gamepad-editable in place. The exposed field set is defined in `config/pitstop_fields.json` — extend or trim per device. `B` saves to the per-game config; `L1`/`R1` cycle tabs.*
+
 
 ### ETK Tools
 1. Easily install PS3 packages. Follow the on screen instructions and overlays during the automated process.
@@ -226,12 +231,6 @@ ETK Pitstop's TELEMETRY tab shows the per-game session ledger of the last game l
 2. Re-run `./install.sh` after any `etk.conf` edit to push changes to the rig.
 3. Reboot the rig once to activate the ETK Pitstop entry in the Rocknix Tools menu.
 
-In-place tuning happens on-device — the Pitstop TUNING tab exposes the RPCS3 settings most useful for per-game tuning, gamepad-editable in place:
-
-<img src="docs/screenshots/etk_ROCKNIX_20260526_132607.png" width="600"
-     alt="ETK Pitstop TUNING tab for GT5P: RPCS3 settings list including Audio Backend FAudio, PPU Threads 2, Resolution Scale 75, Frame Limit 30, Shader Mode Async Recompiler with Shader Interpreter" />
-
-*ETK Pitstop TUNING tab for GT5P. The on-board subset of RPCS3 settings most relevant to per-game tuning, gamepad-editable in place. The exposed field set is defined in `config/pitstop_fields.json` — extend or trim per device. `B` saves to the per-game config; `L1`/`R1` cycle tabs.*
 
 ## ETK File Structure
 - `AI_MANIFEST.md`: System Manual and Immutable Laws of ETK Development for AI
@@ -271,20 +270,6 @@ In-place tuning happens on-device — the Pitstop TUNING tab exposes the RPCS3 s
 - `/dossiers`: Design dossiers driving the architecture (device-agnostic profile, rig self-update feasibility, telemetry, etc.).
 - `/docs`: Public-facing assets including the screenshot gallery used by this README.
 - `/vault`: Local mirror of the harvested shader bank, organised as `vault/<CHIPSET>/<GAME_ID>/shaders/` (gitignored; populated by `install.sh` Tier-A sync).
-
-## Custom ETK Gamepad Specifications
-- Reserved:
-  - `START` + `SELECT` + `R1` = Native Rocknix force quit
-  - `HOME` = RPCS3 menu
-  - `SELECT` = GT5P camera view toggle
-- Implemented:
-	- `R3` = PANIC BUTTON RECOVERY COMMAND (headless on-device Nuclear Recovery, single press)
-	- `L3` = MangoHUD position toggle (top-left ⇄ bottom-left), auto-remembered per game. Bottom-left is the dashboard default; flip to top-left for games whose HUD elements crowd the bottom edge (e.g. GT5P). Sentry applies the per-game preference at ignition.
-	- `L1` = ETK SCREENSHOT (in-race recommended). Silent `grim` capture of the full Wayland surface — **MangoHUD overlay included**, which is the whole point (RPCS3's internal screenshot strips the HUD). Single-button trigger so no chord pass-through to the game. **Onboarding pre-flight:** unbind `L1` in each PS3 game's controls (in GT5P/GT6 it defaults to Rear View camera toggle. Doing this is a natural part of the first-launch settings to disable audio. Shots land in `/storage/games-internal/roms/etk/screenshots/` as `etk_<gameID>_<YYYYMMDD>_<HHMMSS>.png`, instantly visible via the `[games-internal]` SMB share at `\\<rig-ip>\games-internal\roms\etk\screenshots\`. Backed up to the host on every `install.sh`.
-	- `SELECT` + `D-pad Up` = ETK SCREENSHOT (UI/menu fallback). Same capture as L1 above; use this in Pitstop / EmulationStation / dealership / pause menu contexts where L1 has unwanted side effects (Pitstop tab nav). Not recommended in-race — SELECT also triggers the game's camera view toggle, so the captured frame will catch mid-transition.
-	- `SELECT` + `D-pad Right` = manual VAULT command (force a shader-vault tick)
-	- `SELECT` + `D-pad Left` = MangoHUD config reload signal
-	- Thermal failsafe (internal): on overheat, the rig auto-drops to PIT (capped CPU/GPU), the HUD reads `OVERHEAT - REBOOT`, and a cold-boot is the prescribed recovery path to fully restore overdrive performance.
 	
 # FAQ: What is the ETK and How Does it Really Work?
 - **To enhance how the built-in PS3 emulator handles shader caching,** the ETK intercepts the Vulkan shader cache with a simple symlink and safely stores these files into a vault folder on your SD card organized by device and game ID so they can be archived and shared. Even when you crash during a shader harvesting run, the vault has saved the shaders for the next run.
@@ -295,24 +280,6 @@ In-place tuning happens on-device — the Pitstop TUNING tab exposes the RPCS3 s
 - **To simplify managing game shader vaults and software updates,** the ETK includes a simple command-line utility to install, repair, update, and automatically sync shader vaults as you harvest from games or trade device and game-specific shader folders with others. It also includes an uninstall utility to retire from the league. A typical game 300+ MB shader vault will involve tens of thousands of binary files so an efficient transfer mechanism to manage shader sets between a computer and the handheld devices is essential.
 - ETK does all of this while trying to maintain a **minimal system footprint without subjecting your SD card to abuse.**
 
-### Shader storm — the vault writes even when frames fall
-Picking up from the hero shot at the top of this README — same race, same Mini Cooper, twenty seconds later. The GPU floods compiling new shaders for the tunnel lighting and frametime climbs. FPS bottoms out at 5 (`194.9 ms` frametime) yet the kit keeps the vault writing — shader count jumps from `12+` (at the hero shot) to `48+` across the storm, ETK temp holds 78–81°C, battery flat at 49%. The next lap through this tunnel runs on the harvested cache.
-
-<img src="docs/screenshots/etk_NPEA00502_20260526_195230.png" width="600"
-     alt="GT6 chase cam inside the tunnel: motion-blurred opponents in yellow tunnel lights; ETK HUD bottom shows 9 FPS, 48 shaders banked" />
-
-*Inside the tunnel, opponents motion-blurred at speed. `VULKAN 9FPS 109.9ms BATT 49% ETK 79° 13.13 97% 48+ 29.5k 270MB`.*
-
-<img src="docs/screenshots/etk_NPEA00502_20260526_195239.png" width="600"
-     alt="GT6 chase cam closing on two opponents deep in the tunnel; deepest stutter of the sequence at 5 FPS, ETK HUD shows 48 shaders banked, GPU 81 degrees" />
-
-*Peak shader storm, 5 FPS / **194.9 ms frametime**, still rendering. `VULKAN 5FPS 194.9ms BATT 49% ETK 81° 12.40 97% 48+ 29.5k 270MB`.*
-
-<img src="docs/screenshots/etk_NPEA00502_20260526_195242.png" width="600"
-     alt="GT6 chase cam emerging from the tunnel onto dappled sunlit tarmac; ETK HUD shows recovery to 8 FPS, 48 shaders still banked, GPU dropping back to 78 degrees" />
-
-*Emerging onto open tarmac, frame budget recovers to 127 ms. `VULKAN 8FPS 127.0ms BATT 49% ETK 78° 11.89 97% 48+ 29.5k 270MB`. The cache is now permanent.*
-
 # Warnings and Recommendations
 - Requires the patience and dedication of race car drivers. You will crash. But you will also win races that could otherwise not be played. ETK doesn't magically make your device run PS3 emulation, it only gives it a fighting chance with professional grade tools and system tunings. Shader sharing spares other players the harvest.
 - Requires the exact Rocknix Nightly specified above. This does not work on the official release nor has it been tested or updated for other Rocknix nightly builds.
@@ -321,25 +288,8 @@ Picking up from the hero shot at the top of this README — same race, same Mini
 - OS updates, ETK uninstalls and other major system events may require a PPU recompilation which do take time. Putting the device on an ice pack or in the refrigerator will reduce thermal stress on the system during these intensive operations. 
 - The ETK is designed with community shader sharing in mind.
 	  
-# Project History
-- Phase 1: MVP proof-of-concept: now deprecated monolithic mvp/commander.sh achieved initial shader cache accumulation downscaled with no audio, essential commands and Excitebike UX proofed
-- Phase 2: Modular professional grade deployable ETK: shader cache successfully upscaled
-- Phase 3: Enabled on-board MangoHUD DDU: integrated live instrumentation
-- Phase 4: Enabled Gamepad ETK pit controls: full un-tethered racing and shader harvesting
-- Phase 5: Solved SD card treadwear and Rocknix reboot persistence with RAM disk support
-- Phase 6: First successful Rocknix OS nightly migration 20260511
-- Phase 7: Enabled robust crash reporting, diagnosis, advisory, ETK install tiers
-- Phase 8: Attempted experimental incremental audio support
-- Phase 9: Enabled game agnostic ETK
-- Phase 10: Onboard ETK Commands: `R3` as Recovery Panic Button and headless Nuclear Recovery from crashes
-- Phase 11: Onboard ETK Commands: `L3` as MangoHUD screen position toggle
-- Phase 12: Developing native Rocknix ETK app for utilities (Tools or carousel UI)
-- Phase 13: Alpha Testing
-- Phase 14: Develop tuning and shader sharing; Rig self-updates ETK from GitHub in Pitstop App
-- Phase 15: Beta Testing
-
 # Windows Install Guide
-## (alpha-tester preview)
+## alpha-tester preview
 
 Two ways to run the ETK host tooling from Windows:
 
