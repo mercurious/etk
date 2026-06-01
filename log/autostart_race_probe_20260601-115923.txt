@@ -1,0 +1,45 @@
+ETK AUTOSTART ↔ MANGOHUD RACE PROBE — empirical artifact
+Generated: 20260601-115923   Rig: root@SM8250.local   Boot: 2026-06-01 11:35:04
+========================================================
+
+(A) AUTOSTART TIMING (seconds since boot)
+    rocknix-autostart.service    start=7.735    exit=12.013   active=12.013  
+    etk.service                  start=7.732    exit=n/a      active=7.732   
+    sway.service                 start=12.030   exit=n/a      active=12.030  
+    essway.service               start=12.032   exit=n/a      active=12.032  
+    emustation.service           start=n/a      exit=n/a      active=n/a     
+
+    /storage/.config/autostart/ contents:
+      090-sway-hdmi-resolution
+    ETK scripts in autostart dir: 0 (0 = ETK does NOT use autostart)
+
+    Journal handoff (autostart's last act is launching the UI):
+      [    7.734683] SM8250 systemd[1]: Starting rocknix-autostart.service...
+      [    9.964784] SM8250 bash[1806]: cp: can't stat '/usr/share/weston/kiosk.ini': No such file or directory
+      [    9.973667] SM8250 bash[1810]: sed: /storage/.config/weston.ini: No such file or directory
+      [   11.982225] SM8250 Starting[2479]: sway.service essway.service...
+      [   11.994072] SM8250 Autostart[2503]: complete...
+      [   12.013137] SM8250 systemd[1]: Finished rocknix-autostart.service.
+
+(B) MANGOHUD OWNERSHIP
+    mangohud references in /usr/bin/runemu.sh (game-launch wrapper): 7
+    mangohud processes running now: 0
+    emulator processes running now: 0
+    => MangoHud is loaded by runemu.sh at GAME LAUNCH (LD_PRELOAD into the
+       emulator), not at boot. With no emulator running it is absent.
+
+(C) VERDICT
+    autostart finished at +12.013s into boot and its final action
+    starts the UI. MangoHud only appears at a later, user-initiated game launch.
+    The two windows do not overlap.
+
+    CLAIM: 'autostart ... causes race conditions with MangoHud'  →  UNSUPPORTED.
+      - autostart runs at boot and GATES the UI (ordered Before= the UI service);
+        it is not 'tied to the UI load sequence' in the sense of running with/after it.
+      - MangoHud is a game-launch overlay; there is no shared time window to race in.
+      - ETK does not even use autostart (etk.service in /storage/.config/system.d/).
+
+    WHAT IS REAL (the correct reason to keep daemons OUT of autostart):
+      autostart is SYNCHRONOUS and on the critical chain to the UI. A long-running
+      or blocking script dropped there delays UI bring-up. A persistent supervisor
+      therefore belongs in its own systemd unit — which is what ETK already does.

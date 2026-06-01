@@ -16,6 +16,8 @@
 
 ## Enhancements
 
+- **Modernize `etk_pitstop.sh` injection — replace the Sentry polling tripwire with a systemd `.path` unit (2026-06-01).** Sourced from the ROCKNIX `next` branch: the Sentry's 2s loop does two jobs, and only emulator-ignition detection genuinely needs polling (`runemu.sh` exposes no pre/post-game hook — confirmed). The volatile-dir re-injection of `etk_pitstop.sh` into `/storage/.config/modules/` can move to an inotify `.path` unit — the exact idiom ROCKNIX itself uses (`hdmi-hotplug.path`). Win: instant re-injection vs up-to-2s, zero steady-state cost, survives a Sentry crash, and lets the loop's `sleep` widen. Cost: 3 small units + one boot-ordering subtlety (oneshot `After=rocknix-autostart.service` + `.path` as suspenders). Keep a `ETK_PATHUNIT_INJECT=0` fallback to the legacy in-loop tripwire. The volatile wipe itself is unavoidable (`001-sync-modules` rsyncs `--delete` from read-only squashfs). Full design, tradeoffs, risks, acceptance criteria, and ~1-sprint phased plan in `dossiers/PitstopInjectionPathUnitFeasibility.md`.
+
 - Add a character highlight in ledger for sessions that resulted in shaders despite a crash to highlight their productivity vs sessions that crash without shaders
 
 - Add a second HUD sequence during loading to briefly show instrumentation labels

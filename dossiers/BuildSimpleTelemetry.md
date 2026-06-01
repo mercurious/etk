@@ -460,7 +460,7 @@ The TELEMETRY tab reads `$PIT_NOTE_FILE` if it exists and renders it as the bott
 
 For the MVP: `pit_note.txt` simply doesn't exist on first install. The UI renders without the block. Done.
 
-Future generation paths (DO NOT BUILD): either host-side via `pit_wall_sync.sh` pinging an LLM and writing back, or rig-side via a future `pit_engineer_d.py`. Both are designed elsewhere; both are explicitly deferred.
+Future generation paths (DO NOT BUILD): either host-side (the old `pit_wall_sync.sh` Google-Drive bridge — now deprecated to `_archive/`) pinging an LLM and writing back, or rig-side via a future `pit_engineer_d.py`. Both are designed elsewhere; both are explicitly deferred.
 
 If you encounter a `pit_note.txt` during testing (manually created), the UI should render its contents as-is in the bottom block, word-wrapped to fit within ~70 cols, capped at ~4 lines visible (truncate with `…` if longer).
 

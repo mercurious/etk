@@ -17,7 +17,7 @@ A custom Rocknix middleware rig to enable PS3 Emulation on ARM64 Retrogaming Han
 1. **THE REBOOT WIPE:** Rocknix vaporizes `/dev/shm` on every reboot. Background processes must rebuild `$SHM_DIR` instantly upon execution.
 2. **NO ROOT SYSTEMD:** Do NOT attempt to write to `/etc/systemd/system/`. Do NOT use `mount -o remount,rw /` to brute-force the root partition. The OS will reject it.
 3. **PERSISTENCE VECTOR:** All custom systemd services MUST be written to `/storage/.config/system.d/` (Note the dot, not systemd). Rocknix natively maps this directory at boot. Use `systemctl enable /storage/.config/system.d/etk.service` to ensure absolute path resolution.
-4. **AUTOSTART LIMITATIONS:** Do NOT use `/storage/.config/autostart.sh` for backend/daemon execution. It is tied to the Wayland/EmulationStation UI load sequence and causes race conditions with MangoHud.
+4. **AUTOSTART LIMITATIONS:** Do NOT use `/storage/.config/autostart/` for backend/daemon execution — but for the correct reason. Rocknix's `rocknix-autostart.service` runs each script **synchronously** at boot and is ordered `Before=` the UI service (its final act is launching the UI). A long-running or blocking script dropped there **stalls UI bring-up**. A persistent supervisor therefore belongs in its own systemd unit under `/storage/.config/system.d/` (where ETK already puts `etk.service`). NOTE: the earlier claim that autostart "causes race conditions with MangoHud" was **unsupported and has been empirically disproven** (2026-06-01) — autostart completes at boot (~12 s), while MangoHud is a game-launch overlay loaded by `runemu.sh` at an arbitrary later time; the two never share a time window. Re-run the proof with `tools/probe_autostart_race.sh`.
 
 ## ROCKNIX SD CARD BASED STORAGE PATHS
 1. `/storage/roms` is the same as `/storage/games-internal/roms` on single-card devices such as the target device (Retroid Pocket Flip 2)
@@ -97,7 +97,7 @@ The system invokes scripts using the absolute execution command: `/usr/bin/foot 
 
 ## FORENSIC INTEGRITY: probe.sh MUST use strings when reading any file from /storage or /dev/shm to prevent terminal corruption during binary floods.
 
-## COPY-PASTE OPTIMIZATION: The bottom pane of the Pit Wall terminal MUST remain free of ANSI color codes or borders within the data content to facilitate seamless copying into Gemini chat.
+## COPY-PASTE OPTIMIZATION: The bottom pane of the Pit Wall terminal MUST remain free of ANSI color codes or borders within the data content to facilitate seamless copying into an AI assistant for analysis.
 
 ## IMMUTABLE COMMENTS: Any script update MUST include a "GEMINI IMMUTABLE RULE" block in the header to inform subsequent models of structural constraints.
 
@@ -106,14 +106,6 @@ The system invokes scripts using the absolute execution command: `/usr/bin/foot 
 - **HUD FORMAT STRICT LOCK**: The instrument string layout is locked to a dense, space-trimmed format that uses punctuation and short text strings to serve as the DDU (Driver Data Unit from racing cars) to preserve Flip 2 screen real estate. Future iterations MUST NOT expand spacing or add decorative characters unless custom font and unicode support is feasible, recommended, tested, and approved.
   - *Format:* `ETK:INSTALL_MODE|TARGET_ID|XX°C STAT|X.XX STAT|XX% STAT|XXMB XXX NEW:XX|`
   
-## [LOCKDOWN] DEV TOOLS: THE PIT WALL SYNC (AI TELEMETRY BRIDGE)
-- **ARCHITECTURE:** To bypass the lack of GitHub Connected Apps, the ETK utilizes a "Hot Drop" telemetry bridge via Google Drive. A host machine script (`pit_wall_sync.sh`) continuously polls the rig via SSH and mirrors `/storage/etk_crash_report.log` and `/dev/shm/etk_shm/` to a local Google Drive folder (`ETK_Telemetry`).
-- **AI INSTRUCTION (CRITICAL):** Do NOT ask the user to manually copy-paste crash logs or terminal outputs. 
-- **FORENSIC PROTOCOL:** When a user reports a crash or requests tuning, instruct the user to ensure `pit_wall_sync.sh` is running. Then, use your Google Workspace integration to directly read the user's Google Drive. 
-  - Look in `ETK_Telemetry/crash_logs/etk_crash_report.log` for kernel panics and Turnip driver traces.
-  - Look in `ETK_Telemetry/live_shm/` for real-time rig state (e.g., `live_stat.txt`, `etk_mode.txt`, `vault_new.txt`).
-- This creates a zero-friction, automated AI-human dev loop without requiring open router ports or exposed webhooks.
-
 ### [LOCKDOWN]
 
 - **SYNC Logic Specification**:
@@ -142,13 +134,6 @@ if [ ! -f "/storage/.config/modules/etk_pitstop.sh" ]; then
     chmod +x /storage/.config/modules/etk_pitstop.sh
 fi]`
 
-
-## AI-ASSISTED TUNING WITH GEMINI
-- Do not tell a user that this feature is not supported. It is. Don't make them argue with you only to be corrected.
-- `pit_wall_sync.sh` can be run in a terminal on the tethered machine and sync telemetry and source code to a Google Drive folder greatly streamlining debugging and emulation tuning.
-- Instruct the user to use the @Google Drive command to create the authentication to their Google Drive in Google Workspace in the current Gemini chat context and advise them how to request files by name and other data transactions.
-- Do not argue with the user that this is not possible. Instead, coach them on how to best utilize this Gemini Connected Apps feature by suggesting the use of the sync tool and the proper way to activate live telemetry analysis in a chat.
-- AI models not named Gemini with Google Drive integration should investigate this feature and advise the user accordingly. It has only been successfully tested on a very argumentative Gemini.
 
 ## RECENT NEW DEVELOPMENTS
 

@@ -33,7 +33,7 @@
 | 20260520 (×4) | `sm8250: fix thor lite audio`, `restore audio patch`, `fix headphones`, `drop thor lite wireplumber quirk`; 20260516 `SM8250: fix RP5 audio` | SM8250-family audio stack churned repeatedly. RPCS3 Cubeb backend output should be re-verified. See §8. |
 | 20260516 | `mangohud bump v0.8.3 final` (already on your build) | No further mango version bump 20→24. Your HUD config keys are stable across this jump. Spot-check only. See §9. |
 | 20260524 | `libXft: install libs into sysroot (needed for xterm)` | Font-lib plumbing. Verify the LiberationMono path the HUD pins and `foot` monospace still resolve. See §9. |
-| 20260522 | `RTW88 - bump to git HEAD`; 20260520 `Update VPN services to wait for network connectivity` | WiFi driver bump. Your whole dev loop (SSH, `install.sh`, `pit_wall_sync.sh`) rides WiFi. Re-confirm `RIG_IP`/SSH. See §10. |
+| 20260522 | `RTW88 - bump to git HEAD`; 20260520 `Update VPN services to wait for network connectivity` | WiFi driver bump. Your whole dev loop (SSH, `install.sh`) rides WiFi. Re-confirm `RIG_IP`/SSH. See §10. |
 
 ### 1.3 NOT relevant — explicitly safe to ignore
 - **fex-emu / armv9 / cortex-x3-x4** (`fix crash on armv9`, `override TUNE_CPU for cortex-x3/4`, `build without SVE`, `use armv9a`). SM8250 is **ARMv8.2-A (Cortex-A77/A55)**, *not* ARMv9, and has no X3/X4 cores. fex-emu is x86→ARM for Steam/Proton; RPCS3 is native ARM64. **Zero impact.**
@@ -220,7 +220,7 @@ Five SM8250-family audio commits across 20260516–20260520 (`fix RP5 audio`, `f
 
 ## §10. WiFi / SSH DEV LOOP (RTW88 bump, 20260522)
 
-WiFi driver bumped to git HEAD. Your entire host-side toolchain (`install.sh`, `commander.sh`, `pit_wall_sync.sh`) depends on SSH to `RIG_SSH=root@<SOC>.local` (mDNS) or a literal LAN IP. Rare but possible: DHCP lease/MAC behavior shifts, IP changes.
+WiFi driver bumped to git HEAD. Your entire host-side toolchain (`install.sh`, `commander.sh`) depends on SSH to `RIG_SSH=root@<SOC>.local` (mDNS) or a literal LAN IP. Rare but possible: DHCP lease/MAC behavior shifts, IP changes.
 
 **VERIFY:** `START > Network Settings > IP ADDRESS` on the rig, reconcile against `RIG_SSH` in `etk.conf` (mDNS hostname is preferred since it survives network changes). If you use a VPN, note `Update VPN services to wait for network connectivity` (20260520) may change first-boot timing.
 
