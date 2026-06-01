@@ -167,8 +167,8 @@ Found in the Rocknix ES front-end Tools carousel item.
 - Session Detail View
   - Clean View: Shows Duration and telemetry summary
   - Crash View: Shows crash type with explanation, peak stats, and **suggested Tuning fixes**.
-<img src="docs/screenshots/etk_ROCKNIX_20260531_191734.png" width="600 alt="ETK Pitstop App Clean Detail View" />  
-<img src="docs/screenshots/etk_ROCKNIX_20260531_191740.png" width="600 alt="ETK Pitstop App Crash Detail View" />
+<img src="docs/screenshots/etk_ROCKNIX_20260531_191734.png" width="600" alt="ETK Pitstop App Clean Detail View" />  
+<img src="docs/screenshots/etk_ROCKNIX_20260531_191740.png" width="600" alt="ETK Pitstop App Crash Detail View" />
  
 ### ETK Tuning
 Easily tweak emulation settings on the device. The subset of RPSC3 settings included can be customized in `config/pitstop_fields.json`
