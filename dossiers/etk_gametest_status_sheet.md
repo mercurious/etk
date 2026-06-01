@@ -8,7 +8,7 @@
 - Known Issues: Track surface flickers. Write Color Buffers does not fix.
 - Comment: The primary ETK target game.
 
-## NPEA90002 GRAN TURISMO HD
+## NPEA90002 GRAN TURISMO HD CONCEPT
 - Saturation: Highly Saturated
 - Playability: Possible to progress and all cars unlocked.
 - Durability: Highly durable, FPS 20-30
