@@ -95,6 +95,23 @@ Snapshot of per-game status from on-device testing. Full tuning history, panic-l
 1. Install, configure, repair, and uninstall the kit remotely from a computer (`install.sh` and `uninstall.sh`) with mDNS autodiscovery of supported devices on your local network.
 1. Multi-Installation Options: FULL installation for initial shader harvesting and tuning, LITE installation for saturated shader sets with thermal protection only, RAW for stress testing without shader and thermal protections (`ETK_BUILD_TYPE` in `etk.conf`)
 
+## Getting Started with Rocknix Pro-tips
+### To boot into Rocknix running on an SD card with Android as the default OS:
+1. Start the device in Android and reboot. 
+1. Before Retroid Pocket logo appears, hold down the Volume-Up button and let go as soon as you see the U-Boot logo (a little submarine icon in the corner)
+### To always boot into Rocknix as the default OS:
+1. Hold Volume-Down button while starting device to open loader menu
+1. Use volume button to switch `Android` to `bootloader` and use the power button to set it.
+1. Use the same process to revert back to Android.
+### To share games between Rocknix and Android:
+1. Store your games in `/storage/games-internal/roms/` and see [Rocknix documentation](https://rocknix.org/play/add-games/) for further details.
+1. Let your Android apps gain permissions for this folder.
+### To access your card after installing Rocknix:
+Your PC or Mac will no longer read the card through an SD card reader over USB because of its Rocknix partition. Try one of these options instead: 
+1. Use SMB in Windows or macOS to mount SM8250 as a drive
+1. Use an SFTP client
+1. Use [Rocknix USB-GADGET mode](https://rocknix.org/play/add-games/#option-2-usb-gaget-modes).
+
 # Getting Started
 1. [Flash](https://rocknix.org/play/install/) a [Rocknix nightly build](https://github.com/ROCKNIX/distribution-nightly/releases) (see the exact build in [ETK System Requirements](#etk-system-requirements) above) to your handheld's SD card and complete its first-time setup so the rig joins your WiFi. 
 If you've already installed Rocknix, simply press `START` `UPDATES & DOWNLOADS` `UPDATE BRANCH` and switch to `NIGHTLY` and then let the auto-update complete and reboot first. 
@@ -178,28 +195,10 @@ Easily tweak emulation settings on the device. The subset of RPSC3 settings can 
 
 *ETK Pitstop TUNING tab for GT5P. The on-board subset of RPCS3 settings most relevant to per-game tuning, gamepad-editable in place. The exposed field set is defined in `config/pitstop_fields.json` — extend or trim per device. `B` saves to the per-game config; `L1`/`R1` cycle tabs.*
 
-
 ### ETK Tools
 1. Easily install PS3 packages. Follow the on screen instructions and overlays during the automated process.
 2. Easily uninstall PS3 packages
 3. Configure the screenshot tool's `L1` single-finger camera-shutter feature to work always, on in-game, or never. The `SELECT` + `dpad-up` combo will continue to take ETK style screenshots.
-
-## Getting Started with Rocknix Pro-tips
-### To boot into Rocknix running on an SD card with Android as the default OS:
-1. Start the device in Android and reboot. 
-1. Before Retroid Pocket logo appears, hold down the Volume-Up button and let go as soon as you see the U-Boot logo (a little submarine icon in the corner)
-### To always boot into Rocknix as the default OS:
-1. Hold Volume-Down button while starting device to open loader menu
-1. Use volume button to switch `Android` to `bootloader` and use the power button to set it.
-1. Use the same process to revert back to Android.
-### To share games between Rocknix and Android:
-1. Store your games in `/storage/games-internal/roms/` and see [Rocknix documentation](https://rocknix.org/play/add-games/) for further details.
-1. Let your Android apps gain permissions for this folder.
-### To access your card after installing Rocknix:
-Your PC or Mac will no longer read the card through an SD card reader over USB because of its Rocknix partition. Try one of these options instead: 
-1. Use SMB in Windows or macOS to mount SM8250 as a drive
-1. Use an SFTP client
-1. Use [Rocknix USB-GADGET mode](https://rocknix.org/play/add-games/#option-2-usb-gaget-modes).
 
 ## How to Install PS3 Games with the ETK
 The ETK solves the problem of installing PS3 Packages on Rocknix which is otherwise a ridiculous process.
@@ -231,7 +230,6 @@ ETK Pitstop's TELEMETRY tab shows the per-game session ledger of the last game l
    - `ETK_VERBOSE` — 0 = Pit Wall console TUI (default), 1 = raw rsync output for debugging. Pass `--verbose` / `-v` on the install.sh CLI to force verbose for a single run.
 2. Re-run `./install.sh` after any `etk.conf` edit to push changes to the rig.
 3. Reboot the rig once to activate the ETK Pitstop entry in the Rocknix Tools menu.
-
 
 ## ETK File Structure
 - `AI_MANIFEST.md`: System Manual and Immutable Laws of ETK Development for AI
@@ -291,7 +289,6 @@ ETK Pitstop's TELEMETRY tab shows the per-game session ledger of the last game l
 	  
 # Windows Install Guide
 ## alpha-tester preview
-
 Two ways to run the ETK host tooling from Windows:
 
 **1. Native PowerShell installer (`windows_installer/`) — no WSL required.** A dependency-free port of `install.sh` / `uninstall.sh`. On first run it **auto-pairs over SSH** — you type the rig password once (Rocknix default `rocknix`), and every call after that is silent. The rig-side logic (Sentry, systemd unit, and the SSH key-install) is read verbatim out of the bash scripts, so there is no second copy to drift. Full guide: **[windows_installer/WINDOWS_HOST_README.md](windows_installer/WINDOWS_HOST_README.md)**.
@@ -317,11 +314,8 @@ robocopy R:\roms\bios\rpcs3\dev_hdd0\home   C:\etk_backup\rpcs3_home      /MIR /
 
 `robocopy /MIR` is Windows-native (no install), incremental like `rsync`, and idempotent — re-run as often as you like. To restore after a reflash, swap source and destination in each line. **Manual caveat:** you must remember to run the backup yourself; there is no Windows equivalent of `install.sh --restore-state` yet.
 
-
 # AI Disclosure
 ETK was originally prototyped with Google Gemini and developed/maintained with Anthropic Claude Code.
 
 # License
 ETK is released under the [GNU General Public License v2.0](LICENSE), matching the licensing of [Rocknix](https://github.com/ROCKNIX/distribution) which it extends.
-
-Copyright (C) 2026 mercurious
