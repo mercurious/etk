@@ -118,3 +118,28 @@ Even if perf is a wash, moving the **vault (written every session), saves, and c
 
 ### 2.8 Recommendation
 Start with **Tier A** (vault + `dev_hdd1` → internal, GT5P first) — safest, isolates the hot variable, and is the biggest durability win. Measure. Then **Tier B** with **GT HD Concept** as the "entirely internal" proof. Skip GT6/GT5 (don't fit). Decide on permanence only from the measured A/B result.
+
+---
+
+## PART 3 — TIER A RESULT (2026-06-01) + THE SMOOTHNESS-INSTRUMENT GAP
+
+### 3.1 What was done
+Tier A executed for **GT5P (NPUA80075)** + **GT HD Concept (NPEA90002)**: vaults copied to `/storage/etk-internal/vault/SM8250/`, SD originals kept as `*.presplit` safety copies, SD vault paths replaced with symlinks → internal; GT5P `dev_hdd1` caches likewise. Rollback at `/storage/etk-internal/ROLLBACK.sh`. Internal `/storage` after: ~5.26 GB free (488 MB used by the two vaults).
+
+### 3.2 Shaders write + credit correctly on UFS — CONFIRMED
+A `4+` GT5P run that needed R3 recovery: internal vault grew **49784 → 49788 (+4)**, new files written into shards at the run's timestamp, SD `.presplit` stayed frozen at 49784, and `sessions.tsv` credited **`shaders_harvested=4`** for that row. The known "panic credits 0 shaders" bug did **not** bite — R3 (`recovery.sh`) kills RPCS3 without a reboot, so SHM `vault_new` survived and the postmortem read the real count. Symlink survived the R3. Full chain works: compile → write to UFS → survive R3 → credit in ledger.
+
+### 3.3 Smoothness improved; stability did NOT
+Operator reports markedly less track jitter / "less constrained" on UFS ("SD card was like aerodynamic drag"). Crucially, the ledger rows for these runs show **`thermal_overrides=0` and peak ≤81 °C — no throttling occurred** — so the gain is **not** explained by the restored `cooling.profile=aggressive`, which points the smoothness improvement at the UFS vault (the random-I/O shader-read hypothesis). HOWEVER **stability is unchanged**: 4 of 6 runs still hit R3 with `GPU_FENCE_TIMEOUT` / `VK_SWAPCHAIN_DEATH` / Adreno hangs — GPU-driver fence timeouts, storage-independent. **UFS bought smoothness, not stability.** Don't conflate them.
+
+### 3.4 The instrumentation gap (the real finding)
+ETK's ledger measures **stability/thermal/shaders** but has **no frame-pacing axis** — so the exact thing UFS improved (micro-stutter) is unmeasurable by current tooling; the win is only *felt*. This violates validate-before-integrate. **MangoHud already computes the data** (it draws the frametime graph) — it just isn't captured.
+
+**Proposed smoothness instrument (prototype as a DISPOSABLE harness first, per the validate-before-integrate law — do NOT bolt into locked-down `session_postmortem` until proven):**
+1. Enable MangoHud frametime logging via `MangoHud.conf` (`output_folder` + `autostart_log`/`log_duration`).
+2. Parse the per-session CSV → derive **1%/0.1% low FPS, frametime p99 + stddev, stutter count (frames > 1.5× median)**.
+3. Use it to make the UFS↔SD A/B empirical (capture a UFS lap and an SD lap of the same GT5P section, flip the vault between via `ROLLBACK.sh` / re-symlink, compare).
+4. If the metric proves meaningful, THEN consider a smoothness-summary column in `sessions.tsv`.
+
+### 3.5 Verdict
+Tier A is a **keeper on shader-integrity + durability grounds** (write/credit confirmed, write-heavy vault off the wear-prone SD). The **performance** claim is *promising but not yet measured* — pending the smoothness instrument (§3.4). The larger "move the whole rig off the SD" ambition still requires a bigger internal partition (re-`installtointernal` carving 40–60 GB from Android userdata, with this recovery playbook baked in) — scope it only after the smoothness metric confirms the perf win is real and meaningful.
