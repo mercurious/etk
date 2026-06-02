@@ -3,7 +3,7 @@
 **For:** a Claude Code session on **Windows**, driving the Retroid Pocket Flip 2 (SM8250) over USB.
 **Goal (Phase 0, the gate):** prove `fastboot` enumerates with the official Retroid data cable. **Everything else in the internal-storage plan waits on this.**
 **Then (Phase 1, optional, DESTRUCTIVE):** clean-revert the internal install so the rig boots the SD card natively again.
-**Status:** verification not yet achieved — blocked 2026-06-01 on a suspected charge-only cable; retrying with the official Retroid cable on Windows.
+**Status:** **CLOSED 2026-06-02 — fastboot is NOT usable on this firmware.** Verified exhaustively from a Windows host: the cable/port are good (MTP enumerates), but the U-Boot "Enable fastboot mode" entry brings up no USB gadget, and neither a reboot-reason cookie nor a BCB `misc` message is honored. The clean `fastboot erase` revert (§3) is therefore unreachable; clean revert now requires a destructive repartition rebuild (deferred). **Full findings + root cause: `dossiers/FastbootRevertConclusion.md`.** The §2 verification steps below remain valid for re-testing if a future ROCKNIX/U-Boot build fixes the gadget.
 
 > **fastboot is USB-only.** No WiFi, no `SM8250.local`, no SSH. The device must be in fastboot mode and connected by a **data** cable.
 
