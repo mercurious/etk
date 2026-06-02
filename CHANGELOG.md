@@ -2,6 +2,20 @@
 
 All notable changes to the ETK are documented here. This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.4] - 2026-06-02
+
+**Certified on the official ROCKNIX release `20260601` — ETK graduates from chasing nightlies to a pinned official build — and adds an optional internal-storage (UFS) path for shader-harvesting durability and smoothness.** First non-prerelease tag.
+
+### Added
+- **Internal-storage (UFS) support — optional, advanced.** The shader vault, RPCS3 caches, and small games can now run on the device's internal UFS partition instead of the SD card. `install.sh` is internal-aware: it autodetects a vault symlinked into internal UFS and syncs symlink-safely (`--copy-links` on pull, `--keep-dirlinks` on push) so it never de-internalizes the vault. The layout is symlink-based and reversible (on-SD `.presplit` safety copies + `ROLLBACK.sh`). **Durability is proven** (the per-session-rewritten vault moves off the wear-prone SD; shaders write/credit/survive R3 on UFS); **smoothness is operator-confirmed** for GT HD Concept + GT5P running fully internal (ETK has no frame-pacing instrument — a known MangoHUD limitation on this platform — so operator subjective A/B is treated as a first-class datapoint). It does **not** improve crash stability. New README **Internal Storage (Advanced)** section documents the partition layout, the `LABEL=ROCKNIX/STORAGE` collision, fastboot-only full revert, config divergence, and the ≥1.5 GB system-partition headroom rule. See `dossiers/InstallToInternalRecovery.md` and `dossiers/RocknixOfficialReleaseCertification.md`.
+
+### Changed
+- **OS pin: official release `20260601`** (was nightly-20260531). README System Requirements, Getting Started, Warnings, and the Windows flash guide now point at the official release and its update path; `scripts/profiles/SM8250.sh` and `AI_MANIFEST.md` re-pinned. Driver line unchanged — verified still `Mesa Turnip 26.1.0`.
+- **Stability framing corrected (it was stale).** GT5P has **cleared and exceeded** the race-stability bar — career best streak of **16 crash-free sessions** (8 back-to-back clean finishes), one streak straddling into the official release. This was captured only in the live telemetry ledger, never in the docs; README §54 previously (wrongly) said "no version yet certified as race stable." The result was earned on a **saturated** vault; the official-`20260601` migration resets the vault, so a fresh install re-enters the harvest cycle and crashes until the cache re-saturates — race-stable is proven *reachable*, not guaranteed every session.
+
+### Verified
+- **Certified on the official ROCKNIX release `20260601`** (build `e7b9e9a3`, kernel 7.0.2, Turnip Mesa 26.1.0) on SM8250. `etk_drift.py --check` clean (no structural drift); drift baseline `20260601.json` banked + pinned (build_id matches `os-release`); headless gate passed (gamepad codes unchanged, R3 survives suspend/resume, RPCS3 binds `Turnip Adreno (TM) 650`); per-game render re-validated on GT5P + GT HD Concept, both running **fully on internal UFS**. Internal Tier-B layout (game data + vault + `dev_hdd1` caches symlinked to internal, `.presplit` SD copies retained, `ROLLBACK.sh` present) confirmed live on-rig. See `dossiers/RocknixOfficialReleaseCertification.md`.
+
 ## [0.1.3] - 2026-05-31
 
 ### Added

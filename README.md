@@ -51,11 +51,11 @@ Captured on-device with the ETK's `L1` screenshot shutter — MangoHUD overlay i
 *GT6 — Nürburgring Nordschleife at night, Lap 1 of 2, cockpit view at 40 mph into a moonlit corner. HUD: `VULKAN 8FPS 131.9ms BATT 54% ETK 79° 11.99 96% 132+ 29.4k 269MB`. The Green Hell at night, on a handheld, running PS3. **A clean lap landed 2026-05-26.***
 
 ## ETK System Requirements
-ETK is developed and structurally verified against Rocknix nightly 20260525–20260531 on SM8250 (Retroid Pocket Flip 2), with a hard architectural floor at 20260520 (DS5 gamepad era). No version yet certified as race stable, meaning five consecutive crash-free runs of the same target race to a graceful emulator exit.
+ETK is certified against the **official ROCKNIX release `20260601`** on SM8250 (Retroid Pocket Flip 2), with a hard architectural floor at 20260520 (DS5 gamepad era). The race-stability bar — five consecutive crash-free runs of the same target race to a graceful emulator exit — has been **cleared on GT5 Prologue** (best streak: 16 crash-free sessions / 8 back-to-back clean finishes). That result was earned on a **saturated** shader vault; it is **not yet consistently reproducible from a fresh install**, where the rig re-enters the harvest cycle and crashes until the cache re-saturates. Race-stable is proven *reachable*, not guaranteed every session.
 | Type | Detail |
 |---|---|
 | Host System | macOS or Linux ([experimental Windows/PC support](#windows-install-guide)) |
-| OS | ROCKNIX (Nightly Build: 20260531) |
+| OS | ROCKNIX (Official Release: 20260601) |
 | Driver | MESA Turnip 26.1.0 |
 | Shell |  BusyBox v1.36.1 |
 | Custom Overlay |  MangoHUD |
@@ -113,9 +113,9 @@ Your PC or Mac will no longer read the card through an SD card reader over USB b
 1. Use [Rocknix USB-GADGET mode](https://rocknix.org/play/add-games/#option-2-usb-gaget-modes).
 
 # Getting Started
-1. [Flash](https://rocknix.org/play/install/) a [Rocknix nightly build](https://github.com/ROCKNIX/distribution-nightly/releases) (see the exact build in [ETK System Requirements](#etk-system-requirements) above) to your handheld's SD card and complete its first-time setup so the rig joins your WiFi. 
-If you've already installed Rocknix, simply press `START` `UPDATES & DOWNLOADS` `UPDATE BRANCH` and switch to `NIGHTLY` and then let the auto-update complete and reboot first. 
-**Do not update to the next Rocknix nightly after this** without checking the latest README.md for the last known ETK supported Rocknix release.
+1. [Flash](https://rocknix.org/play/install/) the [official ROCKNIX release](https://github.com/ROCKNIX/distribution/releases) (the exact build in [ETK System Requirements](#etk-system-requirements) above — `20260601`) to your handheld's SD card and complete its first-time setup so the rig joins your WiFi. 
+If you've already installed Rocknix, update to the certified official release via `START` `UPDATES & DOWNLOADS` and let the auto-update complete and reboot first. 
+**Do not update past the certified release** without checking the latest README.md for the last known ETK-supported Rocknix build.
 2. Clone this repo to your computer. 
 You can also download the code as a `.zip` and extract as `~/etk/`
 3. Install the ETK onto your handheld rig
@@ -136,6 +136,24 @@ Using mDNS, Rocknix advertises itself on the LAN as `<SOC>.local` (e.g. `SM8250.
 *The `./install.sh` Pit Wall console — `RIG: SM8250.local`, `TIER: FULL`. Six steps deploy bottom-up; the OVERALL bar aggregates them. The 2-line DATALOG at the bottom surfaces what's happening right now without firehosing per-file rsync output. Pass `--verbose` to swap this for the raw rsync stream when something needs diagnosis.*
 
 4. Reboot and start harvesting shaders. 
+
+# Internal Storage (Advanced — Optional)
+**SD-card support was proven first and is the recommended default.** For advanced operators who want a smoother, more durable rig, ETK also supports running the shader vault — and small games — on the device's internal **UFS** partition instead of the SD card. This is an **optional, opt-in** upgrade aimed at intensive shader-harvesting runs.
+
+**What you gain**
+- **Durability (proven).** The shader vault is rewritten every session; moving it off the wear-prone SD card to internal UFS reduces card wear and corruption exposure (the SD is the rig's single point of failure). Shaders write, credit, and survive an R3 recovery correctly on UFS.
+- **Smoothness (operator-confirmed).** Running small targets (GT HD Concept, GT5 Prologue) fully on internal is a clear, repeatable improvement in feel. ETK has no numerical frame-pacing instrument — a known limitation of MangoHUD telemetry on this platform — so the operator's subjective A/B comparison is treated as a first-class datapoint.
+
+**What it does *not* do**
+- It does **not** improve crash stability. You'll still hit the occasional Adreno fence timeout and reach for R3 — productive crashing is unchanged.
+- A **full library** does not fit a small internal partition. GT HD (~0.7 GB) and GT5P (~2.3 GB) fit comfortably; GT6/GT5 (15–20 GB) do not.
+
+**Before you commit — the sharp edges**
+- **`./install.sh` is internal-aware.** Once the vault is symlinked into internal UFS, the installer detects it and syncs symlink-safely — no workflow change.
+- **The internal `/storage` is also the system partition.** Leave **≥1.5 GB headroom**; filling it breaks EmulationStation and boot.
+- **Label collision + revert.** On internal boot the internal partition's `LABEL=ROCKNIX/STORAGE` shadow the SD's, so you cannot escape internal storage by boot-device choice alone — a clean full revert requires **fastboot** (a real USB data cable, not charge-only). 
+- **Config divergence.** The internal `/storage/.config` permanently diverges from the SD's; OS/RPCS3 settings changed on one side won't reflect on the other.
+- The layout is symlink-based and **reversible** (on-SD `.presplit` safety copies + a `ROLLBACK.sh`). Read the full playbook before starting: [dossiers/InstallToInternalRecovery.md](dossiers/InstallToInternalRecovery.md).
 
 # ETK Track Manual
 Getting installed is the hard part. Now you have a track-day setup to attempt the previously impossible. You might not make it across the finish line your first attempt. But keep at it and you will.
@@ -281,8 +299,8 @@ ETK Pitstop's TELEMETRY tab shows the per-game session ledger of the last game l
 
 # Warnings and Recommendations
 - Requires the patience and dedication of race car drivers. You will crash. But you will also win races that could otherwise not be played. ETK doesn't magically make your device run PS3 emulation, it only gives it a fighting chance with professional grade tools and system tunings. Shader sharing spares other players the harvest.
-- Requires the exact Rocknix Nightly specified above. This does not work on the official release nor has it been tested or updated for other Rocknix nightly builds.
-- Do not use your main ROM library SD card for this Rocknix install. Instead, use a reasonably sized (256GB or less) high quality dev card that you don't mind wearing out or needing to reflash. Put your favorite PS3 games on this card and wait until the ETK can be upgraded for a Rocknix (official) release before using on your main card.
+- Requires the exact Rocknix build specified above (official release `20260601`). It has not been tested on later builds; check this README before updating the OS.
+- Do not use your main ROM library SD card for this Rocknix install. Instead, use a reasonably sized (256GB or less) high quality dev card that you don't mind wearing out or needing to reflash. Put your favorite PS3 games on this card.
 - Do not install on your handheld device if you intend to use the warranty coverage or otherwise would protect it from track day abuse. If you wouldn't take your daily driver to the track, do not install highly experimental software on your only retro handheld that could potentially damage or brick it.
 - OS updates, ETK uninstalls and other major system events may require a PPU recompilation which do take time. Putting the device on an ice pack or in the refrigerator will reduce thermal stress on the system during these intensive operations. 
 - The ETK is designed with community shader sharing in mind.
@@ -299,7 +317,7 @@ This path is **no-vault** — it does not back your shaders up to the PC (the ri
 
 **2. WSL2 (full-featured).** For the complete experience including host-side shader-vault backup/restore (Tier-B), install WSL2 + Ubuntu, clone the kit, and follow [Getting Started](#getting-started) above unchanged — `install.sh` runs in WSL2 with no modifications.
 
-For the one-time fresh-card flash, use the official Rocknix [ImageBurner](https://github.com/ROCKNIX/ImageBurner/releases) — Windows-native, no dependency, to install the correct nightly (not official) required for the ETK.
+For the one-time fresh-card flash, use the official Rocknix [ImageBurner](https://github.com/ROCKNIX/ImageBurner/releases) — Windows-native, no dependency, to install the certified official release (`20260601`) required for the ETK.
 
 ## Manual SMB Backup
 - (the native PowerShell installer is no-vault, so use this for shader backups on Windows)
