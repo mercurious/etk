@@ -11,3 +11,19 @@
 
 # PowerShell host scripts are fine either way, but keep them stable:
 *.ps1  text eol=crlf
+
+# ------------------------------------------------------------------
+# Release-archive slimming (`git archive` honors export-ignore, and
+# GitHub builds the "Source code (zip/tar.gz)" downloads with it).
+# These paths are dev/engineering-only — the install payload is ~720 KB,
+# but bundling these bloats the auto archive to ~22 MB. export-ignore
+# affects ARCHIVES ONLY, not clones, so power users who `git clone`
+# still get the full dossier/screenshot history.
+# ------------------------------------------------------------------
+dossiers/   export-ignore
+docs/       export-ignore
+log/        export-ignore
+state/      export-ignore
+_archive/   export-ignore
+TO_DO.md    export-ignore
+typescript  export-ignore
