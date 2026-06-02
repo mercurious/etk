@@ -411,12 +411,24 @@ tui_step_done 0
 # host copy with a rig copy of the same name.
 # ==========================================================
 tui_step_start 1
+# --- INTERNAL-STORAGE DETECTION (Tier A/B) ---
+# On an internal-boot rig, per-game vault dirs (Tier A) are symlinks into
+# /storage/etk-internal. The vault rsyncs below use --copy-links on PULL and
+# --keep-dirlinks on PUSH so the sync is symlink-safe; both are no-ops on an
+# SD-only rig and so are applied unconditionally. This probe is informational.
+ETK_INTERNAL_VAULT=$(ssh $RIG_SSH "find $ETK_ROOT/vault/$CHIPSET -maxdepth 1 -type l 2>/dev/null | head -1")
+if [ -n "$ETK_INTERNAL_VAULT" ]; then
+    say "${C}[INFO] Internal-storage vault detected — symlink-safe sync engaged${N}"
+fi
 # Scoped to $CHIPSET/ so anything outside the structured
 # vault/$CHIPSET/<gameID>/shaders/ tree (e.g. RPCS3 ppu-* per-binary
 # caches that landed at vault root from a legacy tool or a manual op)
 # cannot propagate between rig and host on subsequent installs.
+# --copy-links: if a per-game vault dir is a Tier A symlink into internal UFS,
+# dereference it so the HOST archives the REAL shaders, not a dangling link
+# pointing at a rig-only path. No-op when the dir is a plain dir (SD rig).
 mkdir -p "./vault/$CHIPSET"
-tui_rsync 1 0 70 "Pulling vault shaders (rig → host)" --ignore-existing --exclude='.DS_Store' "$RIG_SSH:$ETK_ROOT/vault/$CHIPSET/" "./vault/$CHIPSET/"
+tui_rsync 1 0 70 "Pulling vault shaders (rig → host)" --copy-links --ignore-existing --exclude='.DS_Store' "$RIG_SSH:$ETK_ROOT/vault/$CHIPSET/" "./vault/$CHIPSET/"
 
 # --- TIER-B BACKUP: rig -> host (addendum §C) ---
 # Mutable-precious state: telemetry ledgers, tuned RPCS3 configs, RPCS3
@@ -489,11 +501,15 @@ tui_step_done 2
 # content-fixed; we only add what the rig is missing, never overwrite.
 # Bidirectional --ignore-existing is the property that makes the
 # Tier-A vault sync safe to run on every install (addendum §B).
+# --keep-dirlinks: when a per-game vault dir on the rig is a Tier A symlink
+# into internal UFS, treat it as the directory it points at and sync INTO the
+# internal target — never replace the symlink with a real dir (which would
+# de-internalize the vault). No-op when the dir is a plain dir (SD rig).
 # ==========================================================
 tui_step_start 3
 # Scoped to $CHIPSET/ — see step 2 rationale.
 if [ -d "./vault/$CHIPSET" ] && [ "$(ls -A "./vault/$CHIPSET" 2>/dev/null)" ]; then
-    tui_rsync 3 0 100 "Pushing vault shaders (host → rig)" --ignore-existing --exclude='.DS_Store' "./vault/$CHIPSET/" "$RIG_SSH:$ETK_ROOT/vault/$CHIPSET/"
+    tui_rsync 3 0 100 "Pushing vault shaders (host → rig)" --keep-dirlinks --ignore-existing --exclude='.DS_Store' "./vault/$CHIPSET/" "$RIG_SSH:$ETK_ROOT/vault/$CHIPSET/"
 else
     say "${Y}[SKIP] No local vault found — nothing to push${N}"
     tui_step_progress 3 100
