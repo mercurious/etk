@@ -84,6 +84,8 @@ Snapshot of per-game status from on-device testing. Full tuning history, panic-l
 | NPEA00502 | [Gran Turismo 6](config/config_NPEA00502.yml) | Playable | <12 | Menus good | Full Nürburgring Nordschleife lap clean 2026-05-26. Tuning for FPS is deferred until the shader vault saturates. Rear-view mirror does not render. | [.zip](https://drive.google.com/file/d/1AUfvVzxwLCrTB31eDt_STqMMy5jPtKd1/view) 334MB |
 | BCUS98114 | [Gran Turismo 5](config/config_BCUS98114.yml) | Menus only | — | Menus only | Tracks kernel-panic. Menus stable, eventual freeze. | [.zip](https://drive.google.com/file/d/1Jbex9koepwoSQNA0qqPhS9aseMufAKYp/view) 31MB |
 
+**NOTE for OFFICIAL ROCKNIX RELEASE:** New shader sets compiled on the final MESA Turnip on the latest official ROCKNIX release are **coming soon**. The zips above are for the prior nightly versions. 
+
 ## ETK Features
 1. Native Rocknix ETK Pitstop App for on-device config editing, per game telemetry analysis over time, and simple PS3 game installation (drop .pkg and .rap in `roms/etk/pkg_install_drop/`)
 1. Customized in-game overlay dashboard with ETK telematics inside native Rocknix MangoHUD
@@ -137,24 +139,6 @@ Using mDNS, Rocknix advertises itself on the LAN as `<SOC>.local` (e.g. `SM8250.
 
 4. Reboot and start harvesting shaders. 
 
-# Internal Storage (Advanced — Optional)
-**SD-card support was proven first and is the recommended default.** For advanced operators who want a smoother, more durable rig, ETK also supports running the shader vault — and small games — on the device's internal **UFS** partition instead of the SD card. This is an **optional, opt-in** upgrade aimed at intensive shader-harvesting runs.
-
-Retroid Pocket SD8250 devices support [Rocknix's Install (internal) option](https://rocknix.org/play/installtointernal/) which allows the OS to run on a partition inside the internal storage rather than from a partition on your SD card. This dramatically speeds up Rocknix boot and OS update times. The ETK also supports the creation of a medium sized internal partition for storing shaders, which improves performance and reduces SD-card treadwear. In addition, the ETK supports the creation of a large internal partition to store games and shaders for improved game launch performance. These partitions take away from your Android storage, so factor that into designing your partitions as your execute the `installtointernal.sh` command on your rig.
-
-## Advancements
-- **Durability.** The shader vault is rewritten every session; moving it off the wear-prone SD card to internal UFS reduces card wear and corruption exposure (the SD is the rig's single point of failure). Shaders write, credit, and survive an R3 recovery correctly on UFS.
-- **Smoothness** Running small targets (GT HD Concept, GT5 Prologue) fully on internal is a clear, repeatable improvement in feel. ETK has no numerical frame-pacing instrument — a known limitation of MangoHUD telemetry on this platform — so the operator's subjective A/B comparison is treated as a first-class datapoint.
-
-## Caveats
-- It does **not** improve crash stability. You'll still hit the occasional Adreno fence timeout and reach for R3 — productive crashing is unchanged.
-- A **full library** does not fit a small internal partition. GT HD (~0.7 GB) and GT5P (~2.3 GB) fit comfortably; GT6/GT5 (15–20 GB) do not.
-- **`./install.sh` is internal-aware.** Once the vault is symlinked into internal UFS, the installer detects it and syncs symlink-safely — no workflow change.
-- **The internal `/storage` is also the system partition.** Leave **≥1.5 GB headroom**; filling it breaks EmulationStation and boot.
-- **Label collision + revert.** On internal boot the internal partition's `LABEL=ROCKNIX/STORAGE` shadow the SD's, so you cannot escape internal storage by boot-device choice alone — a clean full revert requires **fastboot** (a real USB data cable, not charge-only). 
-- **Config divergence.** The internal `/storage/.config` permanently diverges from the SD's; OS/RPCS3 settings changed on one side won't reflect on the other.
-- The layout is symlink-based and **reversible** (on-SD `.presplit` safety copies + a `ROLLBACK.sh`). Read the full playbook before starting: [dossiers/InstallToInternalRecovery.md](dossiers/InstallToInternalRecovery.md).
-
 # ETK Track Manual
 Getting installed is the hard part. Now you have a track-day setup to attempt the previously impossible. You might not make it across the finish line your first attempt. But keep at it and you will.
 
@@ -183,11 +167,6 @@ Custom buttons to get you around the track at dangerous speeds.
 | `L3` | **DDU HUD** | left analog button | Toggles ETK DDU dashboard between top and bottom of screen |
 | `R3` | **PANIC RECOVERY** | right analog button | Recover from a crash or freeze. Reboot recommended after returning to Rocknix ES frontend. |
 | `POWER` | **Kernel Panic** | device's power button | If you cause a *kernel panic* the ETK Recovery function will not work. Hold the `POWER` button down until the device reboots to the Retroid Pocket logo. |
-
-### Full chord reference:
-- `SELECT` + `D-pad Up`: ETK SCREENSHOT (UI/menu fallback). Same capture as `L1` above; use this in Pitstop / EmulationStation / dealership / pause menu contexts where L1 has unwanted side effects (Pitstop tab nav). Not recommended in-race — SELECT also triggers the game's camera view toggle, so the captured frame will catch mid-transition.
-- `SELECT` + `D-pad Right`: manual VAULT command (force a shader-vault tick)
-- `SELECT` + `D-pad Left`: MangoHUD config reload signal
 
 ## The ETK Pitstop Rocknix App
 Found in the Rocknix ES front-end Tools carousel item.
@@ -296,14 +275,6 @@ ETK Pitstop's TELEMETRY tab shows the per-game session ledger of the last game l
 - **To solve the problem of installing `.pkg` files with the desktop version of RCPS3 inside of Rocknix with only a gamepad,** the ETK automates the process for you. All you do is drop files in a folder on your card and use ETK Pitstop Tools to start the process.
 - **To simplify managing game shader vaults and software updates,** the ETK includes a simple command-line utility to install, repair, update, and automatically sync shader vaults as you harvest from games or trade device and game-specific shader folders with others. It also includes an uninstall utility to retire from the league. A typical game 300+ MB shader vault will involve tens of thousands of binary files so an efficient transfer mechanism to manage shader sets between a computer and the handheld devices is essential.
 - ETK does all of this while trying to maintain a **minimal system footprint without subjecting your SD card to abuse.**
-
-# Warnings and Recommendations
-- Requires the patience and dedication of race car drivers. You will crash. But you will also win races that could otherwise not be played. ETK doesn't magically make your device run PS3 emulation, it only gives it a fighting chance with professional grade tools and system tunings. Shader sharing spares other players the harvest.
-- Requires the exact Rocknix build specified above (official release `20260601`). It has not been tested on later builds; check this README before updating the OS.
-- Do not use your main ROM library SD card for this Rocknix install. Instead, use a reasonably sized (256GB or less) high quality dev card that you don't mind wearing out or needing to reflash. Put your favorite PS3 games on this card.
-- Do not install on your handheld device if you intend to use the warranty coverage or otherwise would protect it from track day abuse. If you wouldn't take your daily driver to the track, do not install highly experimental software on your only retro handheld that could potentially damage or brick it.
-- OS updates, ETK uninstalls and other major system events may require a PPU recompilation which do take time. Putting the device on an ice pack or in the refrigerator will reduce thermal stress on the system during these intensive operations. 
-- The ETK is designed with community shader sharing in mind.
 	  
 # Windows Install Guide
 ## alpha-tester preview
@@ -331,6 +302,20 @@ robocopy R:\roms\bios\rpcs3\dev_hdd0\home   C:\etk_backup\rpcs3_home      /MIR /
 ```
 
 `robocopy /MIR` is Windows-native (no install), incremental like `rsync`, and idempotent — re-run as often as you like. To restore after a reflash, swap source and destination in each line. **Manual caveat:** you must remember to run the backup yourself; there is no Windows equivalent of `install.sh --restore-state` yet.
+
+# Internal Storage (Advanced — Optional)
+**SD-card support was proven first and is the recommended default.** For advanced operators who want a faster shader rig, ETK also supports running the shader vaulta and games on the device's internal **UFS** partition instead of the SD card. This is an **optional, opt-in** upgrade aimed at intensive shader-harvesting runs.
+
+Retroid Pocket SD8250 devices support [Rocknix's Install (internal) option](https://rocknix.org/play/installtointernal/) which allows the OS to run on a partition inside the internal storage rather than from a partition on your SD card. This dramatically speeds up Rocknix boot and OS update times. The ETK also supports the creation of a medium sized internal partition for storing shaders, which improves performance and reduces SD-card treadwear. In addition, the ETK supports the creation of a large internal partition to store games and shaders for improved game launch performance. These partitions take away from your Android storage, so factor that into designing your partitions as your execute the `installtointernal.sh` command on your rig.
+
+## Advancements
+- **Durability.** The shader vault is rewritten every session; moving it off the wear-prone SD card to internal UFS reduces card wear and corruption exposure (the SD is the rig's single point of failure). Shaders write, credit, and survive an R3 recovery correctly on UFS.
+- **Speed** OS boots faster. Games launch quicker. Shader I/O is just better.
+
+## Caveats
+- Retroid Flip2 firmware does not seem to support `fastboot` over USB so tinkering with partitions is the danger zone because you can end up needing to resolve in linux destructively.
+- **`./install.sh` is internal-aware.** Once the vault is symlinked into internal UFS, the installer detects it and syncs symlink-safely — no workflow change.
+- **The internal `/storage` is also the system partition.** Leave **≥1.5 GB headroom**; filling it breaks EmulationStation and boot.
 
 # AI Disclosure
 ETK was originally prototyped with Google Gemini and developed/maintained with Anthropic Claude Code.
