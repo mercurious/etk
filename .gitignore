@@ -58,3 +58,6 @@ etk.conf
 # dir stays at the project root (Claude Code requires it there); only the
 # per-machine local settings file is untracked.
 .claude/settings.local.json
+
+# Pro Tuning build artifacts
+pro-tuning/dist/

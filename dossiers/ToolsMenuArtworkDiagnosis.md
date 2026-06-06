@@ -7,6 +7,24 @@
 
 ---
 
+## CORRECTION / CLOSEOUT (2026-06-03, official 20260601, branch `next`)
+
+Re-verified on the official release and **the "platform-wide / clean-install" framing below was too strong.** The missing Tools icons are **gated on the `gamelist-view-artwork` subset**, which is an **operator preference**, not a Rocknix default and not anything ETK sets:
+
+- The theme `es-theme-art-book-next` declares the subset with `image` **first** (theme.xml:113–118) → with no stored value, ES defaults to **`image`**, under which `game-artwork` reads `{game:image}` and the stock tools (which set only `<image>`) **DO render**.
+- The shipped default `es_settings.cfg` carries **no** `subset.gamelist-view-artwork` line; upstream sets none either. So a true clean install = `image` = tools have icons.
+- This rig stores `subset.gamelist-view-artwork = boxart` in `/storage/.config/emulationstation/es_settings.cfg` — an **operator choice** (Game Artwork → Boxart, made via the theme options UI for nicer game boxart). Under `boxart` the element reads `{game:thumbnail}`; under `logo` it reads `{game:marquee}`. Tools set neither → no icon. ETK never writes this key (grep-confirmed).
+
+**So the real shape of the issue:** Tools is a hack — utilities shoehorned into a games-art UI — and the default theme has **no fallback** from `{game:thumbnail}`/`{game:marquee}` back to `<image>` for entries that only set `<image>`. Anyone who switches Game Artwork to **Boxart or Logo** loses *all* stock tool icons. That's a legitimate upstream rough edge, but it is **not** a default-state bug and **not** caused by ETK's `modules/` injection.
+
+**Consequences:**
+- The two underlying upstream facts are still real and still in the current tree (verified live on `ROCKNIX/distribution`, 2026-06-03): tool entries are `<image>`-only (41 entries, 0 thumbnail/marquee) and the *Start touchHLE* `<desc>` still has the unescaped `&` (line 392, fails XML parse).
+- **Quick operator workaround (no edits):** set Game Artwork subset back to **Image** → every stock tool icon returns.
+- **ETK's own fix is still correct and superior:** the Pitstop block emits `<image>` + `<thumbnail>` + `<marquee>` (all → the same SVG), so the Pitstop tile renders under **every** subset regardless of operator preference. Keep it.
+- **Bug-report posture:** if filed, frame it as "default theme has no `<image>` fallback for Tools under boxart/logo subsets" (a fallback/UX request), **not** "no icons on a clean install" (false). See the correction banner in `RocknixToolsArtworkBugReport.md`.
+
+---
+
 ## Method — proven on-rig, ETK uninstalled
 
 Every test below was run with **ETK fully uninstalled**, over SSH, restarting only `essway.service` (a clean ES reload that does *not* re-run the `001-sync-modules` rsync — `rocknix-autostart` is `oneshot`+`RemainAfterExit`, so a manual gamelist edit survives an ES restart but is reverted by a full reboot). Rig was restored to byte-stock state afterward.

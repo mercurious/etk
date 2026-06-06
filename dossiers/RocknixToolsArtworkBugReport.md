@@ -1,5 +1,16 @@
 # Bug report (draft for ROCKNIX) — Tools menu shows no icons
 
+> **⚠️ CORRECTION 2026-06-03 — DO NOT FILE AS-IS.** Re-verified on official 20260601:
+> the missing icons are **subset-gated, not a clean-install/default state.** Rocknix's
+> default `gamelist-view-artwork` subset is **`image`**, under which the `<image>`-only tool
+> entries render fine. The icons only vanish when the operator sets Game Artwork to **Boxart**
+> or **Logo** (theme then reads `{game:thumbnail}`/`{game:marquee}`, which tools don't set).
+> This rig is on `boxart` **by operator preference** — not a Rocknix default, not ETK.
+> The "on a clean install, every entry is text-only" claims below are therefore **wrong** and
+> must be reworded before any submission: reframe as *"the default theme has no `<image>`
+> fallback for Tools entries under the boxart/logo subsets."* The malformed-`&` defect (#1) is
+> still valid and unrelated. Full reasoning: `ToolsMenuArtworkDiagnosis.md` → CORRECTION/CLOSEOUT.
+
 > **HOW TO FILE (verified 2026-05-29):** ROCKNIX has GitHub Issues **disabled** on both
 > `distribution` and `distribution-nightly`. Their policy (`.github/ISSUE_TEMPLATE/config.yml`
 > + `bug-report.md`): **discuss on Discord FIRST** — https://discord.gg/seTxckZjJy — or any

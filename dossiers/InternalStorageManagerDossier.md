@@ -75,8 +75,16 @@ The save/license/account/launcher set is **trivially small (<26 MB total)** — 
 - **Pre-flight**: compute required bytes for the chosen tier vs. STORAGE free; refuse with a clear "you need an N-GB STORAGE; reinstall larger" if it won't fit (the official tool's sizing is the lever).
 - **Place**: copy (not symlink) the manifest pieces into the internal `games-internal/roms` tree; verify checksums.
 - **Register**: ensure ES launcher + RPCS3 see the internal copy.
-- **Rollback**: generalize the existing `ROLLBACK.sh` (today it only de-symlinks vault + restores `dev_hdd0/game/<ID>.presplit` for 2 hardcoded IDs) into a manifest-driven, per-game, reversible move with a manifest log.
+- **Rollback**: generalize the existing `ROLLBACK.sh` (today it de-symlinks vault, restores game data from `dev_hdd0/presplit_backup`, **and strips the duplicate `games.yml` line** for 2 hardcoded IDs) into a manifest-driven, per-game, reversible move with a manifest log.
 - **SD-free readiness check**: a dry "with the SD out, does `<ID>` have every manifest piece on internal?" verifier — the honest gate before telling the operator they can pull the card.
+
+### 4.3 NO-DUPLICATES RULE (learned the hard way 2026-06-02)
+RPCS3's game list = (every subdir of `dev_hdd0/game/` with a `PARAM.SFO`) ∪ (every `games.yml` entry), with **no dedup by serial across paths**. The first internalization produced **three list entries** per game (GT HD / GT5P) because it (1) symlinked `dev_hdd0/game/<ID>` → internal [correct], (2) left the original as `dev_hdd0/game/<ID>.presplit` *inside the scanned tree* [dup], and (3) added a redundant `games.yml` line [dup]. The manager MUST therefore:
+- Place rollback/backup copies **outside `dev_hdd0/game/`** (e.g. `/storage/etk-internal/presplit/<ID>`). Never leave a second `PARAM.SFO` anywhere under `dev_hdd0/game/`.
+- **Not** write a `games.yml` entry for an internalized HDD game — the `dev_hdd0/game/<ID>` symlink alone lists it. `games.yml` is only for true disc games living elsewhere.
+- Keep `ROLLBACK.sh`'s restore path in sync with wherever backups are placed.
+
+**Recurrence resolved 2026-06-03.** GT HD (NPEA90002) / GT5P (NPUA80075) were still double-listing post-UFS — *not* a UFS or bind-mount artifact (RPCS3 reads one config and scans one emulator dir). Cause was the surviving `games.yml` dup (the `.presplit`-in-`game/` dup had already been cleaned; the redundant `games.yml` lines had not). Fixed live by removing both lines from `/storage/.config/rpcs3/games.yml`; the `dev_hdd0/game/<ID>` symlinks list each once. Prevention now enforced: `install.sh` never syncs `games.yml` (no host copy), the dirty `games.yml.etkbak` was cleaned, and `ROLLBACK.sh` strips HDD-game `games.yml` lines on revert. `.predupe` backups left beside each touched file.
 
 ---
 
