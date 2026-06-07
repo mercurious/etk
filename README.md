@@ -278,11 +278,11 @@ ETK Pitstop's TELEMETRY tab shows the per-game session ledger of the last game l
 ## alpha-tester preview
 Two ways to run the ETK host tooling from Windows:
 
-**1. Native PowerShell installer (`windows_installer/`) — no WSL required.** A dependency-free port of `install.sh` / `uninstall.sh`. On first run it **auto-pairs over SSH** — you type the rig password once (Rocknix default `rocknix`), and every call after that is silent. The rig-side logic (Sentry, systemd unit, and the SSH key-install) is read verbatim out of the bash scripts, so there is no second copy to drift. Full guide: **[windows_installer/WINDOWS_HOST_README.md](windows_installer/WINDOWS_HOST_README.md)**.
+**1. Native PowerShell installer (`windows_installer/`) — no WSL required.** A dependency-free port of `install.sh` / `uninstall.sh`. On first run it **auto-pairs over SSH** — you type the rig password once (Rocknix default `rocknix`), and every call after that is silent. Full guide: **[windows_installer/WINDOWS_HOST_README.md](windows_installer/WINDOWS_HOST_README.md)**.
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\windows_installer\etk-install.ps1
 ```
-This path is **no-vault** — it does not back your shaders up to the PC (the rig still vaults locally; see [Manual SMB Backup](#manual-smb-backup)). Pairing and a full install are verified on a real SM8250 rig; treat the rest as alpha and use a dev card.
+This option does not back your shaders up to the PC (the rig still vaults locally; see [Manual SMB Backup](#manual-smb-backup)).
 
 **2. WSL2 (full-featured).** For the complete experience including host-side shader-vault backup/restore (Tier-B), install WSL2 + Ubuntu, clone the kit, and follow [Getting Started](#getting-started) above unchanged — `install.sh` runs in WSL2 with no modifications.
 
