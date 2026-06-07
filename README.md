@@ -73,18 +73,16 @@ The kit ships with one calibrated device profile (`SM8250`) which architecturall
 | Retroid Pocket | 6 | SM8550 Adreno 740 | (needs new profile + vault) | Not yet supported |
 
 ## Tested Games (RPCS3)
-Snapshot of per-game status from on-device testing. Full tuning history, panic-ledger context, and the critical config dials per game live in [dossiers/etk_gametest_status_sheet.md](dossiers/etk_gametest_status_sheet.md). Extract sample shaders as `~/etk/vault/SM8250/[GameID]` and use `install.sh` to push them to the rig.
+Snapshot of per-game status from on-device testing. Full tuning history, panic-ledger context, and the critical config dials per game live in [dossiers/etk_gametest_status_sheet.md](dossiers/etk_gametest_status_sheet.md). Vaults can be extracted as `~/etk/vault/SM8250/[GameID]` and use `install.sh` to sync with rig.
 
-| ID | Game Config | Status | FPS | Audio| Notes | Shader Set |
+| ID | Game Config | Status | FPS | Audio| Notes | Vault Size |
 |---|---|---|---|---|---|---|
-| NPUA80075 | [Gran Turismo Prologue](config/config_NPUA80075.yml) | Playable | ~30 | Menus only | Primary ETK target. Track surface flickers; Unstable over time. | [.zip](https://drive.google.com/file/d/1gC7eTlfWRMuwYSIoMQuhzpyWujcWbv3Q/view) 151MB |
-| NPEA90002 | [Gran Turismo HD Concept](config/config_NPEA90002.yml) | Playable | 20–30 | Good (some race stutter) | Ideal baseline — small, fast, durable. Black sky artifacting; menus SPU-sensitive. | [.zip](https://drive.google.com/file/d/1c8Exq5Xlq2hikBlkVIFdu6Nw3TfsGoKB/view) 11 MB |
-| NPUB30457 | [Ridge Racer 7](config/config_NPUB30457.yml) | Playable | 20-30 | Good (some race stutter) | Very playable, with some crashing | - |
-| NPUA80472 | [LittleBigPlanet](config/config_NPUA80472.yml) | Playable | 12-24 | Good (some stutter) | No issues discovered yet beyond shader storm glitching. | [.zip](https://drive.google.com/file/d/1BJuDP3bK57Z-rl2lOK-o0LDgGnXOL7N3/view) 7MB |
-| NPEA00502 | [Gran Turismo 6](config/config_NPEA00502.yml) | Playable | <12 | Menus good | Full Nürburgring Nordschleife lap clean 2026-05-26. Tuning for FPS is deferred until the shader vault saturates. Rear-view mirror does not render. | [.zip](https://drive.google.com/file/d/1AUfvVzxwLCrTB31eDt_STqMMy5jPtKd1/view) 334MB |
-| BCUS98114 | [Gran Turismo 5](config/config_BCUS98114.yml) | Menus only | — | Menus only | Tracks kernel-panic. Menus stable, eventual freeze. | [.zip](https://drive.google.com/file/d/1Jbex9koepwoSQNA0qqPhS9aseMufAKYp/view) 31MB |
-
-**NOTE for OFFICIAL ROCKNIX RELEASE:** New shader sets compiled on the final MESA Turnip on the latest official ROCKNIX release are **in track testing**. The zips above are for the prior nightly versions, so they are technically stale. 
+| NPEA90002 | [Gran Turismo HD Concept](config/config_NPEA90002.yml) | Playable, crashes rarely | 20–30 | Good (some race stutter) | Ideal baseline — small, fast, durable. Black sky artifacting; menus SPU-sensitive. | 2k 20MB |
+| NPUA80075 | [Gran Turismo Prologue](config/config_NPUA80075.yml) | Playable, crashes occasionally | 12-30 | Menus only | Primary ETK target. Track surface flickers; Unstable over time. | 11k 100MB |
+| BCUS98114 | [Gran Turismo 5](config/config_BCUS98114.yml) | Semi-playable, crashes frequently | 30 | Menus and brief 30FPS track | Tracks often kernel-panic. Menus stable, eventual freeze. | 12.k 110MB |
+| NPEA00502 | [Gran Turismo 6](config/config_NPEA00502.yml) | Playable, crashes occasionally | 8-12 | Menus good | Full Nürburgring Nordschleife lap clean 2026-05-26. Tuning for FPS is deferred until the shader vault saturates. Rear-view mirror does not render and other glitches. | 139k 1296MB |
+| NPUB30457 | [Ridge Racer 7](config/config_NPUB30457.yml) | Playable, crashes rarely | 20-30 | Good (some race stutter) | Very playable, with some crashing | 1.6k 16MB |
+| NPUA80472 | [LittleBigPlanet](config/config_NPUA80472.yml) | Playable, crashes rarely | 12-24 | Good (some stutter) | No issues discovered yet beyond shader storm glitching. | 1.6k 20MB |
 
 ## ETK Features
 1. Native Rocknix ETK Pitstop App for on-device config editing, per game telemetry analysis over time, and simple PS3 game installation (drop .pkg and .rap in `roms/etk/pkg_install_drop/`)
