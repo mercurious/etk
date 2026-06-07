@@ -84,7 +84,7 @@ Snapshot of per-game status from on-device testing. Full tuning history, panic-l
 | NPEA00502 | [Gran Turismo 6](config/config_NPEA00502.yml) | Playable | <12 | Menus good | Full Nürburgring Nordschleife lap clean 2026-05-26. Tuning for FPS is deferred until the shader vault saturates. Rear-view mirror does not render. | [.zip](https://drive.google.com/file/d/1AUfvVzxwLCrTB31eDt_STqMMy5jPtKd1/view) 334MB |
 | BCUS98114 | [Gran Turismo 5](config/config_BCUS98114.yml) | Menus only | — | Menus only | Tracks kernel-panic. Menus stable, eventual freeze. | [.zip](https://drive.google.com/file/d/1Jbex9koepwoSQNA0qqPhS9aseMufAKYp/view) 31MB |
 
-**NOTE for OFFICIAL ROCKNIX RELEASE:** New shader sets compiled on the final MESA Turnip on the latest official ROCKNIX release are **coming soon**. The zips above are for the prior nightly versions. 
+**NOTE for OFFICIAL ROCKNIX RELEASE:** New shader sets compiled on the final MESA Turnip on the latest official ROCKNIX release are **in track testing**. The zips above are for the prior nightly versions, so they are technically stale. 
 
 ## ETK Features
 1. Native Rocknix ETK Pitstop App for on-device config editing, per game telemetry analysis over time, and simple PS3 game installation (drop .pkg and .rap in `roms/etk/pkg_install_drop/`)
