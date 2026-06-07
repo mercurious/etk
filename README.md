@@ -317,6 +317,21 @@ Retroid Pocket SD8250 devices support [Rocknix's Install (internal) option](http
 - **`./install.sh` is internal-aware.** Once the vault is symlinked into internal UFS, the installer detects it and syncs symlink-safely — no workflow change.
 - **The internal `/storage` is also the system partition.** Leave **≥1.5 GB headroom**; filling it breaks EmulationStation and boot.
 
+# Power Pro Tip: Disable GRUB
+You can disable the GRUB device select screen that appears at boot. This will shave seconds off your boot-time. The recovery option listed has been tested and it doesn't appear to do anything useful when you actually need a recovery.
+
+1. Connect to the rig:\
+`ssh root@SM8250.local`
+1. Remount the boot partition read-write:  
+`mount -o remount,rw /flash`
+1. Back it up first so it's reversible:  
+`cp /flash/boot/grub/grub.cfg /flash/boot/grub/grub.cfg.bak`
+1. Set the menu timeout to 0 — skips the GRUB device-picker wait:  
+`sed -i 's/set timeout=2/set timeout=0/' /flash/boot/grub/grub.cfg`
+1. Flush and put it back read-only:  
+`sync && mount -o remount,ro /flash`
+
+
 # AI Disclosure
 ETK was originally prototyped with Google Gemini and developed/maintained with Anthropic Claude Code.
 
