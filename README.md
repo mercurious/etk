@@ -54,7 +54,7 @@ Captured on-device with the ETK's `L1` screenshot shutter — MangoHUD overlay i
 ETK is certified against the **official ROCKNIX release `20260601`** on SM8250 (Retroid Pocket Flip 2), with a hard architectural floor at 20260520 (DS5 gamepad era). The race-stability bar — five consecutive crash-free runs of the same target race to a graceful emulator exit — has been **cleared on GT5 Prologue** (best streak: 16 crash-free sessions / 8 back-to-back clean finishes). That result was earned on a **saturated** shader vault; it is **not yet consistently reproducible from a fresh install**, where the rig re-enters the harvest cycle and crashes until the cache re-saturates. Race-stable is proven *reachable*, not guaranteed every session.
 | Type | Detail |
 |---|---|
-| Host System | macOS or Linux ([experimental Windows/PC support](#windows-install-guide)) |
+| Host System | macOS or Linux native ([Windows/PC port](#windows-install-guide)) |
 | OS | ROCKNIX (Official Release: 20260601) |
 | Driver | MESA Turnip 26.1.0 |
 | Shell |  BusyBox v1.36.1 |
