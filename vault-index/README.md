@@ -34,7 +34,7 @@ the catalog today, the swarm's bootstrap registry tomorrow.
   },
   "tiers":  { "config": true, "vault": true, "savedata": false, "game_pkg": false },
   "vault":  { "shader_count": 11362, "clean_room": true },
-  "tuner":  { "handle": "dave", "note": "...", "harvest": { "sessions": 0, "hours": 0, "best_streak": 0 } }
+  "tuner":  { "handle": "mercurious", "note": "...", "harvest": { "sessions": 0, "hours": 0, "best_streak": 0 } }
 }
 ```
 
