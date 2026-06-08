@@ -1,11 +1,14 @@
 {
   "pro_tuning_index": 1,
   "repo": "mercurious/etk",
-  "updated": "2026-06-03",
+  "updated": "2026-06-08",
   "note": "Curated index of one-command Pro Tuning bundles. Bytes live in GitHub Releases (see release_tag). A second tuner joins by opening a pull request that adds a tune entry. The installer (pro-tuning/install-protune.sh) reads THIS file, matches chipset+game, gates on mesa_hash, then pulls the bundle from Releases. sha256/size/shader_count fields marked PENDING_CLEAN_ROOM are filled by pro-tuning/export.sh after the fresh clean-room compile.",
   "tunes": [
     {
-      "game": { "id": "NPEA90002", "name": "Gran Turismo HD Concept" },
+      "game": {
+        "id": "NPEA90002",
+        "name": "Gran Turismo HD Concept"
+      },
       "chipset": "SM8250",
       "homologation": {
         "turnip_version": "26.1.0",
@@ -16,19 +19,34 @@
       "bundle": {
         "asset": "protune_NPEA90002_SM8250.zip",
         "url": "https://github.com/mercurious/etk/releases/download/vault-SM8250-turnip26.1.0/protune_NPEA90002_SM8250.zip",
-        "sha256": "PENDING_CLEAN_ROOM",
-        "size_mb": 0
+        "sha256": "06d7df3d3f562b9fa1b0d47137254e8017c5a275d66374953567aa650231d492",
+        "size_mb": 16
       },
-      "tiers": { "config": true, "vault": true, "savedata": false, "game_pkg": false },
-      "vault": { "shader_count": 0, "clean_room": true },
+      "tiers": {
+        "config": true,
+        "vault": true,
+        "savedata": true,
+        "game_pkg": false
+      },
+      "vault": {
+        "shader_count": 2015,
+        "clean_room": true
+      },
       "tuner": {
         "handle": "dave",
-        "note": "fresh clean-room vault on final 2026 official — ideal shelf-life",
-        "harvest": { "sessions": 0, "hours": 0, "best_streak": 0 }
+        "note": "clean-room vault on final 2026 official",
+        "harvest": {
+          "sessions": 0,
+          "hours": 0,
+          "best_streak": 0
+        }
       }
     },
     {
-      "game": { "id": "NPUA80075", "name": "Gran Turismo 5 Prologue" },
+      "game": {
+        "id": "NPUA80075",
+        "name": "Gran Turismo 5 Prologue"
+      },
       "chipset": "SM8250",
       "homologation": {
         "turnip_version": "26.1.0",
@@ -39,15 +57,27 @@
       "bundle": {
         "asset": "protune_NPUA80075_SM8250.zip",
         "url": "https://github.com/mercurious/etk/releases/download/vault-SM8250-turnip26.1.0/protune_NPUA80075_SM8250.zip",
-        "sha256": "PENDING_CLEAN_ROOM",
-        "size_mb": 0
+        "sha256": "530acb723f6ce80906a5b961464d7d94863aa3cf70dee44b4838bdee9972118d",
+        "size_mb": 82
       },
-      "tiers": { "config": true, "vault": true, "savedata": false, "game_pkg": false },
-      "vault": { "shader_count": 0, "clean_room": true },
+      "tiers": {
+        "config": true,
+        "vault": true,
+        "savedata": true,
+        "game_pkg": false
+      },
+      "vault": {
+        "shader_count": 11075,
+        "clean_room": true
+      },
       "tuner": {
         "handle": "dave",
-        "note": "fresh clean-room vault on final 2026 official — ideal shelf-life",
-        "harvest": { "sessions": 0, "hours": 0, "best_streak": 0 }
+        "note": "clean-room vault on final 2026 official",
+        "harvest": {
+          "sessions": 0,
+          "hours": 0,
+          "best_streak": 0
+        }
       }
     }
   ]
