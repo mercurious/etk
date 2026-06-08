@@ -134,10 +134,25 @@ elif [ "$VAULT_OK" -eq 0 ]; then
 fi
 
 # ---------- inject: savedata (TIER 3, opt-in, non-clobbering) ----------
+# Save dirs are titleID-prefixed (e.g. NPUA80075-GAME-, NPUA80075-RPLY2-*).
+# We back up any existing same-named dir BEFORE writing — never a silent
+# overwrite of the recipient's progress (ProTuningExportDossier §6 TIER 3).
 if [ "$WITH_SAVEDATA" -eq 1 ] && [ -d "$TMP/bundle/savedata" ]; then
-  # TODO(payload-test): finalize destination + back up recipient's existing
-  # save BEFORE extract (dossiers/ProTuningExportDossier.md §6 TIER 3).
-  say "${Y}[TODO] savedata tier present but install is stubbed in the scaffold.${N}"
+  SAVE_DST=""
+  for d in /storage/*/roms/bios/rpcs3/dev_hdd0/home/00000001/savedata; do
+    [ -d "$d" ] && { SAVE_DST="$d"; break; }
+  done
+  [ -n "$SAVE_DST" ] || { SAVE_DST=/storage/games-internal/roms/bios/rpcs3/dev_hdd0/home/00000001/savedata; mkdir -p "$SAVE_DST"; }
+  TS="$(date +%Y%m%d-%H%M%S 2>/dev/null || echo bak)"
+  N_SAVE=0
+  for sd in "$TMP/bundle/savedata"/*/; do
+    [ -d "$sd" ] || continue
+    name="$(basename "$sd")"
+    [ -d "$SAVE_DST/$name" ] && mv "$SAVE_DST/$name" "$SAVE_DST/$name.protune.bak.$TS"
+    cp -a "$sd" "$SAVE_DST/"
+    N_SAVE=$((N_SAVE + 1))
+  done
+  say "    ${G}savedata -> $SAVE_DST ($N_SAVE dir(s); any existing backed up)${N}"
 fi
 
 # ---------- swappiness one-shot (NOT a daemon; proven essential) ----------

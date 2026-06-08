@@ -20,7 +20,7 @@ REPO="${PROTUNE_REPO:-mercurious/etk}"
 CHIPSET="SM8250"; TURNIP="26.1.0"; ROCKNIX="20260601"
 TUNER="dave"; NOTE="clean-room vault on final 2026 official"
 RIG="${RIG:-SM8250.local}"; MESA_HASH=""; TAG=""
-DO_VAULT=1; DO_PUBLISH=0; DO_WRITE_INDEX=0
+DO_VAULT=1; DO_PUBLISH=0; DO_WRITE_INDEX=0; DO_SAVE=0
 
 GAME_ID="${1:-}"; shift || true
 [ -n "$GAME_ID" ] || { echo "usage: export.sh <GAME_ID> [--chipset X] [--turnip V] [--rocknix B] [--tuner H] [--note '..'] [--tag T] [--mesa-hash H] [--rig host] [--no-vault] [--publish] [--write-index]"; exit 1; }
@@ -30,6 +30,7 @@ while [ $# -gt 0 ]; do case "$1" in
   --note) NOTE="$2"; shift 2;;        --tag) TAG="$2"; shift 2;;
   --mesa-hash) MESA_HASH="$2"; shift 2;; --rig) RIG="$2"; shift 2;;
   --no-vault) DO_VAULT=0; shift;;     --publish) DO_PUBLISH=1; shift;;
+  --with-savedata) DO_SAVE=1; shift;;
   --write-index) DO_WRITE_INDEX=1; shift;;
   *) echo "unknown flag: $1" >&2; exit 1;;
 esac; done
@@ -54,15 +55,35 @@ fi
 # --- assemble the bundle ---
 STAGE="$(mktemp -d)"; trap 'rm -rf "$STAGE"' EXIT
 cp -a "$CONFIG_SRC" "$STAGE/config_${GAME_ID}.yml"
-SHADER_COUNT=0; HAVE_VAULT=false
+# NOTE: HAVE_VAULT/HAVE_SAVE are Python-cased (True/False) — they are
+# interpolated straight into the python heredocs below.
+SHADER_COUNT=0; HAVE_VAULT=False
 if [ "$DO_VAULT" -eq 1 ] && [ -d "$VAULT_SRC" ]; then
   mkdir -p "$STAGE/shaders"
   cp -a "$VAULT_SRC/." "$STAGE/shaders/"
   SHADER_COUNT=$(find "$STAGE/shaders" -type f | wc -l | tr -d ' ')
-  HAVE_VAULT=true
+  HAVE_VAULT=True
   echo ">>> vault: $SHADER_COUNT shader files from $VAULT_SRC"
 else
   echo ">>> NOTE: no vault bundled (config-only). Source: $VAULT_SRC"
+fi
+
+# --- savedata (TIER 3, opt-in): pull titleID-prefixed save dirs from the rig ---
+# Saves are user data (not copyrighted game content) — shippable. Dirs are
+# named <TITLEID>-GAME-/<TITLEID>-RPLY*, so the remote shell glob captures the
+# game's save + replays. The recipient's installer backs up before writing.
+SAVE_COUNT=0; HAVE_SAVE=False
+if [ "$DO_SAVE" -eq 1 ]; then
+  echo ">>> pulling savedata for $GAME_ID from $RIG..."
+  mkdir -p "$STAGE/savedata"
+  RSAVE="/storage/games-internal/roms/bios/rpcs3/dev_hdd0/home/00000001/savedata"
+  rsync -a -e ssh --exclude='.DS_Store' "root@$RIG:$RSAVE/${GAME_ID}*" "$STAGE/savedata/" 2>/dev/null || true
+  SAVE_COUNT=$(find "$STAGE/savedata" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
+  if [ "$SAVE_COUNT" -gt 0 ]; then
+    HAVE_SAVE=True; echo ">>> savedata: $SAVE_COUNT dir(s)"
+  else
+    echo ">>> NOTE: no savedata matched ${GAME_ID}* on $RIG"; rmdir "$STAGE/savedata" 2>/dev/null || true
+  fi
 fi
 
 # --- per-bundle manifest.json (pro_tuning/1, self-describing) ---
@@ -74,6 +95,7 @@ m={"pro_tuning":1,
    "homologation":{"chipset":"$CHIPSET","turnip_version":"$TURNIP","rocknix_build":"$ROCKNIX","mesa_hash":"$MESA_HASH"},
    "config":{"file":"config_${GAME_ID}.yml","dest":"custom_configs"},
    "vault":{"present":$HAVE_VAULT,"shader_count":$SHADER_COUNT,"clean_room":True,"dest":"mesa_shader_cache"},
+   "savedata":{"present":$HAVE_SAVE,"dirs":$SAVE_COUNT,"dest":"dev_hdd0/home/00000001/savedata"},
    "rocknix_settings":{"cooling.profile":"aggressive","cpugovernor":"performance","gpuperf":"performance"}}
 json.dump(m,open(sys.argv[1],"w"),indent=2)
 PY
@@ -108,7 +130,11 @@ if e is None:
 e["homologation"]={"turnip_version":"$TURNIP","rocknix_build":"$ROCKNIX","mesa_hash":"$MESA_HASH"}
 e["release_tag"]="$TAG"
 e["bundle"]={"asset":"$ASSET","url":"$URL","sha256":"$SHA","size_mb":$SIZE_MB}
-e["tiers"]={"config":True,"vault":$HAVE_VAULT,"savedata":False,"game_pkg":False}
+# game_pkg is ALWAYS False in the PUBLIC index — pkg/rap URLs are never
+# published (they live only in the operator's gitignored config/paddock_repos.json).
+# This is the defensibility backstop: the curated index carries tunes, never sources.
+e["tiers"]={"config":True,"vault":$HAVE_VAULT,"savedata":$HAVE_SAVE,"game_pkg":False}
+e.pop("game_pkg", None)
 e["vault"]={"shader_count":$SHADER_COUNT,"clean_room":True}
 e.setdefault("tuner",{}).update({"handle":"$TUNER","note":"$NOTE"})
 d["updated"]="$(date +%Y-%m-%d)"

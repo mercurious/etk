@@ -56,6 +56,7 @@ import glob
 import fcntl
 import re
 import shutil
+import hashlib
 
 
 # === GLOBALS ===
@@ -146,6 +147,30 @@ SCREENSHOT_MODE_DEFAULT = "in-game"
 CRASH_SIG_FILE = os.environ.get("SIGNATURES_FILE", f"{ETK_ROOT}/config/crash_signatures.json")
 
 
+# === PADDOCK TAB: DISTRIBUTION CLIENT (0.5.0) ===
+# PADDOCK is the on-device subscribe/install client for the GitHub-indexed
+# Pro Tuning distribution (dossiers/Release050PaddockDossier.md). It reads the
+# curated index, intersects it with installed games, and shells out to the
+# SAME install-protune.sh injector (one injector; the trust invariant holds).
+PADDOCK_INDEX_URL = os.environ.get(
+    'PROTUNE_INDEX_URL',
+    'https://raw.githubusercontent.com/mercurious/etk/main/vault-index/manifest.json')
+PROTUNE_INSTALLER = os.environ.get(
+    'PROTUNE_INSTALLER', f"{ETK_ROOT}/pro-tuning/install-protune.sh")
+# The homologation primitive: sha256 of the first 64 KB of the Turnip driver,
+# the exact gate install.sh and install-protune.sh use. Match => the shared
+# shader vault is guaranteed loadable on this rig.
+FREEDRENO_SO = os.environ.get('FREEDRENO_SO', '/usr/lib/libvulkan_freedreno.so')
+# Chipset key for index matching. On these rigs the hostname IS the SoC
+# (e.g. "SM8250"); ETK_CHIPSET overrides for dev/testing.
+PADDOCK_CHIPSET = os.environ.get('ETK_CHIPSET', '').strip()
+# known_repo hatch: LOCAL, gitignored game-source pointers (pkg+rap URLs the
+# operator supplies for a game they own). NEVER published — keeping these out
+# of the curated index is the defensibility line (dossier §8).
+PADDOCK_REPOS_JSON = os.environ.get(
+    'PADDOCK_REPOS_JSON', f"{ETK_ROOT}/config/paddock_repos.json")
+
+
 # === COLOR PAIRS ===
 # Pitstop curses UI is exempt from the manifest's no-ANSI rule
 # (that rule applies to commander.sh's pit-wall pane, where ANSI codes
@@ -187,13 +212,16 @@ BTN_BACK = 305              # BTN_EAST  = Circle (O) = back     (DS5 standard)
 CURRENT_TAB_TUNING = 0
 CURRENT_TAB_TELEMETRY = 1
 CURRENT_TAB_TOOLS = 2
+CURRENT_TAB_PADDOCK = 3
 
-# Tab registry — order here is the on-screen order: [TELEMETRY][TUNING][TOOLS].
-# Adding a future tab is one line here plus a new CURRENT_TAB_* constant and
-# a matching draw_/handle_ pair. Geometry math handles itself.
+# Tab registry — order here is the on-screen order. PADDOCK sits between TUNING
+# and TOOLS so the strip reads left->right as inspect -> tune -> subscribe ->
+# operate. Adding a future tab is one line here plus a new CURRENT_TAB_*
+# constant and a matching draw_/handle_ pair. Geometry math handles itself.
 TABS = [
     ("TELEMETRY", CURRENT_TAB_TELEMETRY),
     ("TUNING", CURRENT_TAB_TUNING),
+    ("PADDOCK", CURRENT_TAB_PADDOCK),
     ("TOOLS", CURRENT_TAB_TOOLS),
 ]
 
@@ -759,6 +787,8 @@ def _draw_footer(stdscr, h, w, current_tab, status):
             footer = "DPAD UP/DN: Move  LT/RT: Change  B: Save  A: Quit  L1/R1: Tabs"
         elif current_tab == CURRENT_TAB_TELEMETRY:
             footer = "DPAD: Select  A: Back/Quit  B: Detail  L1/R1: Tabs"
+        elif current_tab == CURRENT_TAB_PADDOCK:
+            footer = "DPAD: Game/Col  B: Toggle/APPLY  A: Quit  L1/R1: Tabs"
         else:
             footer = "DPAD UP/DN: Move  B: Select  A: Back  L1/R1: Tabs"
         stdscr.addstr(h - 2, 4, footer[:w - 6], curses.A_BOLD)
@@ -2524,6 +2554,570 @@ def handle_tools_pad(state, etype, code, val):
     return "continue"
 
 
+# === PADDOCK TAB (0.5.0 — subscribe/install client) ===
+#
+# Reads the curated GitHub index, matches it against installed games + the
+# local Turnip driver, and applies a selected tune by shelling out to the
+# repo's install-protune.sh (ONE injector — the pure-data trust invariant
+# from ProTuningExportDossier §5.4 is preserved: the bundle is data, the only
+# code that runs is the repo-hosted installer). Phase 1-2 of the dossier's
+# §11 sequence: read-only list + APPLY (config + vault). SAVEHUB and the
+# known_repo/game_pkg hatch are stubbed pending later phases.
+
+_ANSI_RE = re.compile(r'\x1b\[[0-9;]*m')
+
+# Per-row field cursor: three toggles + an APPLY action. Using an APPLY
+# pseudo-field keeps the whole tab driveable with just CONFIRM + BACK + dpad
+# (the only gamepad buttons we can rely on un-probed).
+_PF_TUNE, _PF_SHADERS, _PF_SAVE, _PF_APPLY = 0, 1, 2, 3
+_PF_COUNT = 4
+_PENDING_SENTINELS = ("", "PENDING_CLEAN_ROOM", None, "null")
+
+
+def _strip_ansi(s):
+    return _ANSI_RE.sub('', s)
+
+
+def _paddock_chipset():
+    if PADDOCK_CHIPSET:
+        return PADDOCK_CHIPSET
+    try:
+        return os.uname().nodename
+    except Exception:
+        return "SM8250"
+
+
+def _local_mesa_hash():
+    """sha256 of the first 64 KB of the Turnip driver — the homologation
+    gate primitive. None off-rig / on read failure (shaders then grey out)."""
+    try:
+        with open(FREEDRENO_SO, 'rb') as f:
+            return hashlib.sha256(f.read(65536)).hexdigest()
+    except Exception as e:
+        _log(f"paddock: mesa hash read failed: {e}")
+        return None
+
+
+def _paddock_fetch_index():
+    """curl the curated index (no Python HTTP stack on the rig). Returns
+    (data, None) or (None, error_str)."""
+    try:
+        r = subprocess.run(["curl", "-fsSL", PADDOCK_INDEX_URL],
+                           capture_output=True, text=True, timeout=25)
+    except Exception as e:
+        return None, f"curl error: {e}"
+    if r.returncode != 0:
+        return None, f"fetch failed (curl {r.returncode})"
+    try:
+        return json.loads(r.stdout), None
+    except Exception as e:
+        return None, f"bad index JSON: {e}"
+
+
+def _sha256_file(path):
+    """Streaming sha256 of a (possibly multi-GB) file. None on failure."""
+    h = hashlib.sha256()
+    try:
+        with open(path, 'rb') as f:
+            for chunk in iter(lambda: f.read(1 << 20), b''):
+                h.update(chunk)
+        return h.hexdigest()
+    except Exception as e:
+        _log(f"paddock: sha256 failed {path}: {e}")
+        return None
+
+
+def _paddock_load_repos():
+    """Load the LOCAL, gitignored known_repo pointers. Returns
+    {game_id: {pkg:{url,sha256}, rap:{url,sha256}, name}}. Only entries with a
+    non-empty pkg.url are usable; keys starting with '_' (README/schema) are
+    skipped. This file is never published — it carries the operator's own
+    game-source URLs (dossier §8)."""
+    repos = {}
+    try:
+        with open(PADDOCK_REPOS_JSON) as f:
+            data = json.load(f)
+        for gid, ent in data.items():
+            if gid.startswith('_') or not isinstance(ent, dict):
+                continue
+            if (ent.get("pkg") or {}).get("url"):
+                repos[gid] = ent
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        _log(f"paddock: repos load failed: {e}")
+    return repos
+
+
+def _paddock_refresh(state):
+    """Fetch + parse the index, intersect with installed games and the local
+    driver, build the selectable rows. Network failure is non-fatal: keep the
+    last good rows and surface an offline status."""
+    data, err = _paddock_fetch_index()
+    if err:
+        state["paddock_status"] = f"offline — {err}"
+        if state.get("paddock_rows") is None:
+            state["paddock_rows"] = []
+        return
+
+    installed = {g["title_id"]: g["name"]
+                 for g in _list_psn_games() if g.get("title_id")}
+    chipset = _paddock_chipset()
+    local_mesa = _local_mesa_hash()
+    repos = _paddock_load_repos()
+    rows = []
+    for t in data.get("tunes", []):
+        if t.get("chipset") != chipset:
+            continue
+        game = t.get("game", {})
+        gid = game.get("id", "")
+        if not gid:
+            continue
+        tiers = t.get("tiers", {})
+        homolog = t.get("homologation", {})
+        bundle = t.get("bundle", {})
+        want_mesa = homolog.get("mesa_hash", "")
+        shaders_ok = bool(local_mesa) and want_mesa not in _PENDING_SENTINELS \
+            and want_mesa == local_mesa
+        publishable = bundle.get("sha256", "") not in _PENDING_SENTINELS
+        rows.append({
+            "game_id": gid,
+            "name": game.get("name") or installed.get(gid, gid),
+            "installed": gid in installed,
+            "mesa_hash": want_mesa,
+            "shaders_ok": shaders_ok,
+            "publishable": publishable,
+            "size_mb": bundle.get("size_mb", 0),
+            "turnip": homolog.get("turnip_version", ""),
+            "tuner": (t.get("tuner", {}) or {}).get("handle", "anon"),
+            "tier_config": bool(tiers.get("config", True)),
+            "tier_vault": bool(tiers.get("vault", False)),
+            "tier_save": bool(tiers.get("savedata", False)),
+            # known_repo: a local pkg+rap pointer exists for this (missing) game
+            "has_repo": gid in repos,
+            # toggles, defaulted from the published tiers + the gate
+            "t_tune": bool(tiers.get("config", True)),
+            "t_shaders": bool(tiers.get("vault", False)) and shaders_ok,
+            "t_save": False,
+        })
+    rows.sort(key=lambda r: r["name"].lower())
+
+    # Header driver verdict
+    if local_mesa is None:
+        note = "driver: unreadable (off-rig?)"
+    elif not rows:
+        note = "no tunes published for this chipset"
+    elif any(r["shaders_ok"] for r in rows):
+        note = "driver match · shaders loadable"
+    elif any(r["mesa_hash"] not in _PENDING_SENTINELS for r in rows):
+        note = "driver MISMATCH · shaders gated (config-only)"
+    else:
+        note = "index pending clean-room mint"
+
+    state["paddock_rows"] = rows
+    state["paddock_repos"] = repos
+    state["paddock_index_date"] = data.get("updated", "")
+    state["paddock_chipset"] = chipset
+    state["paddock_driver_note"] = note
+    state["paddock_status"] = ""
+    state["paddock_sel"] = min(state.get("paddock_sel", 0), max(0, len(rows) - 1))
+    state["paddock_field"] = 0
+
+
+def _paddock_busy(stdscr, msg):
+    try:
+        stdscr.erase()
+        h, w = stdscr.getmaxyx()
+        _draw_title_bar(stdscr, w)
+        _draw_tab_strip(stdscr, CURRENT_TAB_PADDOCK, w)
+        stdscr.addstr(h // 2, max(2, (w - len(msg)) // 2), msg[:w - 4],
+                      curses.A_BOLD)
+        hint = "Watch the on-screen notifications for progress."
+        stdscr.addstr(h // 2 + 2, max(2, (w - len(hint)) // 2), hint[:w - 4],
+                      curses.A_DIM)
+        stdscr.refresh()
+    except curses.error:
+        pass
+
+
+def draw_paddock(stdscr, state):
+    """PADDOCK render: matched-game list with TUNE/SHADERS/SAVE toggles +
+    an APPLY action, the per-rig driver verdict, and a detail line."""
+    h, w = stdscr.getmaxyx()
+
+    def put(row, col, text, attr=curses.A_NORMAL):
+        try:
+            stdscr.addstr(row, col, text[:max(0, w - col - 1)], attr)
+        except curses.error:
+            pass
+
+    # Header (rows 2-3): PAD + index date, then content header.
+    put(2, 2, f"PADDOCK  |  PAD: {state.get('gamepad_status', '')}", curses.A_DIM)
+    idx_date = state.get("paddock_index_date", "")
+    if idx_date:
+        istr = f"index {idx_date}"
+        put(2, max(2, w - len(istr) - 2), istr, curses.A_DIM)
+    put(3, 2, "-" * (w - 4), curses.A_DIM)
+
+    # Result sub-screen after an APPLY.
+    if state.get("paddock_mode") == "result":
+        ok, lines = state.get("paddock_result") or (False, ["(no result)"])
+        put(5, 2, "DONE" if ok else "FAILED", curses.A_BOLD | (
+            curses.color_pair(PAIR_CLEAN) if ok else curses.color_pair(PAIR_CRASH)))
+        put(6, 2, "-" * (w - 4), curses.A_DIM)
+        y = 8
+        for ln in lines:
+            if y >= h - 4:
+                break
+            put(y, 4, ln)
+            y += 1
+        if y < h - 4:
+            put(y + 1, 4, "B / A: Back to list",
+                curses.color_pair(1) | curses.A_BOLD)
+        return
+
+    # known_repo confirm sub-screen (install a missing game from YOUR source).
+    if state.get("paddock_mode") == "pkg_confirm":
+        rows = state.get("paddock_rows") or []
+        sel = state.get("paddock_sel", 0)
+        row = rows[sel] if 0 <= sel < len(rows) else {"game_id": "?", "name": "?"}
+        ent = (state.get("paddock_repos") or {}).get(row.get("game_id"), {})
+        pkg = ent.get("pkg") or {}
+        url = pkg.get("url", "")
+        host = url.split("/")[2] if "://" in url else url[:40]
+        sha = (pkg.get("sha256") or "")
+        put(5, 2, "KNOWN_REPO — INSTALL MISSING GAME", curses.A_BOLD)
+        put(6, 2, "-" * (w - 4), curses.A_DIM)
+        put(8, 4, f"Game   : {row.get('name', '')}  ({row.get('game_id', '')})")
+        put(9, 4, f"Source : {host}")
+        put(10, 4, f"pkg sha: {sha[:32] or '(none — UNVERIFIED)'}")
+        put(12, 4, "This downloads a game from a source YOU supplied and installs", curses.A_DIM)
+        put(13, 4, "it with the headless PKG installer. ETK hosts nothing.", curses.A_DIM)
+        if not sha:
+            put(15, 4, "WARNING: no sha256 in paddock_repos.json — integrity NOT checked.",
+                curses.color_pair(PAIR_CRASH) | curses.A_BOLD)
+        put(h - 4, 4, "B: Download & install     A: Cancel",
+            curses.color_pair(1) | curses.A_BOLD)
+        return
+
+    put(5, 2, "PADDOCK · powered by GitHub Releases", curses.A_BOLD)
+    put(6, 2, f"chipset: {state.get('paddock_chipset', '')}   "
+              f"{state.get('paddock_driver_note', '')}", curses.A_DIM)
+    put(7, 2, "-" * (w - 4), curses.A_DIM)
+
+    rows = state.get("paddock_rows")
+    if rows is None:
+        put(9, 4, "Fetching Pro Tuning index…", curses.A_BOLD)
+        return
+    if not rows:
+        st = state.get("paddock_status") or "No published tunes match this rig."
+        put(9, 4, st, curses.A_DIM)
+        put(11, 4, "A tune appears here when a game you've installed has a",
+            curses.A_DIM)
+        put(12, 4, "published bundle for this chipset. Install games via TOOLS.",
+            curses.A_DIM)
+        return
+
+    # Column header + rows.
+    C_TUNE, C_SHAD, C_SAVE, C_APPLY = 26, 33, 41, 49
+    put(8, 4, "GAME", curses.A_DIM)
+    put(8, C_TUNE, "TUNE", curses.A_DIM)
+    put(8, C_SHAD, "SHAD", curses.A_DIM)
+    put(8, C_SAVE, "SAVE", curses.A_DIM)
+    put(8, C_APPLY, "ACTION", curses.A_DIM)
+
+    sel = state.get("paddock_sel", 0)
+    field = state.get("paddock_field", 0)
+    top = 10
+    cap = max(1, (h - 6) - top)
+    if len(rows) <= cap:
+        off = 0
+    else:
+        off = min(max(0, sel - cap // 2), len(rows) - cap)
+
+    def cell(ry, col, text, focused, enabled=True):
+        attr = curses.A_NORMAL if enabled else curses.A_DIM
+        if focused:
+            attr |= curses.A_REVERSE
+        put(ry, col, text, attr)
+
+    for r_i, idx in enumerate(range(off, min(off + cap, len(rows)))):
+        row = rows[idx]
+        y = top + r_i
+        is_sel = (idx == sel)
+        name_attr = curses.A_NORMAL if row["installed"] else curses.A_DIM
+        if is_sel:
+            name_attr = curses.A_REVERSE
+        put(y, 2, "> " if is_sel else "  ",
+            curses.color_pair(1) if is_sel else curses.A_NORMAL)
+        put(y, 4, f"{row['name'][:20]:<20}", name_attr)
+
+        cell(y, C_TUNE, "[x]" if row["t_tune"] else "[ ]",
+             is_sel and field == _PF_TUNE)
+        if row["shaders_ok"]:
+            cell(y, C_SHAD, "[x]" if row["t_shaders"] else "[ ]",
+                 is_sel and field == _PF_SHADERS)
+        else:
+            cell(y, C_SHAD, "[-]", is_sel and field == _PF_SHADERS, enabled=False)
+        # SAVEHUB: real opt-in toggle when the tune publishes a savedata tier.
+        if row["tier_save"]:
+            cell(y, C_SAVE, "[x]" if row["t_save"] else "[ ]",
+                 is_sel and field == _PF_SAVE)
+        else:
+            cell(y, C_SAVE, "[-]", is_sel and field == _PF_SAVE, enabled=False)
+        # ACTION: GET (install the missing game from known_repo) or APPLY (tune).
+        if not row["installed"] and row.get("has_repo"):
+            cell(y, C_APPLY, "[GET]", is_sel and field == _PF_APPLY, enabled=True)
+        else:
+            appliable = row["installed"] and row["publishable"]
+            cell(y, C_APPLY, "[APPLY]", is_sel and field == _PF_APPLY,
+                 enabled=appliable)
+
+    # Detail line for the selected row.
+    if 0 <= sel < len(rows):
+        row = rows[sel]
+        if not row["installed"]:
+            if row.get("has_repo"):
+                det = "missing — known_repo ready; APPLY downloads + installs it"
+            else:
+                det = "not installed — install the game first (TOOLS)"
+        elif not row["publishable"]:
+            det = "tune not minted yet (index PENDING_CLEAN_ROOM)"
+        elif not row["shaders_ok"]:
+            det = f"config-only · driver differs · {row['size_mb']} MB"
+        else:
+            det = (f"ready · {row['size_mb']} MB · Turnip {row['turnip']} "
+                   f"· tuned by {row['tuner']}")
+        put(h - 5, 2, f"› {row['name']}: {det}"[:w - 4],
+            curses.color_pair(1) | curses.A_BOLD)
+
+
+def _paddock_toggle(state):
+    """Toggle the focused field on the selected row, respecting gates."""
+    rows = state.get("paddock_rows") or []
+    if not rows:
+        return
+    row = rows[state.get("paddock_sel", 0)]
+    field = state.get("paddock_field", 0)
+    if field == _PF_TUNE:
+        row["t_tune"] = not row["t_tune"]
+        state["status"] = ""
+    elif field == _PF_SHADERS:
+        if row["shaders_ok"]:
+            row["t_shaders"] = not row["t_shaders"]
+            state["status"] = ""
+        else:
+            state["status"] = "SHADERS gated: this rig's driver build differs"
+    elif field == _PF_SAVE:
+        if row["tier_save"]:
+            row["t_save"] = not row["t_save"]
+            state["status"] = ""
+        else:
+            state["status"] = "No savedata published for this tune"
+
+
+def _paddock_apply(state):
+    """Queue an APPLY for the selected row (executed in the main loop so it
+    has stdscr for the busy frame). Gated on installed + minted."""
+    rows = state.get("paddock_rows") or []
+    if not rows:
+        return "continue"
+    row = rows[state.get("paddock_sel", 0)]
+    if not row["installed"]:
+        if row.get("has_repo"):
+            # Missing game with a known_repo pointer → confirm, then install.
+            state["paddock_mode"] = "pkg_confirm"
+            return "continue"
+        state["status"] = "Game not installed — can't apply a tune"
+        return "continue"
+    if not row["publishable"]:
+        state["status"] = "Tune not minted yet (PENDING_CLEAN_ROOM)"
+        return "continue"
+    state["paddock_action"] = row
+    return "continue"
+
+
+def _paddock_queue_pkg(state):
+    """Confirm pressed in pkg_confirm: queue the known_repo install for the
+    selected row and return to the list (the main loop executes it)."""
+    rows = state.get("paddock_rows") or []
+    sel = state.get("paddock_sel", 0)
+    if 0 <= sel < len(rows):
+        ent = (state.get("paddock_repos") or {}).get(rows[sel]["game_id"])
+        if ent:
+            state["paddock_pkg_action"] = (rows[sel], ent)
+    state["paddock_mode"] = "list"
+
+
+def _run_paddock_apply(row, notifier):
+    """Shell out to install-protune.sh for one game, streaming its progress to
+    the mako overlay. Returns (ok, lines) for the result sub-screen. NEVER
+    passes --allow-turnip-mismatch (dossier §10): a greyed SHADERS toggle is
+    the UI expression of the gate; forcing dead-weight shaders stays manual."""
+    gid = row["game_id"]
+    name = row["name"]
+    if not os.path.exists(PROTUNE_INSTALLER):
+        return False, ["installer not found on rig:", PROTUNE_INSTALLER,
+                       "(install.sh deploys pro-tuning/install-protune.sh)"]
+    cmd = ["sh", PROTUNE_INSTALLER, gid, f"--chipset={_paddock_chipset()}"]
+    if row.get("t_save"):
+        cmd.append("--with-savedata")
+    notifier.post("PADDOCK", f"{name}: starting…")
+    lines = []
+    try:
+        proc = subprocess.Popen(cmd, env=_tools_env(),
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT,
+                                text=True, bufsize=1)
+        for raw in proc.stdout:
+            ln = _strip_ansi(raw.rstrip())
+            if not ln:
+                continue
+            lines.append(ln)
+            notifier.post("PADDOCK", f"{name}: {ln[:60]}")
+        proc.wait(timeout=600)
+        ok = proc.returncode == 0
+    except Exception as e:
+        return False, [f"apply failed: {e}"] + lines[-10:]
+    notifier.post("PADDOCK", f"{name}: {'done ✓' if ok else 'failed'}")
+    tail = lines[-12:]
+    head = [f"{'INSTALLED' if ok else 'FAILED'}: {name}", ""]
+    return ok, head + tail
+
+
+def _run_paddock_pkg_install(row, ent, notifier):
+    """known_repo hatch: download the operator-supplied pkg (+rap), sha256-
+    verify, then hand to the existing headless PKG installer. The URLs are the
+    operator's own (pure-data invariant: ETK runs the installer, never hosts
+    the bytes). Refuses on a sha mismatch; warns loudly when no sha is given."""
+    gid = row["game_id"]
+    name = row["name"]
+    pkg = ent.get("pkg") or {}
+    rap = ent.get("rap") or {}
+    pkg_url = pkg.get("url")
+    pkg_sha = (pkg.get("sha256") or "").lower()
+    if not pkg_url:
+        return False, ["no pkg url in paddock_repos.json for this game"]
+    try:
+        os.makedirs(PKG_STAGING_DIR, exist_ok=True)
+    except Exception:
+        pass
+    tmp_pkg = os.path.join(PKG_STAGING_DIR, f"_paddock_{gid}.pkg")
+    tmp_rap = os.path.join(PKG_STAGING_DIR, f"_paddock_{gid}.rap")
+    lines = []
+    try:
+        notifier.post("PADDOCK", f"{name}: downloading PKG…")
+        r = subprocess.run(["curl", "-fsSL", "-o", tmp_pkg, pkg_url],
+                           capture_output=True, text=True, timeout=3600)
+        if r.returncode != 0:
+            return False, [f"pkg download failed (curl {r.returncode})",
+                           (r.stderr or "")[:120]]
+        got = (_sha256_file(tmp_pkg) or "").lower()
+        if pkg_sha:
+            if got != pkg_sha:
+                return False, ["pkg sha256 MISMATCH — refusing to install",
+                               f"want {pkg_sha[:24]}…", f"got  {got[:24]}…"]
+            lines.append("pkg downloaded + sha256 verified")
+        else:
+            lines.append("pkg downloaded (NO sha256 in repos — UNVERIFIED)")
+        rap_path = None
+        if rap.get("url"):
+            notifier.post("PADDOCK", f"{name}: downloading RAP…")
+            rr = subprocess.run(["curl", "-fsSL", "-o", tmp_rap, rap["url"]],
+                               capture_output=True, text=True, timeout=300)
+            if rr.returncode == 0:
+                rsha = (rap.get("sha256") or "").lower()
+                rgot = (_sha256_file(tmp_rap) or "").lower()
+                if rsha and rgot != rsha:
+                    return False, ["rap sha256 MISMATCH — refusing", lines]
+                rap_path = tmp_rap
+                lines.append("rap downloaded" + (" + verified" if rsha else " (UNVERIFIED)"))
+            else:
+                lines.append(f"rap download failed (curl {rr.returncode}) — pkg only")
+        notifier.post("PADDOCK", f"{name}: installing PKG (RPCS3 opens)…")
+        ok, ilines = _run_install(tmp_pkg, rap_path, notifier)
+        head = [f"{'INSTALLED' if ok else 'FAILED'}: {name}", ""]
+        return ok, head + lines + [""] + (ilines or [])[-10:]
+    except Exception as e:
+        return False, [f"pkg install error: {e}"] + lines
+    finally:
+        for p in (tmp_pkg, tmp_rap):
+            try:
+                if os.path.exists(p):
+                    os.remove(p)
+            except Exception:
+                pass
+
+
+def handle_paddock_kb(state, ch):
+    """Keyboard input for PADDOCK. Tab-switch keys [/] intercepted upstream."""
+    if ch in (ord('q'), ord('Q')):
+        return "quit"
+    if state.get("paddock_mode") == "result":
+        if ch in (ord('\n'), ord('s'), curses.KEY_BACKSPACE, 8, 127):
+            state["paddock_mode"] = "list"
+        return "continue"
+    if state.get("paddock_mode") == "pkg_confirm":
+        if ch in (ord('\n'), ord('s')):
+            _paddock_queue_pkg(state)
+        elif ch in (curses.KEY_BACKSPACE, 8, 127):
+            state["paddock_mode"] = "list"
+        return "continue"
+    rows = state.get("paddock_rows") or []
+    if ch == ord('r'):
+        state["paddock_refresh_request"] = True
+    elif ch == curses.KEY_UP and rows:
+        state["paddock_sel"] = (state["paddock_sel"] - 1) % len(rows)
+        state["status"] = ""
+    elif ch == curses.KEY_DOWN and rows:
+        state["paddock_sel"] = (state["paddock_sel"] + 1) % len(rows)
+        state["status"] = ""
+    elif ch == curses.KEY_LEFT:
+        state["paddock_field"] = (state.get("paddock_field", 0) - 1) % _PF_COUNT
+        state["status"] = ""
+    elif ch == curses.KEY_RIGHT:
+        state["paddock_field"] = (state.get("paddock_field", 0) + 1) % _PF_COUNT
+        state["status"] = ""
+    elif ch in (ord('\n'), ord('s')):
+        if state.get("paddock_field", 0) == _PF_APPLY:
+            return _paddock_apply(state)
+        _paddock_toggle(state)
+    return "continue"
+
+
+def handle_paddock_pad(state, etype, code, val):
+    """Gamepad input for PADDOCK. L1/R1 intercepted upstream for tabs."""
+    if state.get("paddock_mode") == "result":
+        if etype == EV_KEY and val == 1 and code in (BTN_CONFIRM, BTN_BACK):
+            state["paddock_mode"] = "list"
+        return "continue"
+    if state.get("paddock_mode") == "pkg_confirm":
+        if etype == EV_KEY and val == 1 and code == BTN_CONFIRM:
+            _paddock_queue_pkg(state)
+        elif etype == EV_KEY and val == 1 and code == BTN_BACK:
+            state["paddock_mode"] = "list"
+        return "continue"
+    rows = state.get("paddock_rows") or []
+    if etype == EV_KEY and val == 1 and code == BTN_CONFIRM:
+        if state.get("paddock_field", 0) == _PF_APPLY:
+            return _paddock_apply(state)
+        _paddock_toggle(state)
+        return "continue"
+    if etype == EV_KEY and val == 1 and code == BTN_BACK:
+        return "quit"
+    if etype == EV_ABS and code == ABS_HAT0Y and rows:
+        if val == -1:
+            state["paddock_sel"] = (state["paddock_sel"] - 1) % len(rows)
+            state["status"] = ""
+        elif val == 1:
+            state["paddock_sel"] = (state["paddock_sel"] + 1) % len(rows)
+            state["status"] = ""
+    elif etype == EV_ABS and code == ABS_HAT0X and val != 0:
+        state["paddock_field"] = (state.get("paddock_field", 0) + val) % _PF_COUNT
+        state["status"] = ""
+    return "continue"
+
+
 # === TAB SWITCH ===
 
 def _switch_tab(state, target_tab):
@@ -2543,6 +3137,13 @@ def _switch_tab(state, target_tab):
             state["_config_changes_cache"] = None
             state["_career_cache"] = None
             state["_pit_note_cache"] = None
+        if target_tab == CURRENT_TAB_PADDOCK:
+            # Always return to the list (never strand in a stale result card),
+            # and lazily fetch the index on first entry (the actual network
+            # call runs in the main loop, where there's a stdscr busy frame).
+            state["paddock_mode"] = "list"
+            if state.get("paddock_rows") is None:
+                state["paddock_refresh_request"] = True
 
 
 def _cycle_tab(state, direction):
@@ -2570,6 +3171,8 @@ def _draw(stdscr, state):
         draw_tuning(stdscr, state)
     elif state["current_tab"] == CURRENT_TAB_TELEMETRY:
         draw_telemetry(stdscr, state)
+    elif state["current_tab"] == CURRENT_TAB_PADDOCK:
+        draw_paddock(stdscr, state)
     else:
         draw_tools(stdscr, state)
     _draw_footer(stdscr, h, w, state["current_tab"], state["status"])
@@ -2583,6 +3186,10 @@ def _dispatch_kb(state, ch):
     ct = state["current_tab"]
     if ct == CURRENT_TAB_TOOLS:
         return handle_tools_kb(state, ch)
+    # PADDOCK is live regardless of ETK_NO_TARGET: it never touches the TUNING
+    # target's config/ledger, and is useful for subscribing a first tune.
+    if ct == CURRENT_TAB_PADDOCK:
+        return handle_paddock_kb(state, ch)
     if ETK_NO_TARGET:
         return "quit" if ch in (ord('q'), ord('Q')) else "continue"
     if ct == CURRENT_TAB_TUNING:
@@ -2595,6 +3202,8 @@ def _dispatch_pad(state, etype, code, val):
     ct = state["current_tab"]
     if ct == CURRENT_TAB_TOOLS:
         return handle_tools_pad(state, etype, code, val)
+    if ct == CURRENT_TAB_PADDOCK:
+        return handle_paddock_pad(state, etype, code, val)
     if ETK_NO_TARGET:
         if etype == EV_KEY and val == 1 and code == BTN_BACK:
             return "quit"
@@ -2658,6 +3267,17 @@ def main(stdscr):
         "tools_pkg": None,
         "tools_games": [],
         "tools_result": None,
+        # PADDOCK tab (0.5.0 subscribe/install client). rows=None means the
+        # index hasn't been fetched yet — it loads lazily on first tab entry.
+        "paddock_rows": None,
+        "paddock_repos": {},
+        "paddock_sel": 0,
+        "paddock_field": 0,            # _PF_TUNE.._PF_APPLY
+        "paddock_mode": "list",        # "list" | "result" | "pkg_confirm"
+        "paddock_result": None,
+        "paddock_index_date": "",
+        "paddock_chipset": "",
+        "paddock_driver_note": "",
     }
 
     running = True
@@ -2721,6 +3341,57 @@ def main(stdscr):
             state["tools_mode"] = "result"
             # Drain input buffered during the (multi-second) blocking op so
             # a button pressed mid-install doesn't skip past the result.
+            if fd is not None:
+                try:
+                    while os.read(fd, EVENT_SIZE):
+                        pass
+                except (BlockingIOError, OSError):
+                    pass
+            try:
+                curses.flushinp()
+            except Exception:
+                pass
+
+        # PADDOCK: lazy index fetch (network) — run here so a busy frame can
+        # be drawn while curl blocks.
+        if state.pop("paddock_refresh_request", None):
+            _paddock_busy(stdscr, "Fetching Pro Tuning index…")
+            _paddock_refresh(state)
+
+        # PADDOCK: queued APPLY — shell out to install-protune.sh for the
+        # selected game, streaming progress to mako. Same long-op pattern as
+        # the TOOLS install above (no RPCS3 launch, so no screen handoff).
+        prow = state.pop("paddock_action", None)
+        if prow:
+            _paddock_busy(stdscr, f"Applying tune: {prow['name']}")
+            ok, lines = _run_paddock_apply(prow, _Notifier())
+            state["paddock_result"] = (ok, lines)
+            state["paddock_mode"] = "result"
+            if fd is not None:
+                try:
+                    while os.read(fd, EVENT_SIZE):
+                        pass
+                except (BlockingIOError, OSError):
+                    pass
+            try:
+                curses.flushinp()
+            except Exception:
+                pass
+
+        # PADDOCK: queued known_repo install — download the operator-supplied
+        # pkg/rap, verify, hand to the headless installer (RPCS3 opens, like a
+        # TOOLS install). Pure-data invariant: ETK runs the installer, the
+        # bytes are the operator's own.
+        pkg_act = state.pop("paddock_pkg_action", None)
+        if pkg_act:
+            prow2, pent = pkg_act
+            _paddock_busy(stdscr, f"Installing {prow2['name']} — RPCS3 will open.")
+            ok, lines = _run_paddock_pkg_install(prow2, pent, _Notifier())
+            state["paddock_result"] = (ok, lines)
+            state["paddock_mode"] = "result"
+            # A successful install changes the library — refresh on next entry.
+            if ok:
+                state["paddock_refresh_request"] = True
             if fd is not None:
                 try:
                     while os.read(fd, EVENT_SIZE):

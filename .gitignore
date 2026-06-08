@@ -59,6 +59,11 @@ etk.conf
 # per-machine local settings file is untracked.
 .claude/settings.local.json
 
+# PADDOCK known_repo game-source pointers — PRIVATE, must never be published
+# (keeps NPS/pkg URLs out of the public index = the defensibility line).
+# The .example template is tracked; the filled-in real file is not.
+config/paddock_repos.json
+
 # Pro Tuning build artifacts
 pro-tuning/dist/
 

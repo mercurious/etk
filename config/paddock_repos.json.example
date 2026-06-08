@@ -1,0 +1,15 @@
+{
+  "_README": "LOCAL, PRIVATE game-source pointers for the PADDOCK known_repo hatch. Copy this to 'paddock_repos.json' (same dir) and fill in. This file is GITIGNORED and MUST NOT be committed or published. Keeping pkg/rap URLs out of ETK's public index is exactly what keeps the feature defensible: the tool automates YOUR install of a game YOU own, it does NOT distribute, host, or curate game sources. ETK never ships these URLs. You supply them; the installer fetches, sha256-verifies, and hands off to the headless PKG installer behind an explicit confirm.",
+  "_schema": {
+    "<TITLE_ID>": {
+      "name": "human label (optional)",
+      "pkg": { "url": "https://<your-source>/game.pkg", "sha256": "<64 hex>" },
+      "rap": { "url": "https://<your-source>/game.rap", "sha256": "<64 hex>" }
+    }
+  },
+  "NPUA80075": {
+    "name": "Gran Turismo 5 Prologue",
+    "pkg": { "url": "", "sha256": "" },
+    "rap": { "url": "", "sha256": "" }
+  }
+}

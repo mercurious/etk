@@ -295,6 +295,7 @@ ssh $RIG_SSH "mkdir -p \
     $ETK_ROOT/logs \
     $ETK_ROOT/config \
     $ETK_ROOT/screenshots \
+    $ETK_ROOT/pro-tuning \
     $PKG_STAGING_DIR \
     /storage/.config/custom_scripts \
     /storage/.config/system.d \
@@ -576,7 +577,21 @@ tui_rsync 4 24 36 "Deploying crash signatures" --exclude='.DS_Store' ./config/cr
 # to custom_configs/config_<ID>.yml for each newly installed game).
 tui_rsync 4 36 48 "Deploying RPCS3 template (etk_template.yml)" --exclude='.DS_Store' ./config/etk_template.yml       $RIG_SSH:$ETK_ROOT/config/
 # SVG icon master for the polished Tools-menu app entry (dossier addendum R1).
-tui_rsync 4 48 60 "Deploying Tools-menu SVG icon" --exclude='.DS_Store' ./config/etk_pitstop.svg        $RIG_SSH:$ETK_ROOT/config/
+tui_rsync 4 48 54 "Deploying Tools-menu SVG icon" --exclude='.DS_Store' ./config/etk_pitstop.svg        $RIG_SSH:$ETK_ROOT/config/
+
+# PADDOCK injector (0.5.0): the rig-side Pro Tuning installer the Pitstop
+# PADDOCK tab shells out to (one injector — preserves the pure-data trust
+# invariant; PADDOCK only fetches data, install-protune.sh is the only code
+# that runs). The host-only producer (export.sh) and prototype signature/
+# renders are intentionally NOT deployed to the rig. CRLF-strip so a Windows
+# checkout can't ship a script the rig's /bin/sh chokes on.
+tui_rsync 4 54 58 "Deploying PADDOCK injector (install-protune.sh)" --exclude='.DS_Store' ./pro-tuning/install-protune.sh $RIG_SSH:$ETK_ROOT/pro-tuning/
+ssh $RIG_SSH "sed -i 's/\r$//' $ETK_ROOT/pro-tuning/install-protune.sh && chmod +x $ETK_ROOT/pro-tuning/install-protune.sh"
+
+# PADDOCK known_repo TEMPLATE only. The real config/paddock_repos.json is
+# operator-created (pkg/rap URLs they own), gitignored, and NEVER deployed or
+# published — we ship just the .example so the schema is on the rig to copy.
+tui_rsync 4 58 60 "Deploying known_repo template (paddock_repos.json.example)" --exclude='.DS_Store' ./config/paddock_repos.json.example $RIG_SSH:$ETK_ROOT/config/
 
 # THE MASTER COPY: Push to the persistent safe zone
 tui_rsync 4 60 72 "Deploying launcher master copy" --exclude='.DS_Store' ./config/etk_pitstop.sh      $RIG_SSH:$ETK_ROOT/config/

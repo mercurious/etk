@@ -68,6 +68,7 @@ Write-Step 1 $TOTAL "PROVISIONING RIG DIRECTORIES..."
 $dirs = @(
     $VaultDir, "$EtkRoot/bin", "$EtkRoot/scripts", "$EtkRoot/tools",
     "$EtkRoot/vault", "$EtkRoot/logs", "$EtkRoot/config", "$EtkRoot/screenshots",
+    "$EtkRoot/pro-tuning",
     $PkgStaging,
     "/storage/.config/custom_scripts", "/storage/.config/system.d",
     "/storage/.config/modules", "/storage/.config/MangoHud",
@@ -152,6 +153,20 @@ Write-Step 5 $TOTAL "DEPLOYING ETK PITSTOP ROCKNIX INTERFACE..."
 # Push config payload (pitstop_fields.json, crash_signatures.json,
 # etk_template.yml, etk_pitstop.svg, etk_pitstop.sh master copy, ...).
 Push-Dir -LocalDir (Join-Path $RepoRoot "config") -RemoteParent $EtkRoot
+
+# PADDOCK injector (0.5.0): the rig-side Pro Tuning installer the Pitstop
+# PADDOCK tab shells out to. Mirrors install.sh Step 4 — deploy ONLY
+# install-protune.sh (export.sh is the host-only producer; signature/ renders
+# are tabled prototypes). CRLF-strip + chmod so a Windows checkout's script
+# runs under the rig's /bin/sh.
+$protuneLocal = Join-Path $RepoRoot "pro-tuning\install-protune.sh"
+if (Test-Path -LiteralPath $protuneLocal) {
+    Send-File -LocalPath $protuneLocal -RemotePath "$EtkRoot/pro-tuning/install-protune.sh"
+    Invoke-Rig "sed -i 's/\r$//' $EtkRoot/pro-tuning/install-protune.sh && chmod +x $EtkRoot/pro-tuning/install-protune.sh" | Out-Null
+    Write-Ok "PADDOCK injector (install-protune.sh) deployed."
+} else {
+    Write-Warn "pro-tuning\install-protune.sh not found locally - PADDOCK APPLY will be unavailable (verify the path)."
+}
 
 # Sanitise + arm the master launcher copy in config/
 $fixMaster = @'
