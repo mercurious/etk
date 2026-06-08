@@ -17,8 +17,8 @@ Audio:
   Microphone Type: "Null"
   Music Handler: Qt
   RSXAudio Avport: HDMI 0
-  Renderer: FAudio
-  Time Stretching Threshold: 100
+  Renderer: ALSA
+  Time Stretching Threshold: 75
 Core:
   Accurate Cache Line Stores: false
   Accurate PPU 128-byte Reservation Op Max Length: 0
@@ -197,7 +197,7 @@ Video:
   Disable Vulkan Memory Allocator: false
   Disable ZCull Occlusion Queries: true
   Driver Recovery Timeout: 1000000
-  Driver Wake-Up Delay: 100
+  Driver Wake-Up Delay: 50
   Enable Frame Skip: false
   FidelityFX CAS Sharpening Intensity: 50
   Force CPU Blit: false
@@ -242,7 +242,7 @@ Video:
   Renderdoc Compatibility Mode: false
   Renderer: Vulkan
   Resolution: 1280x720
-  Resolution Scale: 75
+  Resolution Scale: 100
   Resolution Scale Threshold: 512
   Screen size in inches: 24
   Second Frame Limit: 0

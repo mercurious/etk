@@ -1,5 +1,20 @@
 # CONCLUSION: Fastboot Is Not Usable on the Flip 2 — Clean Revert Requires Repartition Rebuild
 
+## ⚠️ ADDENDUM 2026-06-08 — VERDICT OVERTURNED: the Qualcomm ABL fastboot WORKS
+
+The "fastboot is dead" verdict below was about the **U-Boot "Enable fastboot mode"** entry *only*. The **Qualcomm ABL fastboot** — reached via **Volume-Down → firmware menu** (the same screen used to boot Android for the battery recal, see [[project_rig_boot_sequence]]) — was **never tested in the 2026-06-02 session**, and it **works**:
+
+- From a **Mac** (`fastboot 37.0.0`, Homebrew, no driver install): `fastboot devices` → **`1bb6a94	fastboot`**. Enumerates cleanly.
+- `fastboot getvar all`: `unlocked:yes`, `secure:no`, `product:kona`, `current-slot:a`, and **`ROCKNIX` (0x80000000 = 2 GB) + `STORAGE` (0x1A1D00000 ≈ 7 GB) visible by name** — exactly the §3 erase targets, non-slotted.
+
+**Consequence:** the §3 clean revert (`fastboot erase ROCKNIX` + `erase STORAGE` + `reboot`) is **REACHABLE**. `InternalStorageManagerDossier` is no longer gated on a destructive repartition rebuild — the cheap erase path is live.
+
+**Agreed sequence (2026-06-08):** run `/storage/etk-internal/ROLLBACK.sh` in ROCKNIX **first** (de-internalize data → SD, strip the duplicate `games.yml` lines for NPUA80075/NPEA90002), THEN VolDown → ABL fastboot → `erase ROCKNIX`+`STORAGE` to break the `LABEL=` collision so the SD boots native. The erase only breaks the split-brain; reclaiming the ~9 GB GPT space for Android is a **separate later step** (delete partition + grow `userdata`, do NOT do blind).
+
+> The body below is the (now-superseded) U-Boot-only conclusion. Kept for the root-cause analysis, but the headline verdict is **overturned**.
+
+---
+
 **Date:** 2026-06-02
 **Device:** Retroid Pocket Flip 2 (SM8250), ROCKNIX (kernel 7.0.2 aarch64), SoC `retroidpocket,rpflip2 / qcom,sm8250`
 **Host:** Windows 11 PC, `fastboot` 37.0.0 (Android platform-tools, installed at `C:\Users\dutch\platform-tools`)

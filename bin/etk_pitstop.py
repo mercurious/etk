@@ -2985,6 +2985,65 @@ def _run_paddock_apply(row, notifier):
     return ok, head + tail
 
 
+def _ascii_bar(frac, width=18):
+    frac = 0.0 if frac < 0 else (1.0 if frac > 1 else frac)
+    fill = int(frac * width)
+    return "[" + "#" * fill + "-" * (width - fill) + "]"
+
+
+def _curl_total_bytes(url):
+    """Best-effort total size via HEAD (follows redirects). 0 if the server
+    doesn't report Content-Length (then progress shows MB downloaded only)."""
+    try:
+        r = subprocess.run(["curl", "-sIL", url], capture_output=True,
+                           text=True, timeout=30)
+        total = 0
+        for ln in r.stdout.splitlines():
+            if ln.lower().startswith("content-length:"):
+                try:
+                    total = int(ln.split(":", 1)[1].strip())
+                except ValueError:
+                    pass
+        return total
+    except Exception:
+        return 0
+
+
+def _curl_with_progress(url, dest, notifier, label, timeout=7200):
+    """Download `url` to `dest` with a LIVE mako progress bar. mako has no
+    progress widget and a static toast self-expires in ~1.5s, so we re-post an
+    ASCII bar every ~1.5s — which both shows progress AND keeps the toast on
+    screen. This is the QoL fix for multi-GB PKG downloads that otherwise read
+    as hung. Returns curl's return code (0 = ok, 124 = timeout)."""
+    total = _curl_total_bytes(url)
+    notifier.post("PADDOCK", f"{label}  starting…")
+    try:
+        proc = subprocess.Popen(["curl", "-fsSL", "-o", dest, url],
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL)
+    except Exception as e:
+        _log(f"curl spawn failed: {e}")
+        return 1
+    start = time.time()
+    while proc.poll() is None:
+        if time.time() - start > timeout:
+            proc.kill()
+            return 124
+        try:
+            got = os.path.getsize(dest)
+        except OSError:
+            got = 0
+        mb = got >> 20
+        if total > 0:
+            body = (f"{label}  {_ascii_bar(got / total)} "
+                    f"{int(100 * got / total)}%  {mb}/{total >> 20} MB")
+        else:
+            body = f"{label}  downloading… {mb} MB"
+        notifier.post("PADDOCK", body, timeout=4000)
+        time.sleep(1.5)
+    return proc.returncode
+
+
 def _run_paddock_pkg_install(row, ent, notifier):
     """known_repo hatch: download the operator-supplied pkg (+rap), sha256-
     verify, then hand to the existing headless PKG installer. The URLs are the
@@ -3006,14 +3065,14 @@ def _run_paddock_pkg_install(row, ent, notifier):
     tmp_rap = os.path.join(PKG_STAGING_DIR, f"_paddock_{gid}.rap")
     lines = []
     try:
-        notifier.post("PADDOCK", f"{name}: downloading PKG…")
-        r = subprocess.run(["curl", "-fsSL", "-o", tmp_pkg, pkg_url],
-                           capture_output=True, text=True, timeout=3600)
-        if r.returncode != 0:
-            return False, [f"pkg download failed (curl {r.returncode})",
-                           (r.stderr or "")[:120]]
-        got = (_sha256_file(tmp_pkg) or "").lower()
+        rc = _curl_with_progress(pkg_url, tmp_pkg, notifier, f"{name} PKG")
+        if rc != 0:
+            return False, [f"pkg download failed (curl {rc})"]
+        # Only hash when there's something to compare against — a 2+ GB hash on
+        # an UNVERIFIED install is wasted work (and looks like another hang).
         if pkg_sha:
+            notifier.post("PADDOCK", f"{name}: verifying sha256…")
+            got = (_sha256_file(tmp_pkg) or "").lower()
             if got != pkg_sha:
                 return False, ["pkg sha256 MISMATCH — refusing to install",
                                f"want {pkg_sha[:24]}…", f"got  {got[:24]}…"]
@@ -3022,18 +3081,19 @@ def _run_paddock_pkg_install(row, ent, notifier):
             lines.append("pkg downloaded (NO sha256 in repos — UNVERIFIED)")
         rap_path = None
         if rap.get("url"):
-            notifier.post("PADDOCK", f"{name}: downloading RAP…")
-            rr = subprocess.run(["curl", "-fsSL", "-o", tmp_rap, rap["url"]],
-                               capture_output=True, text=True, timeout=300)
-            if rr.returncode == 0:
+            rrc = _curl_with_progress(rap["url"], tmp_rap, notifier, f"{name} RAP")
+            if rrc == 0:
                 rsha = (rap.get("sha256") or "").lower()
-                rgot = (_sha256_file(tmp_rap) or "").lower()
-                if rsha and rgot != rsha:
-                    return False, ["rap sha256 MISMATCH — refusing", lines]
+                if rsha:
+                    rgot = (_sha256_file(tmp_rap) or "").lower()
+                    if rgot != rsha:
+                        return False, ["rap sha256 MISMATCH — refusing", lines]
+                    lines.append("rap downloaded + verified")
+                else:
+                    lines.append("rap downloaded (UNVERIFIED)")
                 rap_path = tmp_rap
-                lines.append("rap downloaded" + (" + verified" if rsha else " (UNVERIFIED)"))
             else:
-                lines.append(f"rap download failed (curl {rr.returncode}) — pkg only")
+                lines.append(f"rap download failed (curl {rrc}) — pkg only")
         notifier.post("PADDOCK", f"{name}: installing PKG (RPCS3 opens)…")
         ok, ilines = _run_install(tmp_pkg, rap_path, notifier)
         head = [f"{'INSTALLED' if ok else 'FAILED'}: {name}", ""]
@@ -3385,7 +3445,7 @@ def main(stdscr):
         pkg_act = state.pop("paddock_pkg_action", None)
         if pkg_act:
             prow2, pent = pkg_act
-            _paddock_busy(stdscr, f"Installing {prow2['name']} — RPCS3 will open.")
+            _paddock_busy(stdscr, f"Getting {prow2['name']}: downloading, then RPCS3 opens — watch notifications")
             ok, lines = _run_paddock_pkg_install(prow2, pent, _Notifier())
             state["paddock_result"] = (ok, lines)
             state["paddock_mode"] = "result"
