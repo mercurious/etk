@@ -2155,6 +2155,17 @@ def _run_install(pkg_path, rap_path, notify):
         new_id = None
         t1 = time.time()
         proc_dead_since = None
+        last_size = -1
+        stable_since = None
+        done = False
+        # COMPLETION FIX (do NOT stop the instant EBOOT.BIN appears): RPCS3
+        # keeps extracting the rest of the package after EBOOT.BIN lands, so
+        # killing it then truncates the install — zero-byte / missing late
+        # files — and the race resolves differently per card speed (the bug
+        # that broke installs on the fast A2 card but not A1/UFS). Wait for a
+        # REAL finish: RPCS3 self-exits on a successful install; as a fallback
+        # (in case it doesn't), the game-folder size going stable for 20s means
+        # extraction has drained. Only then kill.
         while time.time() - t1 < 600:
             time.sleep(3)
             try:
@@ -2162,28 +2173,44 @@ def _run_install(pkg_path, rap_path, notify):
                          if "lock" not in d.lower()]
             except Exception:
                 fresh = []
-            if fresh:
+            if fresh and new_id is None:
                 new_id = fresh[0]
-                eboot = os.path.join(RPCS3_GAME_DIR, new_id,
-                                     "USRDIR", "EBOOT.BIN")
-                if os.path.exists(eboot):
-                    break
+
             if proc.poll() is not None:
+                # RPCS3 exited. With a game folder present, the install is done.
                 if new_id:
+                    done = True
                     break
-                # RPCS3 exited without producing a game folder — give the
-                # filesystem a short grace window to settle, then stop so a
-                # failed install can't hang the loop for the full 600s.
+                # exited without producing a folder -> failed install; give the
+                # fs a short settle window, then stop (don't hang for 600s).
                 if proc_dead_since is None:
                     proc_dead_since = time.time()
                 elif time.time() - proc_dead_since > 15:
                     break
+                continue
+
+            # RPCS3 still running: fallback completion = the install folder has
+            # stopped growing for 20s (extraction drained).
+            if new_id:
+                sz = _dir_size(os.path.join(RPCS3_GAME_DIR, new_id))
+                if sz >= 0 and sz == last_size:
+                    if stable_since is None:
+                        stable_since = time.time()
+                    elif time.time() - stable_since > 20:
+                        done = True
+                        break
+                else:
+                    stable_since = None
+                    last_size = sz
         if not new_id:
             return False, ["Install did not complete - no game folder",
                            "appeared. Staged files were kept so you",
                            "can retry."]
+        if not done:
+            _log("install: 600s cap reached without a clean completion "
+                 "signal; install may be partial")
 
-        _kill_rpcs3()    # RPCS3 self-exits after install; make sure it is gone
+        _kill_rpcs3()    # ensure RPCS3 is gone (it should have self-exited)
 
         human = _sfo_title(os.path.join(RPCS3_GAME_DIR, new_id)) or new_id
 
