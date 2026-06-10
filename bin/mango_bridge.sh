@@ -5,11 +5,11 @@
 # AI IMMUTABLE RULE:
 # 1. HUD STRING FORMAT IS LOCKED (three-stage time-gated header):
 #    Stage 1 — launch window show ETK MODE, GAME ID, VAULT  (0 <= AGE < HUD_HEADER_HOLD_S):
-#      MODE|ID|XX°CSTAT|SHADERS XXMB X.Xk XX+
+#      MODE|ID|XX°CSTAT|SHADERS XX[MB|GB] X.Xk XX+
 #    Stage 2 — instrument labels  (HUD_HEADER_HOLD_S <= AGE < 2*HUD_HEADER_HOLD_S):
-#      TEMP: XX°CSTAT|CORES: X.XXSTAT|MEM: XX%STAT|SHDRS: XXMB X.Xk XX+
+#      TEMP: XX°CSTAT|CORES: X.XXSTAT|MEM: XX%STAT|SHDRS: XX[MB|GB] X.Xk XX+
 #    Stage 3 — pure telemetry  (AGE >= 2*HUD_HEADER_HOLD_S):
-#      XX°CSTAT|X.XXSTAT|XX%STAT|XXMB X.Xk XX+
+#      XX°CSTAT|X.XXSTAT|XX%STAT|XX[MB|GB] X.Xk XX+
 # 2. ATOMIC SWAP ONLY: MUST use `echo > tmp && mv tmp $LIVE_STAT`
 # 3. RAW TEXT ONLY: No MangoHud configuration keys (e.g., custom_text=) in the output.
 # ==========================================================
@@ -69,11 +69,24 @@ while true; do
 # 2. Use -L to explicitly FORCE du to follow the vault symlinks
 	V_SIZE_KB=$(du -skL "$V_DIR" 2>/dev/null | awk '{print $1}')    
     if [ -z "$V_SIZE_KB" ] || [ "$V_SIZE_KB" -eq 0 ]; then
-        VAULT_STR="VAULT:ERROR"
+        # Startup race, not a fault: at emu fire-up the Sentry hasn't pinned the
+        # game and vault_d hasn't populated the vault dir yet, so this du reads 0
+        # for a few seconds before the vault resolves. Show LOADING, not ERROR —
+        # a LOADING that never clears is itself the real-trouble signal.
+        VAULT_STR="VAULT:LOADING"
     else
     	# Convert Kilobytes to Megabytes safely using integer arithmetic
     	V_SIZE=$((V_SIZE_KB / 1024))
-        VAULT_STR="${NEW_SHADERS}+ ${BANK_STR} ${V_SIZE}MB"
+        # Vault-size abbreviation to keep the HUD trim — mirrors the shader-count
+        # k-abbreviation above (a big game means a big vault; GT6's tops 1GB):
+        #   < 1024 MB   -> XXMB        (e.g. 690MB)
+        #   >= 1024 MB  -> X.XGB       (truncated, e.g. 1228MB -> 1.1GB)
+        if [ "$V_SIZE" -ge 1024 ] 2>/dev/null; then
+            V_SIZE_STR="$((V_SIZE / 1024)).$(( (V_SIZE % 1024) * 10 / 1024 ))GB"
+        else
+            V_SIZE_STR="${V_SIZE}MB"
+        fi
+        VAULT_STR="${NEW_SHADERS}+ ${BANK_STR} ${V_SIZE_STR}"
     fi
 
     # --- TIME-GATED LAUNCH HEADER (three stages) ---
