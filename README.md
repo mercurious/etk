@@ -328,9 +328,9 @@ You can disable the GRUB device select screen that appears at boot. This will sh
 1. Remount the boot partition read-write:  
 `mount -o remount,rw /flash`
 1. Back it up first so it's reversible:  
-`cp /flash/boot/grub/grub.cfg /flash/boot/grub/grub.cfg.bak`
-1. Set the menu timeout to 0 — skips the GRUB device-picker wait:  
-`sed -i 's/set timeout=2/set timeout=0/' /flash/boot/grub/grub.cfg`
+`cp /flash/EFI/BOOT/grub.cfg /flash/EFI/BOOT/grub.cfg.bak`
+1. Set the menu timeout to 0 — skips the GRUB device-picker wait (edit the EFI config, not /flash/boot):  
+`sed -i 's/set timeout=2/set timeout=0/' /flash/EFI/BOOT/grub.cfg && sed -i 's/set timeout=-1/set timeout=0/' /flash/EFI/BOOT/grub.cfg`
 1. Flush and put it back read-only:  
 `sync && mount -o remount,ro /flash`
 
