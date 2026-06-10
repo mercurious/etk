@@ -332,6 +332,21 @@ robocopy R:\roms\bios\rpcs3\dev_hdd0\home   C:\etk_backup\rpcs3_home      /MIR /
 
 `robocopy /MIR` is Windows-native (no install), incremental like `rsync`, and idempotent — re-run as often as you like. To restore after a reflash, swap source and destination in each line. **Manual caveat:** you must remember to run the backup yourself; there is no Windows equivalent of `install.sh --restore-state` yet.
 
+# Power Pro Tip: Disable GRUB
+You can disable the GRUB device select screen that appears at boot. This will shave seconds off your boot-time. The recovery option listed has been tested and it doesn't appear to do anything useful when you actually need a recovery.
+
+1. Connect to the rig:\
+`ssh root@SM8250.local`
+1. Remount the boot partition read-write:  
+`mount -o remount,rw /flash`
+1. Back it up first so it's reversible:  
+`cp /flash/EFI/BOOT/grub.cfg /flash/EFI/BOOT/grub.cfg.bak`
+1. Set the menu timeout to 0 — skips the GRUB device-picker wait (edit the EFI config, not /flash/boot):  
+`sed -i 's/set timeout=2/set timeout=0/' /flash/EFI/BOOT/grub.cfg && sed -i 's/set timeout=-1/set timeout=0/' /flash/EFI/BOOT/grub.cfg`
+1. Flush and put it back read-only:  
+`sync && mount -o remount,ro /flash`
+
+
 # AI Disclosure
 ETK was originally prototyped with Google Gemini and developed/maintained with Anthropic Claude Code.
 
