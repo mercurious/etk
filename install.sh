@@ -188,7 +188,10 @@ else
     RSYNC_CMD="rsync -az --modify-window=2 --progress"
 fi
 
-TOTAL_STEPS=6
+# tui.sh defaults TUI_TOTAL_STEPS to 6 at source time; override before
+# tui_init (which sizes the per-step state arrays) for the new step 7.
+TUI_TOTAL_STEPS=7
+TOTAL_STEPS=7
 
 # --- TUI ACTIVATION ---
 # Console mode (Pit Wall TUI) is the default for terminal installs.
@@ -1092,6 +1095,80 @@ else
         tui_fail "Sentry deploy produced no status marker: $(echo "$SENTRY_OUTPUT" | tail -3 | tr '\n' ' ')"
     else
         echo -e "${Y}>>> WARNING: Sentry status marker missing from remote output${N}"
+    fi
+fi
+
+# ==========================================================
+# STEP 6: STAGE III STABILITY HARNESS
+# Two rig-side primitives validated on-rig 2026-06-11 (see
+# dossiers/Stage3CustomRigDossier.md §T0):
+#   1. profile.d/098-etk-stage3 — lifts Mesa's silent 1 GB disk-cache
+#      LRU cap (the vault crosses 1 GB and would evict its own oldest
+#      shaders) and raises the core-size ulimit for emulator processes.
+#      Inherited by RPCS3 because start_rpcs3.sh sources /etc/profile.
+#   2. 02-etk-coredump.sh + etk-stage3.service — Rocknix's default
+#      kernel.core_pattern is `|/bin/false` (cores are DISCARDED) and
+#      the sysctl resets every boot, so a oneshot systemd unit re-arms
+#      it. Silent-class crashes (no log signature, no dmesg trace)
+#      are undiagnosable without a core; this is the capture path.
+# ==========================================================
+tui_step_start 6
+tui_log "Arming Stage III harness (Mesa cache cap + coredump capture)"
+# Temp-file capture (not $(...) command substitution) for the same reason as
+# the Sentry step above: heredoc bodies with literal `)` characters can
+# confuse bash 3.2's parser when nested inside command substitution.
+STAGE3_OUTPUT_FILE=$(mktemp /tmp/etk_stage3_XXXXXX)
+ssh $RIG_SSH > "$STAGE3_OUTPUT_FILE" 2>&1 << 'REMOTE'
+cat << 'PROF' > /storage/.config/profile.d/098-etk-stage3
+# ETK Stage III stability harness (deployed by install.sh)
+# 1) Lift Mesa disk-cache 1GB default cap so the shader vault never self-evicts
+export MESA_SHADER_CACHE_MAX_SIZE=10G
+# 2) Let emulator processes drop core for silent-crash forensics
+ulimit -c unlimited
+PROF
+
+cat << 'CORE' > /storage/.config/custom_scripts/02-etk-coredump.sh
+#!/bin/bash
+# ETK Stage III: route core dumps to SD, keep newest 2 (cores can be ~7GB)
+mkdir -p /storage/cores
+echo "/storage/cores/%e.%p.%s.core" > /proc/sys/kernel/core_pattern
+ls -t /storage/cores/*.core 2>/dev/null | tail -n +3 | xargs -r rm -f
+CORE
+chmod +x /storage/.config/custom_scripts/02-etk-coredump.sh
+
+cat << 'SVC' > /storage/.config/system.d/etk-stage3.service
+[Unit]
+Description=ETK Stage III stability harness (coredump capture)
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /storage/.config/custom_scripts/02-etk-coredump.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+SVC
+
+systemctl daemon-reload
+systemctl enable etk-stage3.service > /dev/null 2>&1
+systemctl restart etk-stage3.service
+grep -q "^/storage/cores/" /proc/sys/kernel/core_pattern && echo "STAGE3_OK" || echo "STAGE3_FAIL"
+REMOTE
+STAGE3_OUTPUT=$(cat "$STAGE3_OUTPUT_FILE")
+rm -f "$STAGE3_OUTPUT_FILE"
+if [ "$TUI_ACTIVE" != "1" ]; then
+    echo "$STAGE3_OUTPUT"
+fi
+if echo "$STAGE3_OUTPUT" | grep -q STAGE3_OK; then
+    tui_step_progress 6 100
+    tui_step_done 6
+else
+    # Non-fatal: the kit races without it; only crash forensics are degraded.
+    if [ "$TUI_ACTIVE" = "1" ]; then
+        tui_log "WARNING: Stage III harness did not verify — core capture inactive"
+    else
+        echo -e "${Y}>>> WARNING: Stage III harness did not verify (core capture inactive)${N}"
     fi
 fi
 
