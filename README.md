@@ -1,8 +1,11 @@
 # The Emulation Tuning Kit
-For Android
+## For Android
+No ETK features, just house tuned.
 - Use [aPS3e Shader Patch Edition](https://github.com/mercurious/aps3e/releases) for Android (until main release is updated with cache fix)
 - Use [nihui's MESA Turnip drivers](https://github.com/nihui/mesa-turnip-android-driver) for Android during the aPS3e setup wizard.
-For the full Rocknix rig
+
+## For the full Rocknix rig
+The complete high performance system.
 - [Download latest release](https://github.com/mercurious/etk/releases)
 - [System Requirements](https://github.com/mercurious/etk/#etk-system-requirements)
 - [Device Support](https://github.com/mercurious/etk/#handheld-system-support)
