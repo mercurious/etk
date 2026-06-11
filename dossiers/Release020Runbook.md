@@ -69,9 +69,15 @@ bash -n install.sh && bash -n uninstall.sh && bash -n tools/tui.sh
 
 ```bash
 git tag v0.2.0
-git push origin release/0.2.0 --tags        # (or main, under Path A)
-gh release create v0.2.0 --title "ETK v0.2.0 — Nightly Rider" --notes-file <(sed -n '/## \[0.2.0\]/,/## \[0.1.4\]/p' CHANGELOG.md | sed '$d')
+git push origin release/0.2.0
+git push origin v0.2.0      # push the ONE tag explicitly — NEVER `--tags`
+                            # (a stale local copy of the withdrawn vault tag
+                            # would be re-published by --tags; local copy was
+                            # deleted 2026-06-11, but the rule stands)
+gh release create v0.2.0 --target release/0.2.0 --title "ETK v0.2.0 — Nightly Rider" --notes-file ~/Desktop/etk_v020_release_notes.md
 ```
+
+**EXECUTED 2026-06-11:** branch `release/0.2.0` built from v0.1.4 (5 cherry-picks: bb106cd installer fix · 7accfad HUD QoL · 8cbb106 GRUB tip · 72dc8d4 stage3 harness · 5e9459b nightly re-pin; two README conflicts resolved — duplicate Internal-Storage section dropped, v0.1.4 Windows wording kept). Sanity gate PASSED: no `vault-index/`, no `pro-tuning/`, zero PADDOCK code tracked (none of it existed at v0.1.4 — the release tree has no distribution surface at all). `bash -n` clean on install/uninstall/tui. Branch pushed; tag `v0.2.0` created locally; stale local vault tag deleted. Notes drafted at `~/Desktop/etk_v020_release_notes.md`. **Remaining (operator): push the tag + `gh release create`.**
 
 ## Step 4 — Post-release
 

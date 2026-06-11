@@ -191,7 +191,7 @@ Found in the Rocknix ES front-end Tools carousel item.
 <img src="docs/screenshots/etk_ROCKNIX_20260531_191740.png" width="600" alt="ETK Pitstop App Crash Detail View" />
  
 ### ETK Tuning
-Easily tweak emulation settings on the device. The subset of RPSC3 settings can be customized in `config/pitstop_fields.json`
+Easily tweak emulation settings on the device. The subset of RPCS3 settings can be customized in `config/pitstop_fields.json`
 
 <img src="docs/screenshots/etk_ROCKNIX_20260526_132607.png" width="600"
      alt="ETK Pitstop TUNING tab for GT5P: RPCS3 settings list including Audio Backend FAudio, PPU Threads 2, Resolution Scale 75, Frame Limit 30, Shader Mode Async Recompiler with Shader Interpreter" />
@@ -204,7 +204,7 @@ Easily tweak emulation settings on the device. The subset of RPSC3 settings can 
 3. Configure the screenshot tool's `L1` single-finger camera-shutter feature to work always, on in-game, or never. The `SELECT` + `dpad-up` combo will continue to take ETK style screenshots.
 
 ## How to Install PS3 Games with the ETK
-**Note:** The ETK cannot solve the problem of needing to install the PS3 firmware into the emulator. You have dump that from your console or go to Sony's website and then plug in a mouse to your device and use the RPSC3 application in Rocknix tools to get it installed as a one-time setup.
+**Note:** The ETK cannot solve the problem of needing to install the PS3 firmware into the emulator. You have to dump that from your console or go to Sony's website and then plug in a mouse to your device and use the RPCS3 application in Rocknix tools to get it installed as a one-time setup.
 The ETK solves the problem of installing PS3 Packages on Rocknix which is otherwise a ridiculous process, as indicated above.
 1. Place a single PS3 `.pkg` and `.rap` into `/storage/roms/etk/pkg_install_drop/`
 1. In Rocknix Tools > ETK Pitstop > TOOLS > Install a staged PS3 Package
