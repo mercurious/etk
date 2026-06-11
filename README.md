@@ -203,7 +203,8 @@ Easily tweak emulation settings on the device. The subset of RPSC3 settings can 
 3. Configure the screenshot tool's `L1` single-finger camera-shutter feature to work always, on in-game, or never. The `SELECT` + `dpad-up` combo will continue to take ETK style screenshots.
 
 ## How to Install PS3 Games with the ETK
-The ETK solves the problem of installing PS3 Packages on Rocknix which is otherwise a ridiculous process.
+**Note:** The ETK cannot solve the problem of needing to install the PS3 firmware into the emulator. You have dump that from your console or go to Sony's website and then plug in a mouse to your device and use the RPSC3 application in Rocknix tools to get it installed as a one-time setup.
+The ETK solves the problem of installing PS3 Packages on Rocknix which is otherwise a ridiculous process, as indicated above.
 1. Place a single PS3 `.pkg` and `.rap` into `/storage/roms/etk/pkg_install_drop/`
 1. In Rocknix Tools > ETK Pitstop > TOOLS > Install a staged PS3 Package
 1. Wait for the automated process where ETK will handle RPCS3 installation for you and follow the on screen overlay instructions
@@ -318,7 +319,7 @@ Retroid Pocket SD8250 devices support [Rocknix's Install (internal) option](http
 - **Speed** OS boots faster. Games launch quicker. Shader I/O is just better.
 
 ## Caveats
-- Retroid Flip2 firmware does not seem to support `fastboot` over USB so tinkering with partitions is the danger zone because you can end up needing to resolve in linux destructively.
+- Retroid Flip2 firmware supports `fastboot` over USB in the Qualcomm abl (hold Volume button down during boot) to manage partitions from a host; `fastboot` in U-Boot is not supported.
 - **`./install.sh` is internal-aware.** Once the vault is symlinked into internal UFS, the installer detects it and syncs symlink-safely — no workflow change.
 - **The internal `/storage` is also the system partition.** Leave **≥1.5 GB headroom**; filling it breaks EmulationStation and boot.
 
