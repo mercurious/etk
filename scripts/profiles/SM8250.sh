@@ -8,10 +8,13 @@
 # VALUES ONLY — no `export`, no logic. env.sh is the sole
 # exporter of the canonical names defined below.
 #
-# Certified against the OFFICIAL Rocknix release 20260601 (build e7b9e9a3, kernel
-# 7.0.2) on 2026-06-02 via `etk_drift.py --check` (no structural drift) + headless
-# gate (gamepad codes unchanged, R3 survives suspend/resume, RPCS3 binds Adreno
-# 650 on Turnip Mesa 26.1.0). Drift baseline 20260601.json banked + pinned.
+# Certified against Rocknix NIGHTLY 20260610 (kernel 7.0.11, Turnip Mesa 26.1.2,
+# RPCS3 0.0.41-19444 w/ GT5 memory-leak fix) on 2026-06-11 — live race validation
+# on-rig (GT5P sessions clean at 720p, RAM peaks down ~1.5 GB vs official 20260601,
+# silent-crash class absent from the ledger this boot; gamepad codes unchanged,
+# R3 recovery verified, RPCS3 binds Adreno 650 on the renderer path).
+# Prior baseline: OFFICIAL 20260601 (build e7b9e9a3, kernel 7.0.2, Turnip 26.1.0),
+# certified 2026-06-02 via etk_drift.py --check + headless gate; 20260601.json banked.
 # Input-node renumbering across builds is benign — find_gamepad() matches by
 # name, not index (DualSense buttons node drifted event8->event9 historically).
 # Per-game render re-validated on GT5P + GT HD (running fully on internal UFS).

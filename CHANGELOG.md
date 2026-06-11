@@ -2,6 +2,24 @@
 
 All notable changes to the ETK are documented here. This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - 2026-06-11
+
+**Back to the bleeding edge — ETK re-pins to ROCKNIX nightly `20260610` to ship the upstream Gran Turismo 5 memory-leak fix, and adds the Stage III stability harness (Mesa cache-cap lift + silent-crash core capture).** Operator-validated on-rig the same day: GT5P racing at full 720p, RAM peaks down ~1.5 GB, and the formerly dominant "silent crash" class absent from the ledger.
+
+### Added
+- **Stage III stability harness (new install step 7, `STAGE3 HARNESS`).** Two rig-side primitives from the Stage III forensics sprint (`dossiers/Stage3CustomRigDossier.md`):
+  - `profile.d/098-etk-stage3` — sets `MESA_SHADER_CACHE_MAX_SIZE=10G`. Mesa's disk cache silently caps at **1 GB with LRU eviction**; the ETK vault crosses 1 GB on a saturated GT suite, meaning the vault could **evict its own oldest shaders** and quietly un-saturate between sessions. Also raises the core-size ulimit for emulator processes.
+  - `02-etk-coredump.sh` + `etk-stage3.service` (oneshot) — Rocknix ships `kernel.core_pattern = |/bin/false` (crash cores are *discarded*) and the sysctl resets every boot. The unit re-arms capture to `/storage/cores/` (keeps newest 2) on every boot. Silent-class crashes — process death with no RPCS3 log signature and no dmesg trace — are undiagnosable without a core; this is the forensic capture path that finally gives Rocknix parity with Android's crash-dropbox.
+  - `uninstall.sh` fully reverts all three artifacts and restores the stock core_pattern.
+- **README:** verify step added to the GRUB-disable Power Pro Tip (a silently failed `remount,rw` previously made the seds no-op), plus a note that OS updates revert the tweak.
+
+### Changed
+- **OS pin: ROCKNIX nightly `20260610`** (was official release `20260601`). The pin is evidence-driven, not novelty-driven: nightly-20260610 ships **RPCS3 `0.0.41-19444`**, the first build containing the upstream GT5 memory-leak fix ([RPCS3 #18819](https://github.com/RPCS3/rpcs3/issues/18819) / PR #18844, merged 2026-06-05 — ~300 MB leaked per car model viewed, lethal on an 8 GB handheld and matching ETK's dominant silent-crash signature), plus **Mesa Turnip 26.1.2** (driver parity with the Android/aPS3e comparison rig) and kernel 7.0.11. The official `20260601` release predates the fix by four days. README System Requirements / Getting Started / Windows flash guide, `scripts/profiles/SM8250.sh`, and `AI_MANIFEST.md` all re-pinned. **Migration note:** the Turnip 26.1.0→26.1.2 bump invalidates the existing Mesa-side shader vault (driver hash keys the cache) — a fresh harvest cycle follows the update; with the new 10G cap it will never self-evict.
+- **Per-title tunes:** GT5P + GT HD Concept switched `Shader Mode` from `Async Recompiler with Shader Interpreter` to `Async Recompiler (multi-threaded)` (matching the shipped template default). The interpreter hybrid does not avoid compile stalls — it *adds* a heavy GPU über-shader pass exactly during compile bursts, a credible amplifier of the Adreno fence-timeout crash class on a 7 W GPU (the same interpreter path is currently crashing the AMD Mesa driver upstream, RPCS3 #18838). Expect brief first-encounter pop-in instead of approximated rendering; the change is A/B-logged in `config_changes.tsv`.
+
+### Verified
+- **Live race validation on nightly-20260610** (SM8250, 2026-06-11): GT5P career sessions at full 720p with sessions 2–3× longer than the official-build era (366–519 s), RAM peaks 5.0–6.1 GB (vs 6.7–7.5 GB pre-fix), zero silent-class crashes on the boot's ledger, and the operator's verdict — comparable stability/feel to the patched Android build at higher fidelity, credits ground, car purchased. Known watch item: 3 thermal-failsafe activations during load/contact-heavy racing (longer sessions = more sustained heat); thermal ceiling behavior unchanged, monitoring continues.
+
 ## [0.1.4] - 2026-06-02
 
 **Certified on the official ROCKNIX release `20260601` — ETK graduates from chasing nightlies to a pinned official build — and adds an optional internal-storage (UFS) path for shader-harvesting durability and smoothness.** First non-prerelease tag.
