@@ -61,7 +61,7 @@ PS3-standard saves (`dev_hdd0/home/00000001/savedata/`) are emulator-portable. T
 
 1. **Commit + push** the installer fix and HUD QoL (messages prepared; operator handling).
 2. **Cut 0.1.5** from `v0.1.4` per §5 when ready.
-3. **Save-sync finish:** Android Revert → Send & Receive; repoint Rocknix node to `x6hh6-yt9u5` (SSH).
+3. ✅ **COMPLETED (2026-06-09 evening) — Save-sync validation:** Repointed Rocknix folder ID `bf65b-9ggqv` → `x6hh6-yt9u5` via SSH. Resolved conflict files on both sides. Pulled golden save via ETK Pitstop Paddock (unexpected win: Paddock works for savedata restore, not just shaders). Validated bidirectional sync: Rocknix → Android (golden save, Cr. 119,470) + Android → Rocknix (earned +500 credits, Cr. 119,970 confirmed). All three nodes now Send & Receive, conflict-free. Ready for A/B testing.
 4. **UFS experiment:** load all 6 games in both OSes → re-measure → run `installtointernal` (shrink to 40 GB) → physically place games on STORAGE → boot-speed/shader-I/O A/B.
 5. **(Optional)** confirm GT5P with a clean full reinstall; A/B the new A1 cards vs the A2 for any genuine card-class effect.
 6. **0.5.0 PADDOCK** remains gated on legal review (shader-vault distribution premise).
