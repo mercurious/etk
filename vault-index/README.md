@@ -1,5 +1,10 @@
 # Pro Tuning index
 
+> **Status (2026-06-11): distribution withdrawn pending legal review.** The index below is
+> intentionally empty and the prior vault Release tag has been unpublished. The catalog
+> design, tooling, and homologation gate are unchanged and documented here for when the
+> review concludes. Nothing in the ETK install depends on this index being populated.
+
 This directory is the **curated catalog** of one-command Pro Tuning bundles. 
 
 **Two storage planes, one repo:**
