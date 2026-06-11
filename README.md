@@ -3,6 +3,7 @@
 No ETK features, just house tuned.
 - Use [aPS3e Shader Patch Edition](https://github.com/mercurious/aps3e/releases) for Android (until main release is updated with cache fix)
 - Use [nihui's MESA Turnip drivers](https://github.com/nihui/mesa-turnip-android-driver) for Android during the aPS3e setup wizard.
+- Use an ETK config tuning from [Tested Games](https://github.com/mercurious/etk/#tested-games-rpcs3).
 
 ## For the full Rocknix rig
 The complete high performance system.
