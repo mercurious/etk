@@ -51,12 +51,12 @@ Captured on-device with the ETK's `L1` screenshot shutter — MangoHUD overlay i
 *GT6 — Nürburgring Nordschleife at night, Lap 1 of 2, cockpit view at 40 mph into a moonlit corner. HUD: `VULKAN 8FPS 131.9ms BATT 54% ETK 79° 11.99 96% 132+ 29.4k 269MB`. The Green Hell at night, on a handheld, running PS3. **A clean lap landed 2026-05-26.***
 
 ## ETK System Requirements
-ETK is certified against the **official ROCKNIX release `20260601`** on SM8250 (Retroid Pocket Flip 2), with a hard architectural floor at 20260520 (DS5 gamepad era). The race-stability bar — five consecutive crash-free runs of the same target race to a graceful emulator exit — has been **cleared on GT5 Prologue** (best streak: 16 crash-free sessions / 8 back-to-back clean finishes). That result was earned on a **saturated** shader vault; it is **not yet consistently reproducible from a fresh install**, where the rig re-enters the harvest cycle and crashes until the cache re-saturates. Race-stable is proven *reachable*, not guaranteed every session.
+ETK is certified against **ROCKNIX nightly `20260610`** on SM8250 (Retroid Pocket Flip 2), with a hard architectural floor at 20260520 (DS5 gamepad era). The nightly pin is deliberate: nightly-20260610 ships RPCS3 `0.0.41-19444`, which contains the upstream Gran Turismo 5 memory-leak fix ([RPCS3 #18819](https://github.com/RPCS3/rpcs3/issues/18819), ~300 MB leaked per car viewed — fatal on an 8 GB handheld and the prime suspect behind the former dominant "silent crash" class), plus Mesa Turnip 26.1.2 and kernel 7.0.11. Official release `20260601` predates the fix. The race-stability bar — five consecutive crash-free runs of the same target race to a graceful emulator exit — has been **cleared on GT5 Prologue** (best streak: 16 crash-free sessions / 8 back-to-back clean finishes). That result was earned on a **saturated** shader vault; it is **not yet consistently reproducible from a fresh install**, where the rig re-enters the harvest cycle and crashes until the cache re-saturates. Race-stable is proven *reachable*, not guaranteed every session.
 | Type | Detail |
 |---|---|
 | Host System | macOS or Linux ([experimental Windows/PC support](#windows-install-guide)) |
-| OS | ROCKNIX (Official Release: 20260601) |
-| Driver | MESA Turnip 26.1.0 |
+| OS | ROCKNIX (Nightly: 20260610) |
+| Driver | MESA Turnip 26.1.2 |
 | Shell |  BusyBox v1.36.1 |
 | Custom Overlay |  MangoHUD |
 
@@ -113,9 +113,9 @@ Your PC or Mac will no longer read the card through an SD card reader over USB b
 1. Use [Rocknix USB-GADGET mode](https://rocknix.org/play/add-games/#option-2-usb-gaget-modes).
 
 # Getting Started
-1. [Flash](https://rocknix.org/play/install/) the [official ROCKNIX release](https://github.com/ROCKNIX/distribution/releases) (the exact build in [ETK System Requirements](#etk-system-requirements) above — `20260601`) to your handheld's SD card and complete its first-time setup so the rig joins your WiFi. 
-If you've already installed Rocknix, update to the certified official release via `START` `UPDATES & DOWNLOADS` and let the auto-update complete and reboot first. 
-**Do not update past the certified release** without checking the latest README.md for the last known ETK-supported Rocknix build.
+1. [Flash](https://rocknix.org/play/install/) the [ROCKNIX nightly](https://github.com/ROCKNIX/distribution-nightly/releases) certified in [ETK System Requirements](#etk-system-requirements) above (`20260610`) to your handheld's SD card and complete its first-time setup so the rig joins your WiFi. 
+If you've already installed Rocknix, switch the update channel to nightly (`START` → `UPDATES & DOWNLOADS`), update to the certified nightly, and let the auto-update complete and reboot first. 
+**Do not update past the certified nightly** without checking the latest README.md for the last known ETK-supported Rocknix build.
 2. Clone this repo to your computer. 
 You can also download the code as a `.zip` and extract as `~/etk/`
 3. Install the ETK onto your handheld rig
@@ -317,7 +317,7 @@ This path is **no-vault** — it does not back your shaders up to the PC (the ri
 
 **2. WSL2 (full-featured).** For the complete experience including host-side shader-vault backup/restore (Tier-B), install WSL2 + Ubuntu, clone the kit, and follow [Getting Started](#getting-started) above unchanged — `install.sh` runs in WSL2 with no modifications.
 
-For the one-time fresh-card flash, use the official Rocknix [ImageBurner](https://github.com/ROCKNIX/ImageBurner/releases) — Windows-native, no dependency, to install the certified official release (`20260601`) required for the ETK.
+For the one-time fresh-card flash, use the official Rocknix [ImageBurner](https://github.com/ROCKNIX/ImageBurner/releases) — Windows-native, no dependency, to install the certified nightly (`20260610`) required for the ETK.
 
 ## Manual SMB Backup
 - (the native PowerShell installer is no-vault, so use this for shader backups on Windows)
@@ -343,8 +343,12 @@ You can disable the GRUB device select screen that appears at boot. This will sh
 `cp /flash/EFI/BOOT/grub.cfg /flash/EFI/BOOT/grub.cfg.bak`
 1. Set the menu timeout to 0 — skips the GRUB device-picker wait (edit the EFI config, not /flash/boot):  
 `sed -i 's/set timeout=2/set timeout=0/' /flash/EFI/BOOT/grub.cfg && sed -i 's/set timeout=-1/set timeout=0/' /flash/EFI/BOOT/grub.cfg`
+1. Verify both timeouts now read 0 (if either still shows 2 or -1, the remount in step 2 didn't take — redo from step 2):  
+`grep timeout= /flash/EFI/BOOT/grub.cfg`
 1. Flush and put it back read-only:  
 `sync && mount -o remount,ro /flash`
+
+> **Note:** Rocknix OS updates regenerate the EFI grub.cfg and revert this tweak — re-run these steps after every update.
 
 
 # AI Disclosure
