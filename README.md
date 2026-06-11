@@ -1,7 +1,7 @@
 # The Emulation Tuning Kit
 For best performance attempting to emulate your PS3 Gran Turismo games, use Android instead of Rocknix, which recently surpassed capability in terms of general crash stability and playability.
 - Use [aPS3e Shader Patch Edition](https://github.com/mercurious/aps3e/releases) for Android
-- [Use nihui's MESA Turnip drivers](https://github.com/nihui/mesa-turnip-android-driver) for Android during the aPS3e setup wizard.
+- Use [nihui's MESA Turnip drivers](https://github.com/nihui/mesa-turnip-android-driver) for Android during the aPS3e setup wizard.
 
 *For research purposes only*, the ETK is now presented as a speculative design project on productive crash forensics, native Rocknix App UI/UX, and handheld device optimization/customization with LLMs such as Claude Code.
 - [Download latest release](https://github.com/mercurious/etk/releases)
