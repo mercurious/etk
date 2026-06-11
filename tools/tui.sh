@@ -70,6 +70,7 @@ if [ -z "${TUI_STEP_LABELS+set}" ]; then
         "PUSH VAULT     "
         "PITSTOP UI     "
         "ARM SENTRY     "
+        "STAGE3 HARNESS "
     )
 fi
 # Per-step state — initialised/resized in tui_init based on TUI_TOTAL_STEPS.

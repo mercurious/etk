@@ -185,6 +185,16 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
     rm -f /storage/.config/custom_scripts/01-etk-sentry.sh
     echo "    Removed: 01-etk-sentry.sh"
 
+    # Stage III stability harness (v0.2.0): oneshot unit, coredump script,
+    # profile.d env snippet. Restore the Rocknix stock core_pattern
+    # (|/bin/false — cores discarded) so the rig leaves no ETK behavior behind.
+    systemctl disable --now etk-stage3.service 2>/dev/null
+    rm -f /storage/.config/system.d/etk-stage3.service
+    rm -f /storage/.config/custom_scripts/02-etk-coredump.sh
+    rm -f /storage/.config/profile.d/098-etk-stage3
+    echo "|/bin/false" > /proc/sys/kernel/core_pattern 2>/dev/null
+    echo "    Removed: etk-stage3.service / 02-etk-coredump.sh / 098-etk-stage3 (core_pattern restored)"
+
     # Legacy carcasses from earlier ETK phases (Phase 12 + pre-rename Phase 13).
     # The pre-rename install left a separate etk-guardian.service unit pointing
     # at the old 01-etk-startup.sh — when the script was renamed to
