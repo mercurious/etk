@@ -108,9 +108,12 @@ Snapshot of per-game status from on-device testing. Full tuning history, panic-l
 1. Start the device in Android and reboot. 
 1. Before Retroid Pocket logo appears, hold down the Volume-Up button and let go as soon as you see the U-Boot logo (a little submarine icon in the corner)
 ### To always boot into Rocknix as the default OS:
-1. Hold Volume-Down button while starting device to open loader menu
-1. Use volume button to switch `Android` to `bootloader` and use the power button to set it.
-1. Use the same process to revert back to Android.
+1. Hold Volume-Down button while starting device to open loader menu, the `abl`
+1. Use volume buttons to switch modes that include `Restart bootloader`,`Recovery mode`,`Emergency mode`,`Switch Boot mode`,`Power off`,`START`
+1. Select `Switch Boot mode` with vol buttons and press `POWER`
+1. `BOOT MODE` will switch to `Loader`
+1. Select `START` with vol buttons and press `POWER`
+1. Use the same process to `Switch Boot mode` back to `Android`.
 ### To share games between Rocknix and Android:
 1. Store your games in `/storage/games-internal/roms/` and see [Rocknix documentation](https://rocknix.org/play/add-games/) for further details.
 1. Let your Android apps gain permissions for this folder.
@@ -131,7 +134,7 @@ You can also download the code as a `.zip` and extract as `~/etk/`
 **For macOS, WLS2, Linux:** from the repo root
 - run `chmod +x install.sh` to make it executable
 - run `./install.sh` to install the ETK on your handheld rig
-- Run `./install.sh` whenever you want to update, repair, or sync your rig.
+- run `./install.sh` whenever you want to update, repair, or sync your rig
 
 **For Windows,** use the [PowerShell installer](https://github.com/mercurious/etk#windows-install-guide) which is a direct port of `install.sh` but use SMB backup to substitute for its file sync features.
 
@@ -143,7 +146,10 @@ Using mDNS, Rocknix advertises itself on the LAN as `<SOC>.local` (e.g. `SM8250.
 
 *The `./install.sh` Pit Wall console — `RIG: SM8250.local`, `TIER: FULL`. Six steps deploy bottom-up; the OVERALL bar aggregates them. The 2-line DATALOG at the bottom surfaces what's happening right now without firehosing per-file rsync output. Pass `--verbose` to swap this for the raw rsync stream when something needs diagnosis.*
 
-4. Reboot and start harvesting shaders. 
+4. Reboot and start harvesting shaders.
+
+## Removing ETK
+- Use the provided `uninstall.sh` or PowerShell port `etk_uninstall.ps1` to remove the ETK from your system.
 
 # ETK Track Manual
 Getting installed is the hard part. Now you have a track-day setup to attempt the previously impossible. You might not make it across the finish line your first attempt. But keep at it and you will.
