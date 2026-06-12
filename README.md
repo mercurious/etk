@@ -127,8 +127,9 @@ Your PC or Mac will no longer read the card through an SD card reader over USB b
 1. [Flash](https://rocknix.org/play/install/) the [ROCKNIX nightly](https://github.com/ROCKNIX/distribution-nightly/releases) certified in [ETK System Requirements](#etk-system-requirements) above (`20260610`) to your handheld's SD card and complete its first-time setup so the rig joins your WiFi. 
 If you've already installed Rocknix, switch the update channel to nightly (`START` → `UPDATES & DOWNLOADS`), update to the certified nightly, and let the auto-update complete and reboot first. 
 **Do not update past the certified nightly** without checking the latest README.md for the last known ETK-supported Rocknix build.
-2. Clone this repo to your computer. 
-You can also download the code as a `.zip` and extract as `~/etk/`
+2. Clone this repo to your computer.
+- run `git clone https://github.com/mercurious/etk`
+- (You can also download the code as a `.zip` and extract as `~/etk/`).
 3. Install the ETK onto your handheld rig
 
 **For macOS, WLS2, Linux:** from the repo root
