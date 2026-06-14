@@ -6,6 +6,20 @@
 #   bash /storage/games-internal/roms/etk/tools/vault_sweep.sh           # dry-run, current game
 #   bash /storage/games-internal/roms/etk/tools/vault_sweep.sh --apply   # commit
 #   bash /storage/games-internal/roms/etk/tools/vault_sweep.sh --all-games --apply
+#   bash .../vault_sweep.sh --game NPUA80075 [--apply]   # explicit single vault
+#   bash .../vault_sweep.sh --all-games --porcelain      # machine-readable
+#
+# FLAGS
+#   --apply        delete (default is dry-run)
+#   --all-games    sweep every vault under vault/<chipset>/
+#   --game <ID>    sweep one explicit vault, bypassing env TARGET_ID
+#                  resolution (so it works from the idle Tools menu)
+#   --porcelain    emit stable, ANSI-free lines for parsers:
+#                    GAME <id> <stale_files> <stale_kb> <fresh_files> <fresh_kb>
+#                    TOTAL <stale_files> <stale_kb> <fresh_files> <fresh_kb>
+#                  (fresh = shard-tree files NEWER than the boundary, same
+#                   basis as stale — lets a consumer split fresh:stale without
+#                   conflating Mesa bookkeeping/du overhead. Pitstop consumes it)
 #
 # WHY
 #   Every Rocknix nightly rebuilds Mesa from source; the resulting
@@ -43,19 +57,24 @@ source /storage/games-internal/roms/etk/scripts/env.sh
 
 APPLY=0
 ALL_GAMES=0
-for arg in "$@"; do
-    case "$arg" in
+PORCELAIN=0
+GAME_ARG=""
+while [ $# -gt 0 ]; do
+    case "$1" in
         --apply)     APPLY=1 ;;
         --all-games) ALL_GAMES=1 ;;
+        --game)      shift; GAME_ARG="$1" ;;
+        --porcelain) PORCELAIN=1 ;;
         -h|--help)
-            sed -n '2,30p' "$0"
+            sed -n '2,40p' "$0"
             exit 0
             ;;
         *)
-            echo "Unknown arg: $arg (try --help)" >&2
+            echo "Unknown arg: $1 (try --help)" >&2
             exit 2
             ;;
     esac
+    shift
 done
 
 C='\033[0;36m'; G='\033[0;32m'; Y='\033[1;33m'; R='\033[0;31m'; N='\033[0m'
@@ -75,10 +94,12 @@ case "$CUTOFF_EPOCH" in ''|*[!0-9]*)
 ;; esac
 CUTOFF_HUMAN=$(date -d "@$CUTOFF_EPOCH" 2>/dev/null || date -r "$CUTOFF_EPOCH" 2>/dev/null || echo "epoch=$CUTOFF_EPOCH")
 
-# Refuse if a PS3 game is running — Mesa has the cache open, mtimes are
-# mid-flux, and sweeping a hot shader would mid-write delete a file Mesa
-# is actively reading. Quit the game first.
-if pgrep -f "rpcs3|AppRun.wrapped" >/dev/null 2>&1; then
+# Refuse to DELETE if a PS3 game is running — Mesa has the cache open, mtimes
+# are mid-flux, and sweeping a hot shader would mid-write delete a file Mesa is
+# actively reading. A dry-run is read-only (find/stat only) so it is allowed
+# while a game runs — that lets the Pitstop graph populate live. Only --apply
+# is gated.
+if [ "$APPLY" = "1" ] && pgrep -f "rpcs3|AppRun.wrapped" >/dev/null 2>&1; then
     echo -e "${R}[ABORT] RPCS3 is running. Quit the game and re-run this sweep.${N}"
     exit 1
 fi
@@ -89,7 +110,18 @@ if [ ! -d "$VAULT_ROOT" ]; then
     echo -e "${R}[ABORT] $VAULT_ROOT does not exist.${N}"
     exit 1
 fi
-if [ "$ALL_GAMES" = "1" ]; then
+if [ -n "$GAME_ARG" ]; then
+    # Explicit single vault. Validate the ID shape so a typo can't expand into
+    # an unintended path. The per-game loop skips it cleanly if no shaders dir.
+    case "$GAME_ARG" in
+        [A-Z][A-Z][A-Z][A-Z][0-9][0-9][0-9][0-9][0-9]) ;;
+        *)
+            echo "[ABORT] --game '$GAME_ARG' is not a valid GAMEID." >&2
+            exit 1
+        ;;
+    esac
+    GAMES="$GAME_ARG"
+elif [ "$ALL_GAMES" = "1" ]; then
     GAMES=$(ls "$VAULT_ROOT" 2>/dev/null)
 else
     # Resolve current TARGET_ID via env.sh's logic. Reject IDLE/UNKNOWN_ID
@@ -112,20 +144,27 @@ else
     MODE_BANNER="${Y}DRY-RUN — no files will be deleted (pass --apply to commit)${N}"
 fi
 
-echo -e "${C}=========================================================="
-echo -e "  ETK VAULT SWEEP"
-echo -e "==========================================================${N}"
-echo -e "  mode    : $MODE_BANNER"
-echo -e "  cutoff  : ${Y}$CUTOFF_HUMAN${N}  (from mtime of .last_mesa.hash)"
-echo -e "  scope   : $(echo $GAMES | wc -w) game(s)"
-echo ""
+if [ "$PORCELAIN" = "0" ]; then
+    echo -e "${C}=========================================================="
+    echo -e "  ETK VAULT SWEEP"
+    echo -e "==========================================================${N}"
+    echo -e "  mode    : $MODE_BANNER"
+    echo -e "  cutoff  : ${Y}$CUTOFF_HUMAN${N}  (from mtime of .last_mesa.hash)"
+    echo -e "  scope   : $(echo $GAMES | wc -w) game(s)"
+    echo ""
+fi
 
 TOTAL_FILES=0
 TOTAL_BYTES=0
+TOTAL_FRESH_FILES=0
+TOTAL_FRESH_BYTES=0
 
 for GAME in $GAMES; do
     SHADER_DIR="$VAULT_ROOT/$GAME/shaders"
-    [ -d "$SHADER_DIR" ] || { echo -e "  ${Y}[SKIP] $GAME — no shaders dir${N}"; continue; }
+    if [ ! -d "$SHADER_DIR" ]; then
+        [ "$PORCELAIN" = "0" ] && echo -e "  ${Y}[SKIP] $GAME — no shaders dir${N}"
+        continue
+    fi
 
     # Find shader cache files older than the rebuild epoch. Restrict to the
     # 256-shard tree (paths like .../shaders/<hex>/<hex>) so the `index`
@@ -143,14 +182,34 @@ for GAME in $GAMES; do
     fi
     GAME_MB=$(( GAME_BYTES / 1048576 ))
 
-    printf "  %-12s  orphan files: %7d   reclaim: %5d MB\n" "$GAME" "$GAME_FILES" "$GAME_MB"
+    if [ "$PORCELAIN" = "1" ]; then
+        # Also tally FRESH (the complement: shard-tree files NEWER than the
+        # boundary) on the SAME basis as stale, so a consumer can split
+        # fresh:stale honestly without conflating Mesa's bookkeeping (the
+        # index/marker at the shaders root) or du block-rounding as "fresh".
+        FTMP=$(mktemp 2>/dev/null || echo "/tmp/etk_fresh.$$")
+        find "$SHADER_DIR" -mindepth 2 -maxdepth 2 -type f \
+             -newer "$MESA_HASH_FILE" 2>/dev/null > "$FTMP"
+        FRESH_FILES=$(wc -l < "$FTMP")
+        FRESH_BYTES=0
+        if [ "$FRESH_FILES" -gt 0 ]; then
+            FRESH_BYTES=$(xargs -a "$FTMP" stat -c '%s' 2>/dev/null | awk '{s+=$1} END{print s+0}')
+        fi
+        rm -f "$FTMP"
+        printf "GAME %s %s %s %s %s\n" "$GAME" "$GAME_FILES" \
+               "$(( GAME_BYTES / 1024 ))" "$FRESH_FILES" "$(( FRESH_BYTES / 1024 ))"
+        TOTAL_FRESH_FILES=$(( TOTAL_FRESH_FILES + FRESH_FILES ))
+        TOTAL_FRESH_BYTES=$(( TOTAL_FRESH_BYTES + FRESH_BYTES ))
+    else
+        printf "  %-12s  orphan files: %7d   reclaim: %5d MB\n" "$GAME" "$GAME_FILES" "$GAME_MB"
+    fi
 
     if [ "$APPLY" = "1" ] && [ "$GAME_FILES" -gt 0 ]; then
         # xargs -r so an empty list is a no-op. -0 unavailable on BusyBox
         # xargs; rely on the find above producing newline-safe paths (shard
         # tree filenames are hex digits — no whitespace possible).
         xargs -a "$TMP" rm -f 2>/dev/null
-        echo -e "    ${G}[DELETED] $GAME_FILES files${N}"
+        [ "$PORCELAIN" = "0" ] && echo -e "    ${G}[DELETED] $GAME_FILES files${N}"
     fi
     rm -f "$TMP"
 
@@ -159,11 +218,16 @@ for GAME in $GAMES; do
 done
 
 TOTAL_MB=$(( TOTAL_BYTES / 1048576 ))
-echo ""
-echo -e "${C}----------------------------------------------------------${N}"
-printf "  TOTAL ORPHANS:  %d files,  ~%d MB\n" "$TOTAL_FILES" "$TOTAL_MB"
-if [ "$APPLY" = "1" ]; then
-    echo -e "  ${G}swept.${N}"
+if [ "$PORCELAIN" = "1" ]; then
+    printf "TOTAL %s %s %s %s\n" "$TOTAL_FILES" "$(( TOTAL_BYTES / 1024 ))" \
+           "$TOTAL_FRESH_FILES" "$(( TOTAL_FRESH_BYTES / 1024 ))"
 else
-    echo -e "  ${Y}dry-run; re-run with --apply to delete.${N}"
+    echo ""
+    echo -e "${C}----------------------------------------------------------${N}"
+    printf "  TOTAL ORPHANS:  %d files,  ~%d MB\n" "$TOTAL_FILES" "$TOTAL_MB"
+    if [ "$APPLY" = "1" ]; then
+        echo -e "  ${G}swept.${N}"
+    else
+        echo -e "  ${Y}dry-run; re-run with --apply to delete.${N}"
+    fi
 fi
