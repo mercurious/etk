@@ -234,6 +234,51 @@ ETK Pitstop's TELEMETRY tab shows the per-game session ledger of the last game l
 
 *ETK Pitstop TELEMETRY tab for Gran Turismo 5 (BCUS98114). Career rollup: **6 sessions · 50% clean · 3 crashes · 7,639 shaders banked · +1,273 avg/session**. The session log shows the full ledger schema — duration, RAM peak, load, GPU temp, battery drain, new-shader count, and the recovery signature (`RECOVERY:Adreno` = fence timeout, `RECOVERY:Silent` = soft hang). Config changes are logged inline so every tuning experiment is reproducible.*
 
+## Setting Up the Private Paddock (optional)
+The **Private Paddock** is your own personal cloud backup for shaders, per-game tunes, and PS3 saves — pushed and pulled straight from the rig to **your own private GitHub repo** over WiFi, with no host computer in the loop. ETK ships the tooling; the bytes are yours and are never shared. The **PADDOCK** tab only appears in ETK Pitstop once you've configured a token, so this whole feature is opt-in — leave the token blank and nothing changes.
+
+### 1. Create a GitHub token (and repo)
+You need a GitHub Personal Access Token (PAT). Either type works:
+
+- **Classic PAT (easiest — lets ETK create the repo for you).** On GitHub: *Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token*. Tick the **`repo`** scope and generate. You do **not** need to create the repo yourself — `install.sh` will create a private `etk-paddock` repo for you on the first run.
+- **Fine-grained PAT (most locked-down).** First create the private repo yourself on github.com (e.g. name it `etk-paddock`, visibility **Private**). Then *Settings → Developer settings → Fine-grained tokens → Generate new token*, scope it to **only that one repo**, and grant **Repository permissions → Contents: Read and write**. (Fine-grained tokens can't create repos, which is why you make the repo first.)
+
+> ⚠️ The repo **must be private**. ETK refuses to use a public repo — a public paddock would publicly *distribute* your vault, which is exactly what ETK is designed not to do.
+
+### 2. Configure `etk.conf`
+`etk.conf` lives in the repo root (it's generated on your first `./install.sh` and is gitignored, so your token never leaves your machine). Set:
+
+```sh
+PADDOCK_TOKEN="ghp_your_token_here"
+# Optional — defaults to <your-github-username>/etk-paddock
+PADDOCK_REPO=""
+```
+
+Leave `PADDOCK_REPO` blank to accept the default `<token-owner>/etk-paddock`, or set it to `owner/repo` to use a specific repo name.
+
+### 3. Run the installer
+```sh
+./install.sh
+```
+The installer's **PADDOCK LINK** step then:
+1. Verifies the token with GitHub and derives your username.
+2. Finds — or, with a classic `repo`-scope token, **creates** — the private repo.
+3. **Refuses to continue** if the repo is public.
+4. Seeds an initial commit if the repo is empty (uploads are GitHub Releases, which need a commit to tag).
+5. Writes the credential to the rig at `/storage/roms/etk/config/paddock.json` (root-only, `chmod 600`).
+
+If the token is rejected, or the repo is missing and your (fine-grained) token can't create it, the step prints exactly what to fix — correct it and re-run `./install.sh`.
+
+### 4. Use it on the rig
+Reboot or relaunch ETK Pitstop and open the **PADDOCK** tab. Each game row shows where its data lives — `LOCAL-ONLY`, `REMOTE-ONLY`, `BOTH`, or `EPOCH-OLD` (a bundle built against a different driver build). Use the **D-pad** to select **PUSH** or **PULL** and press **confirm** to run it.
+
+- **PUSH** uploads that game's vault + config + saves to your paddock, tagged to your current driver build.
+- **PULL** brings it back down to the rig — after an SD swap or reflash, or onto a second SM8250 device running the same driver build. Pulled shaders are checked against your live driver (the *homologation gate*): a mismatched bundle installs the config only and skips the stale shaders.
+
+> 💡 Sweep stale shaders with **TOOLS → Manage Shaders** before a PUSH so you bank a lean bundle — a fresh driver build can strand >90% of a vault as dead weight.
+
+To disconnect, clear `PADDOCK_TOKEN` in `etk.conf` and re-run `./install.sh`, or run `uninstall.sh` (which removes the rig credential). Your remote repo is never touched — it's your backup.
+
 ## Customizing the ETK
 1. The first run generates `etk.conf` from `etk.conf.example`
    - `RIG_SSH` — auto-populated to `root@<SOC>.local`; replace with a literal IP if your LAN blocks mDNS
