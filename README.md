@@ -28,7 +28,7 @@ In the style of a race car Driver Data Unit (DDU) dashboard, the ETK instruments
 More technically, ETK is a custom Rocknix middleware composed of shell scripts and python curses that employ brute-force optimization, shader cache management, advanced in-game telematics, on-board screenshot tooling that includes the MangoHUD overlay, operates an automated file-drop headless install of PS3 PKG installations inside of RPCS3, and automatically archives shaders into an optional private, unshared cloud repository on GitHub.
 
 ## Race Durability
-Built for abuse and race conditions, the ETK guards hard-earned shaders, custom tunings, screenshots, and game saves from SD card failure, OS flashing, data corruption, device failure, loss or theft. The ETK includes an emergency cooldown that automatically puts your device in PIT mode as needed, protecting your engine from overheating.
+Built for abuse and race conditions, the ETK guards hard-earned shaders, custom tunings, screenshots, and game saves from SD card failure, OS flashing, data corruption, device failure, loss or theft. The ETK includes an emergency cooldown that automatically puts your device in PIT mode as needed, protecting your engine from overheating — and **automatically recovers back to racing once it cools, with no reboot required**.
 
 ## Gallery
 Captured on-device with the ETK's `L1` screenshot shutter — MangoHUD overlay included (which is the whole point; RPCS3's built-in screenshot strips it).
@@ -97,8 +97,8 @@ Snapshot of per-game status from on-device testing. Full tuning history, panic-l
 1. Customized in-game overlay dashboard with ETK telematics inside native Rocknix MangoHUD
 1. Hardware and driver tunings for maximum performance going beyond config settings
 1. Optimized emulator game configurations tuned to the device hardware
-1. Smart thermal protection to safely overdrive the device during shader harvesting
-1. Automatic shader backup from your device to computer to shield hard earned work from loss and to share with other ETK users
+1. Smart thermal protection to safely overdrive the device during shader harvesting, with automatic overheat recovery that returns to racing once cooled — no reboot
+1. Automatic shader backup from your device to your computer to shield hard-earned work from loss, plus an optional **Private Paddock** — push/pull your shaders, tunes, and saves to your own private GitHub repo straight from the rig over WiFi (self-custody, nothing shared publicly), and **Manage Shaders** to reclaim storage by sweeping shaders stranded by driver updates
 1. Pit wall remote terminal screen to monitor and control device (`scripts/commander.sh`)
 1. Install, configure, repair, and uninstall the kit remotely from a computer (`install.sh` and `uninstall.sh`) with mDNS autodiscovery of supported devices on your local network.
 1. Multi-Installation Options: FULL installation for initial shader harvesting and tuning, LITE installation for saturated shader sets with thermal protection only, RAW for stress testing without shader and thermal protections (`ETK_BUILD_TYPE` in `etk.conf`)
@@ -167,7 +167,7 @@ The custom display has a 3-step startup sequence. The duration can be edited in 
 
 ### Gauge Indicators
 - The TEMP gauge will show `HOT` when you are getting close to overheating.
-  - It will show `OVERHEAT - REBOOT` when you trigger the thermal protection system.
+  - When you trigger the thermal protection system the device drops into a PIT-mode cooldown and the gauge shows `»COOLDOWN`. **No reboot needed** — once it cools back down the system automatically returns to racing and flashes `RACE OK`.
 - The core LOAD and RAM gauges have 3-step meters: `»--` `»»-` `»»»`
    - Don't think of these as proportional to the numbers,
    - Instead, think of these as your "system overhead" and when you are maxed out with all three segments, you are pushing the device to its known limits.
@@ -209,6 +209,7 @@ Easily tweak emulation settings on the device. The subset of RPCS3 settings can 
 1. Easily install PS3 packages. Follow the on screen instructions and overlays during the automated process.
 2. Easily uninstall PS3 packages
 3. Configure the screenshot tool's `L1` single-finger camera-shutter feature to work always, on in-game, or never. The `SELECT` + `dpad-up` combo will continue to take ETK style screenshots.
+4. **Manage Shaders** — every ROCKNIX nightly rebuilds the graphics driver, which strands the shaders cached against the old build as dead weight (a saturated vault can be >90% stale). This screen shows a per-game fresh/stale graph and lets you **Sweep** the stale orphans to reclaim space, **Delete** a game's whole vault, or **Clear** the RPCS3 cache — each gated behind a confirm.
 
 ## How to Install PS3 Games with the ETK
 **Note:** The ETK cannot solve the problem of needing to install the PS3 firmware into the emulator. You have to dump that from your console or go to Sony's website and then plug in a mouse to your device and use the RPCS3 application in Rocknix tools to get it installed as a one-time setup.

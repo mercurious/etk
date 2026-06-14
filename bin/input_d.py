@@ -14,7 +14,8 @@
 #    signals MangoHud reload_cfg so the swap takes effect live.
 #    The Sentry re-applies the per-game pref at IDLE->RUNNING.
 #    PIT/RACE thermal mode is now thermal_d.sh-internal only
-#    (auto-PIT at RACE_THRESHOLD; recover via reboot).
+#    (auto-PIT at RACE_THRESHOLD; auto-recovers to RACE at
+#    RECOVER_THRESHOLD — no reboot, since thermal_d.sh v14).
 # 3. SELF-HEAL: The InputPlumber virtual controller may not
 #    exist when the Sentry spawns this at boot. The connect
 #    loop MUST keep re-finding the device; do not collapse it
