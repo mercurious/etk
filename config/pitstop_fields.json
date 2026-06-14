@@ -130,6 +130,12 @@
     "type": "bool"
   },
   {
+    "label": "Disable ZCull Occlusion Queries",
+    "section": "Video",
+    "yaml_key": "  Disable ZCull Occlusion Queries",
+    "type": "bool"
+  },
+  {
     "label": "Async Texture Streaming",
     "section": "Video",
     "yaml_key": "    Asynchronous Texture Streaming",
