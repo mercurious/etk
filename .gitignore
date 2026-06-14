@@ -48,6 +48,7 @@ __pycache__/
 # 5 Ignore the dev _archive
 _archive/
 /os-install
+dossiers/
 
 # 6. Operator config — generated locally by install.sh's first-run
 # wizard. Tracks the rig SSH target, build tier, HUD preferences, etc.
