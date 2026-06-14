@@ -71,6 +71,7 @@ if [ -z "${TUI_STEP_LABELS+set}" ]; then
         "PITSTOP UI     "
         "ARM SENTRY     "
         "STAGE3 HARNESS "
+        "PADDOCK LINK   "
     )
 fi
 # Per-step state — initialised/resized in tui_init based on TUI_TOTAL_STEPS.

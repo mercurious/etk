@@ -46,6 +46,17 @@ $Rpcs3HomeDir       = "$Rpcs3DevHdd0/home"                  # RPCS3_HOME_DIR
 $Rpcs3ExdataDir     = "$Rpcs3DevHdd0/home/00000001/exdata"  # RPCS3_EXDATA_DIR
 $Ps3LauncherDir     = "/storage/games-internal/roms/ps3"   # PS3_LAUNCHER_DIR (resolved from env.sh 2026-05-28)
 
+# --- PRIVATE PADDOCK (0.3.0, optional) --------------------------------
+# Windows mirror of etk.conf's PADDOCK_TOKEN / PADDOCK_REPO. To get private
+# shader storage, set your GitHub token here BEFORE running the installer.
+# Preferred: fine-grained PAT scoped to ONE repo (<you>/etk-paddock),
+# contents read/write — create the private repo on github.com first
+# (fine-grained tokens can't create repos; a classic `repo`-scope PAT can,
+# and the installer will then create it for you). Empty = feature off,
+# the PADDOCK tab never appears. ETK never shares these bytes.
+$PaddockToken = ""
+$PaddockRepo  = ""    # optional; default <token-owner>/etk-paddock
+
 # --- BEHAVIOUR TOGGLES ------------------------------------------------
 # "1" = verbose scp (-v). Anything else = quiet (-q). Mirrors ETK_VERBOSE.
 $EtkVerbose = "0"

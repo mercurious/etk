@@ -124,9 +124,11 @@ fi
 if [ "$VAULT_OK" -eq 1 ] && [ -d "$TMP/bundle/shaders" ]; then
   MESA_CACHE=/storage/.cache/mesa_shader_cache
   mkdir -p "$MESA_CACHE"
-  # -n: never clobber an existing blob (same hash name == same bytes).
-  cp -rn "$TMP/bundle/shaders/." "$MESA_CACHE/" 2>/dev/null || \
-    (cd "$TMP/bundle/shaders" && find . -type f -exec sh -c 'd="$1"; [ -e "/storage/.cache/mesa_shader_cache/$d" ] || { mkdir -p "/storage/.cache/mesa_shader_cache/$(dirname "$d")"; cp -a "$d" "/storage/.cache/mesa_shader_cache/$d"; }' _ {} \;)
+  # No-clobber merge via tar -k (keep existing): same hash name == same bytes.
+  # NOT `cp -rn src/. dest/` — on BusyBox that form is a SILENT NO-OP (rc=0,
+  # zero files copied), which also defeated the old `||` fallback here.
+  # Discovered live 2026-06-12 during paddock_sync.sh validation.
+  (cd "$TMP/bundle/shaders" && tar -cf - .) | (cd "$MESA_CACHE" && tar -xkf -) 2>/dev/null
   N_NEW=$(find "$TMP/bundle/shaders" -type f | wc -l | tr -d ' ')
   say "    ${G}shaders merged -> $MESA_CACHE ($N_NEW files)${N}"
 elif [ "$VAULT_OK" -eq 0 ]; then

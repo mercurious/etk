@@ -25,7 +25,9 @@ $ErrorActionPreference = "Stop"
 # bin/, scripts/, config/, tools/) is one level up at the repo root.
 $RepoRoot    = Split-Path $PSScriptRoot -Parent
 $InstallSh   = Join-Path $RepoRoot "install.sh"
-$TOTAL       = 6
+$TOTAL       = 8
+# GitHub API on Windows PowerShell 5.1 needs TLS 1.2 opted in explicitly.
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 Write-Host ""
 Write-Host "==========================================================" -ForegroundColor Cyan
@@ -215,6 +217,85 @@ Start-Sleep -Seconds 2
 $active = (Invoke-Rig "systemctl is-active etk.service 2>/dev/null || true").Trim()
 if ($active -eq "active") { Write-Ok "Sentry service is active." }
 else { Write-Warn "Sentry not confirmed active (reported '$active'). Check: ssh $RigSsh 'systemctl status etk.service'" }
+
+# ==========================================================
+# STEP 7: STAGE III STABILITY HARNESS  (install.sh Step 7)
+# PROF / CORE / S3SVC bodies are pulled verbatim from install.sh —
+# Mesa 10G cache cap + ulimit, boot-persistent coredump capture.
+# ==========================================================
+Write-Step 7 $TOTAL "ARMING STAGE III HARNESS (cache cap + coredump capture)..."
+$prof  = Get-Heredoc -Path $InstallSh -Marker "PROF"
+$core  = Get-Heredoc -Path $InstallSh -Marker "CORE"
+$s3svc = Get-Heredoc -Path $InstallSh -Marker "S3SVC"
+Invoke-Rig "mkdir -p /storage/.config/profile.d /storage/.config/custom_scripts /storage/.config/system.d /storage/cores" | Out-Null
+Send-Text -Content $prof  -RemotePath "/storage/.config/profile.d/098-etk-stage3"
+Send-Text -Content $core  -RemotePath "/storage/.config/custom_scripts/02-etk-coredump.sh" -Executable
+Send-Text -Content $s3svc -RemotePath "/storage/.config/system.d/etk-stage3.service"
+Invoke-Rig "systemctl daemon-reload; systemctl enable etk-stage3.service 2>/dev/null; systemctl restart etk-stage3.service" | Out-Null
+$cpat = (Invoke-Rig "cat /proc/sys/kernel/core_pattern").Trim()
+if ($cpat -like "/storage/cores/*") { Write-Ok "Stage III harness armed (core_pattern -> /storage/cores)." }
+else { Write-Warn "Stage III harness not confirmed (core_pattern '$cpat') - crash forensics degraded, install continues." }
+
+# ==========================================================
+# STEP 8: PADDOCK LINK  (install.sh Step 8 — Private Paddock, 0.3.0)
+# Conditional on $PaddockToken in etk-env.ps1. Mirrors the bash step:
+# token -> identity -> verify-or-create PRIVATE repo -> seed -> wire rig.
+# ==========================================================
+Write-Step 8 $TOTAL "PADDOCK LINK (private paddock)..."
+if (-not $PaddockToken) {
+    Write-Note "No PaddockToken in etk-env.ps1 - private paddock skipped (tab stays hidden)."
+} else {
+    $ghHdr = @{ Authorization = "Bearer $PaddockToken"; Accept = "application/vnd.github+json"; "User-Agent" = "etk-installer" }
+    try {
+        $ghUser = (Invoke-RestMethod -Uri "https://api.github.com/user" -Headers $ghHdr -Method Get).login
+    } catch { $ghUser = $null }
+    if (-not $ghUser) {
+        Write-Warn "PADDOCK: token rejected by GitHub - check etk-env.ps1, re-run installer."
+    } else {
+        $prRepo = if ($PaddockRepo) { $PaddockRepo } else { "$ghUser/etk-paddock" }
+        $repoInfo = $null
+        try { $repoInfo = Invoke-RestMethod -Uri "https://api.github.com/repos/$prRepo" -Headers $ghHdr -Method Get } catch {}
+        if (-not $repoInfo) {
+            # Missing: try to create (classic PATs can; fine-grained cannot)
+            $body = @{ name = ($prRepo -split '/')[1]; private = $true;
+                       description = "ETK Private Paddock - personal vault/save/config storage (not shared)" } | ConvertTo-Json
+            try {
+                $repoInfo = Invoke-RestMethod -Uri "https://api.github.com/user/repos" -Headers $ghHdr -Method Post -Body $body -ContentType "application/json"
+                Write-Ok "PADDOCK: created private repo $prRepo"
+            } catch {
+                Write-Warn "PADDOCK: repo $prRepo missing & token can't create it."
+                Write-Warn "         Create it PRIVATE on github.com, then re-run the installer."
+            }
+        }
+        if ($repoInfo) {
+            if (-not $repoInfo.private) {
+                # A PUBLIC paddock would publicly distribute the vault — refuse.
+                Write-Warn "PADDOCK: $prRepo is PUBLIC - refusing. Make it private and re-run."
+            } else {
+                # Seed an initial commit if empty (release tags need a commit)
+                $seeded = $true
+                try { Invoke-RestMethod -Uri "https://api.github.com/repos/$prRepo/contents/README.md" -Headers $ghHdr -Method Get | Out-Null }
+                catch {
+                    $readme = "# ETK Private Paddock`n`nPersonal vault/save/config storage for ETK. Private, not shared, managed by the ETK PADDOCK tab.`n"
+                    $seedBody = @{ message = "paddock: seed";
+                                   content = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($readme)) } | ConvertTo-Json
+                    try {
+                        Invoke-RestMethod -Uri "https://api.github.com/repos/$prRepo/contents/README.md" -Headers $ghHdr -Method Put -Body $seedBody -ContentType "application/json" | Out-Null
+                        Write-Ok "PADDOCK: seeded $prRepo (initial commit)"
+                    } catch { $seeded = $false; Write-Warn "PADDOCK: seed failed - first push will fail until the repo has a commit." }
+                }
+                # Wire the rig: credential file, root-only
+                $cred = '{"repo":"' + $prRepo + '","token":"' + $PaddockToken + '"}'
+                Invoke-Rig "mkdir -p $EtkRoot/config" | Out-Null
+                Send-Text -Content $cred -RemotePath "$EtkRoot/config/paddock.json"
+                Invoke-Rig "chmod 600 $EtkRoot/config/paddock.json" | Out-Null
+                $wired = (Invoke-Rig "[ -s $EtkRoot/config/paddock.json ] && echo OK").Trim()
+                if ($wired -eq "OK") { Write-Ok "PADDOCK connected: $prRepo - tab live on next Pitstop launch." }
+                else { Write-Warn "PADDOCK: rig credential write failed - re-run the installer." }
+            }
+        }
+    }
+}
 
 Write-Host ""
 Write-Host ">>> DEPLOYMENT COMPLETE. REBOOT THE DEVICE TO ACTIVATE ETK PITSTOP IN ROCKNIX TOOLS." -ForegroundColor Green

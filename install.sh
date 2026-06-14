@@ -189,9 +189,10 @@ else
 fi
 
 # tui.sh defaults TUI_TOTAL_STEPS to 6 at source time; override before
-# tui_init (which sizes the per-step state arrays) for the new step 7.
-TUI_TOTAL_STEPS=7
-TOTAL_STEPS=7
+# tui_init (which sizes the per-step state arrays) for steps 7 (STAGE3)
+# and 8 (PADDOCK LINK).
+TUI_TOTAL_STEPS=8
+TOTAL_STEPS=8
 
 # --- TUI ACTIVATION ---
 # Console mode (Pit Wall TUI) is the default for terminal installs.
@@ -582,12 +583,15 @@ tui_rsync 4 36 48 "Deploying RPCS3 template (etk_template.yml)" --exclude='.DS_S
 # SVG icon master for the polished Tools-menu app entry (dossier addendum R1).
 tui_rsync 4 48 54 "Deploying Tools-menu SVG icon" --exclude='.DS_Store' ./config/etk_pitstop.svg        $RIG_SSH:$ETK_ROOT/config/
 
-# PADDOCK injector (0.5.0): the rig-side Pro Tuning installer the Pitstop
-# PADDOCK tab shells out to (one injector — preserves the pure-data trust
-# invariant; PADDOCK only fetches data, install-protune.sh is the only code
-# that runs). The host-only producer (export.sh) and prototype signature/
-# renders are intentionally NOT deployed to the rig. CRLF-strip so a Windows
-# checkout can't ship a script the rig's /bin/sh chokes on.
+# PADDOCK rig-side code. The PADDOCK tab (Private Paddock, 0.3.0) shells out to
+# bin/paddock_sync.sh — the push/pull sync engine — which ships in the bulk
+# ./bin/ rsync above. install-protune.sh (deployed below) is the known_repo
+# GET-hatch injector: it installs a MISSING game from a pkg/rap source the
+# operator supplied. One trust invariant spans both — PADDOCK only ever RUNS
+# these two scripts; everything else it handles is data. The host-only producer
+# (export.sh) and prototype signature/renders are intentionally NOT deployed to
+# the rig. CRLF-strip so a Windows checkout can't ship a script the rig's
+# /bin/sh chokes on.
 tui_rsync 4 54 58 "Deploying PADDOCK injector (install-protune.sh)" --exclude='.DS_Store' ./pro-tuning/install-protune.sh $RIG_SSH:$ETK_ROOT/pro-tuning/
 ssh $RIG_SSH "sed -i 's/\r$//' $ETK_ROOT/pro-tuning/install-protune.sh && chmod +x $ETK_ROOT/pro-tuning/install-protune.sh"
 
@@ -1151,7 +1155,7 @@ ls -t /storage/cores/*.core 2>/dev/null | tail -n +3 | xargs -r rm -f
 CORE
 chmod +x /storage/.config/custom_scripts/02-etk-coredump.sh
 
-cat << 'SVC' > /storage/.config/system.d/etk-stage3.service
+cat << 'S3SVC' > /storage/.config/system.d/etk-stage3.service
 [Unit]
 Description=ETK Stage III stability harness (coredump capture)
 After=multi-user.target
@@ -1163,7 +1167,7 @@ RemainAfterExit=yes
 
 [Install]
 WantedBy=multi-user.target
-SVC
+S3SVC
 
 systemctl daemon-reload
 systemctl enable etk-stage3.service > /dev/null 2>&1
@@ -1185,6 +1189,77 @@ else
     else
         echo -e "${Y}>>> WARNING: Stage III harness did not verify (core capture inactive)${N}"
     fi
+fi
+
+# ==========================================================
+# STEP 7: PADDOCK LINK (Private Paddock, 0.3.0)
+# Optional and conditional: runs ONLY if PADDOCK_TOKEN is set in etk.conf
+# ("to get private shader storage, add your GitHub token to etk.conf
+# before installing"). ETK never shares these bytes — the repo is the
+# USER'S OWN private repo; this step just wires the rig to it.
+# Validated end-to-end by tools/paddock_probe.sh (10/10, 2026-06-12).
+# Empty-repo lesson: a release tag needs a commit, so a freshly created
+# repo MUST be seeded with a README before any push can work.
+# ==========================================================
+tui_step_start 7
+GH_API="https://api.github.com"
+if [ -z "${PADDOCK_TOKEN:-}" ]; then
+    tui_log "PADDOCK: no token in etk.conf — private paddock skipped"
+    tui_step_progress 7 100
+    tui_step_done 7
+else
+    tui_log "PADDOCK: verifying GitHub token + repo"
+    PADDOCK_HDR=$(mktemp /tmp/etk_paddock_hdr_XXXXXX)
+    printf 'Authorization: Bearer %s\n' "$PADDOCK_TOKEN" > "$PADDOCK_HDR"
+    PADDOCK_OK=0
+    GH_LOGIN=$(curl -fsS -H "@$PADDOCK_HDR" "$GH_API/user" 2>/dev/null | \
+        python3 -c 'import json,sys; print(json.load(sys.stdin).get("login",""))' 2>/dev/null)
+    if [ -z "$GH_LOGIN" ]; then
+        tui_log "PADDOCK: token rejected by GitHub — check etk.conf, re-run install"
+    else
+        PR_REPO="${PADDOCK_REPO:-$GH_LOGIN/etk-paddock}"
+        REPO_JSON=$(curl -fsS -H "@$PADDOCK_HDR" "$GH_API/repos/$PR_REPO" 2>/dev/null)
+        if [ -z "$REPO_JSON" ]; then
+            # Repo missing: try to create (classic PATs can; fine-grained cannot)
+            REPO_JSON=$(curl -fsS -X POST -H "@$PADDOCK_HDR" \
+                -d "{\"name\":\"${PR_REPO#*/}\",\"private\":true,\"description\":\"ETK Private Paddock - personal vault/save/config storage (not shared)\"}" \
+                "$GH_API/user/repos" 2>/dev/null)
+            if [ -n "$REPO_JSON" ]; then
+                tui_log "PADDOCK: created private repo $PR_REPO"
+            else
+                tui_log "PADDOCK: repo $PR_REPO missing & token can't create it."
+                tui_log "PADDOCK: create it private on github.com, then re-run install"
+            fi
+        fi
+        if [ -n "$REPO_JSON" ]; then
+            IS_PRIVATE=$(printf '%s' "$REPO_JSON" | \
+                python3 -c 'import json,sys; print(str(json.load(sys.stdin).get("private",False)).lower())' 2>/dev/null)
+            if [ "$IS_PRIVATE" != "true" ]; then
+                # A PUBLIC paddock would publicly distribute the vault — refuse.
+                tui_log "PADDOCK: $PR_REPO is PUBLIC — refusing. Make it private, re-run"
+            else
+                # Seed an initial commit if empty (release tags need a commit)
+                if ! curl -fsS -H "@$PADDOCK_HDR" "$GH_API/repos/$PR_REPO/contents/README.md" >/dev/null 2>&1; then
+                    SEED_B64=$(printf '# ETK Private Paddock\n\nPersonal vault/save/config storage for ETK. Private, not shared, managed by the ETK PADDOCK tab.\n' | base64 | tr -d '\n')
+                    curl -fsS -X PUT -H "@$PADDOCK_HDR" \
+                        -d "{\"message\":\"paddock: seed\",\"content\":\"$SEED_B64\"}" \
+                        "$GH_API/repos/$PR_REPO/contents/README.md" >/dev/null 2>&1 && \
+                        tui_log "PADDOCK: seeded $PR_REPO (initial commit)"
+                fi
+                tui_step_progress 7 60
+                # Wire the rig: credential file, root-only
+                ssh $RIG_SSH "mkdir -p /storage/roms/etk/config && umask 077 && printf '{\"repo\":\"%s\",\"token\":\"%s\"}\n' '$PR_REPO' '$PADDOCK_TOKEN' > /storage/roms/etk/config/paddock.json && chmod 600 /storage/roms/etk/config/paddock.json && echo PADDOCK_WIRED" 2>/dev/null | grep -q PADDOCK_WIRED && PADDOCK_OK=1
+                if [ "$PADDOCK_OK" = "1" ]; then
+                    tui_log "PADDOCK connected: $PR_REPO — tab live on next Pitstop launch"
+                else
+                    tui_log "PADDOCK: rig credential write failed — re-run install"
+                fi
+            fi
+        fi
+    fi
+    rm -f "$PADDOCK_HDR"
+    tui_step_progress 7 100
+    tui_step_done 7
 fi
 
 # Final banner. tui_finish renders the caller-supplied content in both

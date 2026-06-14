@@ -2,6 +2,26 @@
 
 All notable changes to the ETK are documented here. This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - UNRELEASED
+
+**The PADDOCK tab becomes the Private Paddock — push/pull YOUR vaults, tunes, and saves against YOUR own private GitHub repo, from the rig, over WiFi, no host computer.** The tab only exists when GitHub is connected (`PADDOCK_TOKEN` in `etk.conf` before `./install.sh`). This completes the pivot from the retired shader-distribution direction to personal-private shader management: ETK ships tooling, never bytes.
+
+### Added
+- **`bin/paddock_sync.sh`** — rig-side sync engine (BusyBox curl+jq): `status` / `push <ID>` / `pull <ID>`. Epoch-tagged releases per driver build (`vault-<CHIPSET>-turnip<VER>`, version read from the driver library itself), sha256 sidecars, last-write-wins uploads, mesa_hash homologation gate on pull (config-only via manual `--force` only), no-clobber merges for shaders and saves. Token travels via header file in tmpfs — never argv, never logs.
+- **`install.sh` STEP 8 `PADDOCK LINK`** — conditional on `PADDOCK_TOKEN`: derives the GitHub user from the token, verifies the repo is **private** (refuses public — a public paddock would *distribute* the vault), auto-creates it with a classic-scope token (fine-grained tokens get a one-click instruction), seeds the initial commit (release tags need one — discovered live), writes the rig credential (chmod 600). No token → step self-completes, zero behavior change.
+- **Pitstop PADDOCK tab reworked** — gated on the credential file (unconfigured rigs see three tabs); rows show per-game `LOCAL / PADDOCK` state (`LOCAL-ONLY · REMOTE-ONLY · BOTH · EPOCH-OLD`); dpad selects PUSH/PULL, CONFIRM executes with mako progress. The known_repo GET hatch survives unchanged (operator-supplied sources, local + gitignored).
+- **`tools/paddock_probe.sh`** — the disposable validation harness (10/10 pass on first full run; the whole API loop was proven against real infrastructure before a line of integration was written).
+- `uninstall.sh` removes the credential (the remote paddock repo is never touched — it's the user's backup).
+- **`tools/vault_sweep.sh` promoted to the paddock-trim companion.** The epoch-mtime orphan sweep (boundary = install.sh's Mesa-build fingerprint) is how vaults stay push-worthy: first full run reclaimed **174,954 dead-epoch files / 1.2 GB** (GT6's vault was 97.6% pre-bump corpse), and the re-pushed GT5P bundle shrank 113 MB → 34 MB. `paddock_sync.sh push` now warns when a vault still carries pre-bump orphans, so dead-epoch shaders never get banked under a live epoch tag.
+- **PADDOCK tab name resolution** — rows resolve via ES `gamelist.xml` pretty names → `.psn` stems → `games.yml` ISO filenames → names banked in the paddock itself (`paddock_names.json`, maintained on push — so a cold card's REMOTE-ONLY list shows titles, not IDs) → PARAM.SFO → raw ID.
+
+### Fixed
+- **BusyBox `cp -rn src/. dest/` is a SILENT NO-OP** (rc=0, zero files copied) — discovered during pull validation. This also silently broke `install-protune.sh`'s shader injection (its `||` fallback never fired because rc was 0). Both injectors now use the BusyBox-native `tar -k` no-clobber merge.
+
+### Removed
+- **`vault-index/` retired entirely** (the public Pro Tuning index — already neutralized in 0.2.0, now gone). The public-index fetch path is deleted from Pitstop. With no public distribution surface left in the tree, **releases now ship from `main`** — the cherry-pick release era ends.
+- Swarm/sharing-era dossiers moved to `_archive/` (ShaderSwarm, PaddockSwarm, ShaderDistributionFusion, AndroidConsumerSubscribe).
+
 ## [0.2.0] - 2026-06-11
 
 **Back to the bleeding edge — ETK re-pins to ROCKNIX nightly `20260610` to ship the upstream Gran Turismo 5 memory-leak fix, and adds the Stage III stability harness (Mesa cache-cap lift + silent-crash core capture).** Operator-validated on-rig the same day: GT5P racing at full 720p, RAM peaks down ~1.5 GB, and the formerly dominant "silent crash" class absent from the ledger.

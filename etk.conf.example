@@ -37,3 +37,15 @@ HUD_HEADER_HOLD_S=15
 # 1 = raw rsync per-file output (for diagnosing failed installs)
 # The --verbose / -v CLI flag forces 1 regardless of this setting.
 ETK_VERBOSE=0
+
+# --- Private Paddock (optional — personal cloud backup of YOUR vaults/saves/tunes) ---
+# To get private shader storage, add your GitHub token here BEFORE running
+# ./install.sh. The PADDOCK tab appears on the rig only when this is configured.
+# Preferred token: fine-grained PAT scoped to ONE repo (<you>/etk-paddock),
+# contents read/write only. Create the private repo first (fine-grained PATs
+# cannot create repos). A classic `repo`-scope PAT also works and lets
+# install.sh auto-create the repo for you.
+# ETK never shares these bytes: your repo, your token, your shaders.
+PADDOCK_TOKEN=""
+# Optional override; default is <token-owner>/etk-paddock
+PADDOCK_REPO=""

@@ -46,7 +46,19 @@ The system invokes scripts using the absolute execution command: `/usr/bin/foot 
 * **AWK:** Use `awk` for floating-point math; BusyBox `sh` cannot handle decimals and `bc` may not be present in all builds.
 
 
-## ROCKNIX RCPS3 PAHTS
+## THE TWO PACKAGING MODELS (.pkg vs .iso) — FORMAT IS A FIRST-CLASS VARIABLE
+PS3 titles arrive as two DISTINCT RUNTIME MODELS, not two file extensions. ETK tooling is ~100% .pkg-biased (measured 2026-06-12: zero iso/bdvd handling) — mostly rational economics (.pkg needs machinery: headless installer, .rap licenses, gamelist injection; .iso = copy a file), but the runtime differences are load-bearing:
+1. **Spawn topology:** digital/.pkg GT titles are DRM-SPAWN (`EBOOT.BIN` launcher → spawns `EMAIN.SELF`); disc/.iso boots direct. This single axis explained the card#2 saga (disc fine, DRM-spawn crashed) and forced the flush-after-burst design in the aPS3e VkPipelineCache patch (spawned executables never reach clean teardown).
+2. **Cache topology:** per-executable `ppu-<hash>` cache dirs → DRM-spawn titles carry TWO pipeline caches (launcher + game), disc titles one. Vault accounting and pro-tune bundles must know which executable's cache matters.
+3. **I/O model:** .pkg = scattered reads from dev_hdd0; .iso = streaming one large file (GT5 = 19.4 GB). Treat as separate test classes in any storage-tier experiment.
+4. **DRM:** .pkg needs `.rap`; .iso needs a decrypted image (or `.dkey`). Failure smells differ: `CELL_ESRCH` (DRM-spawn init) vs `CELL_ENOTMOUNTED /dev_bdvd`.
+5. **Update asymmetry (UNTESTED PATH):** disc games take updates AS .pkg into `dev_hdd0/game/<ID>` — ETK's PKG installer has never been tested with an update-PKG whose base game is a disc image.
+
+**LAW: any emulator/cache/install fix MUST be validated on BOTH models before being called done.** The cache-bug history shows why: a teardown-save pipeline cache would have *appeared correct* on .iso titles and silently failed on DRM-spawn .pkg titles — the format axis hides bugs from fixers.
+
+**OBSERVABILITY BIAS (operator doctrine, 2026-06-12):** shader-storm pain filters which games stay in player rotation. Light-shader titles (e.g. RR7) play well immediately → high rotation → generate most community evidence. Shader-heavy titles are abandoned before saturation → the players who CAN observe deep cache/stability bugs are rare "gluttons for punishment" obsessing over one series on one device. Therefore: absence of community reports on a shader-heavy-title bug is WEAK evidence of absence; compatibility lore systematically under-represents exactly the titles ETK exists for. Weigh on-rig telemetry over community consensus accordingly.
+
+## ROCKNIX RPCS3 PATHS
 * **CUSTOM CONFIGURATION FILES** `/storage/roms/bios/rpcs3/custom_configs/config_[GAMEID].yml`
 * **ETK Cache Vault Symlimk** `/storage/roms/bios/rpcs3/cache/[GAMEID]`
 * **VIRTUAL HDD PATH PATTERNS:** Do NOT assume standard desktop path resolutions or that global mapping roots are used (e.g., `dev_hdd0/savedata` only anchors empty `vmc` volumes). Rocknix isolates actual emulator user save blocks inside localized nested structures under the individual user profile index:

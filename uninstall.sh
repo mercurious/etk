@@ -195,6 +195,12 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
     echo "|/bin/false" > /proc/sys/kernel/core_pattern 2>/dev/null
     echo "    Removed: etk-stage3.service / 02-etk-coredump.sh / 098-etk-stage3 (core_pattern restored)"
 
+    # Private Paddock credential (0.3.0): contains the user's GitHub token —
+    # must not survive an uninstall. The paddock repo itself is untouched
+    # (it's the user's own backup; uninstall never deletes remote data).
+    rm -f /storage/roms/etk/config/paddock.json
+    echo "    Removed: paddock.json (GitHub credential; remote paddock repo untouched)"
+
     # Legacy carcasses from earlier ETK phases (Phase 12 + pre-rename Phase 13).
     # The pre-rename install left a separate etk-guardian.service unit pointing
     # at the old 01-etk-startup.sh — when the script was renamed to

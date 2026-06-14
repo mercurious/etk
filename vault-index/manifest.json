@@ -1,7 +1,0 @@
-{
-  "pro_tuning_index": 1,
-  "repo": "mercurious/etk",
-  "updated": "2026-06-11",
-  "note": "Index intentionally empty. Pro Tuning bundle distribution (shader vaults) is WITHDRAWN pending legal review of the shader-sharing premise; the previously listed bundles and their Release tag have been unpublished. Consumers degrade gracefully on an empty index: install-protune.sh exits with 'no Pro Tuning published' and the Pitstop PADDOCK tab shows 'No published tunes match this rig'. The schema and tooling remain in place; entries return here if/when the review clears distribution.",
-  "tunes": []
-}
