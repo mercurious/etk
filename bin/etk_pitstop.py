@@ -147,14 +147,36 @@ SCREENSHOT_MODE_DEFAULT = "in-game"
 CRASH_SIG_FILE = os.environ.get("SIGNATURES_FILE", f"{ETK_ROOT}/config/crash_signatures.json")
 
 
-# === PADDOCK TAB: DISTRIBUTION CLIENT (0.5.0) ===
-# PADDOCK is the on-device subscribe/install client for the GitHub-indexed
-# Pro Tuning distribution (dossiers/Release050PaddockDossier.md). It reads the
-# curated index, intersects it with installed games, and shells out to the
-# SAME install-protune.sh injector (one injector; the trust invariant holds).
-PADDOCK_INDEX_URL = os.environ.get(
-    'PROTUNE_INDEX_URL',
-    'https://raw.githubusercontent.com/mercurious/etk/main/vault-index/manifest.json')
+# === VAULT HYGIENE (Manage Shaders) ===
+# The Manage Shaders screen is a front-end over tools/vault_sweep.sh (the ONE
+# sweep engine) — same single-injector ethos as PADDOCK over paddock_sync.sh.
+VAULT_SWEEP = os.environ.get('VAULT_SWEEP', f"{ETK_ROOT}/tools/vault_sweep.sh")
+# Chipset key for the vault path. env.sh exports CHIPSET; off-rig fall back to
+# the hostname (which IS the SoC on these rigs), then the SM8250 reference.
+_CHIPSET = os.environ.get('CHIPSET') or os.environ.get('ETK_CHIPSET') or ''
+if not _CHIPSET:
+    try:
+        _CHIPSET = os.uname().nodename or 'SM8250'
+    except Exception:
+        _CHIPSET = 'SM8250'
+VAULT_BASE = os.environ.get('VAULT_BASE', f"{ETK_ROOT}/vault/{_CHIPSET}")
+# Persistent last-played anchor (env.sh RECENT_ID_FILE) — resolves the 'Current'
+# scope when Pitstop runs idle from the Tools menu (no rpcs3 process).
+RECENT_ID_FILE = os.environ.get(
+    'RECENT_ID_FILE', f"{ETK_ROOT}/vault/last_played_id.txt")
+
+
+# === PADDOCK TAB: PRIVATE PADDOCK (0.3.0) ===
+# PADDOCK is the on-device sync client for the USER'S OWN private GitHub
+# repo (dossiers/Release030PrivatePaddockDossier.md): push/pull your own
+# vaults, tunes, and saves. ETK shares nothing — there is no public index
+# (the 0.5.0 subscribe-client direction was retired with the distribution
+# withdrawal). The tab only exists when install.sh's PADDOCK LINK step has
+# written the credential file (PADDOCK_TOKEN in etk.conf → paddock.json).
+PADDOCK_CRED = os.environ.get(
+    'PADDOCK_CRED', "/storage/roms/etk/config/paddock.json")
+PADDOCK_SYNC = os.environ.get(
+    'PADDOCK_SYNC', f"{ETK_ROOT}/bin/paddock_sync.sh")
 PROTUNE_INSTALLER = os.environ.get(
     'PROTUNE_INSTALLER', f"{ETK_ROOT}/pro-tuning/install-protune.sh")
 # The homologation primitive: sha256 of the first 64 KB of the Turnip driver,
@@ -214,16 +236,27 @@ CURRENT_TAB_TELEMETRY = 1
 CURRENT_TAB_TOOLS = 2
 CURRENT_TAB_PADDOCK = 3
 
-# Tab registry — order here is the on-screen order. PADDOCK sits between TUNING
-# and TOOLS so the strip reads left->right as inspect -> tune -> subscribe ->
-# operate. Adding a future tab is one line here plus a new CURRENT_TAB_*
-# constant and a matching draw_/handle_ pair. Geometry math handles itself.
+# Tab registry — order here is the on-screen order AND the [/] · L1/R1 cycle
+# order (clamped, no wrap). PADDOCK is LAST on purpose: it is the only tab that
+# fires a network event (its sync-status fetch on first entry) and it is
+# optional (gated below on the private-paddock credential). Parking it at the
+# end keeps the three default OFFLINE tabs (TELEMETRY/TUNING/TOOLS) all
+# reachable by cycling without ever landing on PADDOCK and triggering a fetch.
+# Adding a future tab is one line here plus a new CURRENT_TAB_* constant and a
+# matching draw_/handle_ pair. Geometry math handles itself.
 TABS = [
     ("TELEMETRY", CURRENT_TAB_TELEMETRY),
     ("TUNING", CURRENT_TAB_TUNING),
-    ("PADDOCK", CURRENT_TAB_PADDOCK),
     ("TOOLS", CURRENT_TAB_TOOLS),
+    ("PADDOCK", CURRENT_TAB_PADDOCK),
 ]
+
+# Private Paddock gating (0.3.0, operator requirement): the PADDOCK tab
+# only appears when the rig is wired to the user's own private repo —
+# install.sh's PADDOCK LINK step writes the credential. Unconfigured rigs
+# see three tabs and never know; discovery lives in the README, not the UI.
+if not os.path.exists(PADDOCK_CRED):
+    TABS = [t for t in TABS if t[1] != CURRENT_TAB_PADDOCK]
 
 
 # === EVDEV WIRE FORMAT ===
@@ -1698,9 +1731,11 @@ def handle_telemetry_pad(state, etype, code, val):
 # ============================================================
 
 _TOOLS_MENU = ["Install a staged PS3 Package", "Uninstall a Game",
-               "Screenshot on L1"]
+               "Manage Shaders", "Screenshot on L1"]
+# Index of the Manage Shaders sub-screen entry.
+_TOOLS_SHADERS_IDX = 2
 # Index of the in-place toggle item (label gets ": <mode>" appended at draw).
-_TOOLS_SCREENSHOT_IDX = 2
+_TOOLS_SCREENSHOT_IDX = 3
 
 
 def _read_screenshot_mode():
@@ -2346,7 +2381,365 @@ def _run_uninstall(game, notify):
     ]
 
 
+# === TOOLS TAB — SHADER HYGIENE (Manage Shaders) ===
+# Three escalating, NON-overlapping actions (the symlink makes them distinct):
+#   sweep        -> vault_sweep.sh --apply : deletes only files older than the
+#                   Mesa-rebuild boundary; keeps the live/fresh Turnip cache.
+#   delete_vault -> rm the game's ENTIRE ETK Turnip shader cache (fresh+stale).
+#   clear_cache  -> rm RPCS3's OWN runtime cache (PPU/SPU/ISO), separate from
+#                   the Mesa vault; RPCS3 rebuilds it on next launch.
+# The on-disk cache has no "shader layer" taxonomy (the 256 dirs are hash
+# buckets, filenames are opaque hashes), so the only robust, actionable graph
+# axis is fresh vs stale by Mesa-rebuild generation — exactly what sweep acts on.
+
+# Row order on the Manage Shaders screen (index 0 is the scope toggle).
+_SHADER_ROWS = ("scope", "sweep", "delete_vault", "clear_cache")
+
+
+def _vault_game_ids():
+    """GAMEIDs with a vault under VAULT_BASE (valid PSN-id shape + shaders dir)."""
+    out = []
+    try:
+        for name in sorted(os.listdir(VAULT_BASE)):
+            if re.match(r'^[A-Z]{4}[0-9]{5}$', name) and \
+               os.path.isdir(os.path.join(VAULT_BASE, name, "shaders")):
+                out.append(name)
+    except Exception:
+        pass
+    return out
+
+
+def _resolve_current_vault_id(game_ids):
+    """Which game the 'Current' scope targets: the resolved TARGET_ID if it has
+    a vault, else the last-played id, else TARGET_ID (may have no vault -> 0)."""
+    if TARGET_ID in game_ids:
+        return TARGET_ID
+    try:
+        with open(RECENT_ID_FILE) as f:
+            rid = f.read().strip()
+        if rid in game_ids:
+            return rid
+    except Exception:
+        pass
+    return TARGET_ID
+
+
+def _du_kb(path):
+    """BusyBox-safe dir size in KB (du -ks). 0 on absence/failure."""
+    try:
+        r = subprocess.run(["du", "-k", "-s", path],
+                           capture_output=True, text=True, timeout=180)
+        parts = r.stdout.split()
+        return int(parts[0]) if r.returncode == 0 and parts else 0
+    except Exception:
+        return 0
+
+
+def _sweep_porcelain():
+    """vault_sweep.sh --all-games --porcelain (DRY-RUN, read-only). Returns
+    ({gid: {stale_files, stale_kb, fresh_files, fresh_kb}}, boundary_ok).
+    boundary_ok False => no .last_mesa.hash / engine error, so Sweep shows n/a.
+    fresh_* share the stale basis (shard-tree files), so fresh+stale is the
+    honest shader byte total (excludes Mesa bookkeeping / du block overhead)."""
+    per = {}
+    try:
+        r = subprocess.run(["bash", VAULT_SWEEP, "--all-games", "--porcelain"],
+                           capture_output=True, text=True, timeout=600)
+        if r.returncode != 0:
+            return per, False
+        for ln in r.stdout.splitlines():
+            p = ln.split()
+            if len(p) >= 6 and p[0] == "GAME":
+                try:
+                    per[p[1]] = {"stale_files": int(p[2]), "stale_kb": int(p[3]),
+                                 "fresh_files": int(p[4]), "fresh_kb": int(p[5])}
+                except ValueError:
+                    pass
+        return per, True
+    except Exception as e:
+        _log(f"sweep porcelain failed: {e}")
+        return per, False
+
+
+def _scan_vault_hygiene(state):
+    """Build the Manage Shaders model: per-game total/fresh/stale sizes + the
+    RPCS3 runtime-cache sizes. Scope-agnostic (reclaim derived per-scope at
+    draw). Slow-ish (du + the dry-run stat pass) so callers draw a busy frame
+    first. Cached in state['shaders_model'] until an action invalidates it."""
+    game_ids = _vault_game_ids()
+    current = _resolve_current_vault_id(game_ids)
+    stale_map, boundary_ok = _sweep_porcelain()
+
+    games = []
+    for gid in game_ids:
+        # disk_kb = true on-disk footprint (what Delete Vault frees). stale_kb /
+        # fresh_kb = shard-tree shader bytes by generation (what the graph splits
+        # and Sweep frees). disk_kb >= stale_kb+fresh_kb; the gap is Mesa
+        # bookkeeping + block overhead, shown as a dim tail on the bar.
+        disk_kb = _du_kb(os.path.join(VAULT_BASE, gid, "shaders"))
+        st = stale_map.get(gid, {})
+        games.append({
+            "id": gid,
+            "disk_kb": disk_kb,
+            "stale_kb": st.get("stale_kb", 0),
+            "fresh_kb": st.get("fresh_kb", 0),
+            "stale_files": st.get("stale_files", 0),
+        })
+    games.sort(key=lambda g: g["disk_kb"], reverse=True)
+
+    model = {
+        "games": games,
+        "by_id": {g["id"]: g for g in games},
+        "current": current,
+        "boundary_ok": boundary_ok,
+        "rpcs3_all_mb": _du_kb(RPCS3_RUNTIME_CACHE) // 1024,
+        "rpcs3_cur_mb": _du_kb(os.path.join(RPCS3_RUNTIME_CACHE, current)) // 1024,
+        "rpcs3_running": _rpcs3_running(),
+    }
+    state["shaders_model"] = model
+    return model
+
+
+def _shader_reclaim(model, scope_all):
+    """Reclaim MB for the three actions under the chosen scope. Sweep frees the
+    stale shard bytes; Delete Vault frees the whole on-disk footprint (disk_kb)."""
+    games = model["games"]
+    if scope_all:
+        return {"sweep_mb": sum(g["stale_kb"] for g in games) // 1024,
+                "vault_mb": sum(g["disk_kb"] for g in games) // 1024,
+                "cache_mb": model["rpcs3_all_mb"]}
+    g = model["by_id"].get(model["current"]) or {"stale_kb": 0, "disk_kb": 0}
+    return {"sweep_mb": g["stale_kb"] // 1024, "vault_mb": g["disk_kb"] // 1024,
+            "cache_mb": model["rpcs3_cur_mb"]}
+
+
+def _draw_shader_screen(stdscr, state, model, y, h, w):
+    """Manage Shaders: fresh/stale-per-game graph + scope toggle + 3 actions."""
+    def put(row, col, text, attr=curses.A_NORMAL):
+        try:
+            stdscr.addstr(row, col, text[:max(0, w - col - 1)], attr)
+        except curses.error:
+            pass
+
+    scope_all = state.get("shaders_scope_all", False)
+    cur = model["current"]
+    rec = _shader_reclaim(model, scope_all)
+    boundary_ok = model["boundary_ok"]
+    running = model["rpcs3_running"]
+
+    put(y, 2, "MANAGE SHADERS", curses.A_BOLD); y += 1
+    put(y, 2, "-" * (w - 4), curses.A_DIM); y += 1
+
+    # --- Graph: per-game bar; length ∝ on-disk footprint, segmented
+    # green=fresh / red=stale / dim=overhead (Mesa bookkeeping + block slack).
+    games = [g for g in model["games"] if g["disk_kb"] > 0]
+    if not games:
+        put(y, 4, "Vault is empty — nothing to clean.", curses.A_DIM); y += 1
+    else:
+        legend = "vault by game  " + (
+            "(green=fresh  red=stale)" if boundary_ok else "(stale unknown — no boundary)")
+        put(y, 4, legend, curses.A_DIM); y += 1
+        max_kb = max(g["disk_kb"] for g in games) or 1
+        BARW = 18
+        # Leave room below for the 4 rows + hints (~8 lines).
+        cap = max(1, (h - y) - 8)
+        shown = games[:cap]
+        for g in shown:
+            marker = "›" if g["id"] == cur else " "
+            barw = max(1, int(round(BARW * g["disk_kb"] / max_kb)))
+            col = 4
+            put(y, col, f"{marker}{g['id']:<9}"); col += 11
+            if boundary_ok:
+                fw = int(round(barw * g["fresh_kb"] / g["disk_kb"]))
+                sw = int(round(barw * g["stale_kb"] / g["disk_kb"]))
+                if fw + sw > barw:
+                    sw = barw - fw
+                ow = max(0, barw - fw - sw)            # overhead tail
+                put(y, col, "#" * fw, curses.color_pair(PAIR_CLEAN)); col += fw
+                put(y, col, "#" * sw, curses.color_pair(PAIR_CRASH)); col += sw
+                put(y, col, "#" * ow, curses.A_DIM); col += ow
+            else:
+                put(y, col, "#" * barw, curses.color_pair(PAIR_CONFIG)); col += barw
+            put(y, col, "." * (BARW - barw), curses.A_DIM); col += (BARW - barw) + 1
+            put(y, col, f"{g['disk_kb'] // 1024}MB", curses.A_DIM)
+            y += 1
+        if len(games) > len(shown):
+            rest = games[len(shown):]
+            put(y, 4, f" +{len(rest)} more game(s)  "
+                      f"{sum(g['disk_kb'] for g in rest) // 1024}MB", curses.A_DIM)
+            y += 1
+    y += 1
+
+    # --- Action rows (cursor-selected). Row 0 is the scope toggle.
+    cursor = state.get("tools_cursor", 0)
+    scope_txt = "ALL GAMES" if scope_all else f"Current ({cur})"
+    sweep_txt = (f"Sweep stale shaders       ~{rec['sweep_mb']} MB"
+                 if boundary_ok else "Sweep stale shaders       n/a (no boundary)")
+    rows = [
+        f"Scope: {scope_txt}    (CONFIRM toggles)",
+        sweep_txt,
+        f"Delete vault              ~{rec['vault_mb']} MB",
+        f"Clear RPCS3 cache         ~{rec['cache_mb']} MB",
+    ]
+    for i, label in enumerate(rows):
+        sel = (i == cursor)
+        put(y, 4, "> " if sel else "  ",
+            curses.color_pair(1) if sel else curses.A_NORMAL)
+        put(y, 6, label, curses.A_REVERSE if sel else curses.A_NORMAL)
+        y += 1
+    y += 1
+    if running:
+        put(y, 4, "RPCS3 is running — deletes are blocked; numbers are live.",
+            curses.color_pair(PAIR_RECOV)); y += 1
+    put(y, 4, "CONFIRM: select    BACK: menu",
+        curses.color_pair(1) | curses.A_BOLD)
+
+
+def _draw_shader_confirm(stdscr, state, y, h, w):
+    """Per-action confirm for a destructive shader op."""
+    def put(row, col, text, attr=curses.A_NORMAL):
+        try:
+            stdscr.addstr(row, col, text[:max(0, w - col - 1)], attr)
+        except curses.error:
+            pass
+
+    model = state.get("shaders_model") or {}
+    op = state.get("shaders_pending")
+    scope_all = state.get("shaders_scope_all", False)
+    rec = _shader_reclaim(model, scope_all) if model else \
+        {"sweep_mb": 0, "vault_mb": 0, "cache_mb": 0}
+    scope_txt = "ALL GAMES" if scope_all else model.get("current", "?")
+
+    meta = {
+        "sweep": ("SWEEP STALE SHADERS", rec["sweep_mb"], [
+            "Deletes only shaders orphaned by the last Mesa rebuild.",
+            "Keeps the live/fresh cache — replay re-banks anything lost."]),
+        "delete_vault": ("DELETE VAULT", rec["vault_mb"], [
+            f"Deletes the ENTIRE Turnip shader cache for {scope_txt}.",
+            "Next launch recompiles from scratch — slow first laps."]),
+        "clear_cache": ("CLEAR RPCS3 CACHE", rec["cache_mb"], [
+            "Clears RPCS3's own PPU/SPU/ISO runtime cache.",
+            "RPCS3 rebuilds it automatically on next launch."]),
+    }
+    title, mb, notes = meta.get(op, ("CONFIRM", 0, []))
+
+    put(y, 2, title + " - CONFIRM", curses.A_BOLD); y += 1
+    put(y, 2, "-" * (w - 4), curses.A_DIM); y += 2
+    put(y, 4, f"Scope   : {scope_txt}", curses.A_BOLD); y += 1
+    put(y, 4, f"Reclaim : ~{mb} MB"); y += 2
+    for n in notes:
+        put(y, 4, n); y += 1
+    y += 1
+    put(y, 4, "B: Confirm     A: Cancel",
+        curses.color_pair(1) | curses.A_BOLD)
+
+
+def _run_shader_op(op, scope_all, gid, notify):
+    """Blocking shader-hygiene op. Returns (ok, [result lines]). Refuses while
+    RPCS3 runs (Mesa cache open / mid-flux mtimes)."""
+    if _rpcs3_running():
+        return False, ["RPCS3 is running - quit the game first, then retry."]
+
+    if op == "sweep":
+        cmd = ["bash", VAULT_SWEEP, "--apply", "--porcelain"]
+        cmd += ["--all-games"] if scope_all else ["--game", gid]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+        except Exception as e:
+            return False, [f"sweep failed: {e}"]
+        if r.returncode != 0:
+            return False, ["vault_sweep error:",
+                           (r.stderr.strip() or "see etk_pitstop.log")[:200]]
+        files = kb = 0
+        for ln in r.stdout.splitlines():
+            p = ln.split()
+            if len(p) >= 3 and p[0] == "TOTAL":   # TOTAL <stale_f> <stale_kb> ...
+                try:
+                    files, kb = int(p[1]), int(p[2])
+                except ValueError:
+                    pass
+        mb = kb // 1024
+        notify.post("Shaders swept",
+                    f"{files} stale files removed, {mb} MB freed.", timeout=12000)
+        return True, [
+            f"SWEPT stale shaders ({'all games' if scope_all else gid})",
+            f"  removed : {files} files, {mb} MB freed",
+            "  kept    : the live/fresh Turnip cache",
+            "",
+            "Stale shaders re-accrue after each Mesa rebuild (nightly).",
+            "Re-run this after a Rocknix update."]
+
+    if op == "delete_vault":
+        ids = _vault_game_ids() if scope_all else [gid]
+        freed = removed = 0
+        for g in ids:
+            d = os.path.join(VAULT_BASE, g, "shaders")
+            if os.path.isdir(d):
+                freed += _du_kb(d)
+                try:
+                    shutil.rmtree(d)
+                    os.makedirs(d, exist_ok=True)  # keep mesa symlink target valid
+                    removed += 1
+                except Exception as e:
+                    _log(f"delete_vault rmtree {d}: {e}")
+        mb = freed // 1024
+        notify.post("Vault deleted",
+                    f"{mb} MB freed ({removed} game(s)). Shaders recompile next launch.",
+                    timeout=15000)
+        return True, [
+            f"DELETED vault ({'all games' if scope_all else gid})",
+            f"  freed   : {mb} MB across {removed} game(s)",
+            "  note    : next launch recompiles shaders from scratch",
+            "",
+            "Expect slower first laps until the cache rebuilds."]
+
+    if op == "clear_cache":
+        if scope_all:
+            targets = [RPCS3_RUNTIME_CACHE, RPCS3_HDD1_CACHE]
+        else:
+            targets = [os.path.join(RPCS3_RUNTIME_CACHE, gid),
+                       os.path.join(RPCS3_HDD1_CACHE, f"{gid}_{gid}")]
+        freed = removed = 0
+        for t in targets:
+            if os.path.isdir(t):
+                freed += _du_kb(t)
+                try:
+                    shutil.rmtree(t)
+                    # Recreate the two cache ROOTS (all-games) so RPCS3 finds them.
+                    if scope_all:
+                        os.makedirs(t, exist_ok=True)
+                    removed += 1
+                except Exception as e:
+                    _log(f"clear_cache rmtree {t}: {e}")
+        mb = freed // 1024
+        notify.post("RPCS3 cache cleared",
+                    f"{mb} MB freed. RPCS3 rebuilds it next launch.", timeout=12000)
+        return True, [
+            f"CLEARED RPCS3 runtime cache ({'all games' if scope_all else gid})",
+            f"  freed   : {mb} MB, {removed} dir(s)",
+            "  note    : RPCS3 rebuilds PPU/SPU/ISO cache automatically",
+            "",
+            "This does NOT touch your ETK Turnip shader vault."]
+
+    return False, [f"unknown shader op: {op}"]
+
+
 # === TOOLS TAB — DRAW ===
+
+def _tools_busy_msg(stdscr, msg):
+    """Generic 'working' frame for a blocking TOOLS op that doesn't hand the
+    screen to RPCS3 (shader scans/cleans)."""
+    try:
+        stdscr.erase()
+        h, w = stdscr.getmaxyx()
+        _draw_title_bar(stdscr, w)
+        _draw_tab_strip(stdscr, CURRENT_TAB_TOOLS, w)
+        stdscr.addstr(h // 2, max(2, (w - len(msg)) // 2), msg[:w - 4],
+                      curses.A_BOLD)
+        stdscr.refresh()
+    except curses.error:
+        pass
+
 
 def _draw_tools_busy(stdscr, kind):
     """Paint a 'working' frame before a blocking TOOLS op. RPCS3 covers
@@ -2453,6 +2846,16 @@ def draw_tools(stdscr, state):
         put(y, 4, "B: Delete     A: Cancel",
             curses.color_pair(1) | curses.A_BOLD)
 
+    elif mode == "shaders":
+        model = state.get("shaders_model")
+        if not model:
+            put(y, 4, "Scanning shader vault…", curses.A_DIM)
+        else:
+            _draw_shader_screen(stdscr, state, model, y, h, w)
+
+    elif mode == "shaders_confirm":
+        _draw_shader_confirm(stdscr, state, y, h, w)
+
     elif mode == "result":
         ok, lines = state.get("tools_result") or (False, ["(no result)"])
         put(y, 2, "DONE" if ok else "FAILED", curses.A_BOLD | (
@@ -2480,6 +2883,8 @@ def _tools_move(state, delta):
         n = len(state.get("tools_games", []))
         if n:
             state["tools_cursor"] = (state.get("tools_cursor", 0) + delta) % n
+    elif mode == "shaders":
+        state["tools_cursor"] = (state.get("tools_cursor", 0) + delta) % len(_SHADER_ROWS)
 
 
 def _tools_select(state):
@@ -2516,6 +2921,12 @@ def _tools_select(state):
             state["tools_games"] = _list_psn_games()
             state["tools_cursor"] = 0
             state["tools_mode"] = "uninstall_list"
+        elif state.get("tools_cursor", 0) == _TOOLS_SHADERS_IDX:   # Manage Shaders
+            state["tools_mode"] = "shaders"
+            state["tools_cursor"] = 0
+            state["shaders_scope_all"] = False
+            state["shaders_model"] = None
+            state["shaders_scan_request"] = True     # main loop scans w/ busy frame
         else:                                        # Screenshot-on-L1 toggle
             state["status"] = f"Screenshot on L1: {_cycle_screenshot_mode()}"
 
@@ -2530,6 +2941,33 @@ def _tools_select(state):
     elif mode == "uninstall_confirm":
         g = state["tools_games"][state["tools_cursor"]]
         state["tools_action"] = ("uninstall", g)
+
+    elif mode == "shaders":
+        idx = state.get("tools_cursor", 0)
+        if idx == 0:                                  # toggle scope (no rescan;
+            state["shaders_scope_all"] = not state.get("shaders_scope_all", False)
+        else:                                         # model is scope-agnostic)
+            op = _SHADER_ROWS[idx]
+            model = state.get("shaders_model") or {}
+            if op == "sweep" and not model.get("boundary_ok"):
+                state["tools_result"] = (False, [
+                    "No Mesa-rebuild boundary (vault/.last_mesa.hash).",
+                    "Run install.sh once from the host to seed it,",
+                    "then sweep after the next Rocknix nightly."])
+                state["tools_mode"] = "result"
+            elif model.get("rpcs3_running"):
+                state["tools_result"] = (False, [
+                    "RPCS3 is running.",
+                    "Quit the game first, then retry."])
+                state["tools_mode"] = "result"
+            else:
+                state["shaders_pending"] = op
+                state["tools_mode"] = "shaders_confirm"
+
+    elif mode == "shaders_confirm":
+        state["tools_action"] = ("shader", state.get("shaders_pending"),
+                                 state.get("shaders_scope_all", False),
+                                 (state.get("shaders_model") or {}).get("current"))
 
     elif mode == "result":
         state["tools_mode"] = "menu"
@@ -2546,6 +2984,11 @@ def _tools_back(state):
         return "quit"
     if mode == "uninstall_confirm":
         state["tools_mode"] = "uninstall_list"
+    elif mode == "shaders_confirm":
+        state["tools_mode"] = "shaders"
+    elif mode == "shaders":
+        state["tools_mode"] = "menu"
+        state["tools_cursor"] = _TOOLS_SHADERS_IDX
     else:
         state["tools_mode"] = "menu"
         state["tools_cursor"] = 0
@@ -2581,28 +3024,99 @@ def handle_tools_pad(state, etype, code, val):
     return "continue"
 
 
-# === PADDOCK TAB (0.5.0 — subscribe/install client) ===
+# === PADDOCK TAB (0.3.0 — Private Paddock sync client) ===
 #
-# Reads the curated GitHub index, matches it against installed games + the
-# local Turnip driver, and applies a selected tune by shelling out to the
-# repo's install-protune.sh (ONE injector — the pure-data trust invariant
-# from ProTuningExportDossier §5.4 is preserved: the bundle is data, the only
-# code that runs is the repo-hosted installer). Phase 1-2 of the dossier's
-# §11 sequence: read-only list + APPLY (config + vault). SAVEHUB and the
-# known_repo/game_pkg hatch are stubbed pending later phases.
+# Lists local vaults vs the user's OWN private repo (via paddock_sync.sh
+# status), and pushes/pulls per game. The known_repo GET hatch survives
+# (operator-supplied game sources, local + gitignored — private by nature).
+# All API work lives in bin/paddock_sync.sh; this tab is a thin gamepad
+# front-end over it (one engine — the single-injector invariant holds).
 
 _ANSI_RE = re.compile(r'\x1b\[[0-9;]*m')
 
-# Per-row field cursor: three toggles + an APPLY action. Using an APPLY
-# pseudo-field keeps the whole tab driveable with just CONFIRM + BACK + dpad
-# (the only gamepad buttons we can rely on un-probed).
-_PF_TUNE, _PF_SHADERS, _PF_SAVE, _PF_APPLY = 0, 1, 2, 3
-_PF_COUNT = 4
+# Per-row field cursor: PUSH and PULL action cells. dpad left/right moves
+# between them, CONFIRM executes the focused one — the whole tab drives
+# with CONFIRM + BACK + dpad only.
+_PF_PUSH, _PF_PULL = 0, 1
+_PF_COUNT = 2
 _PENDING_SENTINELS = ("", "PENDING_CLEAN_ROOM", None, "null")
 
 
 def _strip_ansi(s):
     return _ANSI_RE.sub('', s)
+
+
+RPCS3_GAMES_YML = "/storage/.config/rpcs3/games.yml"
+RPCS3_GAME_DIR = "/storage/roms/bios/rpcs3/dev_hdd0/game"
+
+
+def _sfo_title(tid):
+    """TITLE from an installed game's PARAM.SFO (covers stub/update dirs the
+    launcher files don't). None on any failure — this is the deep fallback."""
+    import struct
+    path = os.path.join(RPCS3_GAME_DIR, tid, "PARAM.SFO")
+    try:
+        with open(path, 'rb') as f:
+            d = f.read()
+        _, _, kto, dto, n = struct.unpack_from("<4sIIII", d, 0)
+        for i in range(n):
+            ko, _, ln, _, do = struct.unpack_from("<HHIII", d, 20 + i * 16)
+            key = d[kto + ko:d.index(b"\x00", kto + ko)].decode()
+            if key == "TITLE":
+                return d[dto + do:dto + do + ln].rstrip(b"\x00").decode(
+                    "utf-8", "replace").strip() or None
+    except Exception:
+        return None
+    return None
+
+
+def _resolve_game_names():
+    """Title-ID -> display-name map + installed-ID set, from (in preference
+    order): ES gamelist.xml pretty names > .psn launcher stems > games.yml
+    ISO filenames (bracket-ID stripped). PARAM.SFO is applied lazily by the
+    caller for IDs none of these cover (vault-only/stub titles)."""
+    names, installed, pretty = {}, set(), {}
+    try:
+        import xml.etree.ElementTree as ET
+        root = ET.parse(os.path.join(PS3_ROMS_DIR, "gamelist.xml")).getroot()
+        for g in root.iter("game"):
+            p = (g.findtext("path") or "").strip()
+            n = (g.findtext("name") or "").strip()
+            if p and n:
+                pretty[os.path.basename(p)] = n
+    except Exception as e:
+        _log(f"paddock: gamelist parse failed: {e}")
+    for g in _list_psn_games():
+        tid = g["title_id"]
+        if not tid:
+            continue
+        installed.add(tid)
+        names[tid] = pretty.get(os.path.basename(g["psn"]), g["name"])
+    # games.yml: serial -> path (ISO/disc titles have no .psn launcher)
+    try:
+        with open(RPCS3_GAMES_YML) as f:
+            for ln in f:
+                if ':' not in ln or ln.lstrip().startswith('#'):
+                    continue
+                tid, path = ln.split(':', 1)
+                tid, path = tid.strip(), path.strip().strip('"')
+                if not tid:
+                    continue
+                installed.add(tid)
+                if tid in names:
+                    continue
+                base = os.path.basename(path)
+                nm = pretty.get(base)
+                if not nm:
+                    # "Gran Turismo 5 [BCUS98114].iso" -> "Gran Turismo 5"
+                    nm = re.sub(r'\s*\[[^\]]*\]', '',
+                                os.path.splitext(base)[0]).strip()
+                names[tid] = nm or tid
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        _log(f"paddock: games.yml parse failed: {e}")
+    return names, installed
 
 
 def _paddock_chipset():
@@ -2625,20 +3139,38 @@ def _local_mesa_hash():
         return None
 
 
-def _paddock_fetch_index():
-    """curl the curated index (no Python HTTP stack on the rig). Returns
-    (data, None) or (None, error_str)."""
+def _paddock_load_cred():
+    """Read the private-paddock credential written by install.sh's PADDOCK
+    LINK step. Returns {"repo":…} or None (tab is gated on file presence,
+    so None here means it was deleted mid-session)."""
     try:
-        r = subprocess.run(["curl", "-fsSL", PADDOCK_INDEX_URL],
-                           capture_output=True, text=True, timeout=25)
+        with open(PADDOCK_CRED) as f:
+            return json.load(f)
     except Exception as e:
-        return None, f"curl error: {e}"
+        _log(f"paddock: cred read failed: {e}")
+        return None
+
+
+def _paddock_sync_status():
+    """Shell out to paddock_sync.sh status. Returns (rows, None) or
+    (None, error_str). Each row: (game_id, local_n, local_kb, remote_kb,
+    epoch_tag, state)."""
+    try:
+        r = subprocess.run(["bash", PADDOCK_SYNC, "status"],
+                           capture_output=True, text=True, timeout=40)
+    except Exception as e:
+        return None, f"sync error: {e}"
     if r.returncode != 0:
-        return None, f"fetch failed (curl {r.returncode})"
-    try:
-        return json.loads(r.stdout), None
-    except Exception as e:
-        return None, f"bad index JSON: {e}"
+        err = (r.stderr or "").strip().splitlines()
+        return None, (err[-1] if err else f"status failed ({r.returncode})")
+    rows = []
+    for ln in r.stdout.splitlines():
+        parts = ln.split("\t")
+        if len(parts) == 6:          # engine without the names column
+            parts.append("")
+        if len(parts) == 7:
+            rows.append(parts)
+    return rows, None
 
 
 def _sha256_file(path):
@@ -2677,74 +3209,59 @@ def _paddock_load_repos():
 
 
 def _paddock_refresh(state):
-    """Fetch + parse the index, intersect with installed games and the local
-    driver, build the selectable rows. Network failure is non-fatal: keep the
-    last good rows and surface an offline status."""
-    data, err = _paddock_fetch_index()
+    """Sync state with the user's own paddock via paddock_sync.sh status.
+    Network/API failure is non-fatal: keep the last good rows and surface
+    an offline status."""
+    cred = _paddock_load_cred()
+    repo_name = (cred or {}).get("repo", "?")
+    raw, err = _paddock_sync_status()
     if err:
         state["paddock_status"] = f"offline — {err}"
         if state.get("paddock_rows") is None:
             state["paddock_rows"] = []
+        state["paddock_repo"] = repo_name
         return
 
-    installed = {g["title_id"]: g["name"]
-                 for g in _list_psn_games() if g.get("title_id")}
-    chipset = _paddock_chipset()
-    local_mesa = _local_mesa_hash()
+    names, installed = _resolve_game_names()
+
+    def _name(gid, rname=""):
+        # local sources > name banked in the paddock itself > PARAM.SFO > ID
+        return names.get(gid) or rname or _sfo_title(gid) or gid
+
     repos = _paddock_load_repos()
     rows = []
-    for t in data.get("tunes", []):
-        if t.get("chipset") != chipset:
-            continue
-        game = t.get("game", {})
-        gid = game.get("id", "")
-        if not gid:
-            continue
-        tiers = t.get("tiers", {})
-        homolog = t.get("homologation", {})
-        bundle = t.get("bundle", {})
-        want_mesa = homolog.get("mesa_hash", "")
-        shaders_ok = bool(local_mesa) and want_mesa not in _PENDING_SENTINELS \
-            and want_mesa == local_mesa
-        publishable = bundle.get("sha256", "") not in _PENDING_SENTINELS
+    for gid, ln, lkb, rkb, epoch, pstate, rname in raw:
         rows.append({
             "game_id": gid,
-            "name": game.get("name") or installed.get(gid, gid),
+            "name": _name(gid, rname),
             "installed": gid in installed,
-            "mesa_hash": want_mesa,
-            "shaders_ok": shaders_ok,
-            "publishable": publishable,
-            "size_mb": bundle.get("size_mb", 0),
-            "turnip": homolog.get("turnip_version", ""),
-            "tuner": (t.get("tuner", {}) or {}).get("handle", "anon"),
-            "tier_config": bool(tiers.get("config", True)),
-            "tier_vault": bool(tiers.get("vault", False)),
-            "tier_save": bool(tiers.get("savedata", False)),
+            "local_n": int(ln or 0),
+            "local_kb": int(lkb or 0),
+            "remote_kb": int(rkb or 0),
+            "epoch": epoch,
+            "pstate": pstate,
             # known_repo: a local pkg+rap pointer exists for this (missing) game
             "has_repo": gid in repos,
-            # toggles, defaulted from the published tiers + the gate
-            "t_tune": bool(tiers.get("config", True)),
-            "t_shaders": bool(tiers.get("vault", False)) and shaders_ok,
-            "t_save": False,
         })
+    # Games with a known_repo pointer but neither vault nor remote bundle
+    # still get a row, so GET remains reachable.
+    seen = {r["game_id"] for r in rows}
+    for gid in repos:
+        if gid not in seen:
+            rows.append({"game_id": gid, "name": _name(gid),
+                         "installed": gid in installed, "local_n": 0,
+                         "local_kb": 0, "remote_kb": 0, "epoch": "-",
+                         "pstate": "NO-VAULT", "has_repo": True})
     rows.sort(key=lambda r: r["name"].lower())
 
-    # Header driver verdict
-    if local_mesa is None:
-        note = "driver: unreadable (off-rig?)"
-    elif not rows:
-        note = "no tunes published for this chipset"
-    elif any(r["shaders_ok"] for r in rows):
-        note = "driver match · shaders loadable"
-    elif any(r["mesa_hash"] not in _PENDING_SENTINELS for r in rows):
-        note = "driver MISMATCH · shaders gated (config-only)"
-    else:
-        note = "index pending clean-room mint"
+    n_local = sum(1 for r in rows if r["local_n"] > 0)
+    n_remote = sum(1 for r in rows if r["remote_kb"] > 0)
+    note = f"{n_local} local vaults · {n_remote} banked in your paddock"
 
     state["paddock_rows"] = rows
     state["paddock_repos"] = repos
-    state["paddock_index_date"] = data.get("updated", "")
-    state["paddock_chipset"] = chipset
+    state["paddock_repo"] = repo_name
+    state["paddock_chipset"] = _paddock_chipset()
     state["paddock_driver_note"] = note
     state["paddock_status"] = ""
     state["paddock_sel"] = min(state.get("paddock_sel", 0), max(0, len(rows) - 1))
@@ -2827,31 +3344,28 @@ def draw_paddock(stdscr, state):
             curses.color_pair(1) | curses.A_BOLD)
         return
 
-    put(5, 2, "PADDOCK · powered by GitHub Releases", curses.A_BOLD)
+    put(5, 2, f"PRIVATE PADDOCK · {state.get('paddock_repo', '?')}", curses.A_BOLD)
     put(6, 2, f"chipset: {state.get('paddock_chipset', '')}   "
               f"{state.get('paddock_driver_note', '')}", curses.A_DIM)
     put(7, 2, "-" * (w - 4), curses.A_DIM)
 
     rows = state.get("paddock_rows")
     if rows is None:
-        put(9, 4, "Fetching Pro Tuning index…", curses.A_BOLD)
+        put(9, 4, "Syncing with your paddock…", curses.A_BOLD)
         return
     if not rows:
-        st = state.get("paddock_status") or "No published tunes match this rig."
+        st = state.get("paddock_status") or "No vaults yet — race a game to harvest, then PUSH it here."
         put(9, 4, st, curses.A_DIM)
-        put(11, 4, "A tune appears here when a game you've installed has a",
-            curses.A_DIM)
-        put(12, 4, "published bundle for this chipset. Install games via TOOLS.",
+        put(11, 4, "Your paddock is YOUR private GitHub repo. ETK shares nothing.",
             curses.A_DIM)
         return
 
     # Column header + rows.
-    C_TUNE, C_SHAD, C_SAVE, C_APPLY = 26, 33, 41, 49
+    C_LOCAL, C_REMOTE, C_PUSH, C_PULL = 26, 38, 50, 58
     put(8, 4, "GAME", curses.A_DIM)
-    put(8, C_TUNE, "TUNE", curses.A_DIM)
-    put(8, C_SHAD, "SHAD", curses.A_DIM)
-    put(8, C_SAVE, "SAVE", curses.A_DIM)
-    put(8, C_APPLY, "ACTION", curses.A_DIM)
+    put(8, C_LOCAL, "LOCAL", curses.A_DIM)
+    put(8, C_REMOTE, "PADDOCK", curses.A_DIM)
+    put(8, C_PUSH, "ACTION", curses.A_DIM)
 
     sel = state.get("paddock_sel", 0)
     field = state.get("paddock_field", 0)
@@ -2868,6 +3382,15 @@ def draw_paddock(stdscr, state):
             attr |= curses.A_REVERSE
         put(ry, col, text, attr)
 
+    def _fmt_kb(kb):
+        if kb <= 0:
+            return "—"
+        if kb >= 1048576:
+            return f"{kb / 1048576:.1f}G"
+        if kb >= 1024:
+            return f"{kb / 1024:.0f}M"
+        return f"{kb}K"
+
     for r_i, idx in enumerate(range(off, min(off + cap, len(rows)))):
         row = rows[idx]
         y = top + r_i
@@ -2879,88 +3402,69 @@ def draw_paddock(stdscr, state):
             curses.color_pair(1) if is_sel else curses.A_NORMAL)
         put(y, 4, f"{row['name'][:20]:<20}", name_attr)
 
-        cell(y, C_TUNE, "[x]" if row["t_tune"] else "[ ]",
-             is_sel and field == _PF_TUNE)
-        if row["shaders_ok"]:
-            cell(y, C_SHAD, "[x]" if row["t_shaders"] else "[ ]",
-                 is_sel and field == _PF_SHADERS)
-        else:
-            cell(y, C_SHAD, "[-]", is_sel and field == _PF_SHADERS, enabled=False)
-        # SAVEHUB: real opt-in toggle when the tune publishes a savedata tier.
-        if row["tier_save"]:
-            cell(y, C_SAVE, "[x]" if row["t_save"] else "[ ]",
-                 is_sel and field == _PF_SAVE)
-        else:
-            cell(y, C_SAVE, "[-]", is_sel and field == _PF_SAVE, enabled=False)
-        # ACTION: GET (install the missing game from known_repo) or APPLY (tune).
+        loc = f"{row['local_n']}·{_fmt_kb(row['local_kb'])}" if row["local_n"] else "—"
+        rem = _fmt_kb(row["remote_kb"])
+        if row["pstate"] == "EPOCH-OLD":
+            rem += "*"          # banked under an older driver epoch
+        put(y, C_LOCAL, f"{loc:<11}", curses.A_DIM if not row["local_n"] else curses.A_NORMAL)
+        put(y, C_REMOTE, f"{rem:<11}", curses.A_DIM if row["remote_kb"] <= 0 else curses.A_NORMAL)
+
+        can_push = row["local_n"] > 0
+        # GET replaces PULL for a missing game with a known_repo pointer.
         if not row["installed"] and row.get("has_repo"):
-            cell(y, C_APPLY, "[GET]", is_sel and field == _PF_APPLY, enabled=True)
+            cell(y, C_PUSH, "[PUSH]", is_sel and field == _PF_PUSH, enabled=can_push)
+            cell(y, C_PULL, "[GET ]", is_sel and field == _PF_PULL, enabled=True)
         else:
-            appliable = row["installed"] and row["publishable"]
-            cell(y, C_APPLY, "[APPLY]", is_sel and field == _PF_APPLY,
-                 enabled=appliable)
+            can_pull = row["remote_kb"] > 0 and row["pstate"] != "EPOCH-OLD"
+            cell(y, C_PUSH, "[PUSH]", is_sel and field == _PF_PUSH, enabled=can_push)
+            cell(y, C_PULL, "[PULL]", is_sel and field == _PF_PULL, enabled=can_pull)
 
     # Detail line for the selected row.
     if 0 <= sel < len(rows):
         row = rows[sel]
-        if not row["installed"]:
-            if row.get("has_repo"):
-                det = "missing — known_repo ready; APPLY downloads + installs it"
-            else:
-                det = "not installed — install the game first (TOOLS)"
-        elif not row["publishable"]:
-            det = "tune not minted yet (index PENDING_CLEAN_ROOM)"
-        elif not row["shaders_ok"]:
-            det = f"config-only · driver differs · {row['size_mb']} MB"
+        ps = row["pstate"]
+        if ps == "LOCAL-ONLY":
+            det = "not banked — PUSH saves this vault to your paddock"
+        elif ps == "REMOTE-ONLY":
+            det = "banked, no local vault — PULL restores it"
+        elif ps == "BOTH":
+            det = f"banked @ {row['epoch']} — PUSH updates · PULL restores"
+        elif ps == "EPOCH-OLD":
+            det = f"banked under OLD driver ({row['epoch']}) — PUSH re-banks on current"
+        elif ps == "NO-VAULT" and row.get("has_repo"):
+            det = "missing game — known_repo ready; GET downloads + installs it"
         else:
-            det = (f"ready · {row['size_mb']} MB · Turnip {row['turnip']} "
-                   f"· tuned by {row['tuner']}")
+            det = ps
         put(h - 5, 2, f"› {row['name']}: {det}"[:w - 4],
             curses.color_pair(1) | curses.A_BOLD)
 
 
-def _paddock_toggle(state):
-    """Toggle the focused field on the selected row, respecting gates."""
+def _paddock_apply(state):
+    """CONFIRM on a row: queue the focused action (PUSH or PULL/GET) for the
+    main loop, which owns the busy frame. All gates re-checked here so a
+    stale screen can't queue an impossible action."""
     rows = state.get("paddock_rows") or []
     if not rows:
-        return
+        return "continue"
     row = rows[state.get("paddock_sel", 0)]
     field = state.get("paddock_field", 0)
-    if field == _PF_TUNE:
-        row["t_tune"] = not row["t_tune"]
-        state["status"] = ""
-    elif field == _PF_SHADERS:
-        if row["shaders_ok"]:
-            row["t_shaders"] = not row["t_shaders"]
-            state["status"] = ""
-        else:
-            state["status"] = "SHADERS gated: this rig's driver build differs"
-    elif field == _PF_SAVE:
-        if row["tier_save"]:
-            row["t_save"] = not row["t_save"]
-            state["status"] = ""
-        else:
-            state["status"] = "No savedata published for this tune"
-
-
-def _paddock_apply(state):
-    """Queue an APPLY for the selected row (executed in the main loop so it
-    has stdscr for the busy frame). Gated on installed + minted."""
-    rows = state.get("paddock_rows") or []
-    if not rows:
-        return "continue"
-    row = rows[state.get("paddock_sel", 0)]
-    if not row["installed"]:
-        if row.get("has_repo"):
-            # Missing game with a known_repo pointer → confirm, then install.
-            state["paddock_mode"] = "pkg_confirm"
+    if field == _PF_PUSH:
+        if row["local_n"] <= 0:
+            state["status"] = "Nothing local to push — race it first"
             return "continue"
-        state["status"] = "Game not installed — can't apply a tune"
+        state["paddock_action"] = {"verb": "push", "row": row}
         return "continue"
-    if not row["publishable"]:
-        state["status"] = "Tune not minted yet (PENDING_CLEAN_ROOM)"
+    # _PF_PULL: GET for missing known_repo games, PULL otherwise.
+    if not row["installed"] and row.get("has_repo"):
+        state["paddock_mode"] = "pkg_confirm"
         return "continue"
-    state["paddock_action"] = row
+    if row["remote_kb"] <= 0:
+        state["status"] = "Nothing banked for this game — PUSH first"
+        return "continue"
+    if row["pstate"] == "EPOCH-OLD":
+        state["status"] = "Banked under an older driver — gated (re-push on current)"
+        return "continue"
+    state["paddock_action"] = {"verb": "pull", "row": row}
     return "continue"
 
 
@@ -2976,20 +3480,21 @@ def _paddock_queue_pkg(state):
     state["paddock_mode"] = "list"
 
 
-def _run_paddock_apply(row, notifier):
-    """Shell out to install-protune.sh for one game, streaming its progress to
-    the mako overlay. Returns (ok, lines) for the result sub-screen. NEVER
-    passes --allow-turnip-mismatch (dossier §10): a greyed SHADERS toggle is
-    the UI expression of the gate; forcing dead-weight shaders stays manual."""
+def _run_paddock_sync(verb, row, notifier):
+    """Shell out to paddock_sync.sh push/pull for one game, streaming its
+    output to the mako overlay. Returns (ok, lines) for the result
+    sub-screen. The mesa_hash homologation gate lives in the engine; this
+    front-end NEVER passes --force (an epoch-gated PULL is greyed out in
+    the UI — forcing config-only restores stays a manual SSH decision)."""
     gid = row["game_id"]
     name = row["name"]
-    if not os.path.exists(PROTUNE_INSTALLER):
-        return False, ["installer not found on rig:", PROTUNE_INSTALLER,
-                       "(install.sh deploys pro-tuning/install-protune.sh)"]
-    cmd = ["sh", PROTUNE_INSTALLER, gid, f"--chipset={_paddock_chipset()}"]
-    if row.get("t_save"):
-        cmd.append("--with-savedata")
-    notifier.post("PADDOCK", f"{name}: starting…")
+    if not os.path.exists(PADDOCK_SYNC):
+        return False, ["sync engine not found on rig:", PADDOCK_SYNC,
+                       "(install.sh deploys bin/paddock_sync.sh)"]
+    cmd = ["bash", PADDOCK_SYNC, verb, gid]
+    if verb == "push" and name and name != gid:
+        cmd.append(name)     # bank the display name in paddock_names.json
+    notifier.post("PADDOCK", f"{name}: {verb} starting…")
     lines = []
     try:
         proc = subprocess.Popen(cmd, env=_tools_env(),
@@ -3002,13 +3507,13 @@ def _run_paddock_apply(row, notifier):
                 continue
             lines.append(ln)
             notifier.post("PADDOCK", f"{name}: {ln[:60]}")
-        proc.wait(timeout=600)
+        proc.wait(timeout=1800)
         ok = proc.returncode == 0
     except Exception as e:
-        return False, [f"apply failed: {e}"] + lines[-10:]
-    notifier.post("PADDOCK", f"{name}: {'done ✓' if ok else 'failed'}")
+        return False, [f"{verb} failed: {e}"] + lines[-10:]
+    notifier.post("PADDOCK", f"{name}: {verb} {'done ✓' if ok else 'FAILED'}")
     tail = lines[-12:]
-    head = [f"{'INSTALLED' if ok else 'FAILED'}: {name}", ""]
+    head = [f"{verb.upper()} {'OK' if ok else 'FAILED'}: {name}", ""]
     return ok, head + tail
 
 
@@ -3166,9 +3671,7 @@ def handle_paddock_kb(state, ch):
         state["paddock_field"] = (state.get("paddock_field", 0) + 1) % _PF_COUNT
         state["status"] = ""
     elif ch in (ord('\n'), ord('s')):
-        if state.get("paddock_field", 0) == _PF_APPLY:
-            return _paddock_apply(state)
-        _paddock_toggle(state)
+        return _paddock_apply(state)
     return "continue"
 
 
@@ -3186,10 +3689,7 @@ def handle_paddock_pad(state, etype, code, val):
         return "continue"
     rows = state.get("paddock_rows") or []
     if etype == EV_KEY and val == 1 and code == BTN_CONFIRM:
-        if state.get("paddock_field", 0) == _PF_APPLY:
-            return _paddock_apply(state)
-        _paddock_toggle(state)
-        return "continue"
+        return _paddock_apply(state)
     if etype == EV_KEY and val == 1 and code == BTN_BACK:
         return "quit"
     if etype == EV_ABS and code == ABS_HAT0Y and rows:
@@ -3359,7 +3859,7 @@ def main(stdscr):
         "paddock_rows": None,
         "paddock_repos": {},
         "paddock_sel": 0,
-        "paddock_field": 0,            # _PF_TUNE.._PF_APPLY
+        "paddock_field": 0,            # _PF_PUSH | _PF_PULL
         "paddock_mode": "list",        # "list" | "result" | "pkg_confirm"
         "paddock_result": None,
         "paddock_index_date": "",
@@ -3416,14 +3916,28 @@ def main(stdscr):
         # Runs here in the main loop so it has stdscr for the 'busy' frame;
         # the op itself blocks (RPCS3 owns the screen during an install)
         # and surfaces live progress through mako notifications.
+        # Manage Shaders: lazy vault scan (du + dry-run stat pass). Runs here so
+        # a busy frame covers the multi-second read.
+        if state.pop("shaders_scan_request", None):
+            _tools_busy_msg(stdscr, "Scanning shader vault…")
+            _scan_vault_hygiene(state)
+
         action = state.pop("tools_action", None)
         if action:
-            _draw_tools_busy(stdscr, action[0])
             notifier = _Notifier()
-            if action[0] == "install":
+            kind = action[0]
+            if kind == "install":
+                _draw_tools_busy(stdscr, "install")
                 ok, lines = _run_install(action[1], action[2], notifier)
-            else:
+            elif kind == "uninstall":
+                _draw_tools_busy(stdscr, "uninstall")
                 ok, lines = _run_uninstall(action[1], notifier)
+            elif kind == "shader":
+                _tools_busy_msg(stdscr, "Cleaning shaders — please wait…")
+                ok, lines = _run_shader_op(action[1], action[2], action[3], notifier)
+                state["shaders_model"] = None     # force rescan on re-entry
+            else:
+                ok, lines = (False, [f"unknown action: {kind}"])
             state["tools_result"] = (ok, lines)
             state["tools_mode"] = "result"
             # Drain input buffered during the (multi-second) blocking op so
@@ -3439,21 +3953,25 @@ def main(stdscr):
             except Exception:
                 pass
 
-        # PADDOCK: lazy index fetch (network) — run here so a busy frame can
-        # be drawn while curl blocks.
+        # PADDOCK: lazy sync-status fetch (network) — run here so a busy
+        # frame can be drawn while the API round-trip blocks.
         if state.pop("paddock_refresh_request", None):
-            _paddock_busy(stdscr, "Fetching Pro Tuning index…")
+            _paddock_busy(stdscr, "Syncing with your paddock…")
             _paddock_refresh(state)
 
-        # PADDOCK: queued APPLY — shell out to install-protune.sh for the
+        # PADDOCK: queued PUSH/PULL — shell out to paddock_sync.sh for the
         # selected game, streaming progress to mako. Same long-op pattern as
         # the TOOLS install above (no RPCS3 launch, so no screen handoff).
-        prow = state.pop("paddock_action", None)
-        if prow:
-            _paddock_busy(stdscr, f"Applying tune: {prow['name']}")
-            ok, lines = _run_paddock_apply(prow, _Notifier())
+        pact = state.pop("paddock_action", None)
+        if pact:
+            prow = pact["row"]
+            _paddock_busy(stdscr, f"{pact['verb'].upper()}: {prow['name']} ↔ your paddock")
+            ok, lines = _run_paddock_sync(pact["verb"], prow, _Notifier())
             state["paddock_result"] = (ok, lines)
             state["paddock_mode"] = "result"
+            # Sync changed local or remote state — refresh the list next entry.
+            if ok:
+                state["paddock_refresh_request"] = True
             if fd is not None:
                 try:
                     while os.read(fd, EVENT_SIZE):
