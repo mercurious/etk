@@ -81,7 +81,7 @@ The kit ships with one calibrated device profile (`SM8250`) which architecturall
 | Retroid Pocket | 6 | SM8550 Adreno 740 | (needs new profile + vault) | Not yet supported |
 
 ## Tested Games (RPCS3)
-Snapshot of per-game status from on-device testing. Full tuning history, panic-ledger context, and the critical config dials per game live in [dossiers/etk_gametest_status_sheet.md](dossiers/etk_gametest_status_sheet.md). Vaults can be extracted as `~/etk/vault/SM8250/[GameID]` and use `install.sh` to sync with rig.
+Snapshot of per-game status from on-device testing with links to tuned RPCS3 configurations. 
 
 | ID | Game Config | Status | FPS | Audio| Notes | Vault Size |
 |---|---|---|---|---|---|---|
@@ -128,14 +128,25 @@ Your PC or Mac will no longer read the card through an SD card reader over USB b
 If you've already installed Rocknix, switch the update channel to nightly (`START` → `UPDATES & DOWNLOADS`), update to the certified nightly, and let the auto-update complete and reboot first. 
 **Do not update past the certified nightly** without checking the latest README.md for the last known ETK-supported Rocknix build.
 2. Clone this repo to your computer.
-- run `git clone https://github.com/mercurious/etk`
+```sh
+git clone https://github.com/mercurious/etk
+```
 - (You can also download the code as a `.zip` and extract as `~/etk/`).
 3. Install the ETK onto your handheld rig
 
 **For macOS, WLS2, Linux:** from the repo root
-- run `chmod +x install.sh` to make it executable
-- run `./install.sh` to install the ETK on your handheld rig
-- run `./install.sh` whenever you want to update, repair, or sync your rig
+to make it executable
+```sh
+chmod +x install.sh
+```
+to install the ETK on your handheld rig
+```sh
+./install.sh
+```
+whenever you want to update, repair, or sync your rig, `cd ~/etk` or wherever you keep it
+```sh
+./install.sh
+```
 
 **For Windows,** use the [PowerShell installer](https://github.com/mercurious/etk#windows-install-guide) which is a direct port of `install.sh` but use SMB backup to substitute for its file sync features.
 
@@ -235,7 +246,7 @@ ETK Pitstop's TELEMETRY tab shows the per-game session ledger of the last game l
 *ETK Pitstop TELEMETRY tab for Gran Turismo 5 (BCUS98114). Career rollup: **6 sessions · 50% clean · 3 crashes · 7,639 shaders banked · +1,273 avg/session**. The session log shows the full ledger schema — duration, RAM peak, load, GPU temp, battery drain, new-shader count, and the recovery signature (`RECOVERY:Adreno` = fence timeout, `RECOVERY:Silent` = soft hang). Config changes are logged inline so every tuning experiment is reproducible.*
 
 ## Setting Up the Private Paddock (optional)
-The **Private Paddock** is your own personal cloud backup for shaders, per-game tunes, and PS3 saves — pushed and pulled straight from the rig to **your own private GitHub repo** over WiFi, with no host computer in the loop. ETK ships the tooling; the bytes are yours and are never shared. The **PADDOCK** tab only appears in ETK Pitstop once you've configured a token, so this whole feature is opt-in — leave the token blank and nothing changes.
+The **Private Paddock** is your own personal cloud backup for shaders, a 2GB per-game remote vault that includes your settings and saves, all pushed and pulled straight from the rig to and from **your own private GitHub repo** over WiFi, with no host computer in the loop. ETK ships the tooling; the bytes are yours and are never shared. The **PADDOCK** tab only appears in ETK Pitstop once you've configured a token, so this whole feature is opt-in — leave the token blank and nothing changes.
 
 ### 1. Create a GitHub token (and repo)
 You need a GitHub Personal Access Token (PAT). Either type works:
