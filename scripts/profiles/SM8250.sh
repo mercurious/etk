@@ -47,9 +47,32 @@ GPU_GOVERNOR_PATH="/sys/class/devfreq/3d00000.gpu/governor"
 
 # --- Thermal thresholds (chassis-calibrated; Flip 2 reference) ---
 # Re-validate on RP5 chassis before claiming RP5 support (different cooling).
-ALARM_TEMP=83
-PIT_THRESHOLD=65
-RACE_THRESHOLD=86
+#
+# Recalibrated 2026-06-13 for the 20260610 stack (Turnip 26.1.2 / RPCS3 19444),
+# which runs the GPU hotter and pushed the normal 70-82C operating band against
+# the old 86C ceiling — spurious OVERHEAT trips, worse while charging. Anchored
+# to zone14 (cpu7-bottom) kernel trip points: passive 90C (gentle, reversible
+# auto-throttle) / passive 95C / critical 110C. RACE_THRESHOLD now sits ABOVE
+# the kernel's first passive trip so the kernel's reversible governor is the
+# first responder and ETK's reboot-requiring PIT is a true backstop; still 3C
+# under the kernel's hard 95C trip and 18C under critical. ALARM (HOT warning)
+# precedes the kernel's 90C throttle. History: 83/86 (pre-20260613).
+ALARM_TEMP=88
+RACE_THRESHOLD=92
+
+# RECOVER_THRESHOLD: auto-recovery floor. A thermally-induced PIT self-clears
+# back to RACE once TEMP holds at/under this for RACE_TRIP_TICKS ticks — no
+# reboot (bin/thermal_d.sh restores both CPU clusters at runtime). The 92->80
+# gap below RACE_THRESHOLD is the hysteresis band that keeps thermal cycling a
+# slow safe sawtooth instead of rapid flapping. (Replaces the dead, never-read
+# PIT_THRESHOLD=65.)
+RECOVER_THRESHOLD=80
+
+# Debounce: consecutive over-RACE_THRESHOLD ticks (loop = 2s) required before
+# tripping PIT, AND the consecutive under-RECOVER_THRESHOLD ticks required
+# before auto-recovering. Telemetry showed most 86C touches were single-tick
+# transients. 2 ticks ~= 4s sustained. Consumed by bin/thermal_d.sh via env.sh.
+RACE_TRIP_TICKS=2
 
 # --- RPCS3 vault adapter pin ---
 GPU_ADAPTER_STRING="Turnip Adreno (TM) 650"

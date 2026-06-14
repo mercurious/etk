@@ -153,7 +153,12 @@ export PROFILE_SOC GPU_DRIVER_FAMILY RPCS3_CAPABLE
 export THERMAL_ZONE_GOVERNING THERMAL_ZONE_MAP
 export CPU_POLICY_SILVER CPU_POLICY_GOLD CPU_POLICY_PRIME CPU_PIT_CAP_KHZ
 export GPU_DEVFREQ_NODE GPU_GOVERNOR_PATH GPU_ADAPTER_STRING
-export ALARM_TEMP PIT_THRESHOLD RACE_THRESHOLD
+export ALARM_TEMP RACE_THRESHOLD
+# RECOVER_THRESHOLD / RACE_TRIP_TICKS may be absent in older/leaner profiles;
+# default here so thermal_d's auto-recovery + debounce work before a profile
+# re-sync. (${VAR:-default} idiom; RECOVER_THRESHOLD replaced dead PIT_THRESHOLD.)
+export RECOVER_THRESHOLD="${RECOVER_THRESHOLD:-80}"
+export RACE_TRIP_TICKS="${RACE_TRIP_TICKS:-2}"
 export FOOT_FONT_SIZE MANGOHUD_FONT_SIZE
 
 # --- [ PATH RESOLUTION ] ---
@@ -172,8 +177,8 @@ export TRIPWIRE_LOG="/storage/etk_tripwire.log"
 
 # --- [ THERMAL BOUNDARIES ] ---
 # Calibrated PER-DEVICE; values live in scripts/profiles/<soc>.sh.
-# env.sh re-exports ALARM_TEMP / PIT_THRESHOLD / RACE_THRESHOLD via the
-# DEVICE PROFILE block above. Bootstrap re-calibration recipe lives in
+# env.sh re-exports ALARM_TEMP / RACE_THRESHOLD / RECOVER_THRESHOLD /
+# RACE_TRIP_TICKS via the DEVICE PROFILE block above. Bootstrap re-calibration recipe lives in
 # scripts/etk_probe.sh (see dossier §G).
 
 # --- [ RESTORED STEALTH DETECTION ] ---
