@@ -85,6 +85,11 @@ PS3 titles arrive as two DISTINCT RUNTIME MODELS, not two file extensions. ETK t
 ### 4. UTILITIES
 * **agnostify.sh:** The Migrator. Converts legacy hardcoded GT5P installs into the new Agnostic vault structure. (CONSIDER FOR DEPRECATION)
 
+### 5. DESIGN DOSSIERS (LOCAL-PRIVATE — NOT IN GIT)
+* **`dossiers/`** is the design-rationale archive: one Markdown file per major decision (e.g. `ProTuningExportDossier.md`, `Stage3CustomRigDossier.md`, certification dossiers). It lives at `$ETK_ROOT/dossiers` on the operator's machine ONLY.
+* **STATUS:** pulled from the public repo and **gitignored as of 2026-06-14** — same precedent as `vault/` and `state/`. The dossiers stay local and private; they are never committed, cloned, or archived.
+* **DO NOT BE CONFUSED BY THEIR ABSENCE:** code comments and docs cite them heavily (`dossiers/<Name>Dossier.md §N`, or shorthand `dossier §N`). Those citations are design provenance, not a promise the file is in the checkout. If you clone the repo, the referenced files will not be present — this is expected, not a missing-file bug. Read them locally if available; do not try to "restore" them into the repo.
+
 ## SHM DATA MAP (/dev/shm/etk_shm/)
 * `active_id.txt`: The current Game ID (e.g., NPUA80075).
 * `etk_mode.txt`: Current thermal profile (RACE/PIT).

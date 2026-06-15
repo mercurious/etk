@@ -48,6 +48,13 @@ __pycache__/
 # 5 Ignore the dev _archive
 _archive/
 /os-install
+
+# 5b. Design dossiers — LOCAL-PRIVATE, never committed. The dossiers/ tree
+# lives at $ETK_ROOT/dossiers as the design-rationale archive (referenced
+# throughout the code as `dossiers/<Name>Dossier.md` and inline `dossier §N`
+# citations). Pulled from the public repo 2026-06-14; stays local only —
+# same precedent as vault/ and state/. Their absence from git is expected;
+# the dangling references are design provenance, not missing files.
 dossiers/
 
 # 6. Operator config — generated locally by install.sh's first-run

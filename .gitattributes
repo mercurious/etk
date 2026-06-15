@@ -18,9 +18,10 @@
 # These paths are dev/engineering-only — the install payload is ~720 KB,
 # but bundling these bloats the auto archive to ~22 MB. export-ignore
 # affects ARCHIVES ONLY, not clones, so power users who `git clone`
-# still get the full dossier/screenshot history.
+# still get the full screenshot/doc history.
+# (dossiers/ is intentionally NOT listed here: it is gitignored as of
+# 2026-06-14, so it is never in the repo, clones, or archives to begin with.)
 # ------------------------------------------------------------------
-dossiers/   export-ignore
 docs/       export-ignore
 log/        export-ignore
 state/      export-ignore
