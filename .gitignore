@@ -74,7 +74,3 @@ config/paddock_repos.json
 
 # Pro Tuning build artifacts
 pro-tuning/dist/
-
-# Signature/cracktro prototype renders — design tabled (ProTuningExportDossier §9);
-# keep the small HTML template seeds, ignore the heavy PNG renders.
-pro-tuning/signature/*.png

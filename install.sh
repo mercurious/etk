@@ -589,7 +589,7 @@ tui_rsync 4 48 54 "Deploying Tools-menu SVG icon" --exclude='.DS_Store' ./config
 # GET-hatch injector: it installs a MISSING game from a pkg/rap source the
 # operator supplied. One trust invariant spans both — PADDOCK only ever RUNS
 # these two scripts; everything else it handles is data. The host-only producer
-# (export.sh) and prototype signature/renders are intentionally NOT deployed to
+# (export.sh) is intentionally NOT deployed to
 # the rig. CRLF-strip so a Windows checkout can't ship a script the rig's
 # /bin/sh chokes on.
 tui_rsync 4 54 58 "Deploying PADDOCK injector (install-protune.sh)" --exclude='.DS_Store' ./pro-tuning/install-protune.sh $RIG_SSH:$ETK_ROOT/pro-tuning/

@@ -158,8 +158,8 @@ Push-Dir -LocalDir (Join-Path $RepoRoot "config") -RemoteParent $EtkRoot
 
 # PADDOCK injector (0.5.0): the rig-side Pro Tuning installer the Pitstop
 # PADDOCK tab shells out to. Mirrors install.sh Step 4 — deploy ONLY
-# install-protune.sh (export.sh is the host-only producer; signature/ renders
-# are tabled prototypes). CRLF-strip + chmod so a Windows checkout's script
+# install-protune.sh (export.sh is the host-only producer, not deployed).
+# CRLF-strip + chmod so a Windows checkout's script
 # runs under the rig's /bin/sh.
 $protuneLocal = Join-Path $RepoRoot "pro-tuning\install-protune.sh"
 if (Test-Path -LiteralPath $protuneLocal) {
