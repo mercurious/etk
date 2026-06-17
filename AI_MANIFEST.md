@@ -64,6 +64,7 @@ PS3 titles arrive as two DISTINCT RUNTIME MODELS, not two file extensions. ETK t
 * **VIRTUAL HDD PATH PATTERNS:** Do NOT assume standard desktop path resolutions or that global mapping roots are used (e.g., `dev_hdd0/savedata` only anchors empty `vmc` volumes). Rocknix isolates actual emulator user save blocks inside localized nested structures under the individual user profile index:
   `~/roms/bios/rpcs3/dev_hdd0/home/00000001/savedata/`
   Targeted cleaning operations or resets must trace files from this exact explicit directory footprint.
+* **RUNTIME PROCESS = `AppRun.wrapped` (NOT `rpcs3-sa`):** `rpcs3-sa` is only a launcher stub; the live emulator is the `AppRun.wrapped` process (target it for runtime probes — VMAs/RSS/FDs — and for "is a game running?" checks). This matters because **RPCS3 rewrites its config on exit**, so any edit to `input_configs/` (e.g. `global/Default.yml` pad config) or `custom_configs/` MUST be done with RPCS3 **closed**, or it gets clobbered. ⚠️ PITFALL: `pgrep -f "rpcs3|AppRun.wrapped"` self-matches its own shell (the pattern string is in the command line) → false "RPCS3 running". Use `pgrep -x AppRun.wrapped` (matches the process name, not the cmdline), or exclude `$$`.
 
 ## FILE REGISTRY (THE ETK ANATOMY)
 ### 1. CORE ENGINE
