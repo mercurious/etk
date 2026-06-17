@@ -2,7 +2,7 @@
 
 All notable changes to the ETK are documented here. This project adheres to [Semantic Versioning](https://semver.org/).
 
-## [0.3.1] - 2026-06-17  (STAGED — public release held for review)
+## [0.3.1] - 2026-06-17
 
 **The Cockpit pit-engineer goes cross-platform, and the fork learns to record the wheel.** ETK's Cockpit skill — until now an Android/`adb`-over-USB spotter — was proven this session to run **unchanged against ROCKNIX over `ssh`**, on both the **USB-net gadget** (`169.254.170.2`, sub-ms) and the **WiFi LAN**, reading the same live telemetry through standard Linux sysfs on the same SM8250. The basic **Spotter (read-only telemetry)** and **Engineer (telemetry→tuning)** tiers are now transport- and OS-agnostic. Separately, the **aPS3e Shader Fork v4** lands the native **pad-movie** record/replay hook. The throughline holds: ETK ships tooling, never bytes.
 
