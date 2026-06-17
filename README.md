@@ -406,6 +406,8 @@ You can disable the GRUB device select screen that appears at boot. This will sh
 
 > **Note:** Rocknix OS updates regenerate the EFI grub.cfg and revert this tweak — re-run these steps after every update.
 
+# Legal Notice
+This project is intended for expert enthusiasts who maintain fair use/legal digital archives of their own games, not copyright infrigement.
 
 # AI Disclosure
 ETK was originally prototyped with Google Gemini and developed/maintained with Anthropic Claude Code.
