@@ -97,6 +97,8 @@ Snapshot of per-game status from on-device testing with links to tuned RPCS3 con
 1. Customized in-game overlay dashboard with ETK telematics inside native Rocknix MangoHUD
 1. Hardware and driver tunings for maximum performance going beyond config settings
 1. Optimized emulator game configurations tuned to the device hardware
+1. On-device **DRIVER tab** to A/B the Mesa/Turnip graphics-driver dials (`TU_AUTOTUNE_ALGO` + the `TU_DEBUG` ladder), with every race session stamped in the ledger with the exact dial set it ran under
+1. **Crash-cam** — every recoverable freeze is photographed at the `R3` panic and bound to its race-ledger entry, viewable full-screen on the device (crash signature + frame + dial, all linked)
 1. Smart thermal protection to safely overdrive the device during shader harvesting, with automatic overheat recovery that returns to racing once cooled — no reboot
 1. Automatic shader backup from your device to your computer to shield hard-earned work from loss, plus an optional **Private Paddock** — push/pull your shaders, tunes, and saves to your own private GitHub repo straight from the rig over WiFi (self-custody, nothing shared publicly), and **Manage Shaders** to reclaim storage by sweeping shaders stranded by driver updates
 1. Pit wall remote terminal screen to monitor and control device (`scripts/commander.sh`)
@@ -204,7 +206,7 @@ Found in the Rocknix ES front-end Tools carousel item.
   - Records every session and tuning change from the Tuning tab.
 - Session Detail View
   - Clean View: Shows Duration and telemetry summary
-  - Crash View: Shows crash type with explanation, peak stats, and **suggested Tuning fixes**.
+  - Crash View: Shows crash type with explanation, peak stats, the driver dial it ran under, and **suggested Tuning fixes**. If a frame was captured at the freeze, press **up** to view the **crash frame** full-screen on the device (any button dismisses).
 <img src="docs/screenshots/etk_ROCKNIX_20260531_191734.png" width="600" alt="ETK Pitstop App Clean Detail View" />  
 <img src="docs/screenshots/etk_ROCKNIX_20260531_191740.png" width="600" alt="ETK Pitstop App Crash Detail View" />
  
@@ -215,6 +217,9 @@ Easily tweak emulation settings on the device. The subset of RPCS3 settings can 
      alt="ETK Pitstop TUNING tab for GT5P: RPCS3 settings list including Audio Backend FAudio, PPU Threads 2, Resolution Scale 75, Frame Limit 30, Shader Mode Async Recompiler with Shader Interpreter" />
 
 *ETK Pitstop TUNING tab for GT5P. The on-board subset of RPCS3 settings most relevant to per-game tuning, gamepad-editable in place. The exposed field set is defined in `config/pitstop_fields.json` — extend or trim per device. `B` saves to the per-game config; `L1`/`R1` cycle tabs.*
+
+### ETK Driver
+Tune the graphics driver itself, not just the emulator. The **DRIVER** tab exposes the Mesa/Turnip environment knobs as gamepad dials — `TU_AUTOTUNE_ALGO` (the GMEM↔system-memory render decision) and the `TU_DEBUG` isolation ladder. **APPLY** injects them via `profile.d` (effective on the next game launch, and they survive a cold boot); **Reset** returns to Turnip's stock autotune. Every APPLY tags the race ledger with the active dial set, so a session's outcome is attributable to the exact driver tune it ran under. Discipline lives in the screen copy: *one knob per soak — change one, drive real laps, read the ledger.*
 
 ### ETK Tools
 1. Easily install PS3 packages. Follow the on screen instructions and overlays during the automated process.
