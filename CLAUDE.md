@@ -16,10 +16,17 @@ session by reading, in order:
 5. **The daemons** in `bin/` (`input_d.py`, `vault_d.sh`, `thermal_d.sh`, `mango_bridge.sh`,
    `recovery.sh`, `session_postmortem.sh`) + `scripts/env.sh` — their **behavior / state model**,
    not just their names. (e.g. `input_d.py` only fires in-game; the Sentry reseeds SHM on state change.)
+   - **Uncommitted `bin/` changes may be side-tracked experiments — confirm scope before absorbing.**
+     `git status` at the top; if a working-tree-modified or untracked file is an abandoned/parked
+     spike (e.g. the input_d pad-movie record side + `padreplay.py` = B-fork autonomy, ROCKNIX-blocked),
+     don't let it re-focus the session. Ask which files are in scope when the task and the diff diverge.
+   - **Some rig scripts are NOT in the repo** (hand-pushed, e.g. `02-etk-coredump.sh` as of 2026-06-18) —
+     they vanish on uninstall/reinstall (the Manage-Shaders trap). When a rig daemon isn't in the repo,
+     flag it for the install.sh push list rather than trusting it to persist.
 
 ## Non-negotiables
 - **Always-reboot gate** — every tune/config change must survive a COLD boot; reboot is the only honest validation. ROCKNIX reverts non-persistent changes; `/storage` persists, read-only root does not.
-- **Use the kit** — prefer ETK's own tools (`install.sh` / `uninstall.sh` / `scripts/` / Pitstop TOOLS / `etk_telemetry` / `recovery.sh`) over bespoke manual rig surgery. Check the kit before hand-crafting a workaround.
+- **Use the kit — including the skills, to their FULL capability** — prefer ETK's own tools (`install.sh` / `uninstall.sh` / `scripts/` / Pitstop TOOLS / `etk_telemetry` / `recovery.sh`) AND the purpose-built **skills** (`cockpit`, etc.) over bespoke manual rig surgery. **This means using a skill's *automation*, not just borrowing its data path.** Concrete miss to never repeat (2026-06-18): for a live multi-crash watch, Claude invoked the `cockpit` skill but hand-rolled per-freeze `ssh`/`grim` grabs and made the operator manually call "freeze" 8+ times — when `cockpit/scripts/rocknix_spotter_loop.sh` ships a **crash-watch loop built for exactly that**. When a task is "watch the rig until X happens," reach for the skill's monitoring loop FIRST (arm it at idle, before launch; have it auto-break + notify). Check the kit/skill's actual capabilities before building the workaround by hand.
 - **Validate before integrate** — prove speculative tuning on a disposable on-rig harness, cold-booted, before touching locked-down core (`install.sh`, daemons, telemetry schema, the R3 panic path).
 - **Verdict from the operator's screen, mechanism from the log** — don't crown a fix from one run or a mid-process read; the noise floor on this title is huge (GT5P ~77–2886 s). Rule out our own code before blaming hardware (bad cable/card).
 

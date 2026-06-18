@@ -38,7 +38,8 @@ This skill is **target-agnostic** — same job, whatever transport reaches the r
 ### ROCKNIX specifics (only on the ssh path)
 - Telemetry via `scripts/rocknix_spotter_loop.sh` (run it over ssh): full thermal map (gpu / cpu-clusters / battery), GPU **devfreq** (drm/msm — there is **no** KGSL `gpubusy`, so infer GPU- vs CPU-bound from GPU-freq + CPU-prime-freq), CPU-prime freq, `MemAvailable`, the ETK `/dev/shm/etk_shm` live-stat bridge, and a crash-watch. RPCS3.log is byte-identical to Android's, so the log/crash skills carry over.
 - **No `screencap`** on ROCKNIX — use a capture card / Moonlight for vision, or run telemetry-only (the instruments alone spot most of a run).
-- **Crash class to watch:** a host **GPU-driver lockup** — `dmesg`: `a6xx_irq … gpu fault` → `recover_worker hangcheck`, offending `rsx::thread` — freezes the game with **no core and no RPCS3-fatal**, so watch `dmesg`, not just the log. ROCKNIX gives real core dumps + on-device `gdb` (better forensics than Android tombstones); to capture a signature, let it freeze and grab dmesg/log *before* the user hits panic-recovery.
+- **Crash class to watch:** a host **GPU-driver lockup** — `dmesg`: `a6xx_irq … gpu fault` → `recover_worker hangcheck`, offending `rsx::thread` — freezes the game with **no core and no RPCS3-fatal**, so the detector MUST watch `dmesg`, not just the log/cores. ROCKNIX gives real core dumps + on-device `gdb` (better forensics than Android tombstones); to capture a signature, let it freeze and grab dmesg/log *before* the user hits panic-recovery.
+- **Use the loop's AUTO-CATCH — don't hand-watch.** `rocknix_spotter_loop.sh` auto-breaks on (1) a new a6xx fault, (2) `live_stat` going stale (silent freeze / process-death), or (3) a core/log-fatal, then captures status + frame + state. **Arm it at IDLE *before* the user launches** (backgrounded over ssh) so it's watching before the fault can happen, then stay hands-off until it notifies you. Do NOT make the user call "freeze" repeatedly or hand-roll per-freeze grabs — that's the exact 2026-06-18 miss. **Liveness is gated on `live_stat` freshness, NOT `pgrep -x AppRun.wrapped`** (pgrep proved unreliable here — observed `seen=0` for a whole live run).
 - **Driver / pad-movie tier is Android-fork-only** — the native `cellPadGetData` hook lives in the APK; stock ROCKNIX `rpcs3-sa` has no hook. Spotter + Engineer work fully via telemetry.
 - **Link:** prefer the USB-net gadget (stable, sub-ms); ROCKNIX WiFi can churn (an `iwd` handshake issue). USB-net uses the USB-C port, so it's mutually exclusive with USB-C video capture.
 
@@ -127,6 +128,6 @@ derivation differ.
 - `scripts/cockpit-read.sh` — one-shot frame + telemetry snapshot.
 - `scripts/frame.sh` — grab a single frame (and notes for high-fps screenrecord/scrcpy).
 - `scripts/pad.sh` — gamepad input actions via sendevent (driver mode, Android).
-- `scripts/rocknix_spotter_loop.sh` — ROCKNIX telemetry + crash-watch over ssh (the ROCKNIX instrument).
+- `scripts/rocknix_spotter_loop.sh` — ROCKNIX telemetry + **auto-catch crash-watch** over ssh (the ROCKNIX instrument): arms at idle, breaks on a6xx-fault / `live_stat`-stale / core-log-fatal, captures status+frame+state. Args: `DUR INT [STALE_TICKS]`. Run backgrounded so it notifies on catch.
 - `scripts/padmovie.sh` — native pad-movie record/replay control (Android fork; T3 / repro harness).
 - `scripts/analyze_padmovie.py` / `synth_padmovie.py` / `extract_lap.py` — multi-lap capture analysis + synthesis.
