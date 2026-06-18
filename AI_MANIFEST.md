@@ -76,7 +76,7 @@ PS3 titles arrive as two DISTINCT RUNTIME MODELS, not two file extensions. ETK t
 * **01-etk-sentry.sh (etk_sentry.service):** The State Machine. Runs constantly in the background. Tracks emulator ignition (IDLE vs RUNNING), resolves the Game ID, and orchestrates the live/die cycles of the thermal and vault daemons.
 * **vault_d.sh:** The Accountant. Resides in `/bin`. Tracks "NEW" vs "BANKED" shaders in real-time.
 * **thermal_d.sh:** The Governor. Resides in `/bin`. Manages CPU/GPU clocks and triggers "PIT" (Cooldown) vs "RACE" (Performance) modes.
-* **input_d.py:** The Shifter. Python daemon that maps Xbox virtual controller inputs (Select+R3) to ETK commands.
+* **input_d.py:** The Shifter (v10.2.0). Python evdev daemon on the InputPlumber virtual pad; maps chords to ETK commands — R3 panic, L3 HUD toggle, L1 screenshot, SELECT-clutch DPAD chords (Right=VAULT, Left=mango toggle, Up=screenshot), and **R1+DPAD-Down = pad-movie 3-mark pulse (IN→OFFSET→OUT) + record** (record armed via `pad_movie.mode`, frames stream to `pad_movie.dat`, marks to `pad_movie.offset`; replay is a separate uinput injector, not built yet). Pad-model-agnostic match by NAME (DS5 era), not node index. **IN-GAME ONLY:** it reads *passthrough* events, so chords/record only fire while the emulator owns the pad — at the ES carousel the frontend owns the controller and the daemon sees no frames. Never `EVIOCGRAB`s (events always reach the game). All pad-movie file I/O is fail-silent so it can never break the R3 panic path.
 
 ### 3. INTERFACES (THE UI)
 * **mango_bridge.sh:** The Dashboard. Translates SHM data into MangoHud custom text.
