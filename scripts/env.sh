@@ -208,6 +208,10 @@ export SESSIONS_LEDGER="$TELEMETRY_DIR/sessions.tsv"
 export CONFIG_CHANGES_LEDGER="$TELEMETRY_DIR/config_changes.tsv"
 export CAREER_DIR="$TELEMETRY_DIR/career"
 export PIT_NOTE_FILE="$TELEMETRY_DIR/pit_note.txt"
+# Active Turnip-dial signature (written by Pitstop DRIVER tab); session_postmortem
+# stamps it onto each ledger row as tune_tag so genuine-play sessions are
+# attributable to their dial set. Absent/empty => "default".
+export ACTIVE_TUNE_FILE="$TELEMETRY_DIR/active_tune.txt"
 export SIGNATURES_FILE="$ETK_ROOT/config/crash_signatures.json"
 
 # Persistent session breadcrumb. Written at IDLE->RUNNING ignition, removed

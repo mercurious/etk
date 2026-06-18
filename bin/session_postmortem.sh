@@ -255,6 +255,21 @@ fi
 # poison the next session's classification.
 rm -f "$R3_SENTINEL" 2>/dev/null
 
+# --- CRASH FRAME (col 16, crash_shot) ---
+# recovery.sh drops $SHM_DIR/crash_shot.txt (the frozen-frame basename) before
+# the flush when it grabbed a frame. Bind it to THIS row so the ledger narrative
+# links to the visual ("Adreno freeze at 312s" -> the actual frame of where).
+# Same freshness guard + consume-after-read as the R3 sentinel; "-" when absent.
+CRASH_SHOT="-"
+CS_SENTINEL="$SHM_DIR/crash_shot.txt"
+if [ -f "$CS_SENTINEL" ]; then
+    CS_MTIME=$(stat -c %Y "$CS_SENTINEL" 2>/dev/null); case "$CS_MTIME" in ''|*[!0-9]*) CS_MTIME=0 ;; esac
+    if [ "$ANCHOR_RELIABLE" -eq 0 ] || [ "$CS_MTIME" -ge "$START_EPOCH" ]; then
+        CS=$(head -n1 "$CS_SENTINEL" 2>/dev/null | tr -d '\t\r')
+    fi
+    rm -f "$CS_SENTINEL" 2>/dev/null
+fi
+
 # --- METRICS ---
 
 # Peak RAM from RPCS3.log Performance Sensor lines. The real line shape
@@ -386,20 +401,30 @@ if [ "$STATUS" = "CLEAN" ] && [ "$DURATION" -lt "${TELEMETRY_MIN_SESSION_S:-60}"
     STATUS="ABORTED"
 fi
 
+# --- ACTIVE TURNIP-DIAL TAG (col 15, tune_tag) ---
+# The Pitstop DRIVER tab writes a compact dial signature to ACTIVE_TUNE_FILE
+# (e.g. "autotune=prefer_gmem;tu_debug=nolrz" or "default"). Stamp it onto this
+# session so genuine-play runs are attributable to the Turnip dials they ran
+# under. Strip tabs/CR so it can never break TSV column alignment.
+TUNE_TAG=$(head -n1 "$ACTIVE_TUNE_FILE" 2>/dev/null | tr -d '\t\r')
+[ -z "$TUNE_TAG" ] && TUNE_TAG="default"
+
 # --- LEDGER WRITE ---
 # Header written exactly once via tmp+mv (atomic on POSIX). Subsequent
 # rows are direct appends; a partial last row on hard crash is a signal,
-# not corruption.
+# not corruption. tune_tag is the trailing column, so older 14-col ledgers and
+# any cut -f<n> reader stay valid; only fresh ledgers carry the labelled header.
 if [ ! -f "$SESSIONS_LEDGER" ]; then
     TMP="$SESSIONS_LEDGER.tmp"
-    printf 'epoch\tduration_s\tbuild\tgame_id\tstatus\tpeak_load\tpeak_ram_mb\tpeak_temp\tavg_temp\tcrash_sig\tfence_at_crash\tshaders_harvested\tdrain_pct\tthermal_overrides\n' > "$TMP"
+    printf 'epoch\tduration_s\tbuild\tgame_id\tstatus\tpeak_load\tpeak_ram_mb\tpeak_temp\tavg_temp\tcrash_sig\tfence_at_crash\tshaders_harvested\tdrain_pct\tthermal_overrides\ttune_tag\tcrash_shot\n' > "$TMP"
     mv "$TMP" "$SESSIONS_LEDGER"
 fi
 
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$NOW" "$DURATION" "$ETK_BUILD_TYPE" "$GAME_ID" "$STATUS" \
     "$PEAK_LOAD" "$PEAK_RAM" "$PEAK_TEMP" "$AVG_TEMP" \
     "$CRASH_SIG" "$FENCE_AT_CRASH" "$SHADERS" "$DRAIN_PCT" "$THERMAL_OVERRIDES" \
+    "$TUNE_TAG" "$CRASH_SHOT" \
     >> "$SESSIONS_LEDGER"
 
 # --- CAREER ROLLUP ---

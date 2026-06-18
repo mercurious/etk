@@ -195,6 +195,12 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
     echo "|/bin/false" > /proc/sys/kernel/core_pattern 2>/dev/null
     echo "    Removed: etk-stage3.service / 02-etk-coredump.sh / 098-etk-stage3 (core_pattern restored)"
 
+    # Turnip driver dials (Pitstop DRIVER tab): the profile.d injection lives
+    # OUTSIDE ETK_ROOT, so it would otherwise keep altering Turnip after the kit
+    # is gone. Remove it so the rig reverts to Turnip's built-in autotune.
+    rm -f /storage/.config/profile.d/097-etk-turnip-dials
+    echo "    Removed: 097-etk-turnip-dials (Turnip dials reverted to default)"
+
     # Private Paddock credential (0.3.0): contains the user's GitHub token —
     # must not survive an uninstall. The paddock repo itself is untouched
     # (it's the user's own backup; uninstall never deletes remote data).

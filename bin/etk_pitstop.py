@@ -53,6 +53,7 @@ import time
 import traceback
 import subprocess
 import threading
+import shutil
 import glob
 import fcntl
 import re
@@ -92,6 +93,17 @@ SESSIONS_LEDGER = os.environ.get(
 CAREER_DIR = os.environ.get('CAREER_DIR', f"{TELEMETRY_DIR}/career")
 PIT_NOTE_FILE = os.environ.get('PIT_NOTE_FILE', f"{TELEMETRY_DIR}/pit_note.txt")
 CONFIG_CHANGES_HEADER = "epoch\tgame_id\tfield_label\told_value\tnew_value\n"
+
+# DRIVER tab (Turnip env-var dials). These are NOT RPCS3 config keys — they
+# inject through the proven profile.d path (same mechanism as 098-etk-stage3),
+# so start_rpcs3.sh picks them up from /etc/profile at the NEXT game launch and
+# they survive a cold boot (ROCKNIX leaves foreign profile.d entries). The
+# active-tune signature is what session_postmortem.sh stamps onto each ledger
+# row (tune_tag), making genuine-play sessions attributable to their dial set.
+TURNIP_PROFILE_D = os.environ.get(
+    'TURNIP_PROFILE_D', "/storage/.config/profile.d/097-etk-turnip-dials")
+ACTIVE_TUNE_FILE = os.environ.get(
+    'ACTIVE_TUNE_FILE', f"{TELEMETRY_DIR}/active_tune.txt")
 
 # Sessions shorter than this are aborts, not real attempts. Sourced from
 # env.sh; the TELEMETRY tab dims sub-threshold rows so a force-quit or a
@@ -236,6 +248,7 @@ CURRENT_TAB_TUNING = 0
 CURRENT_TAB_TELEMETRY = 1
 CURRENT_TAB_TOOLS = 2
 CURRENT_TAB_PADDOCK = 3
+CURRENT_TAB_DRIVER = 4
 
 # Tab registry — order here is the on-screen order AND the [/] · L1/R1 cycle
 # order (clamped, no wrap). PADDOCK is LAST on purpose: it is the only tab that
@@ -249,6 +262,7 @@ TABS = [
     ("TELEMETRY", CURRENT_TAB_TELEMETRY),
     ("TUNING", CURRENT_TAB_TUNING),
     ("TOOLS", CURRENT_TAB_TOOLS),
+    ("DRIVER", CURRENT_TAB_DRIVER),
     ("PADDOCK", CURRENT_TAB_PADDOCK),
 ]
 
@@ -823,6 +837,8 @@ def _draw_footer(stdscr, h, w, current_tab, status):
             footer = "DPAD: Select  A: Back/Quit  B: Detail  L1/R1: Tabs"
         elif current_tab == CURRENT_TAB_PADDOCK:
             footer = "DPAD: Game/Col  B: Toggle/APPLY  A: Quit  L1/R1: Tabs"
+        elif current_tab == CURRENT_TAB_DRIVER:
+            footer = "DPAD UP/DN: Move  LT/RT: Change  B: Toggle/APPLY  A: Quit  L1/R1: Tabs"
         else:
             footer = "DPAD UP/DN: Move  B: Select  A: Back  L1/R1: Tabs"
         stdscr.addstr(h - 2, 4, footer[:w - 6], curses.A_BOLD)
@@ -1019,6 +1035,10 @@ def load_sessions_ledger(filter_game_id=None):
                         "shaders_harvested": int(fields[11] or 0),
                         "drain_pct": int(fields[12] or 0),
                         "thermal_overrides": int(fields[13] or 0),
+                        # Trailing cols (added 2026-06: DRIVER tab + crash frame).
+                        # len-guarded so older 14/15-col rows parse fine.
+                        "tune_tag": fields[14] if len(fields) > 14 else "",
+                        "crash_shot": fields[15] if len(fields) > 15 else "",
                         "_kind": "session",
                     }
                 except ValueError:
@@ -1545,8 +1565,11 @@ def _draw_session_detail(stdscr, state, sessions, config_changes):
 
     if not merged or cur >= len(merged):
         put(y, 2, "No session selected.  (B: back)", curses.A_DIM)
+        state["_detail_row"] = None
         return
     row = merged[cur]
+    # Cache for the input handler (the [up] crash-frame preview reads it).
+    state["_detail_row"] = row
 
     def ram_str(mb):
         if mb >= 1000:
@@ -1610,6 +1633,19 @@ def _draw_session_detail(stdscr, state, sessions, config_changes):
         fence = row.get("fence_at_crash", 0)
         put(y, 4, f"Died at fence: {fence if fence else 'n/a'}     Ran: {dur_h}"
                   f"     Temp peak: {peak_t}C     RAM peak: {ram_str(ram)}"); y += 2
+        # The DRIVER-dial condition + the captured frame — the link from the
+        # ledger row to the tune / the visual. ONE compact line so it never
+        # pushes the SUGGESTED FIX off a short, non-scrolling card.
+        # [up] fires a mako thumbnail of the frame (handle_telemetry_pad).
+        tune = row.get("tune_tag", "")
+        shot = row.get("crash_shot", "")
+        meta = []
+        if tune and tune != "default":
+            meta.append("dial " + tune)
+        if shot and shot != "-":
+            meta.append("frame ↑ preview")
+        if meta:
+            put(y, 4, "  ·  ".join(meta), curses.color_pair(PAIR_CONFIG)); y += 1
         # Union of suggested changes across every matched signature, deduped
         # by yaml_key (first wins) — a multi-cause crash gets the combined dials.
         seen, changes = set(), []
@@ -1676,6 +1712,8 @@ def handle_telemetry_kb(state, ch):
     if state.get("telemetry_mode", "table") == "detail":
         if ch in (curses.KEY_BACKSPACE, 8, 127, ord('\n'), ord('\r')):
             state["telemetry_mode"] = "table"
+        elif ch == curses.KEY_UP:
+            _preview_crash_frame(state, (state.get("_detail_row") or {}).get("crash_shot", ""))
         return "continue"
     if ch == curses.KEY_UP:
         state["telemetry_cursor"] = max(0, state.get("telemetry_cursor", 0) - 1)
@@ -1703,6 +1741,9 @@ def handle_telemetry_pad(state, etype, code, val):
     if mode == "detail":
         if etype == EV_KEY and val == 1 and code in (BTN_BACK, BTN_CONFIRM):
             state["telemetry_mode"] = "table"
+        elif etype == EV_ABS and code == ABS_HAT0Y and val == -1:
+            # [up] on a crash card -> full-screen swayimg preview of the frame.
+            _preview_crash_frame(state, (state.get("_detail_row") or {}).get("crash_shot", ""))
         return "continue"
     if etype == EV_KEY and val == 1 and code == BTN_BACK:
         return "quit"
@@ -1813,6 +1854,43 @@ class _Notifier:
             _log(f"mako notify failed: {e}")
 
 
+def _preview_crash_frame(state, shot):
+    """Show a crash frame FULL-SCREEN via swayimg — the on-device way to see
+    where a crash happened. curses can't render a PNG, and mako can't either on
+    this ROCKNIX build (the gdk-pixbuf loader modules are stripped, so it has no
+    image decoder — diagnosed live 2026-06-18). swayimg decodes PNG itself.
+    Fire-and-forget + a 30s `timeout` BACKSTOP so a window can never pin open;
+    the Popen handle is stashed in state['_preview_proc'] so the main loop can
+    dismiss it on any button press (Pitstop owns the pad here — input_d is
+    in-game-only and never runs in this context). Falls back to a mako TEXT
+    toast (the SMB path) if swayimg is absent."""
+    state["_preview_proc"] = None
+    if not shot or shot == "-":
+        return
+    path = f"{ETK_ROOT}/screenshots/{shot}"
+    if not os.path.isfile(path):
+        _log(f"crash-frame preview: missing {path}")
+        return
+    if not shutil.which("swayimg"):
+        # No image viewer on this build — point at the file over SMB instead.
+        _Notifier().post("Crash frame", f"{shot}  (SMB: roms/etk/screenshots/)")
+        return
+    env = _tools_env()   # carries XDG_RUNTIME_DIR / WAYLAND_DISPLAY / SWAYSOCK
+    try:
+        # Launch with a known app_id; do NOT pass --fullscreen (that tiles in
+        # sway). Instead fullscreen it via swaymsg once mapped — matching the
+        # PKG-installer pattern — and re-assert foot fullscreen on close so
+        # Pitstop's terminal isn't left split (the install path's fix).
+        state["_preview_proc"] = subprocess.Popen(
+            ["timeout", "30", "swayimg", "--class=" + _PREVIEW_APPID, path],
+            env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        state["_preview_env"] = env
+        _fullscreen_preview(env)
+    except Exception as e:
+        _log(f"swayimg preview failed: {e}")
+        state["_preview_proc"] = None
+
+
 # --- /dev/uinput virtual keyboard (confirms the install dialog) ---
 
 def _uinput_ioc(direction, nr, size):
@@ -1900,15 +1978,42 @@ def _find_install_dialog(env):
 
 
 def _restore_pitstop_window(env):
-    """Re-assert the Pitstop (foot) window as fullscreen. Launching RPCS3
-    knocks foot out of fullscreen in sway's tree, which would otherwise
-    leave the curses UI tiled and clipped off-screen on return. The next
-    main-loop _draw picks up the restored size via getmaxyx()."""
+    """Re-assert the Pitstop (foot) window as fullscreen. Launching RPCS3 OR
+    the swayimg crash-frame preview knocks foot out of fullscreen in sway's
+    tree, which would otherwise leave the curses UI tiled and clipped
+    off-screen on return. The next main-loop _draw picks up the restored size
+    via getmaxyx()."""
     try:
         _swaymsg(['[app_id="foot"]', 'fullscreen', 'enable'], env)
         time.sleep(0.3)
     except Exception as e:
         _log(f"restore pitstop window failed: {e}")
+
+
+_PREVIEW_APPID = "etk-crash-preview"
+
+
+def _fullscreen_preview(env):
+    """Once the swayimg preview window maps, fullscreen it so it covers the
+    foot terminal cleanly (no tiling split DURING the preview). Brief blocking
+    poll mirroring _find_install_dialog; breaks as soon as the window appears."""
+    for _ in range(12):
+        try:
+            tree = json.loads(_swaymsg(["-t", "get_tree"], env))
+        except Exception:
+            tree = None
+        if tree is not None:
+            stack = [tree]
+            while stack:
+                n = stack.pop()
+                if n.get("app_id") == _PREVIEW_APPID:
+                    _swaymsg(['[app_id="%s"]' % _PREVIEW_APPID,
+                              'fullscreen', 'enable'], env)
+                    return True
+                for k in ("nodes", "floating_nodes"):
+                    stack.extend(n.get(k, []))
+        time.sleep(0.08)
+    return False
 
 
 def _kill_rpcs3():
@@ -3109,6 +3214,255 @@ def handle_tools_pad(state, etype, code, val):
     return "continue"
 
 
+# === DRIVER TAB (Turnip env-var dials) ===
+#
+# Surfaces the Mesa/Turnip knobs that the Stage IV audit named — the untested
+# big lever TU_AUTOTUNE_ALGO plus the TU_DEBUG isolation ladder — as gamepad
+# dials. They inject via profile.d (TURNIP_PROFILE_D), effective next launch,
+# and stamp active_tune.txt so the ledger can attribute genuine-play sessions
+# to their dial set. Discipline lives in the UI copy: one knob per soak.
+
+_AUTOTUNE_VALUES = ("default", "bandwidth", "profiled", "profiled_imm",
+                    "prefer_sysmem", "prefer_gmem")
+_TU_DEBUG_PRIMARY = ("nolrz", "noubwc", "sysmem", "gmem")        # isolation ladder
+_TU_DEBUG_ADVANCED = ("nobin", "forcebin", "nocb",
+                      "noconcurrentresolves", "syncdraw", "flushall")
+_TU_DEBUG_KNOWN = set(_TU_DEBUG_PRIMARY) | set(_TU_DEBUG_ADVANCED)
+
+
+def _driver_default_model():
+    return {"autotune_idx": 0, "tu_debug": set(),
+            "show_advanced": False, "applied_sig": "default"}
+
+
+def _driver_sig(model):
+    """Compact, stable signature for active_tune.txt + the ledger tune_tag.
+    'default' when nothing is set; flags sorted so the tag is order-stable."""
+    parts = []
+    av = _AUTOTUNE_VALUES[model["autotune_idx"]]
+    if av != "default":
+        parts.append("autotune=" + av)
+    flags = sorted(model["tu_debug"])
+    if flags:
+        parts.append("tu_debug=" + ",".join(flags))
+    return ";".join(parts) if parts else "default"
+
+
+def _driver_load(state):
+    """Read the live dial state from the rig's profile.d injection into
+    state['driver_model']. Tolerant of a missing file (= all default)."""
+    model = _driver_default_model()
+    try:
+        with open(TURNIP_PROFILE_D) as f:
+            for ln in f:
+                ln = ln.strip()
+                if ln.startswith("export TU_AUTOTUNE_ALGO="):
+                    v = ln.split("=", 1)[1].strip().strip('"')
+                    if v in _AUTOTUNE_VALUES:
+                        model["autotune_idx"] = _AUTOTUNE_VALUES.index(v)
+                elif ln.startswith("export TU_DEBUG="):
+                    v = ln.split("=", 1)[1].strip().strip('"')
+                    model["tu_debug"] = {f for f in v.split(",")
+                                         if f in _TU_DEBUG_KNOWN}
+    except OSError:
+        pass
+    if model["tu_debug"] & set(_TU_DEBUG_ADVANCED):
+        model["show_advanced"] = True
+    model["applied_sig"] = _driver_sig(model)
+    state["driver_model"] = model
+    state.setdefault("driver_cursor", 0)
+    state["driver_notice"] = None
+
+
+def _driver_apply(model):
+    """Write the profile.d injection + the active_tune tag. All-default removes
+    the injection so Turnip reverts to its built-in autotune. Effective on the
+    NEXT game launch. Returns (ok, lines)."""
+    av = _AUTOTUNE_VALUES[model["autotune_idx"]]
+    flags = sorted(model["tu_debug"])
+    sig = _driver_sig(model)
+    try:
+        if sig == "default":
+            try:
+                os.remove(TURNIP_PROFILE_D)
+            except OSError:
+                pass
+        else:
+            out = ["# ETK Turnip dials — written by Pitstop DRIVER tab.",
+                   "# Sourced by /etc/profile at game launch; survives reboot.",
+                   "# tune_tag: " + sig]
+            if av != "default":
+                out.append("export TU_AUTOTUNE_ALGO=" + av)
+            if flags:
+                out.append("export TU_DEBUG=" + ",".join(flags))
+            os.makedirs(os.path.dirname(TURNIP_PROFILE_D), exist_ok=True)
+            with open(TURNIP_PROFILE_D, "w") as f:
+                f.write("\n".join(out) + "\n")
+        os.makedirs(os.path.dirname(ACTIVE_TUNE_FILE), exist_ok=True)
+        with open(ACTIVE_TUNE_FILE, "w") as f:
+            f.write(sig + "\n")
+        model["applied_sig"] = sig
+        return True, [sig]
+    except OSError as e:
+        _log(f"driver apply failed: {e}")
+        return False, [str(e)[:60]]
+
+
+def _driver_rows(model):
+    """Flat selectable-row list, rebuilt each frame so draw + input agree.
+    Each entry = (kind, payload)."""
+    rows = [("autotune", None)]
+    rows += [("flag", f) for f in _TU_DEBUG_PRIMARY]
+    rows.append(("advanced", None))
+    if model["show_advanced"]:
+        rows += [("flag", f) for f in _TU_DEBUG_ADVANCED]
+    rows += [("apply", None), ("reset", None)]
+    return rows
+
+
+def draw_driver(stdscr, state):
+    """DRIVER tab — Turnip env-var dials. Global (not per-game): injected via
+    profile.d, effective next launch. No ETK_NO_TARGET gate (driver knobs are
+    title-independent)."""
+    if state.get("driver_model") is None:
+        _driver_load(state)
+    model = state["driver_model"]
+    h, w = stdscr.getmaxyx()
+    rows = _driver_rows(model)
+    cursor = state.get("driver_cursor", 0) % len(rows)
+    state["driver_cursor"] = cursor
+    sig = _driver_sig(model)
+    applied = model.get("applied_sig", "default")
+    dirty = sig != applied
+
+    def put(r, c, t, a=curses.A_NORMAL):
+        try:
+            stdscr.addstr(r, c, t[:max(0, w - c - 1)], a)
+        except curses.error:
+            pass
+
+    y = 5
+    put(y, 2, "TURNIP DRIVER DIALS", curses.A_BOLD); y += 1
+    put(y, 2, "-" * (w - 4), curses.A_DIM); y += 1
+    put(y, 4, "Global Mesa/Turnip env vars — effective NEXT launch, reboot-safe.",
+        curses.A_DIM); y += 1
+    put(y, 4, "One knob per soak: change one, drive real laps, read the ledger.",
+        curses.A_DIM); y += 2
+
+    cap = max(1, (h - y) - 6)
+    for i, (kind, payload) in enumerate(rows[:cap]):
+        sel = (i == cursor)
+        base = curses.A_REVERSE if sel else curses.A_NORMAL
+        put(y, 4, "> " if sel else "  ",
+            curses.color_pair(1) if sel else curses.A_NORMAL)
+        if kind == "autotune":
+            put(y, 6, f"TU_AUTOTUNE_ALGO   < {_AUTOTUNE_VALUES[model['autotune_idx']]} >", base)
+        elif kind == "flag":
+            on = payload in model["tu_debug"]
+            tail = curses.color_pair(PAIR_CLEAN) if (on and not sel) else base
+            put(y, 6, f"TU_DEBUG  {'[x]' if on else '[ ]'} {payload}", tail)
+        elif kind == "advanced":
+            put(y, 6, f"Advanced flags  {'v' if model['show_advanced'] else '>'}",
+                base | curses.A_DIM)
+        elif kind == "apply":
+            put(y, 6, "APPLY" + ("   *unsaved changes*" if dirty else "   (no change)"),
+                base | curses.A_BOLD)
+        elif kind == "reset":
+            put(y, 6, "Reset to default", base)
+        y += 1
+    y += 1
+    put(y, 4, "Pending : " + sig, curses.A_BOLD); y += 1
+    put(y, 4, "Applied : " + applied, curses.A_DIM); y += 1
+    notice = state.get("driver_notice")
+    if notice:
+        ok, msg = notice
+        put(y, 4, msg[:w - 6],
+            curses.color_pair(PAIR_CLEAN if ok else PAIR_CRASH) | curses.A_BOLD)
+    elif dirty:
+        put(y, 4, "APPLY to write — takes effect next game launch.",
+            curses.color_pair(PAIR_RECOV))
+
+
+def _driver_move(state, delta):
+    rows = _driver_rows(state["driver_model"])
+    state["driver_cursor"] = (state.get("driver_cursor", 0) + delta) % len(rows)
+    state["driver_notice"] = None
+
+
+def _driver_adjust(state, delta):
+    """Left/Right on the autotune row cycles its value; on a flag row toggles
+    it (direction-agnostic)."""
+    model = state["driver_model"]
+    rows = _driver_rows(model)
+    kind, payload = rows[state.get("driver_cursor", 0) % len(rows)]
+    if kind == "autotune":
+        model["autotune_idx"] = (model["autotune_idx"] + delta) % len(_AUTOTUNE_VALUES)
+        state["driver_notice"] = None
+    elif kind == "flag":
+        _driver_toggle_flag(state, payload)
+
+
+def _driver_toggle_flag(state, flag):
+    s = state["driver_model"]["tu_debug"]
+    s.discard(flag) if flag in s else s.add(flag)
+    state["driver_notice"] = None
+
+
+def _driver_select(state):
+    """CONFIRM on the focused row."""
+    model = state["driver_model"]
+    rows = _driver_rows(model)
+    kind, payload = rows[state.get("driver_cursor", 0) % len(rows)]
+    if kind == "flag":
+        _driver_toggle_flag(state, payload)
+    elif kind == "advanced":
+        model["show_advanced"] = not model["show_advanced"]
+        state["driver_notice"] = None
+    elif kind == "reset":
+        model["autotune_idx"] = 0
+        model["tu_debug"] = set()
+        state["driver_notice"] = None
+    elif kind == "apply":
+        ok, info = _driver_apply(model)
+        state["driver_notice"] = (ok, ("APPLIED: " + info[0] + " — effective next launch"
+                                       if ok else "APPLY FAILED: " + info[0]))
+    return "continue"
+
+
+def handle_driver_pad(state, etype, code, val):
+    """Gamepad input for DRIVER. L1/R1 intercepted upstream for tabs."""
+    if state.get("driver_model") is None:
+        _driver_load(state)
+    if etype == EV_KEY and val == 1 and code == BTN_CONFIRM:
+        return _driver_select(state)
+    if etype == EV_KEY and val == 1 and code == BTN_BACK:
+        return "quit"
+    if etype == EV_ABS and code == ABS_HAT0Y and val != 0:
+        _driver_move(state, 1 if val == 1 else -1)
+    elif etype == EV_ABS and code == ABS_HAT0X and val != 0:
+        _driver_adjust(state, 1 if val == 1 else -1)
+    return "continue"
+
+
+def handle_driver_kb(state, ch):
+    """Keyboard input for DRIVER (dev/desktop parity with the pad)."""
+    if state.get("driver_model") is None:
+        _driver_load(state)
+    if ch in (ord('q'), ord('Q')):
+        return "quit"
+    if ch == curses.KEY_UP:
+        _driver_move(state, -1)
+    elif ch == curses.KEY_DOWN:
+        _driver_move(state, 1)
+    elif ch == curses.KEY_LEFT:
+        _driver_adjust(state, -1)
+    elif ch == curses.KEY_RIGHT:
+        _driver_adjust(state, 1)
+    elif ch in (ord('\n'), ord(' ')):
+        return _driver_select(state)
+    return "continue"
+
+
 # === PADDOCK TAB (0.3.0 — Private Paddock sync client) ===
 #
 # Lists local vaults vs the user's OWN private repo (via paddock_sync.sh
@@ -3821,6 +4175,10 @@ def _switch_tab(state, target_tab):
             state["paddock_mode"] = "list"
             if state.get("paddock_rows") is None:
                 state["paddock_refresh_request"] = True
+        if target_tab == CURRENT_TAB_DRIVER:
+            # Re-read the live profile.d injection on every entry so the dials
+            # reflect what's actually armed on the rig (cheap local file read).
+            state["driver_model"] = None
 
 
 def _cycle_tab(state, direction):
@@ -3850,6 +4208,8 @@ def _draw(stdscr, state):
         draw_telemetry(stdscr, state)
     elif state["current_tab"] == CURRENT_TAB_PADDOCK:
         draw_paddock(stdscr, state)
+    elif state["current_tab"] == CURRENT_TAB_DRIVER:
+        draw_driver(stdscr, state)
     else:
         draw_tools(stdscr, state)
     _draw_footer(stdscr, h, w, state["current_tab"], state["status"])
@@ -3867,6 +4227,8 @@ def _dispatch_kb(state, ch):
     # target's config/ledger, and is useful for subscribing a first tune.
     if ct == CURRENT_TAB_PADDOCK:
         return handle_paddock_kb(state, ch)
+    if ct == CURRENT_TAB_DRIVER:
+        return handle_driver_kb(state, ch)
     if ETK_NO_TARGET:
         return "quit" if ch in (ord('q'), ord('Q')) else "continue"
     if ct == CURRENT_TAB_TUNING:
@@ -3881,6 +4243,8 @@ def _dispatch_pad(state, etype, code, val):
         return handle_tools_pad(state, etype, code, val)
     if ct == CURRENT_TAB_PADDOCK:
         return handle_paddock_pad(state, etype, code, val)
+    if ct == CURRENT_TAB_DRIVER:
+        return handle_driver_pad(state, etype, code, val)
     if ETK_NO_TARGET:
         if etype == EV_KEY and val == 1 and code == BTN_BACK:
             return "quit"
@@ -3992,8 +4356,32 @@ def main(stdscr):
             if data and len(data) == EVENT_SIZE:
                 _, _, etype, code, val = struct.unpack(EVENT_FORMAT, data)
 
+                # Crash-frame preview (swayimg) intercept: while it's up, ANY
+                # button press dismisses it early and is SWALLOWED, so the press
+                # never also navigates / switches tabs underneath the image. The
+                # 30s timeout is just the backstop. On EVERY close path we
+                # re-assert foot fullscreen (the install-path fix) so Pitstop
+                # isn't left split. Pitstop owns the pad here.
+                pp = state.get("_preview_proc")
+                preview_up = pp is not None and pp.poll() is None
+                if pp is not None and not preview_up:
+                    # auto-closed by the timeout backstop — restore Pitstop.
+                    state["_preview_proc"] = None
+                    _restore_pitstop_window(state.pop("_preview_env", None) or _tools_env())
+                if preview_up:
+                    # Any button OR D-pad PRESS dismisses (not a release: val==0
+                    # is the up-release of the press that opened it).
+                    is_press = (etype == EV_KEY and val == 1) or (
+                        etype == EV_ABS and code in (ABS_HAT0X, ABS_HAT0Y) and val != 0)
+                    if is_press:
+                        subprocess.run(["pkill", "-x", "swayimg"],
+                                       stdout=subprocess.DEVNULL,
+                                       stderr=subprocess.DEVNULL)
+                        state["_preview_proc"] = None
+                        _restore_pitstop_window(state.pop("_preview_env", None) or _tools_env())
+                    # swallow everything while the preview is on screen
                 # Tab switching (gamepad) — L1/R1 cycle through the tabs.
-                if etype == EV_KEY and val == 1 and code == BTN_TL:
+                elif etype == EV_KEY and val == 1 and code == BTN_TL:
                     _cycle_tab(state, -1)
                 elif etype == EV_KEY and val == 1 and code == BTN_TR:
                     _cycle_tab(state, 1)
