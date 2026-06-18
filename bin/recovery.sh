@@ -32,6 +32,7 @@ echo -e "\n\033[31m[!] INITIATING NUCLEAR RECOVERY...\033[0m"
 #    in SHM (preserve-listed below) so session_postmortem.sh binds the frame to
 #    this crash's ledger row — the visual link to the ledger narrative.
 #    BusyBox-safe: command -v / timeout / printf / case.
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/var/run/0-runtime-dir}"
 export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}"
 CRASH_GID=$(cat "$ID_FILE" 2>/dev/null)
 case "$CRASH_GID" in ""|IDLE|UNKNOWN_ID) CRASH_GID="ROCKNIX" ;; esac
