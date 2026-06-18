@@ -480,11 +480,20 @@ tui_step_done 1
 tui_step_start 2
 tui_rsync 2 0 25 "Pushing /bin daemons" --delete --exclude='*.pyc' --exclude='__pycache__' --exclude='.DS_Store' ./bin/ $RIG_SSH:$ETK_ROOT/bin/
 tui_rsync 2 25 45 "Pushing /scripts (env, profiles, probes)" --delete --exclude='.DS_Store' ./scripts/ $RIG_SSH:$ETK_ROOT/scripts/
-# etk_drift.py is the only tools/ entry that runs ON the rig (reads /sys, banks
-# OS profiles under $ETK_ROOT/vault/os_profiles). The rest of tools/ is host-side
-# (tui.sh is sourced by install.sh), so this is a single-file push, not ./tools/.
-tui_rsync 2 45 55 "Pushing tools/etk_drift.py (OS-drift detector)" --exclude='.DS_Store' ./tools/etk_drift.py $RIG_SSH:$ETK_ROOT/tools/etk_drift.py
-tui_rsync 2 55 70 "Pushing MangoHud.conf" --exclude='.DS_Store' ./config/MangoHud.conf $RIG_SSH:/storage/.config/MangoHud/MangoHud.conf
+# Two tools/ entries run ON the rig, so they are explicit single-file pushes
+# (the rest of tools/ is host-side — tui.sh is sourced by install.sh, the probes
+# run from the host — so we do NOT push ./tools/ wholesale):
+#   - etk_drift.py    : OS-drift detector (reads /sys, banks OS profiles under
+#                       $ETK_ROOT/vault/os_profiles).
+#   - vault_sweep.sh  : the Manage Shaders engine. etk_pitstop.py (on the rig)
+#                       shells out to it for --porcelain (fresh/stale graph) and
+#                       --apply (Sweep). MUST be deployed or the screen shows
+#                       "no boundary" (exit 127 on a missing script). uninstall.sh
+#                       does `rm -rf $ETK_ROOT/tools`, so a one-off scp does not
+#                       survive a reinstall — it has to live here.
+tui_rsync 2 45 52 "Pushing tools/etk_drift.py (OS-drift detector)" --exclude='.DS_Store' ./tools/etk_drift.py $RIG_SSH:$ETK_ROOT/tools/etk_drift.py
+tui_rsync 2 52 58 "Pushing tools/vault_sweep.sh (Manage Shaders engine)" --exclude='.DS_Store' ./tools/vault_sweep.sh $RIG_SSH:$ETK_ROOT/tools/vault_sweep.sh
+tui_rsync 2 58 70 "Pushing MangoHud.conf" --exclude='.DS_Store' ./config/MangoHud.conf $RIG_SSH:/storage/.config/MangoHud/MangoHud.conf
 # Operator config: the Sentry's env.sh source on the rig reads this file
 # for ETK_BUILD_TYPE, DEFAULT_MODE, HUD_HEADER_HOLD_S. Without this push
 # the rig would silently use the baked-in defaults regardless of operator
@@ -494,7 +503,7 @@ tui_rsync 2 55 70 "Pushing MangoHud.conf" --exclude='.DS_Store' ./config/MangoHu
 # silently skip such "same-size" edits when mtimes happen to match.
 tui_rsync_checksum 2 70 90 "Pushing etk.conf (operator config)" --exclude='.DS_Store' ./etk.conf $RIG_SSH:$ETK_ROOT/etk.conf
 tui_log "chmod +x daemons and scripts"
-ssh $RIG_SSH "chmod +x $ETK_ROOT/bin/* $ETK_ROOT/scripts/* $ETK_ROOT/tools/etk_drift.py"
+ssh $RIG_SSH "chmod +x $ETK_ROOT/bin/* $ETK_ROOT/scripts/* $ETK_ROOT/tools/etk_drift.py $ETK_ROOT/tools/vault_sweep.sh"
 tui_step_done 2
 
 # ==========================================================

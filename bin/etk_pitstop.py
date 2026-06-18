@@ -52,6 +52,7 @@ import curses
 import time
 import traceback
 import subprocess
+import threading
 import glob
 import fcntl
 import re
@@ -2437,8 +2438,16 @@ def _du_kb(path):
 
 def _sweep_porcelain():
     """vault_sweep.sh --all-games --porcelain (DRY-RUN, read-only). Returns
-    ({gid: {stale_files, stale_kb, fresh_files, fresh_kb}}, boundary_ok).
-    boundary_ok False => no .last_mesa.hash / engine error, so Sweep shows n/a.
+    ({gid: {stale_files, stale_kb, fresh_files, fresh_kb}}, boundary_ok, reason).
+    reason distinguishes the failure modes that all collapse to boundary_ok=False:
+      "ok"          -> engine ran, boundary present
+      "no_boundary" -> vault/.last_mesa.hash absent (vault_sweep ABORT, exit 1)
+      "engine"      -> vault_sweep.sh missing/unrunnable (exit 127 / FileNotFound)
+                       — i.e. it was never deployed to the rig (install.sh push).
+      "error"       -> any other non-zero / exception
+    The split matters: "no boundary" and "engine missing" need different operator
+    fixes (wait for next Mesa rebuild vs. re-run install.sh), and conflating them
+    once hid a missing-deploy bug behind a "no boundary" label.
     fresh_* share the stale basis (shard-tree files), so fresh+stale is the
     honest shader byte total (excludes Mesa bookkeeping / du block overhead)."""
     per = {}
@@ -2446,7 +2455,15 @@ def _sweep_porcelain():
         r = subprocess.run(["bash", VAULT_SWEEP, "--all-games", "--porcelain"],
                            capture_output=True, text=True, timeout=600)
         if r.returncode != 0:
-            return per, False
+            # bash exits 127 when it cannot find/read the script path.
+            if r.returncode == 127 or not os.path.isfile(VAULT_SWEEP):
+                _log(f"sweep porcelain: engine missing at {VAULT_SWEEP} (rc={r.returncode})")
+                return per, False, "engine"
+            # vault_sweep's own no-boundary ABORT is exit 1 + a [ABORT] line.
+            if "[ABORT]" in (r.stdout + r.stderr) and "absent" in (r.stdout + r.stderr):
+                return per, False, "no_boundary"
+            _log(f"sweep porcelain: engine error rc={r.returncode}: {r.stderr.strip()[:200]}")
+            return per, False, "error"
         for ln in r.stdout.splitlines():
             p = ln.split()
             if len(p) >= 6 and p[0] == "GAME":
@@ -2455,10 +2472,13 @@ def _sweep_porcelain():
                                  "fresh_files": int(p[4]), "fresh_kb": int(p[5])}
                 except ValueError:
                     pass
-        return per, True
+        return per, True, "ok"
+    except FileNotFoundError as e:
+        _log(f"sweep porcelain: engine missing ({e})")
+        return per, False, "engine"
     except Exception as e:
         _log(f"sweep porcelain failed: {e}")
-        return per, False
+        return per, False, "error"
 
 
 def _scan_vault_hygiene(state):
@@ -2468,7 +2488,7 @@ def _scan_vault_hygiene(state):
     first. Cached in state['shaders_model'] until an action invalidates it."""
     game_ids = _vault_game_ids()
     current = _resolve_current_vault_id(game_ids)
-    stale_map, boundary_ok = _sweep_porcelain()
+    stale_map, boundary_ok, sweep_reason = _sweep_porcelain()
 
     games = []
     for gid in game_ids:
@@ -2492,6 +2512,7 @@ def _scan_vault_hygiene(state):
         "by_id": {g["id"]: g for g in games},
         "current": current,
         "boundary_ok": boundary_ok,
+        "sweep_reason": sweep_reason,
         "rpcs3_all_mb": _du_kb(RPCS3_RUNTIME_CACHE) // 1024,
         "rpcs3_cur_mb": _du_kb(os.path.join(RPCS3_RUNTIME_CACHE, current)) // 1024,
         "rpcs3_running": _rpcs3_running(),
@@ -2525,6 +2546,19 @@ def _draw_shader_screen(stdscr, state, model, y, h, w):
     cur = model["current"]
     rec = _shader_reclaim(model, scope_all)
     boundary_ok = model["boundary_ok"]
+    sweep_reason = model.get("sweep_reason", "ok")
+    # Short tag for why Sweep is unavailable — each needs a different operator
+    # fix, so don't collapse them all into "no boundary".
+    _SWEEP_LEGEND = {
+        "no_boundary": "(stale unknown — no boundary)",
+        "engine":      "(sweep engine missing — run install.sh)",
+        "error":       "(sweep unavailable — see logs)",
+    }
+    _SWEEP_NA = {
+        "no_boundary": "n/a (no boundary)",
+        "engine":      "n/a (engine missing — reinstall)",
+        "error":       "n/a (unavailable)",
+    }
     running = model["rpcs3_running"]
 
     put(y, 2, "MANAGE SHADERS", curses.A_BOLD); y += 1
@@ -2537,7 +2571,8 @@ def _draw_shader_screen(stdscr, state, model, y, h, w):
         put(y, 4, "Vault is empty — nothing to clean.", curses.A_DIM); y += 1
     else:
         legend = "vault by game  " + (
-            "(green=fresh  red=stale)" if boundary_ok else "(stale unknown — no boundary)")
+            "(green=fresh  red=stale)" if boundary_ok
+            else _SWEEP_LEGEND.get(sweep_reason, "(stale unknown — no boundary)"))
         put(y, 4, legend, curses.A_DIM); y += 1
         max_kb = max(g["disk_kb"] for g in games) or 1
         BARW = 18
@@ -2573,8 +2608,8 @@ def _draw_shader_screen(stdscr, state, model, y, h, w):
     # --- Action rows (cursor-selected). Row 0 is the scope toggle.
     cursor = state.get("tools_cursor", 0)
     scope_txt = "ALL GAMES" if scope_all else f"Current ({cur})"
-    sweep_txt = (f"Sweep stale shaders       ~{rec['sweep_mb']} MB"
-                 if boundary_ok else "Sweep stale shaders       n/a (no boundary)")
+    sweep_txt = (f"Sweep stale shaders       ~{rec['sweep_mb']} MB" if boundary_ok
+                 else "Sweep stale shaders       " + _SWEEP_NA.get(sweep_reason, "n/a (no boundary)"))
     rows = [
         f"Scope: {scope_txt}    (CONFIRM toggles)",
         sweep_txt,
@@ -2726,9 +2761,15 @@ def _run_shader_op(op, scope_all, gid, notify):
 
 # === TOOLS TAB — DRAW ===
 
-def _tools_busy_msg(stdscr, msg):
+# ROCKNIX-style ASCII throbber. Plain ASCII (hyphen, not em-dash) so it stays
+# single-width in any TTY font the rig's curses falls back to.
+_SPINNER_FRAMES = "|/-\\"
+
+
+def _tools_busy_msg(stdscr, msg, spin=None):
     """Generic 'working' frame for a blocking TOOLS op that doesn't hand the
-    screen to RPCS3 (shader scans/cleans)."""
+    screen to RPCS3 (shader scans/cleans). When `spin` is a single glyph it is
+    drawn centered on the line below the message as a throbber frame."""
     try:
         stdscr.erase()
         h, w = stdscr.getmaxyx()
@@ -2736,9 +2777,40 @@ def _tools_busy_msg(stdscr, msg):
         _draw_tab_strip(stdscr, CURRENT_TAB_TOOLS, w)
         stdscr.addstr(h // 2, max(2, (w - len(msg)) // 2), msg[:w - 4],
                       curses.A_BOLD)
+        if spin:
+            stdscr.addstr(h // 2 + 2, max(2, (w - 1) // 2), spin[:1],
+                          curses.A_BOLD)
         stdscr.refresh()
     except curses.error:
         pass
+
+
+def _run_with_spinner(stdscr, msg, work, *args, draw=_tools_busy_msg, **kwargs):
+    """Run a blocking, curses-free `work(*args, **kwargs)` on a background
+    thread while animating the ROCKNIX throbber under `msg` on the main thread.
+    `draw(stdscr, msg, spin)` paints each frame — defaults to the TOOLS busy
+    frame; pass `draw=_paddock_busy` for the PADDOCK tab so the right tab strip
+    shows. Returns work()'s value (None if it raised — logged). The worker MUST
+    NOT touch stdscr: curses is single-threaded, so only this (main) thread draws."""
+    box = {}
+
+    def _runner():
+        try:
+            box["val"] = work(*args, **kwargs)
+        except Exception as e:                       # noqa: BLE001 — surface, don't crash UI
+            box["err"] = e
+
+    t = threading.Thread(target=_runner, daemon=True)
+    t.start()
+    i = 0
+    while t.is_alive():
+        draw(stdscr, msg, _SPINNER_FRAMES[i % len(_SPINNER_FRAMES)])
+        i += 1
+        curses.napms(120)                            # ~8 fps; cheap, smooth enough
+    t.join()
+    if "err" in box:
+        _log(f"spinner work failed: {box['err']}")
+    return box.get("val")
 
 
 def _draw_tools_busy(stdscr, kind):
@@ -2950,10 +3022,23 @@ def _tools_select(state):
             op = _SHADER_ROWS[idx]
             model = state.get("shaders_model") or {}
             if op == "sweep" and not model.get("boundary_ok"):
-                state["tools_result"] = (False, [
-                    "No Mesa-rebuild boundary (vault/.last_mesa.hash).",
-                    "Run install.sh once from the host to seed it,",
-                    "then sweep after the next Rocknix nightly."])
+                reason = model.get("sweep_reason", "no_boundary")
+                if reason == "engine":
+                    msg = [
+                        "Sweep engine missing on the rig.",
+                        "tools/vault_sweep.sh is not deployed —",
+                        "re-run install.sh from the host to push it."]
+                elif reason == "error":
+                    msg = [
+                        "Sweep engine returned an error.",
+                        "Check the ETK Pitstop log on the rig,",
+                        "then re-run install.sh if needed."]
+                else:
+                    msg = [
+                        "No Mesa-rebuild boundary (vault/.last_mesa.hash).",
+                        "Run install.sh once from the host to seed it,",
+                        "then sweep after the next Rocknix nightly."]
+                state["tools_result"] = (False, msg)
                 state["tools_mode"] = "result"
             elif model.get("rpcs3_running"):
                 state["tools_result"] = (False, [
@@ -3268,7 +3353,9 @@ def _paddock_refresh(state):
     state["paddock_field"] = 0
 
 
-def _paddock_busy(stdscr, msg):
+def _paddock_busy(stdscr, msg, spin=None):
+    """PADDOCK 'working' frame. When `spin` is a glyph it animates the ROCKNIX
+    throbber centered between the message and the notifications hint."""
     try:
         stdscr.erase()
         h, w = stdscr.getmaxyx()
@@ -3276,8 +3363,11 @@ def _paddock_busy(stdscr, msg):
         _draw_tab_strip(stdscr, CURRENT_TAB_PADDOCK, w)
         stdscr.addstr(h // 2, max(2, (w - len(msg)) // 2), msg[:w - 4],
                       curses.A_BOLD)
+        if spin:
+            stdscr.addstr(h // 2 + 2, max(2, (w - 1) // 2), spin[:1],
+                          curses.A_BOLD)
         hint = "Watch the on-screen notifications for progress."
-        stdscr.addstr(h // 2 + 2, max(2, (w - len(hint)) // 2), hint[:w - 4],
+        stdscr.addstr(h // 2 + 4, max(2, (w - len(hint)) // 2), hint[:w - 4],
                       curses.A_DIM)
         stdscr.refresh()
     except curses.error:
@@ -3919,8 +4009,8 @@ def main(stdscr):
         # Manage Shaders: lazy vault scan (du + dry-run stat pass). Runs here so
         # a busy frame covers the multi-second read.
         if state.pop("shaders_scan_request", None):
-            _tools_busy_msg(stdscr, "Scanning shader vault…")
-            _scan_vault_hygiene(state)
+            _run_with_spinner(stdscr, "Scanning shader vault…",
+                              _scan_vault_hygiene, state)
 
         action = state.pop("tools_action", None)
         if action:
@@ -3933,8 +4023,10 @@ def main(stdscr):
                 _draw_tools_busy(stdscr, "uninstall")
                 ok, lines = _run_uninstall(action[1], notifier)
             elif kind == "shader":
-                _tools_busy_msg(stdscr, "Cleaning shaders — please wait…")
-                ok, lines = _run_shader_op(action[1], action[2], action[3], notifier)
+                res = _run_with_spinner(
+                    stdscr, "Cleaning shaders — please wait…",
+                    _run_shader_op, action[1], action[2], action[3], notifier)
+                ok, lines = res if res else (False, ["shader op failed — see log"])
                 state["shaders_model"] = None     # force rescan on re-entry
             else:
                 ok, lines = (False, [f"unknown action: {kind}"])
@@ -3956,8 +4048,8 @@ def main(stdscr):
         # PADDOCK: lazy sync-status fetch (network) — run here so a busy
         # frame can be drawn while the API round-trip blocks.
         if state.pop("paddock_refresh_request", None):
-            _paddock_busy(stdscr, "Syncing with your paddock…")
-            _paddock_refresh(state)
+            _run_with_spinner(stdscr, "Syncing with your paddock…",
+                              _paddock_refresh, state, draw=_paddock_busy)
 
         # PADDOCK: queued PUSH/PULL — shell out to paddock_sync.sh for the
         # selected game, streaming progress to mako. Same long-op pattern as
@@ -3965,8 +4057,11 @@ def main(stdscr):
         pact = state.pop("paddock_action", None)
         if pact:
             prow = pact["row"]
-            _paddock_busy(stdscr, f"{pact['verb'].upper()}: {prow['name']} ↔ your paddock")
-            ok, lines = _run_paddock_sync(pact["verb"], prow, _Notifier())
+            res = _run_with_spinner(
+                stdscr, f"{pact['verb'].upper()}: {prow['name']} ↔ your paddock",
+                _run_paddock_sync, pact["verb"], prow, _Notifier(),
+                draw=_paddock_busy)
+            ok, lines = res if res else (False, ["sync failed — see log"])
             state["paddock_result"] = (ok, lines)
             state["paddock_mode"] = "result"
             # Sync changed local or remote state — refresh the list next entry.
