@@ -266,6 +266,7 @@ if [ -f "$CS_SENTINEL" ]; then
     CS_MTIME=$(stat -c %Y "$CS_SENTINEL" 2>/dev/null); case "$CS_MTIME" in ''|*[!0-9]*) CS_MTIME=0 ;; esac
     if [ "$ANCHOR_RELIABLE" -eq 0 ] || [ "$CS_MTIME" -ge "$START_EPOCH" ]; then
         CS=$(head -n1 "$CS_SENTINEL" 2>/dev/null | tr -d '\t\r')
+        [ -n "$CS" ] && CRASH_SHOT="$CS"
     fi
     rm -f "$CS_SENTINEL" 2>/dev/null
 fi

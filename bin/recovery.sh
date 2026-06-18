@@ -20,6 +20,29 @@ source /storage/games-internal/roms/etk/scripts/env.sh
 
 echo -e "\n\033[31m[!] INITIATING NUCLEAR RECOVERY...\033[0m"
 
+# 0. CRASH FRAME CAPTURE (best-effort) — grab the frozen frame BEFORE the kill,
+#    while it's still on screen (once rpcs3 dies, sway redraws to ES and the
+#    frame is gone). grim reads the compositor, so it must COMPLETE before the
+#    kill below. Hard-bounded by `timeout` so it can NEVER stall the nuclear
+#    recovery (rule 2): if grim hangs on the just-reset GPU, timeout reaps it
+#    in 2s and recovery proceeds. The GPU is already kernel-recovered by this
+#    point (hangcheck) and rpcs3 is only wedged on a dead fence, so a ≤2s delay
+#    before SIGKILL is functionally harmless. Wayland env mirrors screenshot.sh
+#    (input_d/Sentry service inherits none). On success the basename is dropped
+#    in SHM (preserve-listed below) so session_postmortem.sh binds the frame to
+#    this crash's ledger row — the visual link to the ledger narrative.
+#    BusyBox-safe: command -v / timeout / printf / case.
+export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}"
+CRASH_GID=$(cat "$ID_FILE" 2>/dev/null)
+case "$CRASH_GID" in ""|IDLE|UNKNOWN_ID) CRASH_GID="ROCKNIX" ;; esac
+CRASH_SHOT="etk_CRASH_${CRASH_GID}_$(date +%Y%m%d_%H%M%S).png"
+mkdir -p "$ETK_ROOT/screenshots" 2>/dev/null
+if command -v grim >/dev/null 2>&1 && timeout 2 grim "$ETK_ROOT/screenshots/$CRASH_SHOT" 2>/dev/null; then
+    mkdir -p "$SHM_DIR" 2>/dev/null
+    printf '%s\n' "$CRASH_SHOT" > "$SHM_DIR/crash_shot.txt"
+    echo -e "\033[36m[*] Crash frame captured: $CRASH_SHOT\033[0m"
+fi
+
 # 1. Break the GPU Deadlock by killing the emulator.
 #    On this build RPCS3 launches as an AppImage with TWO matchable processes:
 #    the launcher (comm "rpcs3-sa", /usr/bin/rpcs3-sa) and the runtime
@@ -57,7 +80,7 @@ date +%s > "$SHM_DIR/r3_pressed.txt"
 # nothing stale leaks forward. BusyBox-safe: for/case/${##} are all POSIX.
 for f in "$SHM_DIR"/*; do
     case "${f##*/}" in
-        session_start.txt|battery_start.txt|thermal_log_start.txt|vault_new.txt|r3_pressed.txt) ;;
+        session_start.txt|battery_start.txt|thermal_log_start.txt|vault_new.txt|r3_pressed.txt|crash_shot.txt) ;;
         *) rm -f "$f" ;;
     esac
 done
