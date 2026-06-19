@@ -65,6 +65,80 @@ The a6xx GPU fault → `recover_worker hangcheck` → wedged `rsx::thread` freez
 - **profile.d injections live OUTSIDE `$ETK_ROOT`** (`/storage/.config/profile.d/09x-etk-*`), so an `$ETK_ROOT` cleanup does NOT remove them — `uninstall.sh` must delete them explicitly, or ETK keeps altering Turnip/Mesa after it's "uninstalled."
 - **The telemetry ledger grows by APPEND-ONLY TRAILING columns** (`tune_tag` col 15, `crash_shot` col 16). Every reader indexes positionally (`cut -fN` / `fields[n]` with `len`-guards), so older narrower rows stay valid. NEVER insert a column mid-row — it silently shears every prior row.
 
+## STAGE IV — TURNIP FORK TOOLCHAIN & GPU-HANG FORENSICS (hard-won; not stock-mesa intuition)
+The Stage-IV loop (build a patched Turnip → deploy → spot a hang → decode the `hangrd` redump) has its
+own gotchas. None are obvious from stock Mesa docs; each cost real garage time (2026-06-19). Front-load.
+
+### hangrd captures are routinely INCOMPLETE — `size-stable` is NOT enough to trust one
+`cat /sys/kernel/debug/dri/0/hangrd > x.rd` frequently emits a **truncated** final `RD_BUFFER_CONTENTS`
+**AND omits `RD_CMDSTREAM_ADDR`** (the cmdstream-entry pointer `cffdump` needs). Result: `cffdump`
+decodes **0 draws** even though the full GPU memory image is present. Seen 2/2 on addr-less captures; one
+truncated *before* any R3, so it is the **kernel node's own dump, not an early-R3 race**. The capture is
+RECOVERABLE: drop the incomplete trailing section, synthesize `RD_CMDSTREAM_ADDR` from the dmesg
+faultinfo `ib1` (size it to the FULL containing `RD_GPUADDR` buffer — the dmesg `ib1_size` is the
+*remaining* count and truncates the decode). Tooling: `scripts/turnip/rd_inspect.py` (section/truncation
+check) + `rd_repair.py` (validate+repair); `rocknix_spotter_loop.sh` now self-repairs in place on catch.
+Redump layout: section = `[u32 type][u32 size][bytes]`; enum in `src/freedreno/common/redump.h`
+(`RD_GPUADDR=3`, `RD_CMDSTREAM_ADDR=6`, `RD_BUFFER_CONTENTS=12`); the type-3/6 payload is
+`[gpuaddr_lo, size, gpuaddr_hi]` (per `decode/rdutil.h parse_addr`).
+
+### VERIFY THE ACTIVE FORK DRIVER BY SIZE, NOT `vulkaninfo`
+A patched and a stock build BOTH report `driverInfo = Mesa 26.1.3` (we don't bump the version string), so
+`deploy_rocknix.sh`'s `vulkaninfo` line is NOT a real verification. Confirm the live driver by
+`stat -c %s /usr/lib/libvulkan_freedreno.so` (or hash). Consider stamping a per-build marker
+(unique exported symbol / `MESA_GIT_SHA1`) on fork builds.
+
+### `deploy_rocknix.sh` bind-mounts STACK across iterate-deploys
+Each deploy adds a `mount --bind` over the previous (`mount | grep -c freedreno` climbs to 3+); the
+topmost wins but it's a confusing state and a fragile revert path. Unstack to a single clean bind:
+`while mount | grep -q " $TGT "; do umount "$TGT"; done; mount --bind /storage/turnip/...so "$TGT"`.
+The bind is RUNTIME-only — a cold boot reverts to the persistent (`etk-turnip.service`) driver.
+
+### The build loop: use INCREMENTAL ninja, and NEVER pipe ninja to `tail`
+- `build_rocknix.sh` does `rm -rf build-rocknix` → a FULL mesa rebuild every run. For the iterate loop,
+  if the build dir survives, **`ninja -C build-rocknix -j4 src/freedreno/vulkan/libvulkan_freedreno.so`**
+  recompiles only the changed file + relinks (~1–2 min vs a full build).
+- **`ninja … | tail` MASKS ninja's failure exit** (`set -e` does not catch a piped command's failure) →
+  the script copies the STALE prior `.so` and falsely reports "BUILT". Gate on ninja's real exit:
+  `if ninja … > log 2>&1; then cp …; else …; fi`. (A patch build "succeeded" on a stale binary this way.)
+
+### Turnip 26.1.x source is `.cc` (C++); the build tree is NOT a git checkout
+- Files are `tu_clear_blit.cc` / `tu_cmd_buffer.cc` (not `.c`). `struct tu_cache_state x = {};` **fails to
+  compile** — a `BitmaskEnum` member rejects aggregate brace-init; copy-init from an existing instance
+  (`= cmd->state.cache`) then override fields.
+- `/work/mesa-26.1.3` (from the `build_rocknix.sh` tarball curl) has **no `.git`** → no `git diff`/`stash`
+  to inspect or revert a patch; keep a manual `*.etk-stock` backup. (The `26.2` rebase intel comes from a
+  SEPARATE git clone — don't conflate the two trees.)
+
+### cffdump defaults to PER-TILE decode (400 MB+) — always `--once`
+Without `--once` the cmdstream is decoded for every tile → hundreds of MB / millions of lines. Use
+`--once` for a compact per-draw summary; `-D N` for one draw; `--dump-shaders` / `--bindless` for the
+ir3 / descriptor contents at the faulting draw. These tools must run IN-TREE in the `turnip-rocknix`
+container (libarchive rpath; need libxml2). `.rd` are freedreno REDUMP → decode with **`cffdump`**, NOT
+crashdec (crashdec is for ASCII kernel devcoredumps; it emits garbage on a redump).
+
+### Driver-update cache invalidation = a long COLD LAUNCH, not a shader storm
+A new `.so` build ID invalidates the cache; the existing vault's pipeline objects are **recompiled for the
+new driver at launch, BEFORE the menu** (observed +9 K shaders pre-menu). There is **no in-game stutter**
+from this — shader *storms* come only from not-yet-encountered shaders (a function of game content).
+Correct A/B after any driver swap: launch once (cold recompile) → **graceful-exit to bank the warm,
+driver-matched cache → relaunch warm and test** (true warm-vs-warm vs the saturated baseline).
+
+### Cockpit forensics: false-SILENT on graceful exit; manual captures lack faultinfo
+- A graceful emulator exit drives `live_stat` non-ingame → `rocknix_spotter_loop.sh`'s stale-counter
+  fires a **false `>>> CRASH: SILENT`** + a ~28 B header-only stub `.rd`. It is NOT a hang. Disarm/re-arm
+  the spotter around any intentional exit and clean the stub.
+- Only the spotter writes the `.faultinfo` sidecar (dmesg `ib1/ib2/fence/status`). Hand-grabbed `manual_*`
+  captures lack it → no fault address → only structural profiling is possible. Write a faultinfo alongside
+  any manual capture.
+
+### Forensic doctrine reaffirmed (Stage IV): NEVER crown a fix from one clean run
+GT5P's clean-run noise floor is huge (77–2886 s). A single clean race — even a Gold Trophy — is variance,
+not a cure: this bit us twice (stock 26.1.3, then Turnip Patch #1). A/B saturated-vs-saturated on a fixed
+dial, with a contemporaneous control, and **confirm any apparent win to N≥3 full races** before believing
+it. Forced-serialization around the *symptom* (where the CP parks) does not fix an *upstream* wedge —
+rule out your own patch's effect by confirming the patched events are actually in the cmdstream decode.
+
 ## BUSYBOX LIMITATIONS & PITFALLS
 * **DU:** Use `du -k` (KB) or `du -m` (MB). BusyBox `du` often lacks `-h` (human-readable) or behaves inconsistently with it.
 * **FIND:** BusyBox `find` is extremely limited. Avoid complex `-exec` or `-regex`. Use `find | wc -l` for counts.
@@ -91,7 +165,7 @@ PS3 titles arrive as two DISTINCT RUNTIME MODELS, not two file extensions. ETK t
 * **VIRTUAL HDD PATH PATTERNS:** Do NOT assume standard desktop path resolutions or that global mapping roots are used (e.g., `dev_hdd0/savedata` only anchors empty `vmc` volumes). Rocknix isolates actual emulator user save blocks inside localized nested structures under the individual user profile index:
   `~/roms/bios/rpcs3/dev_hdd0/home/00000001/savedata/`
   Targeted cleaning operations or resets must trace files from this exact explicit directory footprint.
-* **RUNTIME PROCESS = `AppRun.wrapped` (NOT `rpcs3-sa`):** `rpcs3-sa` is only a launcher stub; the live emulator is the `AppRun.wrapped` process (target it for runtime probes — VMAs/RSS/FDs — and for "is a game running?" checks). This matters because **RPCS3 rewrites its config on exit**, so any edit to `input_configs/` (e.g. `global/Default.yml` pad config) or `custom_configs/` MUST be done with RPCS3 **closed**, or it gets clobbered. ⚠️ PITFALL: `pgrep -f "rpcs3|AppRun.wrapped"` self-matches its own shell (the pattern string is in the command line) → false "RPCS3 running". Use `pgrep -x AppRun.wrapped` (matches the process name, not the cmdline), or exclude `$$`.
+* **RUNTIME PROCESS = `AppRun.wrapped` (NOT `rpcs3-sa`):** `rpcs3-sa` is only a launcher stub; the live emulator is the `AppRun.wrapped` process (target it for runtime probes — VMAs/RSS/FDs — and for "is a game running?" checks). This matters because **RPCS3 rewrites its config on exit**, so any edit to `input_configs/` (e.g. `global/Default.yml` pad config) or `custom_configs/` MUST be done with RPCS3 **closed**, or it gets clobbered. ⚠️ PITFALL: `pgrep -f "rpcs3|AppRun.wrapped"` self-matches its own shell (the pattern string is in the command line) → false "RPCS3 running". Use `pgrep -x AppRun.wrapped` (matches the process name, not the cmdline), or exclude `$$`. ⚠️ FURTHER (Stage IV, 2026-06-19): `pgrep -x AppRun.wrapped` ITSELF proved UNRELIABLE for liveness — observed EMPTY for entire live in-game runs. For "is a game running?" prefer gating on `live_stat` freshness (what `rocknix_spotter_loop.sh` does), or iterate `pgrep -f 'AppRun.wrapped|rpcs3'` and read each `/proc/<pid>/environ`.
 
 ## FILE REGISTRY (THE ETK ANATOMY)
 ### 1. CORE ENGINE
@@ -180,7 +254,7 @@ if [ ! -f "/storage/.config/modules/etk_pitstop.sh" ]; then
 fi]`
 
 
-## RECENT NEW DEVELOPMENTS
+## MISC
 
 - **SENTRY STATE MACHINE (THE IGNITION LOCK)**: The `etk_sentry` service MUST operate as an event-driven state machine. It tracks the `rpcs3` process transitioning between `IDLE` and `RUNNING`.
   - Background daemons (`vault_d.sh`, `thermal_d.sh`) MUST NOT be executed during the OS boot sequence.

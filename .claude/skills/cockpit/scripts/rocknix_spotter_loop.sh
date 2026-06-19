@@ -82,7 +82,59 @@ if [ -n "$crash" ]; then
       echo "$fl" | sed -n 's/.*fence \([0-9a-fx]*\) status \([0-9A-Fa-f]*\) rb \([0-9a-f/]*\) ib1 \([0-9A-Fa-f]*\)\/\([0-9a-f]*\) ib2 \([0-9A-Fa-f]*\)\/\([0-9a-f]*\).*/fence=\1 status=\2 rb=\3 ib1=\4 ib1_size=\5 ib2=\6 ib2_size=\7/p'
     } > "$RDFILE.faultinfo"
     echo "[spotter] hangrd .rd: $RDFILE (${rdsz}B) + $(basename "$RDFILE").faultinfo"
-    if [ "${rdsz:-0}" -lt 1024 ]; then echo "[spotter] WARN: .rd header-only (${rdsz}B) — hangrd didn't capture a cmdstream (dossier 6a); decode would be empty"; else echo "[spotter]   $(cat "$RDFILE.faultinfo" | tail -1)"; fi
+    if [ "${rdsz:-0}" -lt 1024 ]; then
+      echo "[spotter] WARN: .rd header-only (${rdsz}B) — hangrd didn't capture a cmdstream (dossier 6a); decode would be empty"
+    else
+      echo "[spotter]   $(cat "$RDFILE.faultinfo" | tail -1)"
+      # VALIDATE + self-repair. The hangrd node can emit an INCOMPLETE redump even when the file
+      # is size-stable and the reader has closed: a truncated trailing RD_BUFFER_CONTENTS and/or a
+      # missing RD_CMDSTREAM_ADDR (the cmdstream-entry pointer, written at the redump TAIL). cffdump
+      # then decodes 0 draws. Seen 2026-06-18 (Save 235823) + 2026-06-19 (prefer_gmem 114642 — that
+      # one truncated BEFORE any R3, so it is the node's own dump, not an R3 race). Fix in place:
+      # drop the incomplete tail, synthesize RD_CMDSTREAM_ADDR from the faultinfo ib1 sized to the
+      # FULL containing RD_GPUADDR buffer (dmesg ib1_size is the *remaining* count → truncates).
+      # Canonical/host tool: scripts/turnip/rd_repair.py (this is the self-contained rig twin).
+      if command -v python3 >/dev/null 2>&1; then
+        python3 - "$RDFILE" <<'RDREPAIR'
+import sys, struct, os, re
+rd = sys.argv[1]
+size = os.path.getsize(rd); secs = []; trunc = None
+with open(rd, "rb") as f:
+    while True:
+        off = f.tell(); h = f.read(8)
+        if len(h) < 8: break
+        t, sz = struct.unpack("<II", h); end = off + 8 + sz
+        if end > size: trunc = (t, size - (off + 8)); break
+        secs.append((t, sz, off, end)); f.seek(sz, 1)
+has_cs = any(t == 6 for t, _, _, _ in secs)
+if not trunc and has_cs:
+    print("[spotter]   redump VALID (%d sections, has RD_CMDSTREAM_ADDR)" % len(secs)); sys.exit(0)
+why = ("truncated;" if trunc else "") + ("" if has_cs else "no-cmdstream-addr")
+fi = rd + ".faultinfo"; ib1 = None
+if os.path.exists(fi):
+    m = re.search(r"ib1=([0-9A-Fa-f]+)", open(fi).read()); ib1 = int(m.group(1), 16) if m else None
+if ib1 is None:
+    print("[spotter]   WARN redump DEFECTIVE (%s) + no ib1 — cannot self-repair; repair host-side" % why); sys.exit(0)
+sd = None
+with open(rd, "rb") as f:
+    for t, sz, off, end in secs:
+        if t == 3 and sz >= 8:
+            f.seek(off + 8); d = f.read(sz)
+            lo = struct.unpack("<I", d[0:4])[0]; ln = struct.unpack("<I", d[4:8])[0]
+            hi = struct.unpack("<I", d[8:12])[0] if sz >= 12 else 0
+            a = lo | (hi << 32)
+            if a <= ib1 < a + ln: sd = (ln - (ib1 - a)) // 4; break
+if sd is None:
+    print("[spotter]   WARN redump DEFECTIVE (%s); ib1 0x%X unmapped — repair host-side" % (why, ib1)); sys.exit(0)
+lg = secs[-1][3] if secs else 0
+sect = struct.pack("<II", 6, 12) + struct.pack("<III", ib1 & 0xFFFFFFFF, sd, (ib1 >> 32) & 0xFFFFFFFF)
+with open(rd, "rb") as f: body = f.read(lg)
+with open(rd + ".t", "wb") as o: o.write(body); o.write(sect)
+os.replace(rd + ".t", rd)
+print("[spotter]   redump REPAIRED in place (%s) synth RD_CMDSTREAM_ADDR 0x%X sizedwords 0x%X" % (why, ib1, sd))
+RDREPAIR
+      fi
+    fi
   fi
   export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/var/run/0-runtime-dir}" WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}"
   SHOT="/tmp/spotter_crash_$(date +%H%M%S).png"
