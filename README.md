@@ -5,7 +5,7 @@ No ETK features, just house tuned.
 - Use [nihui's MESA Turnip drivers](https://github.com/nihui/mesa-turnip-android-driver) for Android during the aPS3e setup wizard.
 - Use an ETK config tuning from [Tested Games](https://github.com/mercurious/etk/#tested-games-rpcs3).
 
-## For the full Rocknix rig
+## For the full ROCKNIX rig
 The complete high performance system.
 - [Download latest release](https://github.com/mercurious/etk/releases)
 - [System Requirements](https://github.com/mercurious/etk/#etk-system-requirements)
@@ -19,13 +19,13 @@ The complete high performance system.
 
 *GT6 — Trial Mountain, Lap 2 of 2, Position 5/6, Mini Cooper at 62 mph approaching the ivy-covered tunnel. DDU strip on top: `VULKAN 8FPS 126.6ms BATT 49% ETK 79° 12.46 96% 12+ 29.5k 269MB` — backend, framerate, frametime, battery, GPU temp, system load, GPU utilisation, new shaders harvested this session (`12+`), vault total (`29.5k`), live RAM. The `+` is the productive-crashing pitch made literal: the GPU is grinding hard, and the kit is banking every new shader for the next run.*
 
-The Emulation Tuning Kit for Rocknix supports experimental PS3 emulation on ARM64 Retrogaming Handhelds. It excels at tuning games with device-specific emulation configurations while harvesting shaders into vaults. **ETK does not share or distribute shaders** — it manages your own, archived privately to your own GitHub, so your rig can swap games and their vaults on the go without a host computer. It also works by equipping your compatible handheld with special features to become a track day rig to literally and figuratively crash your way into making a game such as Gran Turismo 6 playable. Push your handheld to its limits while collecting shaders with tools to recover from crashes so the game plays well after several attempts. ETK automatically tracks sessions on a per-game race ledger.
+The Emulation Tuning Kit for ROCKNIX supports experimental PS3 emulation on ARM64 Retrogaming Handhelds. It excels at tuning games with device-specific emulation configurations while harvesting shaders into vaults. **ETK does not share or distribute shaders** — it manages your own, archived privately to your own GitHub, so your rig can swap games and their vaults on the go without a host computer. It also works by equipping your compatible handheld with special features to become a track day rig to literally and figuratively crash your way into making a game such as Gran Turismo 6 playable. Push your handheld to its limits while collecting shaders with tools to recover from crashes so the game plays well after several attempts. ETK automatically tracks sessions on a per-game race ledger.
 
 ## Racing UI
-In the style of a race car Driver Data Unit (DDU) dashboard, the ETK instruments provide shader counts in real-time in a custom in-game overlay using MangoHUD support built-in to Rocknix. The kit also adds a custom ETK Pitstop app in the Rocknix Tools carousel menu for on-board telemetry analysis, quick tuning of Adreno-centric emulation settings, and simplified game package installation.
+In the style of a race car Driver Data Unit (DDU) dashboard, the ETK instruments provide shader counts in real-time in a custom in-game overlay using MangoHUD support built-in to ROCKNIX. The kit also adds a custom ETK Pitstop app in the ROCKNIX Tools carousel menu for on-board telemetry analysis, quick tuning of Adreno-centric emulation settings, and simplified game package installation.
 
 ## Race Engineering
-More technically, ETK is a custom Rocknix middleware composed of shell scripts and python curses that employ brute-force optimization, shader cache management, advanced in-game telematics, on-board screenshot tooling that includes the MangoHUD overlay, operates an automated file-drop headless install of PS3 PKG installations inside of RPCS3, and automatically archives shaders into an optional private, unshared cloud repository on GitHub.
+More technically, ETK is a custom ROCKNIX middleware composed of shell scripts and python curses that employ brute-force optimization, shader cache management, advanced in-game telematics, on-board screenshot tooling that includes the MangoHUD overlay, operates an automated file-drop headless install of PS3 PKG installations inside of RPCS3, and automatically archives shaders into an optional private, unshared cloud repository on GitHub.
 
 ## Race Durability
 Built for abuse and race conditions, the ETK guards hard-earned shaders, custom tunings, screenshots, and game saves from SD card failure, OS flashing, data corruption, device failure, loss or theft. The ETK includes an emergency cooldown that automatically puts your device in PIT mode as needed, protecting your engine from overheating — and **automatically recovers back to racing once it cools, with no reboot required**.
@@ -93,8 +93,8 @@ Snapshot of per-game status from on-device testing with links to tuned RPCS3 con
 | NPUA80472 | [LittleBigPlanet](config/config_NPUA80472.yml) | Playable, crashes rarely | 12-24 | Good (some stutter) | No issues discovered yet beyond shader storm glitching. | 1.6k 20MB |
 
 ## ETK Features
-1. Native Rocknix ETK Pitstop App for on-device config editing, per game telemetry analysis over time, simple PS3 game installation (drop .pkg and .rap in `roms/etk/pkg_install_drop/`), and an optional private shader repo (PADDOCK tab)
-1. Customized in-game overlay dashboard with ETK telematics inside native Rocknix MangoHUD
+1. Native ROCKNIX ETK Pitstop App for on-device config editing, per game telemetry analysis over time, simple PS3 game installation (drop .pkg and .rap in `roms/etk/pkg_install_drop/`), and an optional private shader repo (PADDOCK tab)
+1. Customized in-game overlay dashboard with ETK telematics inside native ROCKNIX MangoHUD
 1. Hardware and driver tunings for maximum performance going beyond config settings
 1. Optimized emulator game configurations tuned to the device hardware
 1. On-device **DRIVER tab** to A/B the Mesa/Turnip graphics-driver dials (`TU_AUTOTUNE_ALGO` + the `TU_DEBUG` ladder), with every race session stamped in the ledger with the exact dial set it ran under
@@ -105,30 +105,30 @@ Snapshot of per-game status from on-device testing with links to tuned RPCS3 con
 1. Install, configure, repair, and uninstall the kit remotely from a computer (`install.sh` and `uninstall.sh`) with mDNS autodiscovery of supported devices on your local network.
 1. Multi-Installation Options: FULL installation for initial shader harvesting and tuning, LITE installation for saturated shader sets with thermal protection only, RAW for stress testing without shader and thermal protections (`ETK_BUILD_TYPE` in `etk.conf`)
 
-## Getting Started with Rocknix Pro-tips
-### To boot into Rocknix running on an SD card with Android as the default OS:
+## Getting Started with ROCKNIX Pro-tips
+### To boot into ROCKNIX running on an SD card with Android as the default OS:
 1. Start the device in Android and reboot. 
 1. Before Retroid Pocket logo appears, hold down the Volume-Up button and let go as soon as you see the U-Boot logo (a little submarine icon in the corner)
-### To always boot into Rocknix as the default OS:
+### To always boot into ROCKNIX as the default OS:
 1. Hold Volume-Down button while starting device to open loader menu, the `abl`
 1. Use volume buttons to switch modes that include `Restart bootloader`,`Recovery mode`,`Emergency mode`,`Switch Boot mode`,`Power off`,`START`
 1. Select `Switch Boot mode` with vol buttons and press `POWER`
 1. `BOOT MODE` will switch to `Loader`
 1. Select `START` with vol buttons and press `POWER`
 1. Use the same process to `Switch Boot mode` back to `Android`.
-### To share games between Rocknix and Android:
-1. Store your games in `/storage/games-internal/roms/` and see [Rocknix documentation](https://rocknix.org/play/add-games/) for further details.
+### To share games between ROCKNIX and Android:
+1. Store your games in `/storage/games-internal/roms/` and see [ROCKNIX documentation](https://rocknix.org/play/add-games/) for further details.
 1. Let your Android apps gain permissions for this folder.
-### To access your card after installing Rocknix:
-Your PC or Mac will no longer read the card through an SD card reader over USB because of its Rocknix partition. Try one of these options instead: 
+### To access your card after installing ROCKNIX:
+Your PC or Mac will no longer read the card through an SD card reader over USB because of its ROCKNIX partition. Try one of these options instead: 
 1. Use SMB in Windows or macOS to mount SM8250 as a drive
 1. Use an SFTP client
-1. Use [Rocknix USB-GADGET mode](https://rocknix.org/play/add-games/#option-2-usb-gaget-modes).
+1. Use [ROCKNIX USB-GADGET mode](https://rocknix.org/play/add-games/#option-2-usb-gaget-modes).
 
 # Getting Started
 1. [Flash](https://rocknix.org/play/install/) the [ROCKNIX nightly](https://github.com/ROCKNIX/distribution-nightly/releases) certified in [ETK System Requirements](#etk-system-requirements) above (`20260610`) to your handheld's SD card and complete its first-time setup so the rig joins your WiFi. 
-If you've already installed Rocknix, switch the update channel to nightly (`START` → `UPDATES & DOWNLOADS`), update to the certified nightly, and let the auto-update complete and reboot first. 
-**Do not update past the certified nightly** without checking the latest README.md for the last known ETK-supported Rocknix build.
+If you've already installed ROCKNIX, switch the update channel to nightly (`START` → `UPDATES & DOWNLOADS`), update to the certified nightly, and let the auto-update complete and reboot first. 
+**Do not update past the certified nightly** without checking the latest README.md for the last known ETK-supported ROCKNIX build.
 2. Clone this repo to your computer.
 ```sh
 git clone https://github.com/mercurious/etk
@@ -153,7 +153,7 @@ whenever you want to update, repair, or sync your rig, `cd ~/etk` or wherever yo
 **For Windows,** use the [PowerShell installer](https://github.com/mercurious/etk#windows-install-guide) which is a direct port of `install.sh` but use SMB backup to substitute for its file sync features.
 
 **On the first run the installer auto-discovers your handheld as the rig.** You may be prompted once to accept the rig's SSH host key and enter the default root password unless you've changed it.
-Using mDNS, Rocknix advertises itself on the LAN as `<SOC>.local` (e.g. `SM8250.local` for SD865 devices like the Retroid Pocket Flip 2 / Pocket 5).
+Using mDNS, ROCKNIX advertises itself on the LAN as `<SOC>.local` (e.g. `SM8250.local` for SD865 devices like the Retroid Pocket Flip 2 / Pocket 5).
 
 <img src="docs/screenshots/etk_install_screenshot.png" width="600"
      alt="Pit Wall console TUI mid-install: 6-step dashboard, OVERALL 30%, HARVEST SHADERS at 84%, DATALOG showing 'Mirroring custom_configs'" />
@@ -191,11 +191,11 @@ Custom buttons to get you around the track at dangerous speeds.
 |---|---|---|---|
 | `L1` | **single-finger screenshot** | left top trigger button | **Requires in-game un-binding/un-mapping**. Screenshots stored at `/storage/roms/etk/screenshots`, `install.sh` syncs `etk/screenshots`. Disable `L1` one-finger trigger feature in ETK Pitstop > TOOLS > `3. Screeshot on L1: disabled` and use two-handed `SELECT` + `D-pad-up` instead. |
 | `L3` | **DDU HUD** | left analog button | Toggles ETK DDU dashboard between top and bottom of screen |
-| `R3` | **PANIC RECOVERY** | right analog button | Recover from a crash or freeze. Reboot recommended after returning to Rocknix ES frontend. |
+| `R3` | **PANIC RECOVERY** | right analog button | Recover from a crash or freeze. Reboot recommended after returning to ROCKNIX ES frontend. |
 | `POWER` | **Kernel Panic** | device's power button | If you cause a *kernel panic* the ETK Recovery function will not work. Hold the `POWER` button down until the device reboots to the Retroid Pocket logo. |
 
-## The ETK Pitstop Rocknix App
-Found in the Rocknix ES front-end Tools carousel item.
+## The ETK Pitstop ROCKNIX App
+Found in the ROCKNIX ES front-end Tools carousel item.
 
 ### ETK Telemetry
 - Career
@@ -228,12 +228,12 @@ Tune the graphics driver itself, not just the emulator. The **DRIVER** tab expos
 4. **Manage Shaders** — every ROCKNIX nightly rebuilds the graphics driver, which strands the shaders cached against the old build as dead weight (a saturated vault can be >90% stale). This screen shows a per-game fresh/stale graph and lets you **Sweep** the stale orphans to reclaim space, **Delete** a game's whole vault, or **Clear** the RPCS3 cache — each gated behind a confirm.
 
 ## How to Install PS3 Games with the ETK
-**Note:** The ETK cannot solve the problem of needing to install the PS3 firmware into the emulator. You have to dump that from your console or go to Sony's website and then plug in a mouse to your device and use the RPCS3 application in Rocknix tools to get it installed as a one-time setup.
-The ETK solves the problem of installing PS3 Packages on Rocknix which is otherwise a ridiculous process, as indicated above.
+**Note:** The ETK cannot solve the problem of needing to install the PS3 firmware into the emulator. You have to dump that from your console or go to Sony's website and then plug in a mouse to your device and use the RPCS3 application in ROCKNIX tools to get it installed as a one-time setup.
+The ETK solves the problem of installing PS3 Packages on ROCKNIX which is otherwise a ridiculous process, as indicated above.
 1. Place a single PS3 `.pkg` and `.rap` into `/storage/roms/etk/pkg_install_drop/`
-1. In Rocknix Tools > ETK Pitstop > TOOLS > Install a staged PS3 Package
+1. In ROCKNIX Tools > ETK Pitstop > TOOLS > Install a staged PS3 Package
 1. Wait for the automated process where ETK will handle RPCS3 installation for you and follow the on screen overlay instructions
-1. Quit ETK Pitstop after installation and run **Update Gamelists** in Rocknix so the newly-installed PS3 game appears in the PS3 system list. (Note: this does NOT refresh the ETK Pitstop entry itself — that's installed once by `./install.sh` and persisted by the Sentry.)
+1. Quit ETK Pitstop after installation and run **Update Gamelists** in ROCKNIX so the newly-installed PS3 game appears in the PS3 system list. (Note: this does NOT refresh the ETK Pitstop entry itself — that's installed once by `./install.sh` and persisted by the Sentry.)
 
 <img src="docs/screenshots/etk_ROCKNIX_20260526_132606.png" width="600"
      alt="ETK Pitstop TOOLS tab: 'Install a staged PS3 Package' highlighted, 'Uninstall a Game' below; staging drop folder path shown" />
@@ -302,19 +302,19 @@ To disconnect, clear `PADDOCK_TOKEN` in `etk.conf` and re-run `./install.sh`, or
    - `DEFAULT_MODE`, `HUD_HEADER_HOLD_S` (HUD launch-banner hold)
    - `ETK_VERBOSE` — 0 = Pit Wall console TUI (default), 1 = raw rsync output for debugging. Pass `--verbose` / `-v` on the install.sh CLI to force verbose for a single run.
 2. Re-run `./install.sh` after any `etk.conf` edit to push changes to the rig.
-3. Reboot the rig once to activate the ETK Pitstop entry in the Rocknix Tools menu.
+3. Reboot the rig once to activate the ETK Pitstop entry in the ROCKNIX Tools menu.
 
 ## ETK File Structure
 - `AI_MANIFEST.md`: System Manual and Immutable Laws of ETK Development for AI
-- `LICENSE`: GNU GPL v2.0 — matches Rocknix
+- `LICENSE`: GNU GPL v2.0 — matches ROCKNIX
 - `README.md`: You are reading it now.
 - `CHANGELOG.md`: Release notes, newest first.
 - `etk.conf.example`: Operator config template (committed). `install.sh` generates `etk.conf` from this on first run.
 - `install.sh`: Flashes the ETK onto your handheld from a computer; auto-discovers the rig via mDNS on first run.
 - `uninstall.sh`: Removes the ETK from your handheld from a computer; restores stock CPU/GPU governors before exiting.
 - `/bin`:
-  - `etk_modules_inject.py`: Handles installing the native Rocknix Pitstop app persistently
-  - `etk_pitstop.py`: Native Rocknix Tools App — TELEMETRY, TUNING, TOOLS tabs
+  - `etk_modules_inject.py`: Handles installing the native ROCKNIX Pitstop app persistently
+  - `etk_pitstop.py`: Native ROCKNIX Tools App — TELEMETRY, TUNING, TOOLS tabs
   - `gamepad_probe.py`: Gamepad inventory + mapping probe (dev utility)
   - `input_d.py`: Handles custom gamepad controls (R3 panic, L3 HUD toggle, L1 screenshot, SELECT chords)
   - `mango_bridge.sh`: Manages live telemetry and the in-game overlay display
@@ -325,8 +325,8 @@ To disconnect, clear `PADDOCK_TOKEN` in `etk.conf` and re-run `./install.sh`, or
   - `vault_d.sh`: Archives compiled shaders to the per-game vault
 - `/config`:
   - `crash_signatures.json`: Defines crash classification patterns for forensics
-  - `etk_pitstop.sh`: Native Rocknix app launcher (deployed to `/storage/.config/modules/`)
-  - `etk_pitstop.svg`: Native Rocknix app icon
+  - `etk_pitstop.sh`: Native ROCKNIX app launcher (deployed to `/storage/.config/modules/`)
+  - `etk_pitstop.svg`: Native ROCKNIX app icon
   - `etk_template.yml`: Default RPCS3 per-game config template (used by the TOOLS-tab installer)
   - `MangoHud.conf`: ETK's custom in-game DDU overlay configuration
   - `pitstop_fields.json`: Subset of RPCS3 config keys exposed in the TUNING tab
@@ -338,7 +338,7 @@ To disconnect, clear `PADDOCK_TOKEN` in `etk.conf` and re-run `./install.sh`, or
   - `etk_probe.sh`: Three-mode thermal / freq probe for empirical thermal calibration
   - `probe.sh`: Provides forensic error logs from RPCS3 + dmesg
   - `/profiles`: Device profiles (one file per SoC family — `SM8250.sh` is the Tier-1 reference for SD865 handhelds)
-- `/tools`: Host-side dev utilities. `tui.sh` is the Pit Wall console library shared by `install.sh` and `uninstall.sh`; the rest (`vault_doctor.sh`, `vault_sweep.sh`, `agnostify.sh`, etc.) are operator helpers. `etk_drift.py` runs on the rig to detect Rocknix OS-migration drift — it banks nightly-keyed OS profiles (by `OS_VERSION`, e.g. `20260525`) and diffs a live nightly against the pinned baseline (and against the device profile's assumptions) to decide whether a nightly is safe to adopt.
+- `/tools`: Host-side dev utilities. `tui.sh` is the Pit Wall console library shared by `install.sh` and `uninstall.sh`; the rest (`vault_doctor.sh`, `vault_sweep.sh`, `agnostify.sh`, etc.) are operator helpers. `etk_drift.py` runs on the rig to detect ROCKNIX OS-migration drift — it banks nightly-keyed OS profiles (by `OS_VERSION`, e.g. `20260525`) and diffs a live nightly against the pinned baseline (and against the device profile's assumptions) to decide whether a nightly is safe to adopt.
 - `/dossiers`: Design dossiers driving the architecture (device-agnostic profile, rig self-update feasibility, telemetry, etc.). **Local-only — not committed** (gitignored as of 2026-06-14); kept privately at `$ETK_ROOT/dossiers`. Code comments cite these for rationale, but they are not part of the published repo, so they will not appear in a clone.
 - `/docs`: Public-facing assets including the screenshot gallery used by this README.
 - `/vault`: Local mirror of the harvested shader bank, organised as `vault/<CHIPSET>/<GAME_ID>/shaders/` (gitignored; populated by `install.sh` Tier-A sync).
@@ -346,9 +346,9 @@ To disconnect, clear `PADDOCK_TOKEN` in `etk.conf` and re-run `./install.sh`, or
 # FAQ: What is the ETK and How Does it Really Work?
 - **To enhance how the built-in PS3 emulator handles shader caching,** the ETK intercepts the Vulkan shader cache with a simple symlink and safely stores these files into a vault folder on your SD card organized by device and game ID so they can be archived on your computer. Even when you crash during a shader harvesting run, the vault has saved the shaders for the next run.
 - **To enhance how the device handles high demand games during the shader compiling process and high performance gaming,** the ETK manages the system temp and performance to safely overtax the device when it needs to work the hardest while preventing a total meltdown. It also modifies how the OS manages virtual memory and fine tunes the video driver.
-- **To enhance how you can monitor the device system stress while pushing it to its limits,** the ETK enables a custom dashboard overlay using built-in Rocknix features across a thin horizontal HUD strip designed to evoke the Driver Data Unit (DDU) found in GT and F1 racing cars. The custom HUD DDU also shows the number of shaders harvested during a game session so you realize even if you crash, it was worth it.
-- **To streamline how you can tweak key emulation settings,** the ETK PITSTOP app in the Rocknix Tools menu, inspired by pit wall screens, allows you to easily adjust selected configuration settings using the gamepad controls. The subset of on-board configs can be customized in a JSON file. 
-- **To solve the problem of installing `.pkg` files with the desktop version of RCPS3 inside of Rocknix with only a gamepad,** the ETK automates the process for you. All you do is drop files in a folder on your card and use ETK Pitstop Tools to start the process.
+- **To enhance how you can monitor the device system stress while pushing it to its limits,** the ETK enables a custom dashboard overlay using built-in ROCKNIX features across a thin horizontal HUD strip designed to evoke the Driver Data Unit (DDU) found in GT and F1 racing cars. The custom HUD DDU also shows the number of shaders harvested during a game session so you realize even if you crash, it was worth it.
+- **To streamline how you can tweak key emulation settings,** the ETK PITSTOP app in the ROCKNIX Tools menu, inspired by pit wall screens, allows you to easily adjust selected configuration settings using the gamepad controls. The subset of on-board configs can be customized in a JSON file. 
+- **To solve the problem of installing `.pkg` files with the desktop version of RCPS3 inside of ROCKNIX with only a gamepad,** the ETK automates the process for you. All you do is drop files in a folder on your card and use ETK Pitstop Tools to start the process.
 - **To simplify managing game shader vaults and software updates,** the ETK includes a simple command-line utility to install, repair, update, and automatically sync shader vaults as you harvest from games or trade device and game-specific shader folders with others. It also includes an uninstall utility to retire from the league. A typical game 300+ MB shader vault will involve tens of thousands of binary files so an efficient transfer mechanism to manage shader sets between a computer and the handheld devices is essential.
 - ETK does all of this while trying to maintain a **minimal system footprint without subjecting your SD card to abuse.**
 	  
@@ -356,7 +356,7 @@ To disconnect, clear `PADDOCK_TOKEN` in `etk.conf` and re-run `./install.sh`, or
 ## alpha-tester preview
 Two ways to run the ETK host tooling from Windows:
 
-**1. Native PowerShell installer (`windows_installer/`) — no WSL required.** A dependency-free port of `install.sh` / `uninstall.sh`. On first run it **auto-pairs over SSH** — you type the rig password once (Rocknix default `rocknix`), and every call after that is silent. Full guide: **[windows_installer/WINDOWS_HOST_README.md](windows_installer/WINDOWS_HOST_README.md)**.
+**1. Native PowerShell installer (`windows_installer/`) — no WSL required.** A dependency-free port of `install.sh` / `uninstall.sh`. On first run it **auto-pairs over SSH** — you type the rig password once (ROCKNIX default `rocknix`), and every call after that is silent. Full guide: **[windows_installer/WINDOWS_HOST_README.md](windows_installer/WINDOWS_HOST_README.md)**.
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\windows_installer\etk-install.ps1
 ```
@@ -364,11 +364,11 @@ This option does not back your shaders up to the PC (the rig still vaults locall
 
 **2. WSL2 (full-featured).** For the complete experience including host-side shader-vault backup/restore (Tier-B), install WSL2 + Ubuntu, clone the kit, and follow [Getting Started](#getting-started) above unchanged — `install.sh` runs in WSL2 with no modifications.
 
-For the one-time fresh-card flash, use the official Rocknix [ImageBurner](https://github.com/ROCKNIX/ImageBurner/releases) — Windows-native, no dependency, to install the certified nightly (`20260610`) required for the ETK.
+For the one-time fresh-card flash, use the official ROCKNIX [ImageBurner](https://github.com/ROCKNIX/ImageBurner/releases) — Windows-native, no dependency, to install the certified nightly (`20260610`) required for the ETK.
 
 ## Manual SMB Backup
 - (the native PowerShell installer is no-vault, so use this for shader backups on Windows)
-If you are on the PowerShell installer (no Tier-B host backup) or want belt-and-suspenders, Rocknix exposes Samba shares natively. In File Explorer, `Map network drive...` → `\\<rig-ip>\games-internal` → assign a letter (e.g. `R:`). Then save this as `etk_backup.bat` and run it before any reflash or risky migration:
+If you are on the PowerShell installer (no Tier-B host backup) or want belt-and-suspenders, ROCKNIX exposes Samba shares natively. In File Explorer, `Map network drive...` → `\\<rig-ip>\games-internal` → assign a letter (e.g. `R:`). Then save this as `etk_backup.bat` and run it before any reflash or risky migration:
 
 ```bat
 robocopy R:\roms\etk\vault                  C:\etk_backup\vault           /MIR /R:1 /W:1
@@ -382,7 +382,7 @@ robocopy R:\roms\bios\rpcs3\dev_hdd0\home   C:\etk_backup\rpcs3_home      /MIR /
 # Internal Storage (Advanced — Optional)
 **SD-card support was proven first and is the recommended default.** For advanced operators who want a faster shader rig, ETK also supports running the shader vaulta and games on the device's internal **UFS** partition instead of the SD card. This is an **optional, opt-in** upgrade aimed at intensive shader-harvesting runs.
 
-Retroid Pocket SD8250 devices support [Rocknix's Install (internal) option](https://rocknix.org/play/installtointernal/) which allows the OS to run on a partition inside the internal storage rather than from a partition on your SD card. This dramatically speeds up Rocknix boot and OS update times. The ETK also supports the creation of a medium sized internal partition for storing shaders, which improves performance and reduces SD-card treadwear. In addition, the ETK supports the creation of a large internal partition to store games and shaders for improved game launch performance. These partitions take away from your Android storage, so factor that into designing your partitions as your execute the `installtointernal.sh` command on your rig.
+Retroid Pocket SD8250 devices support [ROCKNIX's Install (internal) option](https://rocknix.org/play/installtointernal/) which allows the OS to run on a partition inside the internal storage rather than from a partition on your SD card. This dramatically speeds up ROCKNIX boot and OS update times. The ETK also supports the creation of a medium sized internal partition for storing shaders, which improves performance and reduces SD-card treadwear. In addition, the ETK supports the creation of a large internal partition to store games and shaders for improved game launch performance. These partitions take away from your Android storage, so factor that into designing your partitions as your execute the `installtointernal.sh` command on your rig.
 
 ## Advancements
 - **Durability.** The shader vault is rewritten every session; moving it off the wear-prone SD card to internal UFS reduces card wear and corruption exposure (the SD is the rig's single point of failure). Shaders write, credit, and survive an R3 recovery correctly on UFS.
@@ -409,7 +409,7 @@ You can disable the GRUB device select screen that appears at boot. This will sh
 1. Flush and put it back read-only:  
 `sync && mount -o remount,ro /flash`
 
-> **Note:** Rocknix OS updates regenerate the EFI grub.cfg and revert this tweak — re-run these steps after every update.
+> **Note:** ROCKNIX OS updates regenerate the EFI grub.cfg and revert this tweak — re-run these steps after every update.
 
 # Legal Notice
 This project is intended for expert enthusiasts who maintain fair use/legal digital archives of their own games, not copyright infrigement.
@@ -418,4 +418,4 @@ This project is intended for expert enthusiasts who maintain fair use/legal digi
 ETK was originally prototyped with Google Gemini and developed/maintained with Anthropic Claude Code.
 
 # License
-ETK is released under the [GNU General Public License v2.0](LICENSE), matching the licensing of [Rocknix](https://github.com/ROCKNIX/distribution) which it extends.
+ETK is released under the [GNU General Public License v2.0](LICENSE), matching the licensing of [ROCKNIX](https://github.com/ROCKNIX/distribution) which it extends.
