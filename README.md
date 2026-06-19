@@ -2,7 +2,7 @@
 ## For Android
 No ETK features, just house tuned.
 - Use [aPS3e Shader Patch Edition](https://github.com/mercurious/aps3e/releases) for Android (until main release is updated with cache fix)
-- Use [nihui's MESA Turnip drivers](https://github.com/nihui/mesa-turnip-android-driver) for Android during the aPS3e setup wizard.
+- Use the latest [ETK MESA Turnip drivers](https://github.com/mercurious/aps3e/releases/tag/etk-turnip-26.1.3) for Android during the aPS3e setup wizard or configuration.
 - Use an ETK config tuning from [Tested Games](https://github.com/mercurious/etk/wiki/Tested-Games).
 - Try the ETK [Claude Code Cockpit skill](https://github.com/mercurious/etk/wiki/Claude-Cockpit-Skill) for real-time pit-engineering advice, crash forensics, tuning suggestions, track photography analysis and more. Works over USB with any Android device and USB & `ssh` on ROCKNIX.
   

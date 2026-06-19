@@ -27,7 +27,7 @@ Add a rig and it lights up automatically.
    or use WSL.)*
 2. **Connection:** the most stable link is the **USB-net gadget** (the rig appears as a network
    interface; reach it at its link-local address). WiFi works too but can be flaky on ROCKNIX (see caveats).
-3. Run the Cockpit skill as in Guide A — it finds the ssh rig and uses the ROCKNIX telemetry path
+3. Run the Cockpit skill as in [Guide A](https://github.com/mercurious/etk/blob/main/docs/guides/A_Cockpit_Quickstart_Android.md) — it finds the ssh rig and uses the ROCKNIX telemetry path
    (`rocknix_spotter`): full thermal map, GPU devfreq, CPU-prime freq, memory, the ETK live-stat bridge,
    and a crash-watch.
 

@@ -28,5 +28,5 @@
 - This APK is **prebuilt** — you don't need the build toolchain (that's a developer-only setup).
 
 ## Where to go next
-- **Guide A** — drive the Cockpit skill against this install (the main event).
+- **[Guide A](https://github.com/mercurious/etk/blob/main/docs/guides/A_Cockpit_Quickstart_Android.md)** — drive the Cockpit skill against this install (the main event).
 - The native record/replay (Driver tier) is experimental; treat it as a TAS-style repro tool today.
