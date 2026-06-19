@@ -3271,6 +3271,7 @@ def _driver_load(state):
     model["applied_sig"] = _driver_sig(model)
     state["driver_model"] = model
     state.setdefault("driver_cursor", 0)
+    state.setdefault("driver_scroll", 0)
     state["driver_notice"] = None
 
 
@@ -3350,7 +3351,21 @@ def draw_driver(stdscr, state):
         curses.A_DIM); y += 2
 
     cap = max(1, (h - y) - 6)
-    for i, (kind, payload) in enumerate(rows[:cap]):
+    # Cursor-follows-scroll window (same pattern as draw_telemetry). Without it
+    # a row list taller than the pane clips the advanced flags + APPLY out of
+    # reach — the 2026-06-18 DRIVER-tab scroll regression. cursor is an absolute
+    # index into rows; keep it inside [scroll, scroll+cap).
+    scroll = state.get("driver_scroll", 0)
+    if cursor < scroll:
+        scroll = cursor
+    elif cursor >= scroll + cap:
+        scroll = cursor - cap + 1
+    scroll = max(0, min(scroll, max(0, len(rows) - cap)))
+    state["driver_scroll"] = scroll
+    if scroll > 0:
+        put(y - 1, w - 10, "(more ^)", curses.A_DIM)
+    for vis_i, (kind, payload) in enumerate(rows[scroll:scroll + cap]):
+        i = scroll + vis_i
         sel = (i == cursor)
         base = curses.A_REVERSE if sel else curses.A_NORMAL
         put(y, 4, "> " if sel else "  ",
@@ -3370,6 +3385,8 @@ def draw_driver(stdscr, state):
         elif kind == "reset":
             put(y, 6, "Reset to default", base)
         y += 1
+    if scroll + cap < len(rows):
+        put(y, w - 10, "(more v)", curses.A_DIM)
     y += 1
     put(y, 4, "Pending : " + sig, curses.A_BOLD); y += 1
     put(y, 4, "Applied : " + applied, curses.A_DIM); y += 1
