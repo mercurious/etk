@@ -74,9 +74,20 @@ if [ -n "$crash" ]; then
   dmesg | grep -E "a6xx_irq.*gpu fault ring|hangcheck recover|rb 0: fence" | tail -3
   # --- finalize hangrd .rd + ib1 sidecar (the decode key) ---
   if [ -n "$RDFILE" ]; then
-    # on an a6xx hang the cat unblocks + flushes the redump; wait up to 6s for the write to finish
-    for _i in 1 2 3 4 5 6; do kill -0 "$HANGRD_PID" 2>/dev/null || break; sleep 1; done
-    kill "$HANGRD_PID" 2>/dev/null   # no-op if already done (e.g. SILENT/CORE class: cat still blocking)
+    # on an a6xx hang the cat unblocks + flushes the redump. Wait until the .rd is SIZE-STABLE
+    # (~10s of no growth), NOT a fixed 6s: a large working set (long play session) streams for
+    # >6s, and a fixed kill TRUNCATES it mid-stream — dropping BOTH cmdstream IBs → undecodable,
+    # unrepairable (validated 2026-06-19: 6s-kill=211MB truncated vs size-stable=587MB complete).
+    # Exits early if the cat finishes naturally (node EOF). For SILENT/CORE (cat still blocking at
+    # ~0B) the size holds stable → loop exits in ~10s and the stub is dropped below.
+    _prev=-1; _stable=0
+    while [ "$_stable" -lt 5 ]; do
+      kill -0 "$HANGRD_PID" 2>/dev/null || break
+      _sz=$(wc -c < "$RDFILE" 2>/dev/null || echo 0)
+      if [ "$_sz" = "$_prev" ]; then _stable=$((_stable + 1)); else _stable=0; _prev=$_sz; fi
+      sleep 2
+    done
+    kill "$HANGRD_PID" 2>/dev/null   # size-stable (or already done); safe to stop
     rdsz=$(wc -c < "$RDFILE" 2>/dev/null || echo 0)
     { echo "$fl"
       echo "$fl" | sed -n 's/.*fence \([0-9a-fx]*\) status \([0-9A-Fa-f]*\) rb \([0-9a-f/]*\) ib1 \([0-9A-Fa-f]*\)\/\([0-9a-f]*\) ib2 \([0-9A-Fa-f]*\)\/\([0-9a-f]*\).*/fence=\1 status=\2 rb=\3 ib1=\4 ib1_size=\5 ib2=\6 ib2_size=\7/p'

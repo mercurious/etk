@@ -81,6 +81,7 @@ check) + `rd_repair.py` (validate+repair); `rocknix_spotter_loop.sh` now self-re
 Redump layout: section = `[u32 type][u32 size][bytes]`; enum in `src/freedreno/common/redump.h`
 (`RD_GPUADDR=3`, `RD_CMDSTREAM_ADDR=6`, `RD_BUFFER_CONTENTS=12`); the type-3/6 payload is
 `[gpuaddr_lo, size, gpuaddr_hi]` (per `decode/rdutil.h parse_addr`).
+**TWO DISTINCT truncation causes — don't conflate (2026-06-19):** (a) the NODE emits an incomplete redump even when size-stable (above; recover with `rd_repair.py`); (b) **`rocknix_spotter_loop.sh` KILLS the `cat` only 6 s after the fault** — for a large working set (long play session) the redump streams for >6 s, so the kill TRUNCATES it mid-stream, dropping BOTH cmdstream IBs (a London capture lost ib1 AND ib2 → undecodable, unrepairable). **FIX (validated this session): wait for the `.rd` to be SIZE-STABLE (~10 s of no growth) before killing, not a fixed 6 s** — a no-kill-timer manual capture got a complete 587 MB decodable redump where the 6 s-kill got a 211 MB truncated one. Fold the size-stable wait into the spotter's post-fault finalize.
 
 ### VERIFY THE ACTIVE FORK DRIVER BY SIZE, NOT `vulkaninfo`
 A patched and a stock build BOTH report `driverInfo = Mesa 26.1.3` (we don't bump the version string), so
@@ -131,6 +132,17 @@ driver-matched cache → relaunch warm and test** (true warm-vs-warm vs the satu
 - Only the spotter writes the `.faultinfo` sidecar (dmesg `ib1/ib2/fence/status`). Hand-grabbed `manual_*`
   captures lack it → no fault address → only structural profiling is possible. Write a faultinfo alongside
   any manual capture.
+- **Turnip dials MUST be set via the Pitstop DRIVER tab, never a remote `profile.d` hand-write (DEFIES EXPECTATION).**
+  `_driver_apply` writes the `097-etk-turnip-dials` export AND `active_tune.txt` *atomically*; the spotter +
+  the ledger stamp each race's `tune_tag` (col 15) from `active_tune.txt`. A remote `echo > 097-etk-turnip-dials`
+  desyncs the tag → the A/B session is mis-attributed, poisoning the saturated-vs-saturated comparison. Drive
+  the DRIVER tab (operator, or cockpit pad-injection); a flag NOT in the ladder gets ADDED to the tab, not hand-injected.
+- **A dmesg-only crash-watch CANNOT capture the redump.** The hangrd node is arm-BEFORE-the-hang — it blocks for
+  the *next* wedge; a post-hoc `cat` of an already-recovered hang captures 0 B. An unsupervised crash-hunt must
+  arm the `cat` at idle, not just watch dmesg.
+- **The rig is always ready at session start** — powered, on USB-net (`169.254.170.2`) + WiFi. Do NOT spend a
+  tool call confirming reachability before starting; go straight to the work and handle an actual failure
+  reactively if one occurs.
 
 ### Forensic doctrine reaffirmed (Stage IV): NEVER crown a fix from one clean run
 GT5P's clean-run noise floor is huge (77–2886 s). A single clean race — even a Gold Trophy — is variance,
