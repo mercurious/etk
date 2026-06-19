@@ -65,7 +65,7 @@ ETK is certified against **ROCKNIX nightly `20260610`** on SM8250 (Retroid Pocke
 | Type | Detail |
 |---|---|
 | Host System | macOS or Linux native ([Windows/PC port](#windows-install-guide)) |
-| OS | ROCKNIX (Nightly: 20260610) |
+| OS | ROCKNIX (Nightly: 20260616) |
 | Driver | MESA Turnip 26.1.2 |
 | Shell |  BusyBox v1.36.1 |
 | Custom Overlay |  MangoHUD |
