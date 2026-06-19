@@ -21,6 +21,15 @@ RIG_SSH="root@SM8250.local"
 # RAW  — HUD only, no protection (for stress testing)
 ETK_BUILD_TYPE="FULL"
 
+# --- Custom Turnip driver (Stage IV — optional) ---
+# Path to a self-built Mesa Turnip .so (ROCKNIX glibc/msm build) to pin over
+# the stock nightly driver. install.sh pushes it to /storage/turnip/ and a
+# boot-persistent systemd unit (etk-turnip.service) bind-mounts it every cold
+# boot. Leave EMPTY to run the stock Turnip (the unit self-skips). The .so is
+# built by scripts/build_rocknix.sh; deploy a one-off (no reinstall) via
+# scripts/deploy_rocknix.sh. Re-validate any swap on a COLD boot.
+TURNIP_SO=""
+
 # --- Default thermal intent at boot ---
 # RACE — full performance; thermal_d switches to PIT on overheat
 # PIT  — throttled at boot; restore RACE via the dashboard

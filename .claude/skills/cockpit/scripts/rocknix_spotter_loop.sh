@@ -26,6 +26,23 @@ zt(){ awk '{printf "%.0f",$1/1000}' /sys/class/thermal/thermal_zone"$1"/temp 2>/
 # in-game = a real live DDU. Exclude pre-game (WAIT/IDLE/LOADING) and the startup banner (SHDRS),
 # so stale-counting only begins once steady telemetry is flowing (no false trip on the banner hold).
 ingame(){ case "$1" in ""|*WAIT*|*IDLE*|*LOADING*|*SHDRS*) return 1;; *) return 0;; esac; }
+# --- hangrd forensic capture (gpu_watch fold-in): cat the debugfs node so the kernel emits the
+#     freedreno REDUMP (.rd) of the HANGING submit the instant the GPU wedges. Arm AT IDLE, here,
+#     before launch. Decode off-rig with cffdump; the .faultinfo sidecar (written on catch) carries
+#     the dmesg ib1/fence/status so the decode lands on the FAULTING draw, not a 1300-draw haystack.
+HANGRD_CAPTURE="${HANGRD_CAPTURE:-1}"; HANGRD_NODE=/sys/kernel/debug/dri/0/hangrd
+FDIR="${FORENSIC_DIR:-/storage/games-internal/roms/etk/etk_telemetry/crash_forensics}"
+RDFILE=""; HANGRD_PID=""
+if [ "$HANGRD_CAPTURE" = 1 ] && [ -e "$HANGRD_NODE" ]; then
+  mkdir -p "$FDIR"
+  RDFILE="$FDIR/hangrd_$(date +%Y%m%d_%H%M%S).rd"
+  cat "$HANGRD_NODE" > "$RDFILE" 2>/dev/null &
+  HANGRD_PID=$!
+  echo "$RDFILE" > "$FDIR/.armed_rd"
+  echo "[spotter] hangrd ARMED -> $RDFILE (pid $HANGRD_PID); /storage free $(df -m /storage 2>/dev/null | awk 'NR==2{print $4}')MB"
+elif [ "$HANGRD_CAPTURE" = 1 ]; then
+  echo "[spotter] WARN: hangrd node absent ($HANGRD_NODE) — no .rd capture this run"
+fi
 echo "[spotter] armed @ uptime ${MARK}s — a6xx-fault + live_stat-stale(${STALE_TICKS}x) + core/log. dur=${DUR}s int=${INT}s. LAUNCH NOW."
 endt=$(( MARK + DUR )); seen=0; prev=""; stale=0; crash=""
 while [ "$(awk '{print int($1)}' /proc/uptime)" -lt "$endt" ]; do
@@ -55,6 +72,18 @@ done
 if [ -n "$crash" ]; then
   echo "[spotter] >>> CRASH: $crash"
   dmesg | grep -E "a6xx_irq.*gpu fault ring|hangcheck recover|rb 0: fence" | tail -3
+  # --- finalize hangrd .rd + ib1 sidecar (the decode key) ---
+  if [ -n "$RDFILE" ]; then
+    # on an a6xx hang the cat unblocks + flushes the redump; wait up to 6s for the write to finish
+    for _i in 1 2 3 4 5 6; do kill -0 "$HANGRD_PID" 2>/dev/null || break; sleep 1; done
+    kill "$HANGRD_PID" 2>/dev/null   # no-op if already done (e.g. SILENT/CORE class: cat still blocking)
+    rdsz=$(wc -c < "$RDFILE" 2>/dev/null || echo 0)
+    { echo "$fl"
+      echo "$fl" | sed -n 's/.*fence \([0-9a-fx]*\) status \([0-9A-Fa-f]*\) rb \([0-9a-f/]*\) ib1 \([0-9A-Fa-f]*\)\/\([0-9a-f]*\) ib2 \([0-9A-Fa-f]*\)\/\([0-9a-f]*\).*/fence=\1 status=\2 rb=\3 ib1=\4 ib1_size=\5 ib2=\6 ib2_size=\7/p'
+    } > "$RDFILE.faultinfo"
+    echo "[spotter] hangrd .rd: $RDFILE (${rdsz}B) + $(basename "$RDFILE").faultinfo"
+    if [ "${rdsz:-0}" -lt 1024 ]; then echo "[spotter] WARN: .rd header-only (${rdsz}B) — hangrd didn't capture a cmdstream (dossier 6a); decode would be empty"; else echo "[spotter]   $(cat "$RDFILE.faultinfo" | tail -1)"; fi
+  fi
   export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/var/run/0-runtime-dir}" WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}"
   SHOT="/tmp/spotter_crash_$(date +%H%M%S).png"
   command -v grim >/dev/null && timeout 3 grim "$SHOT" 2>/dev/null && echo "[spotter] frame $SHOT ($(wc -c < "$SHOT" 2>/dev/null)B)"
@@ -62,5 +91,11 @@ if [ -n "$crash" ]; then
   echo "[spotter] tune=$(cat /storage/games-internal/roms/etk/etk_telemetry/active_tune.txt 2>/dev/null)"
   echo "[spotter] ledger: $(tail -1 /storage/games-internal/roms/etk/etk_telemetry/sessions.tsv 2>/dev/null | cut -f1,2,5,10,11,15)"
 else
+  # disarm hangrd: kill the blocking cat and drop the header-only stub
+  if [ -n "$HANGRD_PID" ]; then
+    kill "$HANGRD_PID" 2>/dev/null
+    [ -n "$RDFILE" ] && [ "$(wc -c < "$RDFILE" 2>/dev/null || echo 0)" -lt 1024 ] && rm -f "$RDFILE"
+    echo "[spotter] hangrd disarmed (no crash); empty .rd removed."
+  fi
   echo "[spotter] window ended — NO crash caught (possible CLEAN run; check ledger)."
 fi

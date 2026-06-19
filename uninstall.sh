@@ -195,6 +195,14 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
     echo "|/bin/false" > /proc/sys/kernel/core_pattern 2>/dev/null
     echo "    Removed: etk-stage3.service / 02-etk-coredump.sh / 098-etk-stage3 (core_pattern restored)"
 
+    # Custom Turnip (Stage IV): drop the boot bind-mount unit + unbind so the
+    # rig falls back to the stock squashfs driver. Leaves /storage/turnip/ (the
+    # user's built .so) in place — it's a build artifact, not ETK runtime.
+    systemctl disable --now etk-turnip.service 2>/dev/null
+    umount /usr/lib/libvulkan_freedreno.so 2>/dev/null || true
+    rm -f /storage/.config/system.d/etk-turnip.service
+    echo "    Removed: etk-turnip.service (stock Turnip restored; /storage/turnip/ kept)"
+
     # Turnip driver dials (Pitstop DRIVER tab): the profile.d injection lives
     # OUTSIDE ETK_ROOT, so it would otherwise keep altering Turnip after the kit
     # is gone. Remove it so the rig reverts to Turnip's built-in autotune.

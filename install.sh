@@ -1127,6 +1127,62 @@ else
 fi
 
 # ==========================================================
+# STEP 6.5: CUSTOM TURNIP DRIVER (Stage IV) — boot-persistent bind-mount
+# ==========================================================
+# The stock Turnip lives on read-only squashfs (/usr/lib), so a forked/bumped
+# .so can't replace it in place. It rides on /storage/turnip/ (persistent) and a
+# oneshot systemd unit bind-mounts it over the stock driver every boot — making
+# the runtime deploy (scripts/deploy_rocknix.sh), which reverts on reboot,
+# actually survive a COLD boot (the always-reboot gate is the real validation).
+# GATED: with TURNIP_SO unset/absent the unit self-skips (ConditionPathExists)
+# and the rig runs the stock nightly Turnip — zero effect on stock installs.
+# §G.5 note: once pinned, the Mesa fingerprint tracks OUR driver, so a nightly's
+# stock-Mesa change is intentionally masked (we want our driver regardless).
+if [ -n "${TURNIP_SO:-}" ] && [ -f "$TURNIP_SO" ]; then
+    say "${G}[ETK]${N} Custom Turnip configured — pushing $(basename "$TURNIP_SO") -> /storage/turnip"
+    ssh $RIG_SSH "mkdir -p /storage/turnip" 2>/dev/null
+    scp -q "$TURNIP_SO" "$RIG_SSH:/storage/turnip/libvulkan_freedreno.so"
+else
+    say "${Y}[ETK]${N} TURNIP_SO unset — installing the bind-mount unit in self-skip mode (stock driver)"
+fi
+TURNIP_OUT_FILE=$(mktemp /tmp/etk_turnip_XXXXXX)
+ssh $RIG_SSH > "$TURNIP_OUT_FILE" 2>&1 << 'REMOTE'
+    mkdir -p /storage/.config/system.d/
+cat << 'SVC' > /storage/.config/system.d/etk-turnip.service
+[Unit]
+Description=ETK Custom Turnip Driver (Stage IV bind-mount over stock)
+After=local-fs.target
+ConditionPathExists=/storage/turnip/libvulkan_freedreno.so
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'grep -q " /usr/lib/libvulkan_freedreno.so " /proc/mounts || mount --bind /storage/turnip/libvulkan_freedreno.so /usr/lib/libvulkan_freedreno.so'
+ExecStop=/bin/sh -c 'umount /usr/lib/libvulkan_freedreno.so 2>/dev/null || true'
+
+[Install]
+WantedBy=multi-user.target
+SVC
+    systemctl daemon-reload
+    if [ -f /storage/turnip/libvulkan_freedreno.so ]; then
+        systemctl enable /storage/.config/system.d/etk-turnip.service >/dev/null 2>&1
+        systemctl start etk-turnip.service >/dev/null 2>&1
+        ver=$(strings /storage/turnip/libvulkan_freedreno.so 2>/dev/null | grep -m1 -oE 'Mesa [0-9.]+')
+        active=$(strings /usr/lib/libvulkan_freedreno.so 2>/dev/null | grep -m1 -oE 'Mesa [0-9.]+')
+        echo "TURNIP_OK enabled (${ver:-?}); /usr/lib now resolves to ${active:-?}; persists on cold boot"
+    else
+        systemctl disable etk-turnip.service >/dev/null 2>&1
+        echo "TURNIP_SKIP unit installed + self-skipping (no /storage/turnip driver — stock Turnip)"
+    fi
+REMOTE
+if grep -q TURNIP_OK "$TURNIP_OUT_FILE"; then
+    say "${G}[ETK]${N} $(grep -m1 TURNIP_OK "$TURNIP_OUT_FILE" | sed 's/TURNIP_OK //')"
+else
+    say "${Y}[ETK]${N} $(grep -m1 TURNIP_SKIP "$TURNIP_OUT_FILE" || echo 'Turnip unit deploy: no status marker')"
+fi
+rm -f "$TURNIP_OUT_FILE"
+
+# ==========================================================
 # STEP 6: STAGE III STABILITY HARNESS
 # Two rig-side primitives validated on-rig 2026-06-11 (see
 # dossiers/Stage3CustomRigDossier.md §T0):
