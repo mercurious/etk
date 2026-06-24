@@ -1,0 +1,52 @@
+{
+  "_comment": "ETK POWER profiles (SM8250). Runtime sysfs power knobs ONLY — no OC beyond the OPP table (GPU caps at 800 MHz, CPU at rated max). Pulldown options are real OPP steps; the Pitstop POWER tab resolves a preset/knobs into a flat path<TAB>value profile that etk-power.service re-applies at boot. Per-SoC: a new chipset ships its own JSON.",
+  "soc": "SM8250",
+  "knobs": [
+    { "id": "gpu_gov", "label": "GPU governor",
+      "paths": ["/sys/class/devfreq/3d00000.gpu/governor"],
+      "options": [
+        { "v": "simple_ondemand", "l": "simple_ondemand" },
+        { "v": "performance", "l": "performance" },
+        { "v": "powersave", "l": "powersave" } ] },
+    { "id": "gpu_floor", "label": "GPU clock floor",
+      "paths": ["/sys/class/devfreq/3d00000.gpu/min_freq"],
+      "note": "ceiling 800 (OPP cap)",
+      "options": [
+        { "v": "305000000", "l": "305 MHz (auto)" },
+        { "v": "650000000", "l": "650 MHz" },
+        { "v": "800000000", "l": "800 MHz (pin)" } ] },
+    { "id": "cpu_gov", "label": "CPU governor",
+      "paths": [
+        "/sys/devices/system/cpu/cpufreq/policy0/scaling_governor",
+        "/sys/devices/system/cpu/cpufreq/policy4/scaling_governor",
+        "/sys/devices/system/cpu/cpufreq/policy7/scaling_governor"],
+      "options": [
+        { "v": "ondemand", "l": "ondemand" },
+        { "v": "performance", "l": "performance" },
+        { "v": "schedutil", "l": "schedutil" },
+        { "v": "powersave", "l": "powersave" } ] },
+    { "id": "cpu_prime_floor", "label": "CPU prime floor",
+      "paths": ["/sys/devices/system/cpu/cpufreq/policy7/scaling_min_freq"],
+      "note": "rsx::thread lever",
+      "options": [
+        { "v": "844800", "l": "0.84 GHz (auto)" },
+        { "v": "1632000", "l": "1.63 GHz" },
+        { "v": "2841600", "l": "2.84 GHz (pin)" } ] },
+    { "id": "cpu_gold_floor", "label": "CPU gold floor",
+      "paths": ["/sys/devices/system/cpu/cpufreq/policy4/scaling_min_freq"],
+      "options": [
+        { "v": "710400", "l": "0.71 GHz (auto)" },
+        { "v": "2419200", "l": "2.42 GHz (pin)" } ] }
+  ],
+  "presets": [
+    { "id": "BALANCED", "label": "BALANCED", "desc": "stock ondemand — the validated baseline",
+      "values": { "gpu_gov": "simple_ondemand", "gpu_floor": "305000000",
+                  "cpu_gov": "ondemand", "cpu_prime_floor": "844800", "cpu_gold_floor": "710400" } },
+    { "id": "RACE", "label": "RACE", "desc": "perf-pinned · max heat · thermal-guarded",
+      "values": { "gpu_gov": "performance", "gpu_floor": "650000000",
+                  "cpu_gov": "performance", "cpu_prime_floor": "2841600", "cpu_gold_floor": "2419200" } },
+    { "id": "COOL", "label": "COOL", "desc": "capped for thermal / battery",
+      "values": { "gpu_gov": "simple_ondemand", "gpu_floor": "305000000",
+                  "cpu_gov": "powersave", "cpu_prime_floor": "844800", "cpu_gold_floor": "710400" } }
+  ]
+}

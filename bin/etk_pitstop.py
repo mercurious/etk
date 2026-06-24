@@ -105,6 +105,30 @@ TURNIP_PROFILE_D = os.environ.get(
 ACTIVE_TUNE_FILE = os.environ.get(
     'ACTIVE_TUNE_FILE', f"{TELEMETRY_DIR}/active_tune.txt")
 
+# DRIVER BUILD selector (Stage IV — catalog of bindable Turnip .so builds).
+# Distinct from the env-var dials above: the dials tune whatever driver is
+# loaded (next-launch); the BUILD selector picks WHICH .so binds over the stock
+# /usr/lib driver (reboot-gated, since a bind-mount can't swap a live driver).
+#   drivers/   = the catalog (install.sh stages every host drivers/*.so here)
+#   selected   = operator's pick (a catalog filename, or the synthetic "stock")
+#   loaded     = ground truth stamped by etk-turnip-bind.sh at boot — what is
+#                ACTUALLY bound right now (so the header never claims a build is
+#                live when it's only pending a reboot). See install.sh Step 6.5.
+TURNIP_DIR = os.environ.get('TURNIP_DIR', "/storage/turnip")
+TURNIP_DRIVERS_DIR = os.path.join(TURNIP_DIR, "drivers")
+TURNIP_SELECTED_FILE = os.path.join(TURNIP_DIR, "selected")
+TURNIP_LOADED_FILE = os.path.join(TURNIP_DIR, "loaded")
+STOCK_BUILD = "stock"  # synthetic catalog id: unbind, run ROCKNIX's own Turnip
+
+# POWER tab (CPU/GPU governors + clock pinning). Schema-driven (power_profiles.json:
+# OPP-bounded pulldowns + named presets). The tab resolves a preset/knob set into a
+# flat path<TAB>value profile that etk-power.service re-applies at boot (govs/freqs
+# reset on reboot); APPLY also writes the knobs live. NO OC — the OPP table caps the
+# pulldowns at rated max. Stamps pwr= into the ledger (session_postmortem).
+POWER_PROFILES_JSON = os.environ.get('POWER_PROFILES_JSON', f"{ETK_ROOT}/config/power_profiles.json")
+POWER_DIR = os.environ.get('ETK_POWER_DIR', "/storage/etk-power")
+POWER_PROFILE_FILE = os.path.join(POWER_DIR, "profile")  # path<TAB>value + '# pwr=' header
+
 # Sessions shorter than this are aborts, not real attempts. Sourced from
 # env.sh; the TELEMETRY tab dims sub-threshold rows so a force-quit or a
 # misclassified 2s "crash" doesn't read as signal.
@@ -249,6 +273,7 @@ CURRENT_TAB_TELEMETRY = 1
 CURRENT_TAB_TOOLS = 2
 CURRENT_TAB_PADDOCK = 3
 CURRENT_TAB_DRIVER = 4
+CURRENT_TAB_POWER = 5
 
 # Tab registry — order here is the on-screen order AND the [/] · L1/R1 cycle
 # order (clamped, no wrap). PADDOCK is LAST on purpose: it is the only tab that
@@ -263,6 +288,7 @@ TABS = [
     ("TUNING", CURRENT_TAB_TUNING),
     ("TOOLS", CURRENT_TAB_TOOLS),
     ("DRIVER", CURRENT_TAB_DRIVER),
+    ("POWER", CURRENT_TAB_POWER),
     ("PADDOCK", CURRENT_TAB_PADDOCK),
 ]
 
@@ -814,8 +840,87 @@ def _draw_tab_strip(stdscr, current_tab, w):
         stdscr.addstr(1, col, "=" * (w - col - 2), curses.A_DIM)
 
 
+_DRIVER_LABEL_CACHE = None
+
+
+def _build_label(build_id):
+    """Short, human-friendly name for a catalog build id (a .so filename).
+    'libvulkan_freedreno-rocknix-26.1.3-lsd.so' -> 'rocknix-26.1.3-lsd';
+    'stock'/'' -> 'stock'. Filename IS the catalog id (operator drops the .so
+    into drivers/ and we name it by what they called it)."""
+    if not build_id or build_id == STOCK_BUILD:
+        return STOCK_BUILD
+    name = re.sub(r"\.so$", "", build_id)
+    name = re.sub(r"^libvulkan_freedreno[-_]?", "", name)
+    return name or build_id
+
+
+def _read_build_pointer(path):
+    """Read a one-line build pointer file (selected/loaded). Returns the
+    stripped id, or None if absent/empty/unreadable."""
+    try:
+        with open(path) as f:
+            v = f.read().strip()
+        return v or None
+    except OSError:
+        return None
+
+
+def _list_builds():
+    """The selectable catalog: every drivers/*.so id plus the synthetic
+    'stock'. Sorted, with stock last so the dial reads builds-then-stock."""
+    builds = []
+    try:
+        for n in sorted(os.listdir(TURNIP_DRIVERS_DIR)):
+            if n.endswith(".so"):
+                builds.append(n)
+    except OSError:
+        pass
+    builds.append(STOCK_BUILD)
+    return builds
+
+
+def driver_string():
+    """Header label for the LOADED Turnip driver — what is actually bound right
+    now, not what's pending a reboot. e.g. 'Turnip 26.1.3 (rocknix-26.1.3-lsd)'
+    for a bound catalog build, or 'Turnip 26.1.3 (stock)' for the OS driver.
+    Computed once, cached.
+
+    Ground truth comes from /storage/turnip/loaded (stamped by etk-turnip-bind.sh
+    at boot). We fall back to the live bind-mount probe for pre-catalog rigs that
+    have no 'loaded' stamp yet. Version is read from the live /usr/lib .so (the
+    Mesa string is baked in). Degrades to a bare 'Turnip' on any probe error
+    (never blanks the header)."""
+    global _DRIVER_LABEL_CACHE
+    if _DRIVER_LABEL_CACHE is not None:
+        return _DRIVER_LABEL_CACHE
+    so = "/usr/lib/libvulkan_freedreno.so"
+    ver = ""
+    try:
+        out = subprocess.run(
+            ["sh", "-c", f"strings '{so}' 2>/dev/null | grep -oE 'Mesa [0-9]+\\.[0-9]+\\.[0-9]+' | head -1"],
+            capture_output=True, text=True, timeout=5).stdout
+        m = re.search(r"(\d+\.\d+\.\d+)", out)
+        if m:
+            ver = " " + m.group(1)
+    except Exception:
+        pass
+    loaded = _read_build_pointer(TURNIP_LOADED_FILE)
+    if loaded is None:
+        # Pre-catalog fallback: a live freedreno bind == a custom build is up.
+        try:
+            out = subprocess.run(["sh", "-c", "mount | grep -c freedreno"],
+                                 capture_output=True, text=True, timeout=4).stdout.strip()
+            loaded = "custom" if (out.isdigit() and int(out) > 0) else STOCK_BUILD
+        except Exception:
+            loaded = None
+    tail = f" ({_build_label(loaded)})" if loaded else ""
+    _DRIVER_LABEL_CACHE = f"Turnip{ver}{tail}"
+    return _DRIVER_LABEL_CACHE
+
+
 def _draw_meta_line(stdscr, w, gamepad_status, lap_str):
-    target = f"GAME: {GAME_NAME}  |  PAD: {gamepad_status}"
+    target = f"GAME: {GAME_NAME}  |  DRIVER: {driver_string()}"
     stdscr.addstr(2, 2, target[:w - 4], curses.A_DIM)
     if w > len(lap_str) + 4 and lap_str:
         stdscr.addstr(2, w - len(lap_str) - 2, lap_str, curses.color_pair(1) | curses.A_BOLD)
@@ -1039,6 +1144,13 @@ def load_sessions_ledger(filter_game_id=None):
                         # len-guarded so older 14/15-col rows parse fine.
                         "tune_tag": fields[14] if len(fields) > 14 else "",
                         "crash_shot": fields[15] if len(fields) > 15 else "",
+                        # G-INSTR fps (col 17-19) + tune attribution (col 20-21).
+                        # len-guarded so older narrower rows parse fine.
+                        "fps_med": float(fields[16]) if len(fields) > 16 and fields[16] else 0.0,
+                        "fps_1low": float(fields[17]) if len(fields) > 17 and fields[17] else 0.0,
+                        "ft_p99_ms": float(fields[18]) if len(fields) > 18 and fields[18] else 0.0,
+                        "res_scale": int(fields[19]) if len(fields) > 19 and fields[19].strip().isdigit() else 0,
+                        "gpu_mhz": int(fields[20]) if len(fields) > 20 and fields[20].strip().isdigit() else 0,
                         "_kind": "session",
                     }
                 except ValueError:
@@ -1238,6 +1350,17 @@ def draw_telemetry(stdscr, state):
     # === DETAIL SUB-MODE === full-screen card for the selected row.
     if state.get("telemetry_mode", "table") == "detail":
         _draw_session_detail(stdscr, state, sessions, config_changes)
+        # ASCII scroll indicators (the card sets _detail_content_h/view_bot/scroll).
+        h, w = stdscr.getmaxyx()
+        sc = state.get("telemetry_detail_scroll", 0)
+        bot = state.get("_detail_view_bot", h - 4)
+        try:
+            if sc > 0:
+                stdscr.addstr(5, w - 11, "[^ DPAD]", curses.A_DIM)
+            if state.get("_detail_content_h", 0) - sc > bot:
+                stdscr.addstr(bot, w - 11, "[v DPAD]", curses.A_DIM)
+        except curses.error:
+            pass
         return
 
     # === CAREER ANCHOR ===
@@ -1390,6 +1513,12 @@ _TEL_W_LOAD = 5
 _TEL_W_TEMP = 7
 _TEL_W_DRAIN = 5
 _TEL_W_SHD = 4
+# G-INSTR + tune-attribution columns. FPS sits next to DUR (headline, safe from
+# right-edge clipping); RES/CLK ride the rightmost slots (context — clip-tolerant
+# on a narrow panel, where base[:w-4] truncates them cleanly).
+_TEL_W_FPS = 4
+_TEL_W_RES = 4
+_TEL_W_CLK = 4
 
 
 # --- Session-detail data-viz (ASCII; no Unicode — Pitstop renders pure ASCII,
@@ -1407,6 +1536,11 @@ _GAUGE_TEMP_MAX = _envint("RACE_THRESHOLD", 90)
 _GAUGE_LOAD_MAX = 16          # ~8 cores * 2.0 loadavg
 _GAUGE_RAM_MAX_MB = 8192      # 8 GB reference
 _GAUGE_DRAIN_MAX = 30         # |drain%| over a session
+# FPS gauges (G-INSTR). FPS bars: fuller = better (toward PS3-native 60).
+# Frametime bar: fuller = WORSE (toward a 200ms severe-stutter ceiling) —
+# same "full = bad" sense as the temp/drain gauges.
+_GAUGE_FPS_MAX = 60
+_GAUGE_FT_MAX = 200
 _GAUGE_W = 18
 
 _CRASH_SIG_CACHE = None
@@ -1440,11 +1574,14 @@ def _telemetry_header():
         f"{'':<{_TEL_W_MARK}}"
         f"{'STATUS':<{_TEL_W_STATUS}}"
         f"  {'DUR':>{_TEL_W_DUR}}"
+        f"  {'FPS':>{_TEL_W_FPS}}"
         f"  {'RAM':>{_TEL_W_RAM}}"
         f"  {'LOAD':>{_TEL_W_LOAD}}"
         f"  {'TEMP':>{_TEL_W_TEMP}}"
         f"  {'DRAIN':>{_TEL_W_DRAIN}}"
         f"  {'SHD':>{_TEL_W_SHD}}"
+        f"  {'RES':>{_TEL_W_RES}}"
+        f"  {'CLK':>{_TEL_W_CLK}}"
     )
 
 
@@ -1508,16 +1645,26 @@ def _draw_session_row(stdscr, y, w, row, selected=False):
     drain_str = f"{drain}%"
     shd_str = str(row["shaders_harvested"])
 
+    fps = row.get("fps_med", 0.0)
+    fps_str = f"{fps:.0f}" if fps > 0 else "--"
+    res = row.get("res_scale", 0)
+    res_str = f"{res}%" if res > 0 else "--"
+    clk = row.get("gpu_mhz", 0)
+    clk_str = str(clk) if clk > 0 else "--"
+
     base = (
         f"{time_str:<{_TEL_W_TIME}}"
         f"{mark:<{_TEL_W_MARK}}"
         f"{status[:_TEL_W_STATUS]:<{_TEL_W_STATUS}}"
         f"  {dur_str:>{_TEL_W_DUR}}"
+        f"  {fps_str:>{_TEL_W_FPS}}"
         f"  {ram_str:>{_TEL_W_RAM}}"
         f"  {load_str:>{_TEL_W_LOAD}}"
         f"  {temp_str:>{_TEL_W_TEMP}}"
         f"  {drain_str:>{_TEL_W_DRAIN}}"
         f"  {shd_str:>{_TEL_W_SHD}}"
+        f"  {res_str:>{_TEL_W_RES}}"
+        f"  {clk_str:>{_TEL_W_CLK}}"
     )
     base = base[:w - 4]
     base_attr = curses.A_DIM if low_conf else curses.A_NORMAL
@@ -1553,10 +1700,25 @@ def _draw_session_detail(stdscr, state, sessions, config_changes):
                     key=lambda r: r["epoch"], reverse=True)
     cur = state.get("telemetry_cursor", 0)
     y = 5
+    # Scroll window: the detail card can exceed the panel height (the G-INSTR
+    # FRAMERATE gauges pushed a CLEAN card past the bottom), so render through a
+    # scroll offset. put() tracks the content extent into _detail_content_h and
+    # clips to the visible window; handle_telemetry_pad/_kb scroll via D-pad and
+    # clamp against what put() measured. Same cursor-window spirit as the
+    # DRIVER-tab scroll fix (587b652), minus the cursor (a card has none).
+    _D_TOP, _D_BOT = 5, h - 4
+    _dscroll = state.get("telemetry_detail_scroll", 0)
+    state["_detail_view_bot"] = _D_BOT
+    state["_detail_content_h"] = _D_TOP
 
     def put(row_y, col, text, attr=curses.A_NORMAL):
+        if row_y > state["_detail_content_h"]:
+            state["_detail_content_h"] = row_y
+        ry = row_y - _dscroll
+        if ry < _D_TOP or ry > _D_BOT:
+            return
         try:
-            stdscr.addstr(row_y, col, text[:max(0, w - col - 1)], attr)
+            stdscr.addstr(ry, col, text[:max(0, w - col - 1)], attr)
         except curses.error:
             pass
 
@@ -1673,6 +1835,34 @@ def _draw_session_detail(stdscr, state, sessions, config_changes):
                   f"{_gauge_bar(abs(drain), _GAUGE_DRAIN_MAX)}"); y += 1
         put(y, 4, f"Thermal overrides: {row['thermal_overrides']}"); y += 1
 
+        # G-INSTR framerate — the newly-collected per-run fps/frametime, rendered
+        # as gauges: median (headline), 1%-low (the stutter floor), and P99
+        # frametime (the hitch tail; fuller bar = worse). Skipped on pre-G-INSTR
+        # rows (fps_med == 0) so old sessions render unchanged.
+        fps_med = row.get("fps_med", 0.0)
+        if fps_med > 0:
+            y += 1
+            put(y, 4, "FRAMERATE  (G-INSTR)",
+                curses.color_pair(PAIR_CLEAN) | curses.A_BOLD); y += 1
+            fps_low = row.get("fps_1low", 0.0)
+            ft_p99 = row.get("ft_p99_ms", 0.0)
+            put(y, 4, f"{'FPS med':<8}{(format(fps_med, '.1f')+' fps'):<20}"
+                      f"{_gauge_bar(fps_med, _GAUGE_FPS_MAX)}"); y += 1
+            put(y, 4, f"{'1%-low':<8}{(format(fps_low, '.1f')+' fps'):<20}"
+                      f"{_gauge_bar(fps_low, _GAUGE_FPS_MAX)}"); y += 1
+            hitch = (1000.0 / ft_p99) if ft_p99 > 0 else 0.0
+            put(y, 4, f"{'P99 ft':<8}{(format(ft_p99, '.0f')+'ms ~'+format(hitch, '.0f')+'fps'):<20}"
+                      f"{_gauge_bar(ft_p99, _GAUGE_FT_MAX)}"); y += 1
+            res = row.get("res_scale", 0)
+            clk = row.get("gpu_mhz", 0)
+            ctx = []
+            if res:
+                ctx.append(f"{res}% res")
+            if clk:
+                ctx.append(f"{clk}MHz")
+            if ctx:
+                put(y, 4, "Tune:    " + "  ".join(ctx), curses.A_DIM); y += 1
+
 
 def _draw_config_row(stdscr, y, w, row, selected=False):
     """Render one CONFIG row: time, marker, field label, old->new
@@ -1712,8 +1902,13 @@ def handle_telemetry_kb(state, ch):
     if state.get("telemetry_mode", "table") == "detail":
         if ch in (curses.KEY_BACKSPACE, 8, 127, ord('\n'), ord('\r')):
             state["telemetry_mode"] = "table"
-        elif ch == curses.KEY_UP:
+        elif ch == ord('p'):
             _preview_crash_frame(state, (state.get("_detail_row") or {}).get("crash_shot", ""))
+        elif ch == curses.KEY_UP:
+            state["telemetry_detail_scroll"] = max(0, state.get("telemetry_detail_scroll", 0) - 1)
+        elif ch == curses.KEY_DOWN:
+            _dmax = max(0, state.get("_detail_content_h", 5) - state.get("_detail_view_bot", 20))
+            state["telemetry_detail_scroll"] = min(_dmax, state.get("telemetry_detail_scroll", 0) + 1)
         return "continue"
     if ch == curses.KEY_UP:
         state["telemetry_cursor"] = max(0, state.get("telemetry_cursor", 0) - 1)
@@ -1726,6 +1921,7 @@ def handle_telemetry_kb(state, ch):
         state["telemetry_cursor"] = state.get("telemetry_cursor", 0) + 5
     elif ch in (ord('\n'), ord('\r'), ord('s')):
         state["telemetry_mode"] = "detail"
+        state["telemetry_detail_scroll"] = 0
     elif ch == ord('r') or ch == ord('R'):
         # Manual refresh: useful when a post-mortem lands while Pitstop is open.
         _refresh_telemetry_caches(state)
@@ -1739,16 +1935,23 @@ def handle_telemetry_pad(state, etype, code, val):
     CONFIRM is repurposed from refresh -> open-detail per the dossier.)"""
     mode = state.get("telemetry_mode", "table")
     if mode == "detail":
-        if etype == EV_KEY and val == 1 and code in (BTN_BACK, BTN_CONFIRM):
+        if etype == EV_KEY and val == 1 and code == BTN_BACK:
             state["telemetry_mode"] = "table"
-        elif etype == EV_ABS and code == ABS_HAT0Y and val == -1:
-            # [up] on a crash card -> full-screen swayimg preview of the frame.
+        elif etype == EV_KEY and val == 1 and code == BTN_CONFIRM:
+            # D-pad is now the scroll axis, so CONFIRM carries the crash-frame
+            # preview (full-screen swayimg of the frame, on crash cards).
             _preview_crash_frame(state, (state.get("_detail_row") or {}).get("crash_shot", ""))
+        elif etype == EV_ABS and code == ABS_HAT0Y and val == -1:
+            state["telemetry_detail_scroll"] = max(0, state.get("telemetry_detail_scroll", 0) - 1)
+        elif etype == EV_ABS and code == ABS_HAT0Y and val == 1:
+            _dmax = max(0, state.get("_detail_content_h", 5) - state.get("_detail_view_bot", 20))
+            state["telemetry_detail_scroll"] = min(_dmax, state.get("telemetry_detail_scroll", 0) + 1)
         return "continue"
     if etype == EV_KEY and val == 1 and code == BTN_BACK:
         return "quit"
     if etype == EV_KEY and val == 1 and code == BTN_CONFIRM:
         state["telemetry_mode"] = "detail"
+        state["telemetry_detail_scroll"] = 0
         return "continue"
     if etype == EV_ABS and code == ABS_HAT0Y:
         if val == -1:
@@ -3226,13 +3429,27 @@ _AUTOTUNE_VALUES = ("default", "bandwidth", "profiled", "profiled_imm",
                     "prefer_sysmem", "prefer_gmem")
 _TU_DEBUG_PRIMARY = ("nolrz", "noubwc", "sysmem", "gmem")        # isolation ladder
 _TU_DEBUG_ADVANCED = ("nobin", "forcebin", "nocb",
-                      "noconcurrentresolves", "syncdraw", "flushall")
+                      "noconcurrentresolves", "syncdraw", "flushall",
+                      # ETK LSD gears — lighter-than-syncdraw barriers; REQUIRE
+                      # the fork driver (.so). Inert on stock Turnip.
+                      # Patch #2: sdgate = depth-clean gated to depth-writing
+                      # draws (the scalpel); sdclean = depth-clean alone.
+                      "sddepth", "sdmem", "sdme", "sdclean", "sdgate",
+                      # Stage IV §5 resolution-alignment investigation: dimlog
+                      # logs the GMEM render dims + ragged remainder at tiling
+                      # setup (diagnostic, inert; REQUIRES the lsd-dim fork .so).
+                      "dimlog")
 _TU_DEBUG_KNOWN = set(_TU_DEBUG_PRIMARY) | set(_TU_DEBUG_ADVANCED)
 
 
 def _driver_default_model():
     return {"autotune_idx": 0, "tu_debug": set(),
-            "show_advanced": False, "applied_sig": "default"}
+            "show_advanced": False, "applied_sig": "default",
+            # BUILD selector: which .so binds over stock (reboot-gated).
+            "builds": [STOCK_BUILD], "build_idx": 0,
+            "selected_build": STOCK_BUILD,   # persisted pending pick
+            "loaded_build": STOCK_BUILD,     # live (what's bound now)
+            "reboot_arm": False}             # two-press guard on REBOOT
 
 
 def _driver_sig(model):
@@ -3269,6 +3486,17 @@ def _driver_load(state):
     if model["tu_debug"] & set(_TU_DEBUG_ADVANCED):
         model["show_advanced"] = True
     model["applied_sig"] = _driver_sig(model)
+    # BUILD selector state: catalog + the persisted pick + the live bind.
+    builds = _list_builds()
+    selected = _read_build_pointer(TURNIP_SELECTED_FILE) or STOCK_BUILD
+    loaded = _read_build_pointer(TURNIP_LOADED_FILE) or STOCK_BUILD
+    if selected not in builds:           # pick names a build no longer staged
+        selected = STOCK_BUILD
+    model["builds"] = builds
+    model["selected_build"] = selected
+    model["loaded_build"] = loaded
+    model["build_idx"] = builds.index(selected)
+    model["reboot_arm"] = False
     state["driver_model"] = model
     state.setdefault("driver_cursor", 0)
     state.setdefault("driver_scroll", 0)
@@ -3309,10 +3537,56 @@ def _driver_apply(model):
         return False, [str(e)[:60]]
 
 
+def _build_pending(model):
+    """The build the cursor currently points at (pending pick)."""
+    return model["builds"][model["build_idx"] % len(model["builds"])]
+
+
+def _build_dirty(model):
+    """Pending pick differs from what's persisted in `selected`."""
+    return _build_pending(model) != model["selected_build"]
+
+
+def _build_reboot_pending(model):
+    """Persisted pick differs from what's actually bound — a reboot will
+    change the live driver. (Distinct from _build_dirty, which is unsaved.)"""
+    return model["selected_build"] != model["loaded_build"]
+
+
+def _build_apply(model):
+    """Persist the BUILD pick to /storage/turnip/selected. Takes effect on the
+    NEXT cold boot (etk-turnip-bind.sh rebinds at boot — a live bind-mount can't
+    hot-swap an in-use driver). 'stock' is written verbatim (= unbind). Returns
+    (ok, msg)."""
+    pick = _build_pending(model)
+    try:
+        os.makedirs(TURNIP_DIR, exist_ok=True)
+        with open(TURNIP_SELECTED_FILE, "w") as f:
+            f.write(pick + "\n")
+        model["selected_build"] = pick
+        return True, pick
+    except OSError as e:
+        _log(f"build apply failed: {e}")
+        return False, str(e)[:60]
+
+
+def _reboot_rig():
+    """Cold-boot the rig so etk-turnip-bind.sh binds the freshly-selected build.
+    The only honest validation of a driver swap (always-reboot gate)."""
+    try:
+        subprocess.Popen(["sh", "-c", "sleep 1; systemctl reboot"])
+        return True
+    except Exception as e:
+        _log(f"reboot failed: {e}")
+        return False
+
+
 def _driver_rows(model):
     """Flat selectable-row list, rebuilt each frame so draw + input agree.
-    Each entry = (kind, payload)."""
-    rows = [("autotune", None)]
+    Each entry = (kind, payload). The BUILD selector leads (it's the bigger
+    lever — which driver), then the env-var dials that tune it."""
+    rows = [("build", None), ("build_apply", None), ("reboot", None)]
+    rows += [("autotune", None)]
     rows += [("flag", f) for f in _TU_DEBUG_PRIMARY]
     rows.append(("advanced", None))
     if model["show_advanced"]:
@@ -3343,14 +3617,14 @@ def draw_driver(stdscr, state):
             pass
 
     y = 5
-    put(y, 2, "TURNIP DRIVER DIALS", curses.A_BOLD); y += 1
+    put(y, 2, "TURNIP DRIVER", curses.A_BOLD); y += 1
     put(y, 2, "-" * (w - 4), curses.A_DIM); y += 1
-    put(y, 4, "Global Mesa/Turnip env vars — effective NEXT launch, reboot-safe.",
+    put(y, 4, "BUILD = which .so loads (reboot to apply). Dials tune it (next launch).",
         curses.A_DIM); y += 1
-    put(y, 4, "One knob per soak: change one, drive real laps, read the ledger.",
+    put(y, 4, "One change per soak: swap one thing, drive real laps, read the ledger.",
         curses.A_DIM); y += 2
 
-    cap = max(1, (h - y) - 6)
+    cap = max(1, (h - y) - 7)
     # Cursor-follows-scroll window (same pattern as draw_telemetry). Without it
     # a row list taller than the pane clips the advanced flags + APPLY out of
     # reach — the 2026-06-18 DRIVER-tab scroll regression. cursor is an absolute
@@ -3370,7 +3644,21 @@ def draw_driver(stdscr, state):
         base = curses.A_REVERSE if sel else curses.A_NORMAL
         put(y, 4, "> " if sel else "  ",
             curses.color_pair(1) if sel else curses.A_NORMAL)
-        if kind == "autotune":
+        if kind == "build":
+            pend = _build_pending(model)
+            mark = " *" if _build_dirty(model) else ""
+            put(y, 6, f"DRIVER BUILD   < {_build_label(pend)} >{mark}", base)
+        elif kind == "build_apply":
+            bd = _build_dirty(model)
+            put(y, 6, "Apply build" + ("   *unsaved pick*" if bd else
+                      ("   (reboot to load)" if _build_reboot_pending(model)
+                       else "   (no change)")),
+                base | curses.A_BOLD)
+        elif kind == "reboot":
+            armed = model.get("reboot_arm")
+            put(y, 6, "REBOOT to load build" + ("   CONFIRM?" if armed else ""),
+                base | (curses.A_BOLD if armed else curses.A_DIM))
+        elif kind == "autotune":
             put(y, 6, f"TU_AUTOTUNE_ALGO   < {_AUTOTUNE_VALUES[model['autotune_idx']]} >", base)
         elif kind == "flag":
             on = payload in model["tu_debug"]
@@ -3388,6 +3676,13 @@ def draw_driver(stdscr, state):
     if scroll + cap < len(rows):
         put(y, w - 10, "(more v)", curses.A_DIM)
     y += 1
+    loaded_lbl = _build_label(model["loaded_build"])
+    sel_lbl = _build_label(model["selected_build"])
+    if _build_reboot_pending(model):
+        put(y, 4, f"Build   : {loaded_lbl} loaded -> {sel_lbl} on reboot",
+            curses.color_pair(PAIR_RECOV) | curses.A_BOLD); y += 1
+    else:
+        put(y, 4, f"Build   : {loaded_lbl} loaded", curses.A_DIM); y += 1
     put(y, 4, "Pending : " + sig, curses.A_BOLD); y += 1
     put(y, 4, "Applied : " + applied, curses.A_DIM); y += 1
     notice = state.get("driver_notice")
@@ -3395,6 +3690,9 @@ def draw_driver(stdscr, state):
         ok, msg = notice
         put(y, 4, msg[:w - 6],
             curses.color_pair(PAIR_CLEAN if ok else PAIR_CRASH) | curses.A_BOLD)
+    elif _build_dirty(model):
+        put(y, 4, "Apply build to save the pick, then REBOOT to load it.",
+            curses.color_pair(PAIR_RECOV))
     elif dirty:
         put(y, 4, "APPLY to write — takes effect next game launch.",
             curses.color_pair(PAIR_RECOV))
@@ -3403,16 +3701,21 @@ def draw_driver(stdscr, state):
 def _driver_move(state, delta):
     rows = _driver_rows(state["driver_model"])
     state["driver_cursor"] = (state.get("driver_cursor", 0) + delta) % len(rows)
+    state["driver_model"]["reboot_arm"] = False  # leaving the row disarms it
     state["driver_notice"] = None
 
 
 def _driver_adjust(state, delta):
-    """Left/Right on the autotune row cycles its value; on a flag row toggles
-    it (direction-agnostic)."""
+    """Left/Right on the BUILD row cycles the catalog; on the autotune row
+    cycles its value; on a flag row toggles it (direction-agnostic)."""
     model = state["driver_model"]
     rows = _driver_rows(model)
     kind, payload = rows[state.get("driver_cursor", 0) % len(rows)]
-    if kind == "autotune":
+    if kind == "build":
+        model["build_idx"] = (model["build_idx"] + delta) % len(model["builds"])
+        model["reboot_arm"] = False
+        state["driver_notice"] = None
+    elif kind == "autotune":
         model["autotune_idx"] = (model["autotune_idx"] + delta) % len(_AUTOTUNE_VALUES)
         state["driver_notice"] = None
     elif kind == "flag":
@@ -3430,7 +3733,31 @@ def _driver_select(state):
     model = state["driver_model"]
     rows = _driver_rows(model)
     kind, payload = rows[state.get("driver_cursor", 0) % len(rows)]
-    if kind == "flag":
+    if kind != "reboot":
+        model["reboot_arm"] = False
+    if kind == "build":
+        # CONFIRM also cycles the catalog (parity with the dpad), so a one-build
+        # catalog still reads as "stock <-> build" without needing left/right.
+        model["build_idx"] = (model["build_idx"] + 1) % len(model["builds"])
+        state["driver_notice"] = None
+    elif kind == "build_apply":
+        ok, msg = _build_apply(model)
+        if ok:
+            note = (f"BUILD SET: {_build_label(msg)} — REBOOT to load"
+                    if _build_reboot_pending(model)
+                    else f"BUILD SET: {_build_label(msg)} (already loaded)")
+            state["driver_notice"] = (True, note)
+        else:
+            state["driver_notice"] = (False, "BUILD SET FAILED: " + msg)
+    elif kind == "reboot":
+        if not model.get("reboot_arm"):
+            model["reboot_arm"] = True
+            state["driver_notice"] = (True, "Press CONFIRM again to REBOOT now.")
+        else:
+            model["reboot_arm"] = False
+            ok = _reboot_rig()
+            state["driver_notice"] = (ok, "REBOOTING…" if ok else "REBOOT FAILED")
+    elif kind == "flag":
         _driver_toggle_flag(state, payload)
     elif kind == "advanced":
         model["show_advanced"] = not model["show_advanced"]
@@ -3477,6 +3804,331 @@ def handle_driver_kb(state, ch):
         _driver_adjust(state, 1)
     elif ch in (ord('\n'), ord(' ')):
         return _driver_select(state)
+    return "continue"
+
+
+# === POWER TAB (CPU/GPU governors + clock pinning) ===
+#
+# Runtime sysfs power knobs — NO OC (the OPP table caps every pulldown at rated
+# max). Schema in power_profiles.json: knobs (OPP-bounded options) + named presets
+# (RACE/BALANCED/COOL). Picking a preset sets every knob; overriding a knob flips
+# the preset to CUSTOM (ECU-map behaviour). APPLY writes the resolved path<TAB>value
+# set to POWER_PROFILE_FILE (etk-power.service re-applies at boot — govs/freqs reset
+# on reboot) AND writes them live now. Stamps pwr= into the ledger. thermal_d's PIT
+# cooldown still overrides on overheat, then returns to this profile.
+
+_POWER_SCHEMA_CACHE = None
+
+
+def _power_schema():
+    global _POWER_SCHEMA_CACHE
+    if _POWER_SCHEMA_CACHE is None:
+        try:
+            with open(POWER_PROFILES_JSON) as f:
+                _POWER_SCHEMA_CACHE = json.load(f)
+        except Exception as e:
+            _log(f"power schema load failed: {e}")
+            _POWER_SCHEMA_CACHE = {"knobs": [], "presets": []}
+    return _POWER_SCHEMA_CACHE
+
+
+def _power_knob(schema, kid):
+    for k in schema.get("knobs", []):
+        if k["id"] == kid:
+            return k
+    return None
+
+
+def _power_opt_label(knob, value):
+    for o in (knob or {}).get("options", []):
+        if o["v"] == value:
+            return o["l"]
+    return value
+
+
+def _power_match_preset(schema, values):
+    """The preset id whose values all match the current knobs, else 'CUSTOM'."""
+    for p in schema.get("presets", []):
+        if all(values.get(k) == v for k, v in p["values"].items()):
+            return p["id"]
+    return "CUSTOM"
+
+
+def _power_read_saved():
+    """(pwr_tag, {knob_id: value}) from POWER_PROFILE_FILE — the persisted state.
+    Knob values live in '# knob <id> <value>' records so the boot applier (which
+    only reads the path<TAB>value lines) and the UI share one source of truth."""
+    tag = None
+    vals = {}
+    try:
+        with open(POWER_PROFILE_FILE) as f:
+            for ln in f:
+                ln = ln.rstrip("\n")
+                if ln.startswith("# pwr="):
+                    tag = ln.split("=", 1)[1].strip()
+                elif ln.startswith("# knob "):
+                    parts = ln.split()
+                    if len(parts) >= 4:
+                        vals[parts[2]] = parts[3]
+    except OSError:
+        pass
+    return tag, vals
+
+
+def _power_preset_values(schema, preset_id):
+    for p in schema.get("presets", []):
+        if p["id"] == preset_id:
+            return dict(p["values"])
+    return None
+
+
+def _power_load(state):
+    schema = _power_schema()
+    saved_tag, saved_vals = _power_read_saved()
+    vals = _power_preset_values(schema, "BALANCED") or {
+        k["id"]: (k["options"][0]["v"] if k.get("options") else "")
+        for k in schema.get("knobs", [])}
+    vals.update({k: v for k, v in saved_vals.items() if _power_knob(schema, k)})
+    state["power_model"] = {
+        "schema": schema,
+        "values": vals,
+        "saved_values": dict(vals) if saved_tag else {},
+        "applied_tag": saved_tag or "none",
+    }
+    state.setdefault("power_cursor", 0)
+    state.setdefault("power_scroll", 0)
+    state["power_notice"] = None
+
+
+def _power_rows(model):
+    rows = [("preset", None)]
+    rows += [("knob", k["id"]) for k in model["schema"].get("knobs", [])]
+    rows += [("apply", None), ("reset", None)]
+    return rows
+
+
+def _power_cur_preset(model):
+    return _power_match_preset(model["schema"], model["values"])
+
+
+def _power_tag(model):
+    p = _power_cur_preset(model)
+    return p.lower() if p != "CUSTOM" else "custom"
+
+
+def _power_dirty(model):
+    return model["values"] != model.get("saved_values")
+
+
+def _power_cycle_preset(model, delta):
+    presets = [p["id"] for p in model["schema"].get("presets", [])]
+    if not presets:
+        return
+    cur = _power_cur_preset(model)
+    i = presets.index(cur) if cur in presets else 0
+    pv = _power_preset_values(model["schema"], presets[(i + delta) % len(presets)])
+    if pv:
+        model["values"].update(pv)
+
+
+def _power_cycle_knob(model, kid, delta):
+    k = _power_knob(model["schema"], kid)
+    if not k or not k.get("options"):
+        return
+    opts = [o["v"] for o in k["options"]]
+    cur = model["values"].get(kid, opts[0])
+    i = opts.index(cur) if cur in opts else 0
+    model["values"][kid] = opts[(i + delta) % len(opts)]
+
+
+def _power_apply(model):
+    """Persist the resolved profile + apply live to sysfs. Returns (ok, msg)."""
+    schema = model["schema"]
+    vals = model["values"]
+    tag = _power_tag(model)
+    out = ["# ETK POWER profile — written by Pitstop POWER tab.",
+           "# Re-applied at boot by etk-power.service (govs/freqs reset on reboot).",
+           "# pwr=" + tag]
+    writes = []
+    for k in schema.get("knobs", []):
+        v = vals.get(k["id"])
+        if v is None:
+            continue
+        out.append(f"# knob {k['id']} {v}")
+        for p in k.get("paths", []):
+            writes.append((p, v))
+    out += [f"{p}\t{v}" for p, v in writes]
+    try:
+        os.makedirs(POWER_DIR, exist_ok=True)
+        with open(POWER_PROFILE_FILE, "w") as f:
+            f.write("\n".join(out) + "\n")
+    except OSError as e:
+        _log(f"power apply write failed: {e}")
+        return False, str(e)[:60]
+    live = 0
+    for p, v in writes:
+        try:
+            with open(p, "w") as f:
+                f.write(v)
+            live += 1
+        except OSError:
+            pass  # a knob may reject live (min/max ordering); the boot applier retries
+    model["saved_values"] = dict(vals)
+    model["applied_tag"] = tag
+    return True, f"{tag} — {live}/{len(writes)} knobs live + reboot-safe"
+
+
+def draw_power(stdscr, state):
+    """POWER tab — schema-driven gov/clock dials with named presets. Global
+    (not per-game); applied live + boot-persistent."""
+    if state.get("power_model") is None:
+        _power_load(state)
+    model = state["power_model"]
+    h, w = stdscr.getmaxyx()
+    rows = _power_rows(model)
+    cursor = state.get("power_cursor", 0) % max(1, len(rows))
+    state["power_cursor"] = cursor
+    dirty = _power_dirty(model)
+    cur_preset = _power_cur_preset(model)
+    raw_build = os.environ.get('ETK_BUILD_TYPE', 'FULL') == 'RAW'
+
+    def put(r, c, t, a=curses.A_NORMAL):
+        try:
+            stdscr.addstr(r, c, t[:max(0, w - c - 1)], a)
+        except curses.error:
+            pass
+
+    y = 5
+    put(y, 2, "POWER PROFILE", curses.A_BOLD); y += 1
+    put(y, 2, "-" * (w - 4), curses.A_DIM); y += 1
+    put(y, 4, "CPU/GPU governors + clock pinning — no OC (OPP-capped). Live + reboot-safe.",
+        curses.A_DIM); y += 1
+    put(y, 4, "Coordinates with thermal_d: PIT cooldown overrides, then returns here.",
+        curses.A_DIM); y += 2
+
+    cap = max(1, (h - y) - 7)
+    scroll = state.get("power_scroll", 0)
+    if cursor < scroll:
+        scroll = cursor
+    elif cursor >= scroll + cap:
+        scroll = cursor - cap + 1
+    scroll = max(0, min(scroll, max(0, len(rows) - cap)))
+    state["power_scroll"] = scroll
+    if scroll > 0:
+        put(y - 1, w - 10, "(more ^)", curses.A_DIM)
+    for vis_i, (kind, payload) in enumerate(rows[scroll:scroll + cap]):
+        i = scroll + vis_i
+        sel = (i == cursor)
+        base = curses.A_REVERSE if sel else curses.A_NORMAL
+        put(y, 4, "> " if sel else "  ",
+            curses.color_pair(1) if sel else curses.A_NORMAL)
+        if kind == "preset":
+            put(y, 6, f"PRESET   < {cur_preset} >", base | curses.A_BOLD)
+            if not sel:
+                for p in model["schema"].get("presets", []):
+                    if p["id"] == cur_preset:
+                        put(y, 32, p.get("desc", "")[:w - 34], curses.A_DIM)
+                        break
+        elif kind == "knob":
+            k = _power_knob(model["schema"], payload)
+            lbl = _power_opt_label(k, model["values"].get(payload, ""))
+            put(y, 6, f"{k['label']:<16} < {lbl} >", base)
+            if k.get("note") and not sel:
+                put(y, 46, k["note"][:w - 48], curses.A_DIM)
+        elif kind == "apply":
+            put(y, 6, "APPLY" + ("   *unsaved*" if dirty else "   (no change)"),
+                base | curses.A_BOLD)
+        elif kind == "reset":
+            put(y, 6, "Reset to BALANCED", base)
+        y += 1
+    if scroll + cap < len(rows):
+        put(y, w - 10, "(more v)", curses.A_DIM)
+    y += 1
+    put(y, 4, f"Active : {model['applied_tag']}    Ledger : pwr={_power_tag(model)}",
+        curses.A_BOLD); y += 1
+    put(y, 4, "Thermal guard: " + ("ARMED" if not raw_build else "OFF — RAW build, no protection!"),
+        curses.color_pair(PAIR_CLEAN if not raw_build else PAIR_CRASH) | curses.A_BOLD); y += 1
+    notice = state.get("power_notice")
+    if notice:
+        ok, msg = notice
+        put(y, 4, msg[:w - 6],
+            curses.color_pair(PAIR_CLEAN if ok else PAIR_CRASH) | curses.A_BOLD)
+    elif dirty:
+        put(y, 4, "APPLY to set live + persist across reboot.",
+            curses.color_pair(PAIR_RECOV))
+
+
+def _power_move(state, delta):
+    rows = _power_rows(state["power_model"])
+    state["power_cursor"] = (state.get("power_cursor", 0) + delta) % len(rows)
+    state["power_notice"] = None
+
+
+def _power_adjust(state, delta):
+    model = state["power_model"]
+    rows = _power_rows(model)
+    kind, payload = rows[state.get("power_cursor", 0) % len(rows)]
+    if kind == "preset":
+        _power_cycle_preset(model, delta)
+        state["power_notice"] = None
+    elif kind == "knob":
+        _power_cycle_knob(model, payload, delta)
+        state["power_notice"] = None
+
+
+def _power_select(state):
+    model = state["power_model"]
+    rows = _power_rows(model)
+    kind, payload = rows[state.get("power_cursor", 0) % len(rows)]
+    if kind == "preset":
+        _power_cycle_preset(model, 1)
+        state["power_notice"] = None
+    elif kind == "knob":
+        _power_cycle_knob(model, payload, 1)
+        state["power_notice"] = None
+    elif kind == "reset":
+        pv = _power_preset_values(model["schema"], "BALANCED")
+        if pv:
+            model["values"].update(pv)
+        state["power_notice"] = None
+    elif kind == "apply":
+        ok, msg = _power_apply(model)
+        state["power_notice"] = (ok, ("APPLIED: " + msg) if ok
+                                 else ("APPLY FAILED: " + msg))
+    return "continue"
+
+
+def handle_power_pad(state, etype, code, val):
+    """Gamepad input for POWER. L1/R1 intercepted upstream for tabs."""
+    if state.get("power_model") is None:
+        _power_load(state)
+    if etype == EV_KEY and val == 1 and code == BTN_CONFIRM:
+        return _power_select(state)
+    if etype == EV_KEY and val == 1 and code == BTN_BACK:
+        return "quit"
+    if etype == EV_ABS and code == ABS_HAT0Y and val != 0:
+        _power_move(state, 1 if val == 1 else -1)
+    elif etype == EV_ABS and code == ABS_HAT0X and val != 0:
+        _power_adjust(state, 1 if val == 1 else -1)
+    return "continue"
+
+
+def handle_power_kb(state, ch):
+    """Keyboard input for POWER (dev/desktop parity)."""
+    if state.get("power_model") is None:
+        _power_load(state)
+    if ch in (ord('q'), ord('Q')):
+        return "quit"
+    if ch == curses.KEY_UP:
+        _power_move(state, -1)
+    elif ch == curses.KEY_DOWN:
+        _power_move(state, 1)
+    elif ch == curses.KEY_LEFT:
+        _power_adjust(state, -1)
+    elif ch == curses.KEY_RIGHT:
+        _power_adjust(state, 1)
+    elif ch in (ord('\n'), ord(' ')):
+        return _power_select(state)
     return "continue"
 
 
@@ -4196,6 +4848,8 @@ def _switch_tab(state, target_tab):
             # Re-read the live profile.d injection on every entry so the dials
             # reflect what's actually armed on the rig (cheap local file read).
             state["driver_model"] = None
+        if target_tab == CURRENT_TAB_POWER:
+            state["power_model"] = None  # re-read the persisted profile on entry
 
 
 def _cycle_tab(state, direction):
@@ -4227,6 +4881,8 @@ def _draw(stdscr, state):
         draw_paddock(stdscr, state)
     elif state["current_tab"] == CURRENT_TAB_DRIVER:
         draw_driver(stdscr, state)
+    elif state["current_tab"] == CURRENT_TAB_POWER:
+        draw_power(stdscr, state)
     else:
         draw_tools(stdscr, state)
     _draw_footer(stdscr, h, w, state["current_tab"], state["status"])
@@ -4246,6 +4902,8 @@ def _dispatch_kb(state, ch):
         return handle_paddock_kb(state, ch)
     if ct == CURRENT_TAB_DRIVER:
         return handle_driver_kb(state, ch)
+    if ct == CURRENT_TAB_POWER:
+        return handle_power_kb(state, ch)
     if ETK_NO_TARGET:
         return "quit" if ch in (ord('q'), ord('Q')) else "continue"
     if ct == CURRENT_TAB_TUNING:
@@ -4262,6 +4920,8 @@ def _dispatch_pad(state, etype, code, val):
         return handle_paddock_pad(state, etype, code, val)
     if ct == CURRENT_TAB_DRIVER:
         return handle_driver_pad(state, etype, code, val)
+    if ct == CURRENT_TAB_POWER:
+        return handle_power_pad(state, etype, code, val)
     if ETK_NO_TARGET:
         if etype == EV_KEY and val == 1 and code == BTN_BACK:
             return "quit"
