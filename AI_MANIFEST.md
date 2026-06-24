@@ -12,6 +12,7 @@ A custom Rocknix middleware rig to enable PS3 Emulation on ARM64 Retrogaming Han
 3. **SYMLINK SANCTITY:** The shader cache is a dynamic symlink: `/storage/.cache/mesa_shader_cache` -> `$VAULT_DIR`. Never use `rsync` on the live cache.
 4. **AGNOSTIC IDENTITY:** The `TARGET_ID` must always be dynamic. It is sniffed from the active RPCS3 process via `pgrep` and `PARAM.SFO`.
 5. **NO GNU-ISMS:** Rocknix uses **BusyBox**. Assume GNU-specific flags (`--long-options`, `grep -P`, `find -printf`) will fail. Use POSIX-compliant syntax only.
+6. **NEVER REBOOT THE RIG REMOTELY:** The operator is physically at the rig (the Driver; the host AI is the Engineer). Do NOT `systemctl reboot` / `reboot` over ssh, nor trigger any host-driven power-cycle of the device. When a cold boot is genuinely required (driver-build swap to load, clearing a GPU wedge, any always-reboot-gate validation), do the host-side prep, then ASK the operator to reboot on-device (or via the Pitstop DRIVER-tab REBOOT row) and WAIT for the rig to return. Read-only telemetry/spotter over ssh is fine — the prohibition is on rebooting and other disruptive power actions.
 
 ## ROCKNIX ARCHITECTURE (THE BOOT CHAIN)
 1. **THE REBOOT WIPE:** Rocknix vaporizes `/dev/shm` on every reboot. Background processes must rebuild `$SHM_DIR` instantly upon execution.

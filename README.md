@@ -61,11 +61,11 @@ Captured on-device with the ETK's `L1` screenshot shutter — MangoHUD overlay i
 *GT6 — Nürburgring Nordschleife at night, Lap 1 of 2, cockpit view at 40 mph into a moonlit corner. HUD: `VULKAN 8FPS 131.9ms BATT 54% ETK 79° 11.99 96% 132+ 29.4k 269MB`. The Green Hell at night, on a handheld, running PS3. **A clean lap landed 2026-05-26.***
 
 ## ETK System Requirements
-ETK is certified against **ROCKNIX nightly `20260610`** on SM8250 (Retroid Pocket Flip 2), with a hard architectural floor at 20260520 (DS5 gamepad era). The nightly pin is deliberate: nightly-20260610 ships RPCS3 `0.0.41-19444`, which contains the upstream Gran Turismo 5 memory-leak fix ([RPCS3 #18819](https://github.com/RPCS3/rpcs3/issues/18819), ~300 MB leaked per car viewed — fatal on an 8 GB handheld and the prime suspect behind the former dominant "silent crash" class), plus Mesa Turnip 26.1.2 and kernel 7.0.11. Official release `20260601` predates the fix. The race-stability bar — five consecutive crash-free runs of the same target race to a graceful emulator exit — has been **cleared on GT5 Prologue** (best streak: 16 crash-free sessions / 8 back-to-back clean finishes). That result was earned on a **saturated** shader vault; it is **not yet consistently reproducible from a fresh install**, where the rig re-enters the harvest cycle and crashes until the cache re-saturates. Race-stable is proven *reachable*, not guaranteed every session.
+ETK is certified against **ROCKNIX nightly `20260622`** on SM8250 (Retroid Pocket Flip 2), with a hard architectural floor at 20260520 (DS5 gamepad era). The pin tracks the nightly cadence deliberately: nightly-20260610 first shipped RPCS3 `0.0.41-19444`, which contains the upstream Gran Turismo 5 memory-leak fix ([RPCS3 #18819](https://github.com/RPCS3/rpcs3/issues/18819), ~300 MB leaked per car viewed — fatal on an 8 GB handheld and the prime suspect behind the former dominant "silent crash" class), plus Mesa Turnip 26.1.2 and kernel 7.0.11; certification has since tracked forward to `20260622` (kernel 7.0.11 unchanged). Official release `20260601` predates the fix. The race-stability bar — five consecutive crash-free runs of the same target race to a graceful emulator exit — has been **cleared on GT5 Prologue** (best streak: 16 crash-free sessions / 8 back-to-back clean finishes). That result was earned on a **saturated** shader vault; it is **not yet consistently reproducible from a fresh install**, where the rig re-enters the harvest cycle and crashes until the cache re-saturates. Race-stable is proven *reachable*, not guaranteed every session.
 | Type | Detail |
 |---|---|
 | Host System | macOS or Linux native ([Windows/PC port](#windows-install-guide)) |
-| OS | ROCKNIX (Nightly: 20260616) |
+| OS | ROCKNIX (Nightly: 20260622) |
 | Driver | MESA Turnip 26.1.2 |
 | Shell |  BusyBox v1.36.1 |
 | Custom Overlay |  MangoHUD |
@@ -87,7 +87,7 @@ The kit ships with one calibrated device profile (`SM8250`) which architecturall
 1. Customized in-game overlay dashboard with ETK telematics inside native ROCKNIX MangoHUD
 1. Hardware and driver tunings for maximum performance going beyond config settings
 1. Optimized emulator game configurations tuned to the device hardware
-1. On-device **DRIVER tab** to A/B the Mesa/Turnip graphics-driver dials (`TU_AUTOTUNE_ALGO` + the `TU_DEBUG` ladder), with every race session stamped in the ledger with the exact dial set it ran under
+1. On-device **DRIVER tab** to swap the whole Mesa/Turnip **driver build** (a `DRIVER BUILD` selector over the on-rig catalog of `.so`s you stage in `drivers/` — your own fork, the stock OS driver, or community Adreno-650 builds; pick + reboot to load, with the live build shown in the header) *and* to A/B its dials (`TU_AUTOTUNE_ALGO` + the `TU_DEBUG` ladder), with every race session stamped in the ledger with the exact dial set it ran under
 1. **Crash-cam** — every recoverable freeze is photographed at the `R3` panic and bound to its race-ledger entry, viewable full-screen on the device (crash signature + frame + dial, all linked)
 1. Smart thermal protection to safely overdrive the device during shader harvesting, with automatic overheat recovery that returns to racing once cooled — no reboot
 1. Automatic shader backup from your device to your computer to shield hard-earned work from loss, plus an optional **Private Paddock** — push/pull your shaders, tunes, and saves to your own private GitHub repo straight from the rig over WiFi (self-custody, nothing shared publicly), and **Manage Shaders** to reclaim storage by sweeping shaders stranded by driver updates
@@ -96,7 +96,7 @@ The kit ships with one calibrated device profile (`SM8250`) which architecturall
 1. Multi-Installation Options: FULL installation for initial shader harvesting and tuning, LITE installation for saturated shader sets with thermal protection only, RAW for stress testing without shader and thermal protections (`ETK_BUILD_TYPE` in `etk.conf`)
 
 # Getting Started
-1. [Flash](https://rocknix.org/play/install/) the [ROCKNIX nightly](https://github.com/ROCKNIX/distribution-nightly/releases) certified in [ETK System Requirements](#etk-system-requirements) above (`20260610`) to your handheld's SD card and complete its first-time setup so the rig joins your WiFi. 
+1. [Flash](https://rocknix.org/play/install/) the [ROCKNIX nightly](https://github.com/ROCKNIX/distribution-nightly/releases) certified in [ETK System Requirements](#etk-system-requirements) above (`20260622`) to your handheld's SD card and complete its first-time setup so the rig joins your WiFi. 
 If you've already installed ROCKNIX, switch the update channel to nightly (`START` → `UPDATES & DOWNLOADS`), update to the certified nightly, and let the auto-update complete and reboot first. 
 **Do not update past the certified nightly** without checking the latest README.md for the last known ETK-supported ROCKNIX build.
 2. Clone this repo to your computer.
@@ -185,7 +185,7 @@ This option does not back your shaders up to the PC (the rig still vaults locall
 
 **2. WSL2 (full-featured).** For the complete experience including host-side shader-vault backup/restore (Tier-B), install WSL2 + Ubuntu, clone the kit, and follow [Getting Started](#getting-started) above unchanged — `install.sh` runs in WSL2 with no modifications.
 
-For the one-time fresh-card flash, use the official ROCKNIX [ImageBurner](https://github.com/ROCKNIX/ImageBurner/releases) — Windows-native, no dependency, to install the certified nightly (`20260610`) required for the ETK.
+For the one-time fresh-card flash, use the official ROCKNIX [ImageBurner](https://github.com/ROCKNIX/ImageBurner/releases) — Windows-native, no dependency, to install the certified nightly (`20260622`) required for the ETK.
 
 ## Manual SMB Backup
 - (the native PowerShell installer is no-vault, so use this for shader backups on Windows)
