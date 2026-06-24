@@ -26,6 +26,8 @@ export ETK_BUILD_TYPE="${ETK_BUILD_TYPE:-FULL}"
 export DEFAULT_MODE="${DEFAULT_MODE:-RACE}"
 export HUD_HEADER_HOLD_S="${HUD_HEADER_HOLD_S:-15}"
 export ETK_VERBOSE="${ETK_VERBOSE:-1}"
+# host<->rig Tier-A shader sync mode (install.sh): full | backup | off
+export VAULT_SYNC="${VAULT_SYNC:-full}"
 
 # --- [ SHM & STATE ] ---
 export SHM_DIR="/dev/shm/etk_shm"

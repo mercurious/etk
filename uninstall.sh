@@ -195,19 +195,28 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
     echo "|/bin/false" > /proc/sys/kernel/core_pattern 2>/dev/null
     echo "    Removed: etk-stage3.service / 02-etk-coredump.sh / 098-etk-stage3 (core_pattern restored)"
 
-    # Custom Turnip (Stage IV): drop the boot bind-mount unit + unbind so the
-    # rig falls back to the stock squashfs driver. Leaves /storage/turnip/ (the
-    # user's built .so) in place — it's a build artifact, not ETK runtime.
+    # Custom Turnip (Stage IV): drop the boot bind-mount unit + its resolver +
+    # unbind so the rig falls back to the stock squashfs driver. Leaves
+    # /storage/turnip/ (the driver catalog + the operator's selection) in place —
+    # build artifacts, not ETK runtime.
     systemctl disable --now etk-turnip.service 2>/dev/null
     umount /usr/lib/libvulkan_freedreno.so 2>/dev/null || true
-    rm -f /storage/.config/system.d/etk-turnip.service
-    echo "    Removed: etk-turnip.service (stock Turnip restored; /storage/turnip/ kept)"
+    rm -f /storage/.config/system.d/etk-turnip.service /storage/.config/etk-turnip-bind.sh
+    echo "    Removed: etk-turnip.service + bind resolver (stock Turnip restored; /storage/turnip/ catalog kept)"
 
     # Turnip driver dials (Pitstop DRIVER tab): the profile.d injection lives
     # OUTSIDE ETK_ROOT, so it would otherwise keep altering Turnip after the kit
     # is gone. Remove it so the rig reverts to Turnip's built-in autotune.
     rm -f /storage/.config/profile.d/097-etk-turnip-dials
     echo "    Removed: 097-etk-turnip-dials (Turnip dials reverted to default)"
+
+    # POWER profile (Pitstop POWER tab): the boot applier re-pins CPU/GPU
+    # governors + clocks every boot, so it would keep overriding stock power
+    # management after uninstall. Drop the unit + applier; thermal_d's own
+    # governor handling returns to stock. Leaves /storage/etk-power/ profile.
+    systemctl disable --now etk-power.service 2>/dev/null
+    rm -f /storage/.config/system.d/etk-power.service /storage/.config/etk-power-apply.sh
+    echo "    Removed: etk-power.service + applier (stock power management restored)"
 
     # Private Paddock credential (0.3.0): contains the user's GitHub token —
     # must not survive an uninstall. The paddock repo itself is untouched

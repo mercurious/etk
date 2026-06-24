@@ -21,13 +21,32 @@ RIG_SSH="root@SM8250.local"
 # RAW  — HUD only, no protection (for stress testing)
 ETK_BUILD_TYPE="FULL"
 
-# --- Custom Turnip driver (Stage IV — optional) ---
-# Path to a self-built Mesa Turnip .so (ROCKNIX glibc/msm build) to pin over
-# the stock nightly driver. install.sh pushes it to /storage/turnip/ and a
-# boot-persistent systemd unit (etk-turnip.service) bind-mounts it every cold
-# boot. Leave EMPTY to run the stock Turnip (the unit self-skips). The .so is
-# built by scripts/build_rocknix.sh; deploy a one-off (no reinstall) via
-# scripts/deploy_rocknix.sh. Re-validate any swap on a COLD boot.
+# --- Host<->rig shader sync (Tier-A vault) ---
+# Controls how install.sh syncs the harvested SHADER vault between this computer
+# and the rig. (Your telemetry/tuned configs/saves — Tier-B — are always backed
+# up rig->host on every run regardless of this, and only restored host->rig with
+# --restore-state.) Override per-run with `./install.sh --sync-mode=MODE`.
+#   full   — pull (rig->host harvest) AND push (host->rig restore). The classic
+#            two-way mirror; use if the host PC is your shader backup/restore.
+#   backup — pull ONLY. Host is a read-only archive; install never pushes shaders
+#            back, so a stale host vault can't re-seed the rig after a Mesa bump.
+#            RECOMMENDED once you back shaders up to your Private Paddock (PADDOCK
+#            tab), which then owns restore.
+#   off    — no host shader sync at all. Leanest; rely entirely on Private Paddock.
+VAULT_SYNC="full"
+
+# --- Custom Turnip driver catalog (Stage IV — optional) ---
+# Every Mesa Turnip .so (ROCKNIX glibc/msm build) you drop in this repo's
+# drivers/ folder is staged into the on-rig CATALOG (/storage/turnip/drivers/).
+# Pick which one binds over the stock /usr/lib driver from Pitstop's DRIVER tab
+# (DRIVER BUILD selector) and reboot to load it — the choice persists across
+# reboot and reinstall. 'stock' = run ROCKNIX's own Turnip (unbind). Builds come
+# from scripts/build_rocknix.sh, or download community Adreno-650 forks into
+# drivers/. Re-validate any swap on a COLD boot.
+#
+# TURNIP_SO (optional): path to ONE .so that is the DEFAULT pick on a rig that
+# hasn't chosen yet (also staged into the catalog if it lives outside drivers/).
+# Leave EMPTY to default a fresh rig to stock.
 TURNIP_SO=""
 
 # --- Default thermal intent at boot ---

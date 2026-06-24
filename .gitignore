@@ -74,3 +74,10 @@ config/paddock_repos.json
 
 # Pro Tuning build artifacts
 pro-tuning/dist/
+# Driver catalog = local staging only (binaries never committed; same precedent
+# as vault/). Covers ROCKNIX glibc ICDs (drivers/*.so) AND the Android
+# adrenotools packages staged for the aPS3e side (drivers/android/*).
+drivers/*.so
+drivers/**/*.so
+drivers/**/*.zip
+drivers/android/
