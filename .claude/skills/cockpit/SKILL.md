@@ -66,6 +66,12 @@ asks for more.
   track/section.
 - **On-demand snapshot:** `scripts/cockpit-read.sh` grabs one frame + a one-line telemetry
   read. Use it for a quick "what's happening right now."
+- **Contact sheet (one-shot, ROCKNIX/ssh):** when the driver has shot a batch of L1
+  screenshots over a run, `scripts/contact_sheet.sh [COUNT]` pulls the N most-recent on-rig
+  ETK screenshots and montages them into ONE labeled grid PNG — Read it to see the whole run's
+  sections / car-density / per-frame HUD-fps at a glance, then Read individual frames full-res
+  to pull exact numbers. Filter to one run with `COCKPIT_SS_GLOB='*20260622_2024*'`. (Validated
+  2026-06-22 on the HSL tunnel analysis — it turned the GPU-vs-CPU-bound diagnosis into one look.)
 - **Reading FPS:** SurfaceFlinger `--latency` is unreliable on some builds. When it returns
   nothing, **read the FPS straight off the in-frame HUD** (e.g. the ETK overlay) — vision is
   a perfectly good instrument.
@@ -126,6 +132,7 @@ derivation differ.
 - `scripts/preflight.sh` — adb + device + app + gamepad detection; coaches USB-debugging setup.
 - `scripts/spotter.sh` — background telemetry logger + auto dip-frame capture (the instrument).
 - `scripts/cockpit-read.sh` — one-shot frame + telemetry snapshot.
+- `scripts/contact_sheet.sh` — one-shot labeled contact sheet of the N most-recent on-rig ETK screenshots (ROCKNIX/ssh; tar-over-ssh pull + PIL montage). Args: `[COUNT] [OUTPUT_PNG]`; env `COCKPIT_SS_GLOB` to scope one run. Read the sheet for a whole-run section/fps overview.
 - `scripts/frame.sh` — grab a single frame (and notes for high-fps screenrecord/scrcpy).
 - `scripts/pad.sh` — gamepad input actions via sendevent (driver mode, Android).
 - `scripts/rocknix_spotter_loop.sh` — ROCKNIX telemetry + **auto-catch crash-watch** over ssh (the ROCKNIX instrument): arms at idle, breaks on a6xx-fault / `live_stat`-stale / core-log-fatal, captures status+frame+state. Args: `DUR INT [STALE_TICKS]`. Run backgrounded so it notifies on catch.
