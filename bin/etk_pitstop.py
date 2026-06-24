@@ -846,12 +846,14 @@ _DRIVER_LABEL_CACHE = None
 def _build_label(build_id):
     """Short, human-friendly name for a catalog build id (a .so filename).
     'libvulkan_freedreno-rocknix-26.1.3-lsd.so' -> 'rocknix-26.1.3-lsd';
+    'etk_turnip_rocknix_26.1.3_gtk_0.1.so'      -> 'rocknix_26.1.3_gtk_0.1';
     'stock'/'' -> 'stock'. Filename IS the catalog id (operator drops the .so
-    into drivers/ and we name it by what they called it)."""
+    into drivers/ and we name it by what they called it). The ETK livery
+    convention is [house]_[driver]_[os]_[base-version]_[game-target]_[fork-version]."""
     if not build_id or build_id == STOCK_BUILD:
         return STOCK_BUILD
     name = re.sub(r"\.so$", "", build_id)
-    name = re.sub(r"^libvulkan_freedreno[-_]?", "", name)
+    name = re.sub(r"^(?:libvulkan_freedreno|etk_turnip)[-_]?", "", name)
     return name or build_id
 
 
@@ -1151,6 +1153,10 @@ def load_sessions_ledger(filter_game_id=None):
                         "ft_p99_ms": float(fields[18]) if len(fields) > 18 and fields[18] else 0.0,
                         "res_scale": int(fields[19]) if len(fields) > 19 and fields[19].strip().isdigit() else 0,
                         "gpu_mhz": int(fields[20]) if len(fields) > 20 and fields[20].strip().isdigit() else 0,
+                        # ft_jitter_ms (col 23) — the road-feel chase metric: mean
+                        # |Δframetime| over adjacent race frames. len-guarded so
+                        # older rows (no jitter col) read 0 and render "----".
+                        "ft_jitter_ms": float(fields[22]) if len(fields) > 22 and fields[22] else 0.0,
                         "_kind": "session",
                     }
                 except ValueError:
@@ -1510,7 +1516,11 @@ _TEL_W_STATUS = 15
 _TEL_W_DUR = 6
 _TEL_W_RAM = 5
 _TEL_W_LOAD = 5
-_TEL_W_TEMP = 7
+# JITTER replaced TEMP as the visible chase metric (2026-06-24): thermals are a
+# solved, uninteresting axis; frame-pacing jitter is the new road-feel target.
+# peak_temp/avg_temp remain STORED (ledger cols 8-9, never sheared) and surface
+# in the session-detail card for thermal forensics — just not as the table headline.
+_TEL_W_JITTER = 7
 _TEL_W_DRAIN = 5
 _TEL_W_SHD = 4
 # G-INSTR + tune-attribution columns. FPS sits next to DUR (headline, safe from
@@ -1541,6 +1551,9 @@ _GAUGE_DRAIN_MAX = 30         # |drain%| over a session
 # same "full = bad" sense as the temp/drain gauges.
 _GAUGE_FPS_MAX = 60
 _GAUGE_FT_MAX = 200
+# Jitter (mean |Δframetime| ms) — fuller = WORSE (slushy). ~30ms of frame-to-
+# frame wobble is severe judder; smooth race feel sits in the low single digits.
+_GAUGE_JITTER_MAX = 30
 _GAUGE_W = 18
 
 _CRASH_SIG_CACHE = None
@@ -1577,7 +1590,7 @@ def _telemetry_header():
         f"  {'FPS':>{_TEL_W_FPS}}"
         f"  {'RAM':>{_TEL_W_RAM}}"
         f"  {'LOAD':>{_TEL_W_LOAD}}"
-        f"  {'TEMP':>{_TEL_W_TEMP}}"
+        f"  {'JITTER':>{_TEL_W_JITTER}}"
         f"  {'DRAIN':>{_TEL_W_DRAIN}}"
         f"  {'SHD':>{_TEL_W_SHD}}"
         f"  {'RES':>{_TEL_W_RES}}"
@@ -1626,9 +1639,8 @@ def _draw_session_row(stdscr, y, w, row, selected=False):
     time_str = _time_label(row["epoch"])
     dur_str = _format_duration(duration)
 
-    peak_t = row["peak_temp"]
-    avg_t = row["avg_temp"]
-    temp_str = f"{avg_t}/{peak_t}C" if peak_t > 0 else "----"
+    jitter = row.get("ft_jitter_ms", 0.0)
+    jitter_str = f"{jitter:.1f}" if jitter > 0 else "----"
 
     load = row["peak_load"]
     load_str = f"{load:.1f}" if load > 0 else "----"
@@ -1660,7 +1672,7 @@ def _draw_session_row(stdscr, y, w, row, selected=False):
         f"  {fps_str:>{_TEL_W_FPS}}"
         f"  {ram_str:>{_TEL_W_RAM}}"
         f"  {load_str:>{_TEL_W_LOAD}}"
-        f"  {temp_str:>{_TEL_W_TEMP}}"
+        f"  {jitter_str:>{_TEL_W_JITTER}}"
         f"  {drain_str:>{_TEL_W_DRAIN}}"
         f"  {shd_str:>{_TEL_W_SHD}}"
         f"  {res_str:>{_TEL_W_RES}}"
@@ -1853,6 +1865,11 @@ def _draw_session_detail(stdscr, state, sessions, config_changes):
             hitch = (1000.0 / ft_p99) if ft_p99 > 0 else 0.0
             put(y, 4, f"{'P99 ft':<8}{(format(ft_p99, '.0f')+'ms ~'+format(hitch, '.0f')+'fps'):<20}"
                       f"{_gauge_bar(ft_p99, _GAUGE_FT_MAX)}"); y += 1
+            # jitter = mean |Δframetime| (road-feel; fuller bar = slushier).
+            jitter = row.get("ft_jitter_ms", 0.0)
+            if jitter > 0:
+                put(y, 4, f"{'jitter':<8}{(format(jitter, '.1f')+'ms |dft|'):<20}"
+                          f"{_gauge_bar(jitter, _GAUGE_JITTER_MAX)}"); y += 1
             res = row.get("res_scale", 0)
             clk = row.get("gpu_mhz", 0)
             ctx = []
@@ -3438,7 +3455,18 @@ _TU_DEBUG_ADVANCED = ("nobin", "forcebin", "nocb",
                       # Stage IV §5 resolution-alignment investigation: dimlog
                       # logs the GMEM render dims + ragged remainder at tiling
                       # setup (diagnostic, inert; REQUIRES the lsd-dim fork .so).
-                      "dimlog")
+                      "dimlog",
+                      # Patch #3 "B" cure-candidate: cap the a6xx depth CCU cache
+                      # size (FULL->HALF/QUARTER) to attack the DEPTH_CACHE=FULL
+                      # boss-resolve saturation. (FALSIFIED — cache-size isn't the
+                      # lever; quarter is worse. Kept for the record.)
+                      "ccuhalf", "ccuquarter",
+                      # Patch #3 "A" cure-candidate: dsbypass routes depth-STORING
+                      # renderpasses to sysmem to bypass the GMEM depth resolve
+                      # (missed the boss's alignment-driven resolve). dsany is the
+                      # refinement: ANY depth-attachment pass -> sysmem (catches the
+                      # boss pass). REQUIRES the gtk fork .so.
+                      "dsbypass", "dsany")
 _TU_DEBUG_KNOWN = set(_TU_DEBUG_PRIMARY) | set(_TU_DEBUG_ADVANCED)
 
 

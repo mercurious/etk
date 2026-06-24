@@ -424,8 +424,13 @@ TUNE_TAG=$(head -n1 "$ACTIVE_TUNE_FILE" 2>/dev/null | tr -d '\t\r')
 #   - fps_med  = median race fps (robust headline; NEVER mean-of-fps).
 #   - fps_1low = 1%-low race fps (the stutter floor).
 #   - ft_p99_ms= 99th-pct race frametime ms (the hitching tail).
+#   - ft_jitter_ms = mean |Δframetime| between ADJACENT race frames — the
+#     road-feel / "smooth-vs-slushy" metric (even pacing = low; lumps = high).
+#     This is the Phase-N chase metric: median fps lies (a higher average can
+#     feel worse), p99 only catches the worst hitch — jitter is the felt
+#     frame-pacing consistency the driver reads as accurate speed/time.
 # Absent CSV / too few race frames (crash before race, menu-only) => 0.
-FPS_MED=0; FPS_1LOW=0; FT_P99=0
+FPS_MED=0; FPS_1LOW=0; FT_P99=0; FT_JITTER=0
 MANGOLOG_DIR="$SHM_DIR/mangolog"
 FPS_CSV=$(ls -1t "$MANGOLOG_DIR"/*.csv 2>/dev/null | head -1)
 if [ -n "$FPS_CSV" ] && [ -f "$FPS_CSV" ]; then
@@ -439,6 +444,14 @@ if [ -n "$FPS_CSV" ] && [ -f "$FPS_CSV" ]; then
             | awk '{a[NR]=$1} END{i=int(NR*0.01); if(i<1)i=1; printf "%.1f", a[i]}')
         FT_P99=$(printf '%s\n' "$VALID" | awk '{print $2}' | sort -n \
             | awk '{a[NR]=$1} END{i=int(NR*0.99+0.999); if(i>NR)i=NR; if(i<1)i=1; printf "%.1f", a[i]}')
+        # ft_jitter: mean |Δframetime| over ADJACENT race frames. Computed on the
+        # RAW CSV (not the VALID list) to preserve true frame adjacency; the same
+        # >=25ms race-gate is applied inline so menu/transition frames neither
+        # contribute deltas nor bridge a spurious one. Validated 2026-06-24
+        # (6.3ms on a real 1761-delta run). BusyBox-awk safe.
+        FT_JITTER=$(awk -F, 'NR>3 { ft=$2+0; fps=$1+0; r=(ft>=25 && fps>0);
+            if (r && p) { d=ft-q; if(d<0)d=-d; s+=d; n++ }
+            q=ft; p=r } END{ if(n>1) printf "%.1f", s/n; else printf "0" }' "$FPS_CSV")
     fi
     # Prune the session CSV(s) so SHM stays lean and the next session's
     # newest-CSV pick is unambiguous. MangoHud is already dead at postmortem.
@@ -447,6 +460,7 @@ fi
 case "$FPS_MED" in ''|*[!0-9.]*) FPS_MED=0 ;; esac
 case "$FPS_1LOW" in ''|*[!0-9.]*) FPS_1LOW=0 ;; esac
 case "$FT_P99" in ''|*[!0-9.]*) FT_P99=0 ;; esac
+case "$FT_JITTER" in ''|*[!0-9.]*) FT_JITTER=0 ;; esac
 
 # --- TUNE ATTRIBUTION (cols 20-21: res_scale, gpu_mhz) ---
 # Stamp the run's RPCS3 internal resolution scale (TUNING tab) + GPU max clock
@@ -470,14 +484,15 @@ case "$PWR_TAG" in '') PWR_TAG=none ;; esac
 # --- LEDGER WRITE ---
 # Header written exactly once via tmp+mv (atomic on POSIX). Subsequent
 # rows are direct appends; a partial last row on hard crash is a signal,
-# not corruption. tune_tag is the trailing column, so older 14-col ledgers and
-# any cut -f<n> reader stay valid; only fresh ledgers carry the labelled header.
-LEDGER_HEADER='epoch\tduration_s\tbuild\tgame_id\tstatus\tpeak_load\tpeak_ram_mb\tpeak_temp\tavg_temp\tcrash_sig\tfence_at_crash\tshaders_harvested\tdrain_pct\tthermal_overrides\ttune_tag\tcrash_shot\tfps_med\tfps_1low\tft_p99_ms\tres_scale\tgpu_mhz\tpwr'
+# not corruption. Columns are APPEND-ONLY-TRAILING (ft_jitter_ms is newest), so
+# older narrower ledgers and any cut -f<n> reader stay valid; only fresh ledgers
+# carry the labelled header.
+LEDGER_HEADER='epoch\tduration_s\tbuild\tgame_id\tstatus\tpeak_load\tpeak_ram_mb\tpeak_temp\tavg_temp\tcrash_sig\tfence_at_crash\tshaders_harvested\tdrain_pct\tthermal_overrides\ttune_tag\tcrash_shot\tfps_med\tfps_1low\tft_p99_ms\tres_scale\tgpu_mhz\tpwr\tft_jitter_ms'
 if [ ! -f "$SESSIONS_LEDGER" ]; then
     TMP="$SESSIONS_LEDGER.tmp"
     printf "$LEDGER_HEADER\n" > "$TMP"
     mv "$TMP" "$SESSIONS_LEDGER"
-elif ! head -1 "$SESSIONS_LEDGER" | grep -q 'pwr'; then
+elif ! head -1 "$SESSIONS_LEDGER" | grep -q 'ft_jitter_ms'; then
     # Migrate a stale header (older ledgers were created with fewer columns) so
     # the ledger self-describes. Rewrite ONLY the header line; existing rows are
     # untouched — older rows simply lack the newest trailing cols (read as empty).
@@ -485,11 +500,11 @@ elif ! head -1 "$SESSIONS_LEDGER" | grep -q 'pwr'; then
     { printf "$LEDGER_HEADER\n"; tail -n +2 "$SESSIONS_LEDGER"; } > "$TMP" && mv "$TMP" "$SESSIONS_LEDGER"
 fi
 
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$NOW" "$DURATION" "$ETK_BUILD_TYPE" "$GAME_ID" "$STATUS" \
     "$PEAK_LOAD" "$PEAK_RAM" "$PEAK_TEMP" "$AVG_TEMP" \
     "$CRASH_SIG" "$FENCE_AT_CRASH" "$SHADERS" "$DRAIN_PCT" "$THERMAL_OVERRIDES" \
-    "$TUNE_TAG" "$CRASH_SHOT" "$FPS_MED" "$FPS_1LOW" "$FT_P99" "$RES_SCALE" "$GPU_MHZ" "$PWR_TAG" \
+    "$TUNE_TAG" "$CRASH_SHOT" "$FPS_MED" "$FPS_1LOW" "$FT_P99" "$RES_SCALE" "$GPU_MHZ" "$PWR_TAG" "$FT_JITTER" \
     >> "$SESSIONS_LEDGER"
 
 # --- CAREER ROLLUP ---
