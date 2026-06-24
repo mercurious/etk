@@ -17,6 +17,10 @@ source /storage/games-internal/roms/etk/scripts/env.sh
 
 # 0. SHM REBOOT SEEDING
 mkdir -p "$SHM_DIR" 2>/dev/null
+# G-INSTR: MangoHud's autostart_log (config/MangoHud.conf) writes the per-session
+# fps/frametime CSV here. Seed the dir so MangoHud's logger never races a missing
+# folder at swapchain init; session_postmortem.sh parses + prunes it on exit.
+mkdir -p "$SHM_DIR/mangolog" 2>/dev/null
 echo "INITIALIZING" > "$LIVE_STAT"
 
 while true; do
