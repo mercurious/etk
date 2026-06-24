@@ -139,8 +139,18 @@ for arg in "$@"; do
         --restore-state) RESTORE_STATE=1 ;;
         --verbose|-v) ETK_VERBOSE=1 ;;
         --pair) DO_PAIR_ONLY=1 ;;
+        # --sync-mode=MODE overrides etk.conf's VAULT_SYNC for this run only
+        # (full|backup|off). See the Tier-A gates in Steps 2 & 4.
+        --sync-mode=*) VAULT_SYNC="${arg#*=}" ;;
+        --no-vault-sync) VAULT_SYNC="off" ;;
     esac
 done
+# Normalize + validate the Tier-A shader-sync mode (env.sh already defaulted it
+# to 'full' from etk.conf; a --sync-mode flag above may have overridden it).
+case "$VAULT_SYNC" in
+    full|backup|off) ;;
+    *) echo -e "${Y}>>> Unknown VAULT_SYNC='$VAULT_SYNC' — using 'full'.${N}"; VAULT_SYNC="full" ;;
+esac
 
 # ==========================================================
 # SSH PAIRING (host -> rig)
@@ -416,6 +426,7 @@ tui_step_done 0
 # host copy with a rig copy of the same name.
 # ==========================================================
 tui_step_start 1
+say "${C}[INFO] Shader sync mode: ${VAULT_SYNC} (full=pull+push, backup=pull-only, off=none)${N}"
 # --- INTERNAL-STORAGE DETECTION (Tier A/B) ---
 # On an internal-boot rig, per-game vault dirs (Tier A) are symlinks into
 # /storage/etk-internal. The vault rsyncs below use --copy-links on PULL and
@@ -433,7 +444,14 @@ fi
 # dereference it so the HOST archives the REAL shaders, not a dangling link
 # pointing at a rig-only path. No-op when the dir is a plain dir (SD rig).
 mkdir -p "./vault/$CHIPSET"
-tui_rsync 1 0 70 "Pulling vault shaders (rig → host)" --copy-links --ignore-existing --exclude='.DS_Store' "$RIG_SSH:$ETK_ROOT/vault/$CHIPSET/" "./vault/$CHIPSET/"
+# Tier-A shader PULL (rig -> host harvest). Runs in full + backup modes; the
+# only mode that skips it is 'off' (Private Paddock owns the shader archive).
+if [ "$VAULT_SYNC" = "off" ]; then
+    say "${Y}[SKIP] Tier-A shader pull — VAULT_SYNC=off (Paddock owns shader backup)${N}"
+    tui_step_progress 1 70
+else
+    tui_rsync 1 0 70 "Pulling vault shaders (rig → host)" --copy-links --ignore-existing --exclude='.DS_Store' "$RIG_SSH:$ETK_ROOT/vault/$CHIPSET/" "./vault/$CHIPSET/"
+fi
 
 # --- TIER-B BACKUP: rig -> host (addendum §C) ---
 # Mutable-precious state: telemetry ledgers, tuned RPCS3 configs, RPCS3
@@ -457,7 +475,11 @@ for pair in \
     PCT_LO=$(( 70 + (TIER_B_IDX - 1) * 7 ))
     PCT_HI=$(( 70 + TIER_B_IDX * 7 ))
     if ssh $RIG_SSH "[ -d $SRC ]" 2>/dev/null; then
-        tui_rsync 1 $PCT_LO $PCT_HI "Mirroring $NAME" --exclude='.DS_Store' "$RIG_SSH:$SRC/" "$DST/"
+        # Exclude the big GPU-hang redumps (.rd, hundreds of MB each) + kernel
+        # devcoredumps from the Tier-B mirror: they bloat every sync (re-pulling
+        # ~900 MB redumps on each deploy) and are decoded in-container, not
+        # re-read from the host backup. The tiny .faultinfo sidecars stay synced.
+        tui_rsync 1 $PCT_LO $PCT_HI "Mirroring $NAME" --exclude='.DS_Store' --exclude='*.rd' --exclude='*.devcd' "$RIG_SSH:$SRC/" "$DST/"
     else
         say "${Y}[SKIP] rig source absent: $SRC${N}"
         tui_step_progress 1 $PCT_HI
@@ -521,8 +543,14 @@ tui_step_done 2
 # de-internalize the vault). No-op when the dir is a plain dir (SD rig).
 # ==========================================================
 tui_step_start 3
+# Tier-A shader PUSH (host -> rig restore). ONLY in full mode. In backup/off the
+# host never pushes shaders back, so a stale host vault can't re-seed the rig
+# after a Mesa bump (the host-vault-staleness gap) — Private Paddock owns restore.
 # Scoped to $CHIPSET/ — see step 2 rationale.
-if [ -d "./vault/$CHIPSET" ] && [ "$(ls -A "./vault/$CHIPSET" 2>/dev/null)" ]; then
+if [ "$VAULT_SYNC" != "full" ]; then
+    say "${Y}[SKIP] Tier-A shader push (host → rig) — VAULT_SYNC=$VAULT_SYNC${N}"
+    tui_step_progress 3 100
+elif [ -d "./vault/$CHIPSET" ] && [ "$(ls -A "./vault/$CHIPSET" 2>/dev/null)" ]; then
     tui_rsync 3 0 100 "Pushing vault shaders (host → rig)" --keep-dirlinks --ignore-existing --exclude='.DS_Store' "./vault/$CHIPSET/" "$RIG_SSH:$ETK_ROOT/vault/$CHIPSET/"
 else
     say "${Y}[SKIP] No local vault found — nothing to push${N}"
@@ -585,7 +613,8 @@ tui_step_start 4
 # Python engine and field schema
 tui_rsync 4 0 12 "Deploying Pitstop engine (etk_pitstop.py)" --exclude='.DS_Store' ./bin/etk_pitstop.py            $RIG_SSH:$ETK_ROOT/bin/
 tui_rsync 4 12 24 "Deploying field schema (pitstop_fields.json)" --exclude='.DS_Store' ./config/pitstop_fields.json    $RIG_SSH:$ETK_ROOT/config/
-tui_rsync 4 24 36 "Deploying crash signatures" --exclude='.DS_Store' ./config/crash_signatures.json  $RIG_SSH:$ETK_ROOT/config/
+tui_rsync 4 24 30 "Deploying POWER schema (power_profiles.json)" --exclude='.DS_Store' ./config/power_profiles.json   $RIG_SSH:$ETK_ROOT/config/
+tui_rsync 4 30 36 "Deploying crash signatures" --exclude='.DS_Store' ./config/crash_signatures.json  $RIG_SSH:$ETK_ROOT/config/
 # ETK default per-game RPCS3 config template (TOOLS-tab installer copies this
 # to custom_configs/config_<ID>.yml for each newly installed game).
 tui_rsync 4 36 48 "Deploying RPCS3 template (etk_template.yml)" --exclude='.DS_Store' ./config/etk_template.yml       $RIG_SSH:$ETK_ROOT/config/
@@ -751,7 +780,7 @@ echo "0"    > "$SHM_DIR/vault_count"
 #  - The symlink is only (re)pointed when it differs from the
 #    desired target, and vault_d.sh is killed on a re-point so
 #    the Accountant re-baselines against the correct tree.
-# BusyBox-safe: readlink -f, rsync, ln -sf, [ -L ], [ -d ].
+# BusyBox-safe: readlink -f, rsync, ln -sfn, [ -L ], [ -d ].
 # ==========================================================
 etk_link_cache() {
     DESIRED="$1"
@@ -782,7 +811,15 @@ etk_link_cache() {
     CUR_LINK="$(readlink -f "$RPCS3_CACHE_DIR" 2>/dev/null)"
     if [ "$CUR_LINK" != "$DESIRED" ]; then
         rm -f "$RPCS3_CACHE_DIR"
-        ln -sf "$DESIRED" "$RPCS3_CACHE_DIR"
+        # -n (no-dereference): belt-and-suspenders for the rm above. If that rm
+        # ever fails to drop the symlink (TOCTOU / re-entry), a bare `ln -sf`
+        # would dereference the still-present symlink-to-dir and drop
+        # "$DESIRED/shaders -> $DESIRED" INSIDE the vault — a self-loop that
+        # recurses until the 40-link kernel limit and HANGS install.sh's
+        # --copy-links vault PULL (rsync "Too many levels of symbolic links").
+        # -n replaces the link atomically instead of writing inside it.
+        # (vault-loop regression fix, 2026-06-21.)
+        ln -sfn "$DESIRED" "$RPCS3_CACHE_DIR"
         pkill -f vault_d.sh 2>/dev/null
         echo "[$(date '+%H:%M:%S.%N')] CACHE LINKED -> $DESIRED" >> "$TRIPWIRE_LOG"
     fi
@@ -1127,60 +1164,151 @@ else
 fi
 
 # ==========================================================
-# STEP 6.5: CUSTOM TURNIP DRIVER (Stage IV) — boot-persistent bind-mount
+# STEP 6.5: CUSTOM TURNIP DRIVER CATALOG (Stage IV) — boot-persistent selector
 # ==========================================================
 # The stock Turnip lives on read-only squashfs (/usr/lib), so a forked/bumped
-# .so can't replace it in place. It rides on /storage/turnip/ (persistent) and a
-# oneshot systemd unit bind-mounts it over the stock driver every boot — making
-# the runtime deploy (scripts/deploy_rocknix.sh), which reverts on reboot,
-# actually survive a COLD boot (the always-reboot gate is the real validation).
-# GATED: with TURNIP_SO unset/absent the unit self-skips (ConditionPathExists)
-# and the rig runs the stock nightly Turnip — zero effect on stock installs.
-# §G.5 note: once pinned, the Mesa fingerprint tracks OUR driver, so a nightly's
-# stock-Mesa change is intentionally masked (we want our driver regardless).
-if [ -n "${TURNIP_SO:-}" ] && [ -f "$TURNIP_SO" ]; then
-    say "${G}[ETK]${N} Custom Turnip configured — pushing $(basename "$TURNIP_SO") -> /storage/turnip"
-    ssh $RIG_SSH "mkdir -p /storage/turnip" 2>/dev/null
-    scp -q "$TURNIP_SO" "$RIG_SSH:/storage/turnip/libvulkan_freedreno.so"
+# .so can't replace it in place. ETK stages a CATALOG of builds under
+# /storage/turnip/drivers/ (persistent). The operator picks one in Pitstop's
+# DRIVER tab (writes /storage/turnip/selected = a catalog filename or 'stock');
+# a oneshot systemd unit runs etk-turnip-bind.sh every boot to bind the selected
+# build over the stock driver — or unbind for 'stock' — then stamps
+# /storage/turnip/loaded with what it ACTUALLY bound (the honest live state the
+# Pitstop header reads). Reboot-gated by design: a bind-mount can't hot-swap a
+# driver a running RPCS3 has already mapped (the always-reboot gate is the real
+# validation). Empty catalog / 'stock' / no selection => stock nightly Turnip,
+# zero effect on stock installs. The host `drivers/*.so` set IS the catalog; the
+# optional etk.conf TURNIP_SO names the DEFAULT pick on a rig that hasn't chosen.
+# §G.5 note: once a fork is bound, the Mesa fingerprint tracks OUR driver, so a
+# nightly's stock-Mesa change is intentionally masked (we want our driver).
+ssh $RIG_SSH "mkdir -p /storage/turnip/drivers /storage/.config/system.d/" 2>/dev/null
+if ls ./drivers/*.so >/dev/null 2>&1; then
+    say "${G}[ETK]${N} Staging Turnip driver catalog ($(ls ./drivers/*.so | wc -l | tr -d ' ') build(s)) -> /storage/turnip/drivers"
+    rsync -az --include='*.so' --exclude='*' ./drivers/ "$RIG_SSH:/storage/turnip/drivers/" >/dev/null 2>&1
 else
-    say "${Y}[ETK]${N} TURNIP_SO unset — installing the bind-mount unit in self-skip mode (stock driver)"
+    say "${Y}[ETK]${N} No host drivers/*.so — catalog will be stock-only"
+fi
+# An out-of-tree TURNIP_SO is staged into the catalog too, and names the DEFAULT
+# pick for a rig with no on-rig selection yet (preserves prior single-driver UX).
+TURNIP_DEFAULT_SEL="stock"
+if [ -n "${TURNIP_SO:-}" ] && [ -f "$TURNIP_SO" ]; then
+    scp -q "$TURNIP_SO" "$RIG_SSH:/storage/turnip/drivers/$(basename "$TURNIP_SO")"
+    TURNIP_DEFAULT_SEL="$(basename "$TURNIP_SO")"
+    say "${G}[ETK]${N} Default driver build: $(basename "$TURNIP_SO")"
 fi
 TURNIP_OUT_FILE=$(mktemp /tmp/etk_turnip_XXXXXX)
-ssh $RIG_SSH > "$TURNIP_OUT_FILE" 2>&1 << 'REMOTE'
-    mkdir -p /storage/.config/system.d/
+ssh $RIG_SSH "TURNIP_DEFAULT_SEL='$TURNIP_DEFAULT_SEL' sh -s" > "$TURNIP_OUT_FILE" 2>&1 << 'REMOTE'
+    # Boot-time resolver: read the selection, (re)bind or unbind, stamp loaded.
+cat << 'BIND' > /storage/.config/etk-turnip-bind.sh
+#!/bin/sh
+# ETK Turnip driver selector (Stage IV). Binds the operator-selected catalog
+# build over the stock /usr/lib driver, then records what was actually bound.
+# Selection: /storage/turnip/selected (a drivers/*.so filename, or 'stock').
+# Output:    /storage/turnip/loaded   (the live build id, or 'stock').
+TDIR=/storage/turnip
+DRV="$TDIR/drivers"
+ACTIVE=/usr/lib/libvulkan_freedreno.so
+pick=""
+[ -f "$TDIR/selected" ] && pick=$(tr -d '[:space:]' < "$TDIR/selected")
+# Pre-catalog fallback: legacy single-file install with no selection written.
+if [ -z "$pick" ] && [ -f "$TDIR/libvulkan_freedreno.so" ]; then
+    grep -q " $ACTIVE " /proc/mounts || mount --bind "$TDIR/libvulkan_freedreno.so" "$ACTIVE"
+    echo custom > "$TDIR/loaded"
+    exit 0
+fi
+# Resolve the pick to a real catalog file; anything else means stock (unbind).
+target=""
+if [ -n "$pick" ] && [ "$pick" != "stock" ] && [ -f "$DRV/$pick" ]; then
+    target="$DRV/$pick"
+fi
+# Make the live bind match the target (idempotent; rebind on a changed pick).
+if grep -q " $ACTIVE " /proc/mounts; then
+    umount "$ACTIVE" 2>/dev/null || true
+fi
+if [ -n "$target" ] && mount --bind "$target" "$ACTIVE"; then
+    echo "$pick" > "$TDIR/loaded"
+else
+    echo stock > "$TDIR/loaded"
+fi
+BIND
+    chmod +x /storage/.config/etk-turnip-bind.sh
 cat << 'SVC' > /storage/.config/system.d/etk-turnip.service
 [Unit]
-Description=ETK Custom Turnip Driver (Stage IV bind-mount over stock)
+Description=ETK Custom Turnip Driver selector (Stage IV bind-mount over stock)
 After=local-fs.target
-ConditionPathExists=/storage/turnip/libvulkan_freedreno.so
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/bin/sh -c 'grep -q " /usr/lib/libvulkan_freedreno.so " /proc/mounts || mount --bind /storage/turnip/libvulkan_freedreno.so /usr/lib/libvulkan_freedreno.so'
+ExecStart=/bin/sh /storage/.config/etk-turnip-bind.sh
 ExecStop=/bin/sh -c 'umount /usr/lib/libvulkan_freedreno.so 2>/dev/null || true'
 
 [Install]
 WantedBy=multi-user.target
 SVC
-    systemctl daemon-reload
-    if [ -f /storage/turnip/libvulkan_freedreno.so ]; then
-        systemctl enable /storage/.config/system.d/etk-turnip.service >/dev/null 2>&1
-        systemctl start etk-turnip.service >/dev/null 2>&1
-        ver=$(strings /storage/turnip/libvulkan_freedreno.so 2>/dev/null | grep -m1 -oE 'Mesa [0-9.]+')
-        active=$(strings /usr/lib/libvulkan_freedreno.so 2>/dev/null | grep -m1 -oE 'Mesa [0-9.]+')
-        echo "TURNIP_OK enabled (${ver:-?}); /usr/lib now resolves to ${active:-?}; persists on cold boot"
-    else
-        systemctl disable etk-turnip.service >/dev/null 2>&1
-        echo "TURNIP_SKIP unit installed + self-skipping (no /storage/turnip driver — stock Turnip)"
+    # Seed the default pick ONLY if the operator hasn't chosen on-rig (their
+    # Pitstop selection persists across reinstall — that's the whole point).
+    if [ ! -f /storage/turnip/selected ]; then
+        printf '%s\n' "${TURNIP_DEFAULT_SEL:-stock}" > /storage/turnip/selected
     fi
+    systemctl daemon-reload
+    systemctl enable /storage/.config/system.d/etk-turnip.service >/dev/null 2>&1
+    systemctl restart etk-turnip.service >/dev/null 2>&1
+    sel=$(cat /storage/turnip/selected 2>/dev/null)
+    loaded=$(cat /storage/turnip/loaded 2>/dev/null)
+    active=$(strings /usr/lib/libvulkan_freedreno.so 2>/dev/null | grep -m1 -oE 'Mesa [0-9.]+')
+    n=$(ls /storage/turnip/drivers/*.so 2>/dev/null | wc -l | tr -d ' ')
+    echo "TURNIP_OK catalog=${n} build(s); selected=${sel:-stock}; loaded=${loaded:-stock}; /usr/lib=${active:-?}"
 REMOTE
 if grep -q TURNIP_OK "$TURNIP_OUT_FILE"; then
     say "${G}[ETK]${N} $(grep -m1 TURNIP_OK "$TURNIP_OUT_FILE" | sed 's/TURNIP_OK //')"
 else
-    say "${Y}[ETK]${N} $(grep -m1 TURNIP_SKIP "$TURNIP_OUT_FILE" || echo 'Turnip unit deploy: no status marker')"
+    say "${Y}[ETK]${N} $(grep -m1 -E 'TURNIP|error|denied' "$TURNIP_OUT_FILE" || echo 'Turnip selector deploy: no status marker')"
 fi
 rm -f "$TURNIP_OUT_FILE"
+
+# ==========================================================
+# STEP 6.6: POWER PROFILE APPLIER (CPU/GPU gov + clock pinning)
+# ==========================================================
+# Pitstop's POWER tab writes /storage/etk-power/profile (path<TAB>value lines).
+# sysfs power knobs reset on reboot, so a boot oneshot re-applies them — same
+# self-skipping pattern as etk-turnip.service. GATED: no profile => unit skips,
+# stock thermal_d governor management is unchanged (zero effect until opted in).
+# The POWER schema (power_profiles.json) is pushed with the other config in STEP 4.
+ssh $RIG_SSH "sh -s" > /dev/null 2>&1 <<'REMOTE'
+    mkdir -p /storage/.config/system.d/ /storage/etk-power
+cat << 'APPLY' > /storage/.config/etk-power-apply.sh
+#!/bin/sh
+# ETK POWER applier — re-applies the saved gov/clock profile at boot (sysfs power
+# knobs reset on reboot). Reads path<TAB>value lines; '#' lines are records/ignored.
+PROFILE=/storage/etk-power/profile
+[ -f "$PROFILE" ] || exit 0
+TAB=$(printf '\t')
+while IFS="$TAB" read -r path val; do
+    case "$path" in '#'*|'') continue ;; esac
+    [ -w "$path" ] && printf '%s' "$val" > "$path" 2>/dev/null
+done < "$PROFILE"
+EOFLINE=$(grep -c . "$PROFILE" 2>/dev/null)
+echo "etk-power applied $(grep -c "$TAB" "$PROFILE" 2>/dev/null) knob writes from $PROFILE"
+APPLY
+    chmod +x /storage/.config/etk-power-apply.sh
+cat << 'SVC' > /storage/.config/system.d/etk-power.service
+[Unit]
+Description=ETK POWER profile (CPU/GPU gov + clock re-apply at boot)
+After=multi-user.target
+ConditionPathExists=/storage/etk-power/profile
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh /storage/.config/etk-power-apply.sh
+
+[Install]
+WantedBy=multi-user.target
+SVC
+    systemctl daemon-reload
+    systemctl enable /storage/.config/system.d/etk-power.service >/dev/null 2>&1
+REMOTE
+say "${G}[ETK]${N} POWER applier deployed (etk-power.service — self-skips until a profile is set)"
 
 # ==========================================================
 # STEP 6: STAGE III STABILITY HARNESS
