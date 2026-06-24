@@ -410,22 +410,86 @@ fi
 TUNE_TAG=$(head -n1 "$ACTIVE_TUNE_FILE" 2>/dev/null | tr -d '\t\r')
 [ -z "$TUNE_TAG" ] && TUNE_TAG="default"
 
+# --- FPS / FRAMETIME (cols 17-19: fps_med, fps_1low, ft_p99_ms) ---
+# G-INSTR: MangoHud auto-logs a per-session CSV (config/MangoHud.conf knobs:
+# autostart_log + log_interval=1000) to $SHM_DIR/mangolog. Col1=fps,
+# col2=frametime(ms); 3-line preamble (2 system rows + 1 data header).
+# Aggregate honestly, RACE-FRAMES ONLY (frametime >= 25ms, i.e. fps <= ~40):
+#   - this single window drops BOTH the >250fps scene-transition present-spikes
+#     (frametime ~1ms) AND the 60fps menu/results/vsync frames (frametime 16.6ms)
+#     that otherwise contaminate the median — GT5P gameplay is 8-30fps (33-125ms),
+#     so a >=25ms gate cleanly isolates real race frames from menu time. Without
+#     it, a menu-heavy session medians ~60 (validated on-rig 2026-06-22: a B-6
+#     run read fps_med 62.7 — pure menu artifact, not a real framerate).
+#   - fps_med  = median race fps (robust headline; NEVER mean-of-fps).
+#   - fps_1low = 1%-low race fps (the stutter floor).
+#   - ft_p99_ms= 99th-pct race frametime ms (the hitching tail).
+# Absent CSV / too few race frames (crash before race, menu-only) => 0.
+FPS_MED=0; FPS_1LOW=0; FT_P99=0
+MANGOLOG_DIR="$SHM_DIR/mangolog"
+FPS_CSV=$(ls -1t "$MANGOLOG_DIR"/*.csv 2>/dev/null | head -1)
+if [ -n "$FPS_CSV" ] && [ -f "$FPS_CSV" ]; then
+    VALID=$(awk -F, 'NR>3 && ($1+0)>0 && ($2+0)>=25 {printf "%s %s\n", $1, $2}' "$FPS_CSV")
+    NV=$(printf '%s\n' "$VALID" | grep -c .)
+    case "$NV" in ''|*[!0-9]*) NV=0 ;; esac
+    if [ "$NV" -ge 3 ]; then
+        FPS_MED=$(printf '%s\n' "$VALID" | awk '{print $1}' | sort -n \
+            | awk '{a[NR]=$1} END{m=int((NR+1)/2); if(NR%2) printf "%.1f", a[m]; else printf "%.1f", (a[m]+a[m+1])/2}')
+        FPS_1LOW=$(printf '%s\n' "$VALID" | awk '{print $1}' | sort -n \
+            | awk '{a[NR]=$1} END{i=int(NR*0.01); if(i<1)i=1; printf "%.1f", a[i]}')
+        FT_P99=$(printf '%s\n' "$VALID" | awk '{print $2}' | sort -n \
+            | awk '{a[NR]=$1} END{i=int(NR*0.99+0.999); if(i>NR)i=NR; if(i<1)i=1; printf "%.1f", a[i]}')
+    fi
+    # Prune the session CSV(s) so SHM stays lean and the next session's
+    # newest-CSV pick is unambiguous. MangoHud is already dead at postmortem.
+    rm -f "$MANGOLOG_DIR"/*.csv 2>/dev/null
+fi
+case "$FPS_MED" in ''|*[!0-9.]*) FPS_MED=0 ;; esac
+case "$FPS_1LOW" in ''|*[!0-9.]*) FPS_1LOW=0 ;; esac
+case "$FT_P99" in ''|*[!0-9.]*) FT_P99=0 ;; esac
+
+# --- TUNE ATTRIBUTION (cols 20-21: res_scale, gpu_mhz) ---
+# Stamp the run's RPCS3 internal resolution scale (TUNING tab) + GPU max clock
+# (the OC) so the fps columns above are COMPARABLE across A/B runs — a 75%-vs-100%
+# pair was otherwise indistinguishable in the ledger (both just "sddepth"). Read
+# the active game's custom config; absent/non-numeric => 0 (honest "unknown").
+RES_SCALE=$(grep -E '^  Resolution Scale:' "$RPCS3_CUSTOM_CONFIGS/config_${GAME_ID}.yml" 2>/dev/null \
+    | head -1 | sed 's/.*: *//' | tr -dc '0-9')
+case "$RES_SCALE" in ''|*[!0-9]*) RES_SCALE=0 ;; esac
+GPU_HZ=$(cat /sys/class/devfreq/3d00000.gpu/max_freq 2>/dev/null)
+case "$GPU_HZ" in ''|*[!0-9]*) GPU_HZ=0 ;; esac
+GPU_MHZ=$((GPU_HZ / 1000000))
+
+# --- POWER ATTRIBUTION (col 22: pwr) ---
+# The active CPU/GPU governor + clock-pin profile (Pitstop POWER tab) so an
+# unsupervised RACE-vs-BALANCED gov sweep is attributable. '# pwr=' lives in the
+# POWER profile file; absent (no profile set) => 'none'.
+PWR_TAG=$(sed -n 's/^# pwr=//p' /storage/etk-power/profile 2>/dev/null | head -1)
+case "$PWR_TAG" in '') PWR_TAG=none ;; esac
+
 # --- LEDGER WRITE ---
 # Header written exactly once via tmp+mv (atomic on POSIX). Subsequent
 # rows are direct appends; a partial last row on hard crash is a signal,
 # not corruption. tune_tag is the trailing column, so older 14-col ledgers and
 # any cut -f<n> reader stay valid; only fresh ledgers carry the labelled header.
+LEDGER_HEADER='epoch\tduration_s\tbuild\tgame_id\tstatus\tpeak_load\tpeak_ram_mb\tpeak_temp\tavg_temp\tcrash_sig\tfence_at_crash\tshaders_harvested\tdrain_pct\tthermal_overrides\ttune_tag\tcrash_shot\tfps_med\tfps_1low\tft_p99_ms\tres_scale\tgpu_mhz\tpwr'
 if [ ! -f "$SESSIONS_LEDGER" ]; then
     TMP="$SESSIONS_LEDGER.tmp"
-    printf 'epoch\tduration_s\tbuild\tgame_id\tstatus\tpeak_load\tpeak_ram_mb\tpeak_temp\tavg_temp\tcrash_sig\tfence_at_crash\tshaders_harvested\tdrain_pct\tthermal_overrides\ttune_tag\tcrash_shot\n' > "$TMP"
+    printf "$LEDGER_HEADER\n" > "$TMP"
     mv "$TMP" "$SESSIONS_LEDGER"
+elif ! head -1 "$SESSIONS_LEDGER" | grep -q 'pwr'; then
+    # Migrate a stale header (older ledgers were created with fewer columns) so
+    # the ledger self-describes. Rewrite ONLY the header line; existing rows are
+    # untouched — older rows simply lack the newest trailing cols (read as empty).
+    TMP="$SESSIONS_LEDGER.tmp"
+    { printf "$LEDGER_HEADER\n"; tail -n +2 "$SESSIONS_LEDGER"; } > "$TMP" && mv "$TMP" "$SESSIONS_LEDGER"
 fi
 
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$NOW" "$DURATION" "$ETK_BUILD_TYPE" "$GAME_ID" "$STATUS" \
     "$PEAK_LOAD" "$PEAK_RAM" "$PEAK_TEMP" "$AVG_TEMP" \
     "$CRASH_SIG" "$FENCE_AT_CRASH" "$SHADERS" "$DRAIN_PCT" "$THERMAL_OVERRIDES" \
-    "$TUNE_TAG" "$CRASH_SHOT" \
+    "$TUNE_TAG" "$CRASH_SHOT" "$FPS_MED" "$FPS_1LOW" "$FT_P99" "$RES_SCALE" "$GPU_MHZ" "$PWR_TAG" \
     >> "$SESSIONS_LEDGER"
 
 # --- CAREER ROLLUP ---
