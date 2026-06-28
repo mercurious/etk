@@ -22,12 +22,14 @@
 #                   conflating Mesa bookkeeping/du overhead. Pitstop consumes it)
 #
 # WHY
-#   Every Rocknix nightly rebuilds Mesa from source; the resulting
-#   libvulkan_freedreno.so build ID drifts even when upstream is unchanged,
-#   invalidating the prior Turnip cache layer. Without active management,
-#   the per-game vault grows linearly with the count of Mesa-touching
-#   nightlies (empirical: GT5P doubled 9.5k -> 19k files in one session
-#   after the 20260525 nightly).
+#   A genuine Mesa VERSION bump (e.g. a nightly moving 26.1.x -> 26.2.x)
+#   re-keys the whole Turnip disk cache; the prior version's shaders are
+#   orphaned and the per-game vault otherwise grows without bound across
+#   version bumps (empirical: GT5P doubled 9.5k -> 19k files in one session
+#   after a Mesa-touching nightly). This sweep prunes that orphaned layer.
+#   NOTE: a same-version .so rebuild or a DRIVER-tab build swap does NOT
+#   orphan the cache in a way that storms (see ALGORITHM) — the boundary is
+#   keyed on the Mesa version precisely so swaps don't trigger a false sweep.
 #
 # ALGORITHM (deviation from addendum §G.5 spec — read before editing)
 #   Spec said: parse Mesa's `index` file for live hash entries, delete
@@ -38,12 +40,26 @@
 #   brittle.
 #
 #   Substitute: use the mtime of $ETK_ROOT/vault/.last_mesa.hash as the
-#   rebuild boundary. install.sh writes that file every time it detects a
-#   new libvulkan_freedreno.so build ID. After a rebuild, every shader
-#   file with mtime < rebuild_epoch is orphaned BY DEFINITION — Mesa keyed
-#   it against the old build ID and will never read it again. This is
-#   conservative (won't sweep anything Mesa has rewritten post-rebuild)
-#   and self-explanatory (no Mesa internals to track).
+#   boundary. install.sh stamps that file with the Mesa VERSION and bumps
+#   its mtime ONLY when the version changes (2026-06-24 change — see below).
+#   Every shader file with mtime < boundary predates the last Mesa version
+#   and is orphaned for the current version. self-explanatory (no Mesa
+#   internals to track).
+#
+#   BOUNDARY = MESA VERSION, NOT .so BYTES (2026-06-24, evidence-backed).
+#   Mesa keys its disk cache on the per-build GNU build-id, so DRIVER-tab
+#   build swaps (gtk_0.1 <-> gtk_0.2 <-> lsd, all Mesa 26.1.3) each change
+#   the .so bytes but their caches COEXIST — Mesa reads only the running
+#   build-id's entries and ignores the others (dead weight, never a storm).
+#   The old per-.so-byte boundary stamped a NEW cutoff on every swap, so
+#   returning to a build falsely marked its still-valid cache "stale" (the
+#   operator confirmed those shaders were live — no track storm). install.sh
+#   now keys the boundary on the Mesa version, so it moves ONLY on a real
+#   version bump (the nightly 26.1.x -> 26.2.x) — the one event that orphans
+#   the whole vault. CONSEQUENCE: within a single Mesa version this sweep is
+#   effectively a no-op (nothing is stale); same-version dead weight from
+#   retired builds is reclaimed via Delete Vault, by design. The sweep earns
+#   its keep across a version bump.
 #
 # SAFETY
 #   - Dry-run by default. --apply required to delete.

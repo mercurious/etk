@@ -9,10 +9,11 @@
     ],
     "severity": "high",
     "summary": "GPU stalled rendering a frame",
-    "explanation": "The graphics chip couldn't finish a frame in time and the driver reset it. Usually a burst of scene complexity (e.g. the lap-2 tunnel in GT5P). The dials below ease the load.",
+    "explanation": "The graphics chip wedged on a frame and the driver reset it - the dominant GT5P stall, usually the banked-corner depth resolve a few laps in. The DRIVER-tab dial is the real lever; the TUNING knobs below only ease the load.",
+    "driver_dial": "Adreno LSD dial -> sddepth   (validated GPU-hang mitigation; try syncdraw if it persists)",
     "suggested_changes": [
       {"yaml_key": "  Driver Wake-Up Delay", "new_value": "50"},
-      {"yaml_key": "  Resolution Scale", "new_value": "75"}
+      {"yaml_key": "  Resolution Scale", "new_value": "66"}
     ]
   },
   {
@@ -55,6 +56,7 @@
     "severity": "high",
     "summary": "Graphics device stopped responding",
     "explanation": "The GPU dropped out mid-frame and the emulator couldn't continue. Usually the same root cause as an Adreno stall.",
+    "driver_dial": "Adreno LSD dial -> sddepth   (same GPU-hang root cause; DRIVER tab)",
     "suggested_changes": [
       {"yaml_key": "  Driver Wake-Up Delay", "new_value": "50"}
     ]

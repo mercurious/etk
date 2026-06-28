@@ -94,6 +94,9 @@ CAREER_DIR = os.environ.get('CAREER_DIR', f"{TELEMETRY_DIR}/career")
 PIT_NOTE_FILE = os.environ.get('PIT_NOTE_FILE', f"{TELEMETRY_DIR}/pit_note.txt")
 CONFIG_CHANGES_HEADER = "epoch\tgame_id\tfield_label\told_value\tnew_value\n"
 
+# User-facing app version (shown in the title bar: "ETK PITSTOP v0.5.0 // ...").
+APP_VERSION = "0.5.0"
+
 # DRIVER tab (Turnip env-var dials). These are NOT RPCS3 config keys — they
 # inject through the proven profile.d path (same mechanism as 098-etk-stage3),
 # so start_rpcs3.sh picks them up from /etc/profile at the NEXT game launch and
@@ -808,8 +811,11 @@ def _refresh_baseline(matrix):
 # === CHROME (rendered around every tab) ===
 
 def _draw_title_bar(stdscr, w):
+    # Top line carries the kit version + the live driver .so — driver moved off
+    # the meta line (row 2) where it was too tight next to the game info.
+    title = f" ETK PITSTOP v{APP_VERSION} // powered by {_powered_by()} "
     stdscr.attron(curses.color_pair(1))
-    stdscr.addstr(0, 2, " ETK PITSTOP // SCHEMATIC DRIVEN EMULATOR TUNER ", curses.A_BOLD)
+    stdscr.addstr(0, 2, title[:max(0, w - 3)], curses.A_BOLD)
     stdscr.attroff(curses.color_pair(1))
 
 
@@ -921,8 +927,76 @@ def driver_string():
     return _DRIVER_LABEL_CACHE
 
 
+_POWERED_BY_CACHE = None
+
+
+def _powered_by():
+    """Raw loaded driver .so filename for the title bar's 'powered by' field
+    (e.g. 'etk_turnip_rocknix_26.1.3_gtk_0.3.so'), or 'stock Turnip' when no
+    catalog build is bound. The full filename (not the pretty label) is the
+    point — it names the exact byte-identical build the rig is running. Cached
+    (the bound build only changes on reboot) so the title redraw is file-free."""
+    global _POWERED_BY_CACHE
+    if _POWERED_BY_CACHE is not None:
+        return _POWERED_BY_CACHE
+    loaded = _read_build_pointer(TURNIP_LOADED_FILE)
+    _POWERED_BY_CACHE = "stock Turnip" if (not loaded or loaded == STOCK_BUILD) else loaded
+    return _POWERED_BY_CACHE
+
+
+_CHASSIS_CACHE = None
+
+
+def _chassis_string():
+    """One-line rig identity for the DRIVER/POWER/PADDOCK headers — the SoC,
+    GPU, and ROCKNIX build the kit is running on. Composed from env (CHIPSET,
+    GPU_ADAPTER_STRING via env.sh) + /etc/os-release. Cached; degrades to just
+    the SoC if the optional pieces are missing (never blanks)."""
+    global _CHASSIS_CACHE
+    if _CHASSIS_CACHE is not None:
+        return _CHASSIS_CACHE
+    soc = _CHIPSET or "SM8250"
+    gpu = (os.environ.get("GPU_ADAPTER_STRING", "") or "").strip()
+    gpu = re.sub(r"\(TM\)\s*", "", gpu).replace("Turnip", "").strip()
+    gpu = re.sub(r"\s+", " ", gpu)
+    # ROCKNIX os-release keys the human-legible NIGHTLY DATE on OS_VERSION
+    # (e.g. 20260622); BUILD_ID is the git SHA and VERSION can be a hash — do
+    # NOT use those (etk_drift.py uses the same OS_VERSION -> VERSION_ID order).
+    osr = {}
+    try:
+        with open("/etc/os-release") as f:
+            for line in f:
+                if "=" in line:
+                    k, v = line.split("=", 1)
+                    osr[k.strip()] = v.strip().strip('"')
+    except OSError:
+        pass
+    osv = osr.get("OS_VERSION") or osr.get("VERSION_ID") or ""
+    parts = [soc]
+    if gpu:
+        parts.append(gpu)
+    parts.append(f"ROCKNIX {osv}" if osv else "ROCKNIX")
+    _CHASSIS_CACHE = "  ·  ".join(parts)
+    return _CHASSIS_CACHE
+
+
+def _fmt_count(n):
+    """Abbreviate a large count the way the in-game HUD does (29500 -> '29.5k',
+    1.2M), to save header width. Below 1000 stays exact. Accepts int or str."""
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        return str(n)
+    if n >= 1000000:
+        return f"{n / 1000000:.2f}M"
+    if n >= 1000:
+        return f"{n / 1000:.1f}k"
+    return str(n)
+
+
 def _draw_meta_line(stdscr, w, gamepad_status, lap_str):
-    target = f"GAME: {GAME_NAME}  |  DRIVER: {driver_string()}"
+    # DRIVER now lives in the title bar (row 0); the meta line is the game line.
+    target = f"GAME: {GAME_NAME}"
     stdscr.addstr(2, 2, target[:w - 4], curses.A_DIM)
     if w > len(lap_str) + 4 and lap_str:
         stdscr.addstr(2, w - len(lap_str) - 2, lap_str, curses.color_pair(1) | curses.A_BOLD)
@@ -995,7 +1069,15 @@ def draw_tuning(stdscr, state):
     _draw_meta_line(stdscr, w, state["gamepad_status"], lap)
 
     start_y = 5
-    capacity = max(1, (h - 3) - start_y)
+    # Reserve a pit-engineer hint band just above the footer separator (h-3):
+    # a faint rule + up to 2 wrapped lines explaining the SELECTED field. Only
+    # claimed when the active field actually carries help, so a schema without
+    # help text renders the full-height list exactly as before.
+    help_text = (matrix[active_idx].get("help") or "").strip() if matrix else ""
+    # Only claim the 3-row band when the panel is tall enough to also render it
+    # (matches the h-6 > start_y guard below), so a short terminal keeps its list.
+    help_band = 3 if (help_text and (h - 6) > start_y) else 0
+    capacity = max(1, (h - 3) - start_y - help_band)
 
     if total <= capacity:
         offset = 0
@@ -1021,13 +1103,35 @@ def draw_tuning(stdscr, state):
 
         stdscr.addstr(y, 40, val_str, attr)
 
+    # Pit-engineer hint band: explain the SELECTED field (what it does, the
+    # effect, the tradeoff) so the tuner teaches instead of just listing knobs.
+    if help_text and h - 6 > start_y:
+        avail = max(10, w - 22)  # text renders from col 18; keep wrap within it
+        words, lines, cur = help_text.split(), [], ""
+        for word in words:
+            if len(cur) + len(word) + (1 if cur else 0) <= avail:
+                cur = f"{cur} {word}".strip()
+            else:
+                lines.append(cur); cur = word
+                if len(lines) == 2:
+                    break
+        if cur and len(lines) < 2:
+            lines.append(cur)
+        if len(lines) == 2 and cur != lines[1]:
+            lines[1] = (lines[1][:avail - 1] + "…")
+        stdscr.addstr(h - 6, 2, "-" * (w - 4), curses.A_DIM)
+        stdscr.addstr(h - 5, 4, "PIT ENGINEER", curses.color_pair(1) | curses.A_BOLD)
+        stdscr.addstr(h - 5, 18, lines[0][:w - 20], curses.A_DIM)
+        if len(lines) > 1:
+            stdscr.addstr(h - 4, 18, lines[1][:w - 20], curses.A_DIM)
+
     # Scroll telltales — race shift-light chevrons parked on the rules.
     # Drawn last so they sit on top of the header/footer separator lines.
     if w > 16:
         if offset > 0:
             stdscr.addstr(3, w - 12, " /\\ MORE ", curses.color_pair(1) | curses.A_BOLD)
         if offset + capacity < total:
-            stdscr.addstr(h - 3, w - 12, " \\/ MORE ", curses.color_pair(1) | curses.A_BOLD)
+            stdscr.addstr(h - 3 - help_band, w - 12, " \\/ MORE ", curses.color_pair(1) | curses.A_BOLD)
 
 
 def _adjust_item(item, direction):
@@ -1397,11 +1501,23 @@ def draw_telemetry(stdscr, state):
         stdscr.addstr(y, 2, line1[:w - 4], curses.A_BOLD)
         y += 1
         line2 = (
-            f"{career.get('total_shaders', '0')} shaders banked"
+            f"{_fmt_count(career.get('total_shaders', '0'))} shaders banked"
             f"  *  +{career.get('avg_shaders_per_session', '0')} avg/session"
             f"  *  streak {career.get('current_streak', '0')} (best {career.get('best_streak', '0')})"
         )
         stdscr.addstr(y, 2, line2[:w - 4], curses.A_DIM)
+        y += 1
+        # LINE 3 — the new performance benchmarks to strive for: average run
+        # length, race fps, and frame-pacing jitter. fps/jitter show only once
+        # the MangoHud instrument has logged real race frames (else they're 0).
+        avg_fps = str(career.get('avg_fps', '0'))
+        avg_jit = str(career.get('avg_jitter', '0'))
+        line3 = f"avg {career.get('avg_duration_human', '0m')}/run"
+        if avg_fps not in ('', '0', '0.0'):
+            line3 += f"  *  {avg_fps} fps"
+        if avg_jit not in ('', '0', '0.0'):
+            line3 += f"  *  {avg_jit}ms jitter"
+        stdscr.addstr(y, 2, line3[:w - 4], curses.A_DIM)
         y += 1
 
     stdscr.addstr(y, 2, "-" * (w - 4), curses.A_DIM)
@@ -1828,6 +1944,20 @@ def _draw_session_detail(stdscr, state, sessions, config_changes):
                 k = ch.get("yaml_key", "").strip()
                 if k and k not in seen:
                     seen.add(k); changes.append(ch)
+        # Adreno "traction control": the DRIVER-tab dial is the primary lever for
+        # the GPU hang (the TUNING knobs only ease load), so it leads the advice.
+        dials, dseen = [], set()
+        for m in _matched:
+            d = (m.get("driver_dial") or "").strip()
+            if d and d not in dseen:
+                dseen.add(d); dials.append(d)
+        if dials:
+            put(y, 2, "TRACTION CONTROL  (DRIVER tab):",
+                curses.color_pair(PAIR_CLEAN) | curses.A_BOLD); y += 1
+            for d in dials:
+                wl = _wrap_text(d, w - 10, max_lines=2)
+                for i, ln in enumerate(wl):
+                    put(y, 4, ("* " + ln) if i == 0 else ("  " + ln)); y += 1
         if changes:
             put(y, 2, "SUGGESTED FIX  (TUNING tab):",
                 curses.color_pair(PAIR_CLEAN) | curses.A_BOLD); y += 1
@@ -1835,7 +1965,7 @@ def _draw_session_detail(stdscr, state, sessions, config_changes):
                 put(y, 4, f"* {ch.get('yaml_key','').strip()}  ->  {ch.get('new_value','')}"); y += 1
     else:
         put(y, 4, f"Duration   {dur_h}", curses.A_BOLD); y += 1
-        put(y, 4, f"Shaders +  {row['shaders_harvested']}    (vault delta this run)"); y += 2
+        put(y, 4, f"Shaders +  {_fmt_count(row['shaders_harvested'])}    (vault delta this run)"); y += 2
         put(y, 4, f"{'Temp':<8}{('peak '+str(peak_t)+'C avg '+str(avg_t)+'C'):<20}"
                   f"{_gauge_bar(peak_t, _GAUGE_TEMP_MAX)}"); y += 1
         put(y, 4, f"{'Load':<8}{('peak '+format(load,'.1f')):<20}"
@@ -1959,7 +2089,13 @@ def handle_telemetry_pad(state, etype, code, val):
             # preview (full-screen swayimg of the frame, on crash cards).
             _preview_crash_frame(state, (state.get("_detail_row") or {}).get("crash_shot", ""))
         elif etype == EV_ABS and code == ABS_HAT0Y and val == -1:
-            state["telemetry_detail_scroll"] = max(0, state.get("telemetry_detail_scroll", 0) - 1)
+            # D-pad UP previews the crash frame when at the top of the card (the
+            # natural first press — restores the documented behavior the scroll
+            # remap had stolen); once scrolled into a long card, UP scrolls back.
+            if state.get("telemetry_detail_scroll", 0) <= 0:
+                _preview_crash_frame(state, (state.get("_detail_row") or {}).get("crash_shot", ""))
+            else:
+                state["telemetry_detail_scroll"] -= 1
         elif etype == EV_ABS and code == ABS_HAT0Y and val == 1:
             _dmax = max(0, state.get("_detail_content_h", 5) - state.get("_detail_view_bot", 20))
             state["telemetry_detail_scroll"] = min(_dmax, state.get("telemetry_detail_scroll", 0) + 1)
@@ -1992,11 +2128,15 @@ def handle_telemetry_pad(state, etype, code, val):
 # install; this curses UI is only visible before and after.
 # ============================================================
 
-_TOOLS_MENU = ["Install a staged PS3 Package", "Uninstall a Game",
-               "Manage Shaders", "Screenshot on L1"]
-# Index of the Manage Shaders sub-screen entry.
-_TOOLS_SHADERS_IDX = 2
-# Index of the in-place toggle item (label gets ": <mode>" appended at draw).
+# Manage Shaders leads the list now that stability work has made vault hygiene
+# the most-reached tool (ROADMAP). Every entry is constant-indexed so the order
+# is a one-line edit here with no hardcoded literals in the dispatch below.
+_TOOLS_MENU = ["Manage Shaders", "Install a staged PS3 Package",
+               "Uninstall a Game", "Screenshot on L1"]
+_TOOLS_SHADERS_IDX = 0      # Manage Shaders sub-screen entry
+_TOOLS_INSTALL_IDX = 1      # staged-PKG installer
+_TOOLS_UNINSTALL_IDX = 2    # game uninstaller
+# In-place toggle item (label gets ": <mode>" appended at draw).
 _TOOLS_SCREENSHOT_IDX = 3
 
 
@@ -2912,8 +3052,23 @@ def _draw_shader_screen(stdscr, state, model, y, h, w):
             if boundary_ok:
                 fw = int(round(barw * g["fresh_kb"] / g["disk_kb"]))
                 sw = int(round(barw * g["stale_kb"] / g["disk_kb"]))
-                if fw + sw > barw:
-                    sw = barw - fw
+                # Floor a nonzero generation to >=1 cell so a small-but-real
+                # slice is never invisible at bar resolution — e.g. 6MB fresh in
+                # a 528MB vault rounds to 0 green cells and reads as "all stale"
+                # when the operator does have fresh shaders to keep.
+                if g["fresh_kb"] > 0 and fw == 0:
+                    fw = 1
+                if g["stale_kb"] > 0 and sw == 0:
+                    sw = 1
+                # Keep within the bar, trimming the larger segment first but
+                # never erasing a nonzero generation below 1 cell.
+                while fw + sw > barw and (fw > 1 or sw > 1):
+                    if fw >= sw and fw > 1:
+                        fw -= 1
+                    elif sw > 1:
+                        sw -= 1
+                    else:
+                        break
                 ow = max(0, barw - fw - sw)            # overhead tail
                 put(y, col, "#" * fw, curses.color_pair(PAIR_CLEAN)); col += fw
                 put(y, col, "#" * sw, curses.color_pair(PAIR_CRASH)); col += sw
@@ -3291,7 +3446,7 @@ def _tools_select(state):
     mode = state.get("tools_mode", "menu")
 
     if mode == "menu":
-        if state.get("tools_cursor", 0) == 0:        # Install
+        if state.get("tools_cursor", 0) == _TOOLS_INSTALL_IDX:        # Install
             pkgs, raps = _scan_staging()
             if len(pkgs) == 0:
                 state["tools_result"] = (False, [
@@ -3314,7 +3469,7 @@ def _tools_select(state):
                 rap = raps[0] if raps else None
                 state["tools_pkg"] = (pkg, rap, _pkg_title_id(pkg) or "unknown")
                 state["tools_mode"] = "install_confirm"
-        elif state.get("tools_cursor", 0) == 1:      # Uninstall
+        elif state.get("tools_cursor", 0) == _TOOLS_UNINSTALL_IDX:      # Uninstall
             state["tools_games"] = _list_psn_games()
             state["tools_cursor"] = 0
             state["tools_mode"] = "uninstall_list"
@@ -3645,6 +3800,7 @@ def draw_driver(stdscr, state):
             pass
 
     y = 5
+    put(y, 2, _chassis_string(), curses.A_DIM); y += 1
     put(y, 2, "TURNIP DRIVER", curses.A_BOLD); y += 1
     put(y, 2, "-" * (w - 4), curses.A_DIM); y += 1
     put(y, 4, "BUILD = which .so loads (reboot to apply). Dials tune it (next launch).",
@@ -4027,6 +4183,7 @@ def draw_power(stdscr, state):
             pass
 
     y = 5
+    put(y, 2, _chassis_string(), curses.A_DIM); y += 1
     put(y, 2, "POWER PROFILE", curses.A_BOLD); y += 1
     put(y, 2, "-" * (w - 4), curses.A_DIM); y += 1
     put(y, 4, "CPU/GPU governors + clock pinning — no OC (OPP-capped). Live + reboot-safe.",
@@ -4437,7 +4594,7 @@ def draw_paddock(stdscr, state):
             pass
 
     # Header (rows 2-3): PAD + index date, then content header.
-    put(2, 2, f"PADDOCK  |  PAD: {state.get('gamepad_status', '')}", curses.A_DIM)
+    put(2, 2, f"PADDOCK  ·  {_chassis_string()}", curses.A_DIM)
     idx_date = state.get("paddock_index_date", "")
     if idx_date:
         istr = f"index {idx_date}"

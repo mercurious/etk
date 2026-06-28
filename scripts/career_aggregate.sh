@@ -50,7 +50,10 @@ fi
 #   1=epoch 2=duration_s 3=build 4=game_id 5=status
 #   6=peak_load 7=peak_ram_mb 8=peak_temp 9=avg_temp
 #   10=crash_sig 11=fence_at_crash 12=shaders_harvested
-#   13=drain_pct 14=thermal_overrides
+#   13=drain_pct 14=thermal_overrides 15=tune_tag 16=crash_shot
+#   17=fps_med 18=fps_1low 19=ft_p99_ms 20=res_scale 21=gpu_mhz
+#   22=pwr 23=ft_jitter_ms   (cols 15+ are append-only-trailing; older
+#   rows lack them so $17/$23 read empty -> +0 -> 0 and are skipped)
 #
 # Ledger is append-only oldest-first, so cur_streak at END reflects
 # the streak ending on the newest row — which IS current_streak.
@@ -64,6 +67,11 @@ AGG=$(awk -F'\t' -v gid="$GID" -v mindur="${TELEMETRY_MIN_SESSION_S:-60}" '
         total++
         total_duration += $2+0
         total_shaders += $12+0
+        # fps_med (17) / ft_jitter_ms (23): average only over rows that carry
+        # real race data (>0) so menu-only / crash-before-race / pre-instrument
+        # rows do not drag the benchmark toward zero.
+        if ($17+0 > 0) { sum_fps += $17+0; n_fps++ }
+        if ($23+0 > 0) { sum_jit += $23+0; n_jit++ }
         if ($5 == "CLEAN") {
             clean++
             cur_streak++
@@ -76,16 +84,20 @@ AGG=$(awk -F'\t' -v gid="$GID" -v mindur="${TELEMETRY_MIN_SESSION_S:-60}" '
     }
     END {
         if (total == 0) {
-            print "0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0"
+            print "0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0"
             exit
         }
         recov = crashes - panic
         clean_rate = int(clean * 100.0 / total + 0.5)
         avg_shaders = (total > 0) ? int(total_shaders / total + 0.5) : 0
         current = cur_streak
-        printf "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
+        avg_dur = int(total_duration / total + 0.5)
+        avg_fps = (n_fps > 0) ? sum_fps / n_fps : 0
+        avg_jit = (n_jit > 0) ? sum_jit / n_jit : 0
+        printf "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%.1f\t%.1f\n",
             total, total_duration, clean, crashes, recov, panic,
-            clean_rate, total_shaders, avg_shaders, current, best_streak
+            clean_rate, total_shaders, avg_shaders, current, best_streak,
+            avg_dur, avg_fps, avg_jit
     }
 ' "$SESSIONS_LEDGER")
 
@@ -102,11 +114,19 @@ TOTAL_SHD="${8:-0}"
 AVG_SHD="${9:-0}"
 CUR_STREAK="${10:-0}"
 BEST_STREAK="${11:-0}"
+AVG_DUR="${12:-0}"
+AVG_FPS="${13:-0}"
+AVG_JIT="${14:-0}"
 
 # Human-readable duration (Xh Ym).
 HOURS=$((TOTAL_DUR / 3600))
 MINS=$(((TOTAL_DUR % 3600) / 60))
 DURATION_HUMAN="${HOURS}h ${MINS}m"
+
+# Human-readable AVERAGE run length (Xm Ys) — the per-run benchmark.
+A_MIN=$((AVG_DUR / 60))
+A_SEC=$((AVG_DUR % 60))
+AVG_DUR_HUMAN="${A_MIN}m ${A_SEC}s"
 
 # Atomic write. Pitstop reads this file on every TELEMETRY-tab refresh;
 # a torn write would briefly show partial career data.
@@ -125,6 +145,10 @@ TMP="$CAREER_DIR/$GID.txt.tmp"
     echo "avg_shaders_per_session=$AVG_SHD"
     echo "current_streak=$CUR_STREAK"
     echo "best_streak=$BEST_STREAK"
+    echo "avg_duration_s=$AVG_DUR"
+    echo "avg_duration_human=$AVG_DUR_HUMAN"
+    echo "avg_fps=$AVG_FPS"
+    echo "avg_jitter=$AVG_JIT"
 } > "$TMP"
 mv "$TMP" "$CAREER_DIR/$GID.txt"
 
