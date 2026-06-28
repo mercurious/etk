@@ -28,6 +28,10 @@ export HUD_HEADER_HOLD_S="${HUD_HEADER_HOLD_S:-15}"
 export ETK_VERBOSE="${ETK_VERBOSE:-1}"
 # host<->rig Tier-A shader sync mode (install.sh): full | backup | off
 export VAULT_SYNC="${VAULT_SYNC:-full}"
+# DP-mirror daemon (bin/dpmirror_d.sh): 1 = mirror internal->external for capture
+# (game native on handheld, small GPU/FPS cost); 0 = record-only (game native on
+# the external/capture output, NO wl-mirror = no FPS cost, handheld idle).
+export ETK_DP_MIRROR="${ETK_DP_MIRROR:-1}"
 
 # --- [ SHM & STATE ] ---
 export SHM_DIR="/dev/shm/etk_shm"

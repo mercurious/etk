@@ -240,25 +240,45 @@ sleep 1
 tui_step_progress 0 15
 
 # --- MESA REBUILD FINGERPRINT (addendum §G.5) ---
-# Every Rocknix nightly rebuilds Mesa from source even when upstream is
-# unchanged; the new libvulkan_freedreno.so build ID invalidates the prior
-# Turnip cache layer, doubling per-game vault size in one session. Fingerprint
-# the first 64 KB of the shared object (BusyBox-friendly, deterministic) and
-# compare against $ETK_ROOT/vault/.last_mesa.hash. On change, emit a one-line
-# tripwire and prompt the operator to run tools/vault_sweep.sh. The hash file's
-# OWN mtime is the rebuild-detected epoch — tools/vault_sweep.sh reads it as
-# the sweep cutoff. Silent on first ever run (no prior hash to compare).
-MESA_HASH_NEW=$(ssh $RIG_SSH "head -c 65536 /usr/lib/libvulkan_freedreno.so 2>/dev/null | sha256sum | cut -d' ' -f1")
-if [ -n "$MESA_HASH_NEW" ]; then
+# Shader-sweep boundary = the Mesa VERSION the driver reports (e.g. "26.1.3"),
+# NOT a byte-fingerprint of the .so. RATIONALE (2026-06-24, evidence-backed):
+# Mesa keys its shader disk cache on the per-build GNU build-id, so every
+# DRIVER-tab build swap changes the .so bytes yet its cache COEXISTS with the
+# other builds' (Mesa reads only its own build-id's entries and ignores the
+# rest — dead weight on disk, never a re-compile storm). The old first-64KB
+# sha256 bumped the boundary on EVERY swap, falsely staling the very cache you
+# swap BACK to (operator confirmed the "stale" shaders were live — no track
+# storm). Keying on the Mesa version moves the boundary ONLY on a genuine
+# version change (the nightly that bumps 26.1.x -> 26.2.x) — the one event that
+# truly invalidates the whole vault. Within a version, swapping builds keeps the
+# vault fresh; same-version dead weight is left to Delete Vault, by design. The
+# hash file's OWN mtime is the sweep cutoff that tools/vault_sweep.sh reads.
+MESA_VER_NEW=$(ssh $RIG_SSH "strings /usr/lib/libvulkan_freedreno.so 2>/dev/null | grep -oE 'Mesa [0-9]+\.[0-9]+\.[0-9]+' | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+'")
+if [ -n "$MESA_VER_NEW" ]; then
     MESA_HASH_FILE="$ETK_ROOT/vault/.last_mesa.hash"
-    MESA_HASH_OLD=$(ssh $RIG_SSH "cat $MESA_HASH_FILE 2>/dev/null")
-    if [ -z "$MESA_HASH_OLD" ]; then
-        # First run: seed the fingerprint silently. Nothing prior to compare.
-        ssh $RIG_SSH "mkdir -p $ETK_ROOT/vault && printf '%s\n' '$MESA_HASH_NEW' > $MESA_HASH_FILE"
-    elif [ "$MESA_HASH_OLD" != "$MESA_HASH_NEW" ]; then
-        say "${Y}[INFO] MESA REBUILT — run tools/vault_sweep.sh to prune orphaned shaders${N}"
-        ssh $RIG_SSH "echo \"[\$(date '+%H:%M:%S.%N')] MESA REBUILD DETECTED (was $MESA_HASH_OLD, now $MESA_HASH_NEW)\" >> $TRIPWIRE_LOG && printf '%s\n' '$MESA_HASH_NEW' > $MESA_HASH_FILE"
-    fi
+    MESA_VER_OLD=$(ssh $RIG_SSH "cat $MESA_HASH_FILE 2>/dev/null")
+    case "$MESA_VER_OLD" in
+        "")
+            # First run: seed the version silently. Nothing prior to compare.
+            ssh $RIG_SSH "mkdir -p $ETK_ROOT/vault && printf '%s\n' '$MESA_VER_NEW' > $MESA_HASH_FILE"
+            ;;
+        *.*)
+            # Already version-keyed (steady state). Bump ONLY on a real version
+            # change — that genuinely orphans the prior-version cache.
+            if [ "$MESA_VER_OLD" != "$MESA_VER_NEW" ]; then
+                say "${Y}[INFO] MESA $MESA_VER_OLD -> $MESA_VER_NEW — run tools/vault_sweep.sh to prune the prior-version cache${N}"
+                ssh $RIG_SSH "echo \"[\$(date '+%H:%M:%S.%N')] MESA VERSION CHANGE (was $MESA_VER_OLD, now $MESA_VER_NEW)\" >> $TRIPWIRE_LOG && printf '%s\n' '$MESA_VER_NEW' > $MESA_HASH_FILE"
+            fi
+            ;;
+        *)
+            # Legacy byte-hash boundary (no dot) -> migrate to version-keyed. The
+            # whole current vault is the SAME Mesa version and therefore valid, so
+            # BACKDATE the boundary mtime so it is retained as fresh, not falsely
+            # swept. (touch -t verified on the rig's BusyBox.)
+            ssh $RIG_SSH "printf '%s\n' '$MESA_VER_NEW' > $MESA_HASH_FILE && touch -t 200001010000 $MESA_HASH_FILE && echo \"[\$(date '+%H:%M:%S.%N')] BOUNDARY MIGRATED to version-keyed ($MESA_VER_NEW); vault retained as fresh\" >> $TRIPWIRE_LOG"
+            say "${Y}[INFO] Shader sweep boundary upgraded to version-keyed ($MESA_VER_NEW) — DRIVER build swaps no longer stale the vault${N}"
+            ;;
+    esac
 fi
 tui_step_progress 0 30
 
@@ -514,7 +534,12 @@ tui_rsync 2 25 45 "Pushing /scripts (env, profiles, probes)" --delete --exclude=
 #                       does `rm -rf $ETK_ROOT/tools`, so a one-off scp does not
 #                       survive a reinstall — it has to live here.
 tui_rsync 2 45 52 "Pushing tools/etk_drift.py (OS-drift detector)" --exclude='.DS_Store' ./tools/etk_drift.py $RIG_SSH:$ETK_ROOT/tools/etk_drift.py
-tui_rsync 2 52 58 "Pushing tools/vault_sweep.sh (Manage Shaders engine)" --exclude='.DS_Store' ./tools/vault_sweep.sh $RIG_SSH:$ETK_ROOT/tools/vault_sweep.sh
+tui_rsync 2 52 56 "Pushing tools/vault_sweep.sh (Manage Shaders engine)" --exclude='.DS_Store' ./tools/vault_sweep.sh $RIG_SSH:$ETK_ROOT/tools/vault_sweep.sh
+# wl-mirror: aarch64/glibc screen-mirror binary used by bin/dpmirror_d.sh to
+# duplicate the internal panel onto the external DisplayPort for capture/OBS.
+# Same "tools/ is rm -rf'd on uninstall" reasoning as the two tools above —
+# it must be pushed here, not one-off scp'd. Rebuild via tools/rocknix-bin/build_wl_mirror.sh.
+tui_rsync 2 56 58 "Pushing tools/wl-mirror (DP capture-mirror binary)" --exclude='.DS_Store' ./tools/rocknix-bin/wl-mirror $RIG_SSH:$ETK_ROOT/tools/wl-mirror
 tui_rsync 2 58 70 "Pushing MangoHud.conf" --exclude='.DS_Store' ./config/MangoHud.conf $RIG_SSH:/storage/.config/MangoHud/MangoHud.conf
 # Operator config: the Sentry's env.sh source on the rig reads this file
 # for ETK_BUILD_TYPE, DEFAULT_MODE, HUD_HEADER_HOLD_S. Without this push
@@ -525,7 +550,7 @@ tui_rsync 2 58 70 "Pushing MangoHud.conf" --exclude='.DS_Store' ./config/MangoHu
 # silently skip such "same-size" edits when mtimes happen to match.
 tui_rsync_checksum 2 70 90 "Pushing etk.conf (operator config)" --exclude='.DS_Store' ./etk.conf $RIG_SSH:$ETK_ROOT/etk.conf
 tui_log "chmod +x daemons and scripts"
-ssh $RIG_SSH "chmod +x $ETK_ROOT/bin/* $ETK_ROOT/scripts/* $ETK_ROOT/tools/etk_drift.py $ETK_ROOT/tools/vault_sweep.sh"
+ssh $RIG_SSH "chmod +x $ETK_ROOT/bin/* $ETK_ROOT/scripts/* $ETK_ROOT/tools/etk_drift.py $ETK_ROOT/tools/vault_sweep.sh $ETK_ROOT/tools/wl-mirror"
 tui_step_done 2
 
 # ==========================================================
@@ -1309,6 +1334,40 @@ SVC
     systemctl enable /storage/.config/system.d/etk-power.service >/dev/null 2>&1
 REMOTE
 say "${G}[ETK]${N} POWER applier deployed (etk-power.service — self-skips until a profile is set)"
+
+# ==========================================================
+# STEP 6.7: DP-MIRROR DAEMON (USB video-out / capture-card mirror)
+# ==========================================================
+# When the external DisplayPort (DP-over-USB-C) links, bin/dpmirror_d.sh runs
+# wl-mirror to duplicate the internal panel onto it so a capture card / OBS sees
+# the game while the operator keeps playing on the handheld. Cooperates with
+# ROCKNIX's stock /usr/bin/output_monitor "TV mode": re-enables the internal
+# panel and pins the game workspace to it, then mirrors. Idle (zero effect) until
+# a DP sink links — and DP only links in the Type-C "normal" orientation (kernel
+# AUX/SBU bug; reverse = no link = no mirror, see project_rocknix_usb_dp_videoout).
+# Toggle with ETK_DP_MIRROR in etk.conf (default on). Long-running; Restart=always.
+ssh $RIG_SSH "sh -s" > /dev/null 2>&1 <<'REMOTE'
+    mkdir -p /storage/.config/system.d/
+cat << 'SVC' > /storage/.config/system.d/etk-dpmirror.service
+[Unit]
+Description=ETK DP-mirror (mirror internal panel to external DisplayPort for capture/OBS)
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/bin/bash /storage/games-internal/roms/etk/bin/dpmirror_d.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+SVC
+    systemctl daemon-reload
+    systemctl enable /storage/.config/system.d/etk-dpmirror.service >/dev/null 2>&1
+    systemctl restart etk-dpmirror.service >/dev/null 2>&1
+    systemctl is-active --quiet etk-dpmirror.service && echo "DPMIRROR_OK" || echo "DPMIRROR_FAIL"
+REMOTE
+say "${G}[ETK]${N} DP-mirror daemon deployed (etk-dpmirror.service — idle until a capture display links on DP-1)"
 
 # ==========================================================
 # STEP 6: STAGE III STABILITY HARNESS

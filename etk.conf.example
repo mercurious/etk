@@ -66,6 +66,16 @@ HUD_HEADER_HOLD_S=15
 # The --verbose / -v CLI flag forces 1 regardless of this setting.
 ETK_VERBOSE=0
 
+# --- DP video-out / capture mirror (bin/dpmirror_d.sh) ---
+# Behaviour when a capture display links on USB-C DisplayPort (DP-1). Read live
+# by the daemon (no reinstall needed — an edit takes effect within ~3s).
+#   1 = MIRROR: game stays native on the handheld AND is mirrored to the capture
+#       output via wl-mirror. Both screens. Small GPU/FPS cost while capturing.
+#   0 = RECORD-ONLY: game renders directly on the capture output (native, full
+#       quality, NO wl-mirror = no FPS cost). Handheld screen sits idle.
+# NOTE: DP only links in the Type-C "normal" plug orientation (kernel AUX bug).
+ETK_DP_MIRROR=1
+
 # --- Private Paddock (optional — personal cloud backup of YOUR vaults/saves/tunes) ---
 # To get private shader storage, add your GitHub token here BEFORE running
 # ./install.sh. The PADDOCK tab appears on the rig only when this is configured.
