@@ -77,6 +77,27 @@
     "help": "Reads the framebuffer back for effects (some GT mirror/replay views need it). OFF is faster; turn ON only if an effect is missing."
   },
   {
+    "label": "Write Depth Buffer",
+    "section": "Video",
+    "yaml_key": "  Write Depth Buffer",
+    "type": "bool",
+    "help": "Writes the rendered depth buffer back to memory -- the depth-side analogue of Write Color Buffers. Costs fps; needed by a few depth-sampling effects. Note: does NOT fix the GT5P track-shadow flicker (that's upstream RPCS3 RSX bug #11912, no known setting cures it). OFF by default."
+  },
+  {
+    "label": "Read Depth Buffer",
+    "section": "Video",
+    "yaml_key": "  Read Depth Buffer",
+    "type": "bool",
+    "help": "Reads the depth buffer back for effects that sample depth (shadows, soft particles). OFF is faster; turn ON if depth-based effects look stale or missing."
+  },
+  {
+    "label": "Strict Rendering Mode",
+    "section": "Video",
+    "yaml_key": "  Strict Rendering Mode",
+    "type": "bool",
+    "help": "Forces exact render-target handling instead of fast approximations -- can fix RTT/shadow glitches but a notable fps hit. A diagnostic/correctness lever; leave OFF unless chasing a visual bug."
+  },
+  {
     "label": "Resolution Scale",
     "section": "Video",
     "yaml_key": "  Resolution Scale",
