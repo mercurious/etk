@@ -1055,8 +1055,9 @@ def _draw_inert_panel(stdscr, state, tabname):
 # === TUNING TAB ===
 
 def draw_tuning(stdscr, state):
-    """Tuning matrix editor. start_y shifts to row 5 (was row 4 pre-tabs)
-    to leave room for the tab strip on row 1."""
+    """Tuning matrix editor. List starts at row 4 (just under the GAME/rule meta
+    line) to maximize scroll height; the pit-engineer hint band reserves 3 rows
+    at the bottom only when the selected field carries help."""
     if ETK_NO_TARGET:
         _draw_inert_panel(stdscr, state, "TUNING")
         return
@@ -1065,18 +1066,19 @@ def draw_tuning(stdscr, state):
     h, w = stdscr.getmaxyx()
     total = len(matrix)
 
-    lap = f"LAP {active_idx + 1:02d}/{total:02d}"
-    _draw_meta_line(stdscr, w, state["gamepad_status"], lap)
+    setting = f"SETTING {active_idx + 1:02d}/{total:02d}"
+    _draw_meta_line(stdscr, w, state["gamepad_status"], setting)
 
-    start_y = 5
+    start_y = 4
     # Reserve a pit-engineer hint band just above the footer separator (h-3):
     # a faint rule + up to 2 wrapped lines explaining the SELECTED field. Only
     # claimed when the active field actually carries help, so a schema without
     # help text renders the full-height list exactly as before.
     help_text = (matrix[active_idx].get("help") or "").strip() if matrix else ""
-    # Only claim the 3-row band when the panel is tall enough to also render it
-    # (matches the h-6 > start_y guard below), so a short terminal keeps its list.
-    help_band = 3 if (help_text and (h - 6) > start_y) else 0
+    # Only claim the 4-row band (rule + 3 wrapped text lines) when the panel is
+    # tall enough to also render it (matches the h-7 > start_y guard below), so a
+    # short terminal keeps its list. The 3rd text line costs 1 row of list scroll.
+    help_band = 4 if (help_text and (h - 7) > start_y) else 0
     capacity = max(1, (h - 3) - start_y - help_band)
 
     if total <= capacity:
@@ -1105,7 +1107,7 @@ def draw_tuning(stdscr, state):
 
     # Pit-engineer hint band: explain the SELECTED field (what it does, the
     # effect, the tradeoff) so the tuner teaches instead of just listing knobs.
-    if help_text and h - 6 > start_y:
+    if help_text and h - 7 > start_y:
         avail = max(10, w - 22)  # text renders from col 18; keep wrap within it
         words, lines, cur = help_text.split(), [], ""
         for word in words:
@@ -1113,17 +1115,19 @@ def draw_tuning(stdscr, state):
                 cur = f"{cur} {word}".strip()
             else:
                 lines.append(cur); cur = word
-                if len(lines) == 2:
+                if len(lines) == 3:
                     break
-        if cur and len(lines) < 2:
+        if cur and len(lines) < 3:
             lines.append(cur)
-        if len(lines) == 2 and cur != lines[1]:
-            lines[1] = (lines[1][:avail - 1] + "…")
-        stdscr.addstr(h - 6, 2, "-" * (w - 4), curses.A_DIM)
-        stdscr.addstr(h - 5, 4, "PIT ENGINEER", curses.color_pair(1) | curses.A_BOLD)
-        stdscr.addstr(h - 5, 18, lines[0][:w - 20], curses.A_DIM)
+        if len(lines) == 3 and cur != lines[2]:
+            lines[2] = (lines[2][:avail - 1] + "…")
+        stdscr.addstr(h - 7, 2, "-" * (w - 4), curses.A_DIM)
+        stdscr.addstr(h - 6, 4, "PIT ENGINEER", curses.color_pair(1) | curses.A_BOLD)
+        stdscr.addstr(h - 6, 18, lines[0][:w - 20], curses.A_DIM)
         if len(lines) > 1:
-            stdscr.addstr(h - 4, 18, lines[1][:w - 20], curses.A_DIM)
+            stdscr.addstr(h - 5, 18, lines[1][:w - 20], curses.A_DIM)
+        if len(lines) > 2:
+            stdscr.addstr(h - 4, 18, lines[2][:w - 20], curses.A_DIM)
 
     # Scroll telltales — race shift-light chevrons parked on the rules.
     # Drawn last so they sit on top of the header/footer separator lines.
@@ -1520,8 +1524,8 @@ def draw_telemetry(stdscr, state):
         stdscr.addstr(y, 2, line3[:w - 4], curses.A_DIM)
         y += 1
 
-    stdscr.addstr(y, 2, "-" * (w - 4), curses.A_DIM)
-    y += 2  # visual breather before the table
+    # (career-block bottom rule + breather removed — the session table draws its
+    # own column-header + rule below, reclaiming 2 ledger rows of scroll height.)
 
     # === PIT NOTE RESERVATION ===
     # Reserve bottom rows for the PIT NOTE block when present so the
@@ -3799,14 +3803,14 @@ def draw_driver(stdscr, state):
         except curses.error:
             pass
 
-    y = 5
+    y = 2
     put(y, 2, _chassis_string(), curses.A_DIM); y += 1
     put(y, 2, "TURNIP DRIVER", curses.A_BOLD); y += 1
     put(y, 2, "-" * (w - 4), curses.A_DIM); y += 1
     put(y, 4, "BUILD = which .so loads (reboot to apply). Dials tune it (next launch).",
         curses.A_DIM); y += 1
     put(y, 4, "One change per soak: swap one thing, drive real laps, read the ledger.",
-        curses.A_DIM); y += 2
+        curses.A_DIM); y += 1
 
     cap = max(1, (h - y) - 7)
     # Cursor-follows-scroll window (same pattern as draw_telemetry). Without it
@@ -4182,14 +4186,14 @@ def draw_power(stdscr, state):
         except curses.error:
             pass
 
-    y = 5
+    y = 2
     put(y, 2, _chassis_string(), curses.A_DIM); y += 1
     put(y, 2, "POWER PROFILE", curses.A_BOLD); y += 1
     put(y, 2, "-" * (w - 4), curses.A_DIM); y += 1
     put(y, 4, "CPU/GPU governors + clock pinning — no OC (OPP-capped). Live + reboot-safe.",
         curses.A_DIM); y += 1
     put(y, 4, "Coordinates with thermal_d: PIT cooldown overrides, then returns here.",
-        curses.A_DIM); y += 2
+        curses.A_DIM); y += 1
 
     cap = max(1, (h - y) - 7)
     scroll = state.get("power_scroll", 0)
@@ -4642,10 +4646,10 @@ def draw_paddock(stdscr, state):
             curses.color_pair(1) | curses.A_BOLD)
         return
 
-    put(5, 2, f"PRIVATE PADDOCK · {state.get('paddock_repo', '?')}", curses.A_BOLD)
-    put(6, 2, f"chipset: {state.get('paddock_chipset', '')}   "
+    put(4, 2, f"PRIVATE PADDOCK · {state.get('paddock_repo', '?')}", curses.A_BOLD)
+    put(5, 2, f"chipset: {state.get('paddock_chipset', '')}   "
               f"{state.get('paddock_driver_note', '')}", curses.A_DIM)
-    put(7, 2, "-" * (w - 4), curses.A_DIM)
+    put(6, 2, "-" * (w - 4), curses.A_DIM)
 
     rows = state.get("paddock_rows")
     if rows is None:
@@ -4660,14 +4664,14 @@ def draw_paddock(stdscr, state):
 
     # Column header + rows.
     C_LOCAL, C_REMOTE, C_PUSH, C_PULL = 26, 38, 50, 58
-    put(8, 4, "GAME", curses.A_DIM)
-    put(8, C_LOCAL, "LOCAL", curses.A_DIM)
-    put(8, C_REMOTE, "PADDOCK", curses.A_DIM)
-    put(8, C_PUSH, "ACTION", curses.A_DIM)
+    put(7, 4, "GAME", curses.A_DIM)
+    put(7, C_LOCAL, "LOCAL", curses.A_DIM)
+    put(7, C_REMOTE, "PADDOCK", curses.A_DIM)
+    put(7, C_PUSH, "ACTION", curses.A_DIM)
 
     sel = state.get("paddock_sel", 0)
     field = state.get("paddock_field", 0)
-    top = 10
+    top = 8
     cap = max(1, (h - 6) - top)
     if len(rows) <= cap:
         off = 0
