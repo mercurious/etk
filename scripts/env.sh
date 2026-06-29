@@ -32,6 +32,9 @@ export VAULT_SYNC="${VAULT_SYNC:-full}"
 # (game native on handheld, small GPU/FPS cost); 0 = record-only (game native on
 # the external/capture output, NO wl-mirror = no FPS cost, handheld idle).
 export ETK_DP_MIRROR="${ETK_DP_MIRROR:-1}"
+# HUD instrument set (mango_bridge.sh body): BASIC = TEMP|LOAD|RAM%|shaders;
+# GINSTR = TEMP|TURBO|SLIP|shaders (swap LOAD+RAM for live frame-pacing gauges).
+export ETK_HUD_MODE="${ETK_HUD_MODE:-BASIC}"
 
 # --- [ SHM & STATE ] ---
 export SHM_DIR="/dev/shm/etk_shm"

@@ -59,6 +59,14 @@ DEFAULT_MODE="RACE"
 # collapses to telemetry-only.
 HUD_HEADER_HOLD_S=15
 
+# --- HUD instrument set (read live by bin/mango_bridge.sh) ---
+# BASIC  = LOAD + RAM gauges (harvest / early-stage default).
+# GINSTR = swap LOAD+RAM for two live frame-pacing gauges off the MangoHud
+#          autolog: TURBO (jitter direction — » settling forward, « degrading
+#          back) and SLIP (3-stage pacing-slip severity, top rung blinks).
+#          The G-INSTR tuning HUD; gauge thresholds are feel-tuned on-rig.
+ETK_HUD_MODE="BASIC"
+
 # --- install.sh output mode ---
 # 0 = Pit Wall console TUI (recommended; dashboard with progress bars +
 #     2-line scrolling datalog, evokes commander.sh aesthetic)
