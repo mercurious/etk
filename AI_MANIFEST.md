@@ -127,9 +127,11 @@ Correct A/B after any driver swap: launch once (cold recompile) → **graceful-e
 driver-matched cache → relaunch warm and test** (true warm-vs-warm vs the saturated baseline).
 
 ### Cockpit forensics: false-SILENT on graceful exit; manual captures lack faultinfo
-- A graceful emulator exit drives `live_stat` non-ingame → `rocknix_spotter_loop.sh`'s stale-counter
-  fires a **false `>>> CRASH: SILENT`** + a ~28 B header-only stub `.rd`. It is NOT a hang. Disarm/re-arm
-  the spotter around any intentional exit and clean the stub.
+- A graceful emulator exit leaves `live_stat` lingering at its last value (process gone), while a real
+  silent freeze leaves the process ALIVE. The spotter now auto-distinguishes via an `emu_alive()`
+  cmdline `/proc`-walk and gates the SILENT class on it: a graceful exit reports `>>> GRACEFUL EXIT`
+  with NO crash, NO stub, NO capture. The old false-`SILENT` + ~28 B header-only stub is **FIXED
+  (2026-06-29)** — the manual disarm-around-exit dance is no longer needed.
 - Only the spotter writes the `.faultinfo` sidecar (dmesg `ib1/ib2/fence/status`). Hand-grabbed `manual_*`
   captures lack it → no fault address → only structural profiling is possible. Write a faultinfo alongside
   any manual capture.

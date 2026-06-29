@@ -26,6 +26,19 @@ zt(){ awk '{printf "%.0f",$1/1000}' /sys/class/thermal/thermal_zone"$1"/temp 2>/
 # in-game = a real live DDU. Exclude pre-game (WAIT/IDLE/LOADING) and the startup banner (SHDRS),
 # so stale-counting only begins once steady telemetry is flowing (no false trip on the banner hold).
 ingame(){ case "$1" in ""|*WAIT*|*IDLE*|*LOADING*|*SHDRS*) return 1;; *) return 0;; esac; }
+# emulator-alive probe (gates the SILENT class): a real silent freeze has the emulator process
+# STILL ALIVE with a frozen live_stat; a graceful exit/abort has it GONE (but live_stat lingers at
+# its last value). cmdline-verified /proc walk — NOT `pgrep -f` (self-matches this wrapper shell,
+# AI_MANIFEST §RUNTIME PROCESS) and NOT `pgrep -x AppRun.wrapped` (observed seen=0 for a whole live
+# run on this build). cmdline is NUL-separated; read it per /proc PROC-discovery law. Skip self ($$).
+emu_alive(){
+  for c in /proc/[0-9]*/cmdline; do
+    [ "${c%/cmdline}" = "/proc/$$" ] && continue
+    exe=$(tr '\0' '\n' < "$c" 2>/dev/null | head -1)   # argv[0] = the executable, not an arg-mention
+    case "$exe" in *AppRun.wrapped|*EBOOT.BIN|*EMAIN.SELF) return 0;; esac
+  done
+  return 1
+}
 # --- hangrd forensic capture (gpu_watch fold-in): cat the debugfs node so the kernel emits the
 #     freedreno REDUMP (.rd) of the HANGING submit the instant the GPU wedges. Arm AT IDLE, here,
 #     before launch. Decode off-rig with cffdump; the .faultinfo sidecar (written on catch) carries
@@ -44,7 +57,7 @@ elif [ "$HANGRD_CAPTURE" = 1 ]; then
   echo "[spotter] WARN: hangrd node absent ($HANGRD_NODE) — no .rd capture this run"
 fi
 echo "[spotter] armed @ uptime ${MARK}s — a6xx-fault + live_stat-stale(${STALE_TICKS}x) + core/log. dur=${DUR}s int=${INT}s. LAUNCH NOW."
-endt=$(( MARK + DUR )); seen=0; prev=""; stale=0; crash=""
+endt=$(( MARK + DUR )); seen=0; prev=""; stale=0; crash=""; graceful=""
 while [ "$(awk '{print int($1)}' /proc/uptime)" -lt "$endt" ]; do
   pid=$(pgrep -f rpcs3 | head -1)   # RSS display only (best-effort; do NOT use for liveness)
   rss=$(awk '/VmRSS/{printf "%d",$2/1024}' /proc/"$pid"/status 2>/dev/null)
@@ -60,13 +73,20 @@ while [ "$(awk '{print int($1)}' /proc/uptime)" -lt "$endt" ]; do
   if ingame "$etk"; then seen=1; [ "$etk" = "$prev" ] && stale=$((stale+1)) || stale=0
   else [ "$seen" = 1 ] && stale=$((stale+1)); fi
   prev="$etk"
-  [ -z "$crash" ] && [ "$seen" = 1 ] && [ "$stale" -ge "$STALE_TICKS" ] && crash="SILENT (live_stat stale ${stale}x)"
+  # SILENT gate: a stale live_stat is only a freeze if the emulator is STILL ALIVE. If it's GONE,
+  # this was a graceful exit/abort (live_stat just lingers) — NOT a crash, so no stub, no capture.
+  # (Firing SILENT on every graceful exit is what produced the 28B header-only hangrd stub.)
+  if [ -z "$crash" ] && [ "$seen" = 1 ] && [ "$stale" -ge "$STALE_TICKS" ]; then
+    if emu_alive; then crash="SILENT (live_stat stale ${stale}x)"
+    else graceful="emulator exited (live_stat stale ${stale}x, process gone)"; fi
+  fi
   # 3. core dump / RPCS3.log fatal (SPU/segfault class)
   [ "$(ls "$CORES" 2>/dev/null | wc -l)" -gt "$base" ] && crash="${crash:+$crash; }NEW CORE"
   tail -8 "$LOG" 2>/dev/null | grep -qiE "Segfault|fatal error|Thread terminated" && crash="${crash:+$crash; }RPCS3 FATAL"
   printf '%s | GPU %s°C %sMHz | CPUp %s°C %sMHz | free %sMB rpcs3 %sMB | bat %s°C | etk[%s]%s\n' \
     "$(date +%H:%M:%S)" "$(zt 15)" "${gpuf:-?}" "$(zt 10)" "${cpf:-?}" "$free" "${rss:-?}" "$(zt 25)" "$etk" "${crash:+  *** $crash ***}"
   [ -n "$crash" ] && break
+  [ -n "$graceful" ] && { echo "[spotter] graceful exit detected — $graceful"; break; }
   sleep "$INT"
 done
 if [ -n "$crash" ]; then
@@ -160,5 +180,9 @@ else
     [ -n "$RDFILE" ] && [ "$(wc -c < "$RDFILE" 2>/dev/null || echo 0)" -lt 1024 ] && rm -f "$RDFILE"
     echo "[spotter] hangrd disarmed (no crash); empty .rd removed."
   fi
-  echo "[spotter] window ended — NO crash caught (possible CLEAN run; check ledger)."
+  if [ -n "$graceful" ]; then
+    echo "[spotter] >>> GRACEFUL EXIT: $graceful — no crash, no stub, no forensic capture."
+  else
+    echo "[spotter] window ended — NO crash caught (possible CLEAN run; check ledger)."
+  fi
 fi
