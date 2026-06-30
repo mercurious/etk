@@ -1206,11 +1206,23 @@ fi
 # §G.5 note: once a fork is bound, the Mesa fingerprint tracks OUR driver, so a
 # nightly's stock-Mesa change is intentionally masked (we want our driver).
 ssh $RIG_SSH "mkdir -p /storage/turnip/drivers /storage/.config/system.d/" 2>/dev/null
-if ls ./drivers/*.so >/dev/null 2>&1; then
-    say "${G}[ETK]${N} Staging Turnip driver catalog ($(ls ./drivers/*.so | wc -l | tr -d ' ') build(s)) -> /storage/turnip/drivers"
-    rsync -az --include='*.so' --exclude='*' ./drivers/ "$RIG_SSH:/storage/turnip/drivers/" >/dev/null 2>&1
+# CERTIFIED release catalog: ship stock (synthetic, no file) + only proven fork
+# build(s). Dev/experimental builds (gtk_0.1, lsd-*) stay LOCAL in drivers/ and
+# are NOT staged, so the user-facing DRIVER tab stays "stock + the proven fork."
+# Add a filename here only after that build proves on the track.
+CERTIFIED_BUILDS="etk_turnip_rocknix_26.1.3_gtk_0.2.so"
+TURNIP_KEEP="stock"   # basenames allowed in the on-rig catalog (stock is synthetic)
+staged=0
+for cb in $CERTIFIED_BUILDS; do
+    if [ -f "./drivers/$cb" ]; then
+        rsync -az "./drivers/$cb" "$RIG_SSH:/storage/turnip/drivers/$cb" >/dev/null 2>&1 \
+            && { staged=$((staged + 1)); TURNIP_KEEP="$TURNIP_KEEP $cb"; }
+    fi
+done
+if [ "$staged" -gt 0 ]; then
+    say "${G}[ETK]${N} Staged $staged certified Turnip build(s) -> catalog (stock + proven fork)"
 else
-    say "${Y}[ETK]${N} No host drivers/*.so — catalog will be stock-only"
+    say "${Y}[ETK]${N} No certified drivers/*.so present — catalog will be stock-only"
 fi
 # An out-of-tree TURNIP_SO is staged into the catalog too, and names the DEFAULT
 # pick for a rig with no on-rig selection yet (preserves prior single-driver UX).
@@ -1220,6 +1232,11 @@ if [ -n "${TURNIP_SO:-}" ] && [ -f "$TURNIP_SO" ]; then
     TURNIP_DEFAULT_SEL="$(basename "$TURNIP_SO")"
     say "${G}[ETK]${N} Default driver build: $(basename "$TURNIP_SO")"
 fi
+# Keep the operator's out-of-tree default too, then prune any non-certified .so
+# left on the rig from prior dev installs — so the DRIVER-tab catalog ends up
+# exactly stock + the certified set (no stale gtk_0.1 / lsd-* lingering).
+[ "$TURNIP_DEFAULT_SEL" != "stock" ] && TURNIP_KEEP="$TURNIP_KEEP $TURNIP_DEFAULT_SEL"
+ssh $RIG_SSH "KEEP='$TURNIP_KEEP'; for f in /storage/turnip/drivers/*.so; do [ -e \"\$f\" ] || continue; b=\$(basename \"\$f\"); case \" \$KEEP \" in *\" \$b \"*) : ;; *) rm -f \"\$f\";; esac; done" 2>/dev/null
 TURNIP_OUT_FILE=$(mktemp /tmp/etk_turnip_XXXXXX)
 ssh $RIG_SSH "TURNIP_DEFAULT_SEL='$TURNIP_DEFAULT_SEL' sh -s" > "$TURNIP_OUT_FILE" 2>&1 << 'REMOTE'
     # Boot-time resolver: read the selection, (re)bind or unbind, stamp loaded.

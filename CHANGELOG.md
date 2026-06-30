@@ -2,6 +2,30 @@
 
 All notable changes to the ETK are documented here. This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-06-30
+
+**The custom driver goes public.** ETK's flagship is now the **GTK custom Mesa/Turnip driver for ROCKNIX** — a Gran-Turismo-tuned fork that nearly doubles GT playtime on the SM8250 (median run ~204s → ~394s; the p90 ceiling more than doubles; time-to-crash **+42%**) and decouples the shader vault from ROCKNIX nightlies so the cache survives OS updates instead of spoiling on every bump. The a6xx GPU hang is honestly **reduced, not cured** (crash-rate ~73% → ~50%; the hang persists, the dials just push it far later). A new **DRIVER-build selector** swaps whole `.so` builds (reboot-gated), a **POWER tab** pins CPU/GPU governors, and the in-game **G-INSTR HUD** surfaces live frame-pacing so you can watch the driver's limited-slip mitigation working. Re-pinned to ROCKNIX nightly **20260628**.
+
+### Added
+- **GTK custom Turnip driver**, shipped in the on-rig DRIVER-tab catalog — **stock + the proven `gtk_0.2` build only** (`install.sh` stages a certified allowlist; dev/experimental builds stay local).
+- **DRIVER tab** build selector + `TU_DEBUG` dial ladder (sddepth/syncdraw LSD gears), every race stamped in the ledger with its dial set.
+- **POWER tab** — CPU/GPU governor + clock-pin presets, live + boot-persistent (no runtime OC; the SM8250 OPP table is hard-capped).
+- **G-INSTR HUD mode** (`ETK_HUD_MODE=GINSTR`): replaces the LOAD/RAM gauges with live **JITTER** (frame-pacing direction) + **SLIP** (pacing-slip severity) gauges off the MangoHud autolog; ledger gains `fps_med` / `fps_1low` / `ft_p99_ms` / `ft_jitter_ms` columns.
+- **USB-C DisplayPort capture + handheld mirror** (`dpmirror_d`) for capture-card/OBS recording.
+- README **hero chart** (duration-vs-time, generated from the live race ledger) replaces the lead screenshot; the photo gallery moved to the **[Screenshot Gallery](https://github.com/mercurious/etk/wiki/ETK-Screenshot-Gallery)** wiki page.
+
+### Changed
+- **Re-pinned to ROCKNIX nightly `20260628`** (kernel 7.0.11 + RPCS3 0.0.41-19444 unchanged; `etk_drift.py` reported no structural drift). The prior `20260622` pin had aged off ROCKNIX's published nightly list, so a new user could no longer fetch it.
+- Pitstop tabs reclaim scroll height (DRIVER/POWER/TELEMETRY/PADDOCK/TUNING); TUNING counter relabeled `SETTING`; 3-line PIT ENGINEER hint band.
+
+### Fixed
+- **Cockpit spotter** now distinguishes a real silent freeze from a graceful exit via an `emu_alive` `/proc` gate — no more false `>>> CRASH: SILENT` + 28 B header-only stub `.rd` on a clean exit.
+
+### Known issues / deferred
+- **GT5P "road flicker" is upstream RPCS3, not the ETK driver.** The track-shadow flicker is RSX bug [#11912](https://github.com/RPCS3/rpcs3/issues/11912) (reproduces on desktop RPCS3/MoltenVK too, root-caused upstream to shader program-constants/binary); no driver or config lever fixes it. Carried as a known upstream issue.
+- **DRM-spawn teardown deadlock** — rapid relaunch / the EBOOT→EMAIN spawn handoff can wedge RPCS3 in Vulkan-instance teardown (`vkDestroyInstance`/`pthread_cond_destroy`), presenting as a black-screen launch freeze. Clear with R3 and relaunch (intermittent race). Emulation-side; an RPCS3-fork fix target, not curable from the driver.
+- The **a6xx GPU hang** persists as a managed residual — the GTK driver delays it (`sddepth`/`syncdraw` dials) but does not cure it.
+
 ## [0.4.0] - 2026-06-18
 
 **Tune the driver, photograph the crash.** The hunt for ROCKNIX's headline instability — the a6xx GPU-fault freeze — produced two operator-facing instruments. A new **DRIVER tab** exposes the Mesa/Turnip dials the crash signature points at and stamps every session in the ledger with the exact dial set it ran under, so genuine-play tuning finally yields *attributable* data instead of N=1 guesses. And a **crash-cam** turns every recoverable freeze into a photographed, dial-tagged ledger entry — the frozen frame is grabbed at the R3 panic, bound to its session, and previewed full-screen on the device. Plus the Manage Shaders engine now deploys reliably. The throughline holds: ETK ships tooling, never bytes.

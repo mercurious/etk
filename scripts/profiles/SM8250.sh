@@ -8,11 +8,12 @@
 # VALUES ONLY — no `export`, no logic. env.sh is the sole
 # exporter of the canonical names defined below.
 #
-# Certified against Rocknix NIGHTLY 20260610 (kernel 7.0.11, Turnip Mesa 26.1.2,
-# RPCS3 0.0.41-19444 w/ GT5 memory-leak fix) on 2026-06-11 — live race validation
-# on-rig (GT5P sessions clean at 720p, RAM peaks down ~1.5 GB vs official 20260601,
-# silent-crash class absent from the ledger this boot; gamepad codes unchanged,
-# R3 recovery verified, RPCS3 binds Adreno 650 on the renderer path).
+# Certified against Rocknix NIGHTLY 20260628 (kernel 7.0.11, Turnip Mesa 26.1.2,
+# RPCS3 0.0.41-19444 w/ GT5 memory-leak fix) — re-pinned 20260610->20260628 on
+# 2026-06-30 after etk_drift.py reported NO structural drift (kernel + RPCS3
+# unchanged vs the prior 20260622 pin; gamepad present, no WiFi/boot regression).
+# The 20260610 adoption (2026-06-11) first proved the GT5 leak fix: GT5P clean at
+# 720p, RAM peaks down ~1.5 GB vs official 20260601, silent-crash class absent.
 # Prior baseline: OFFICIAL 20260601 (build e7b9e9a3, kernel 7.0.2, Turnip 26.1.0),
 # certified 2026-06-02 via etk_drift.py --check + headless gate; 20260601.json banked.
 # Input-node renumbering across builds is benign — find_gamepad() matches by
