@@ -9,6 +9,7 @@ No ETK features, just house tuned.
 ## For the full ROCKNIX rig
 The complete high performance system.
 - [Download latest release](https://github.com/mercurious/etk/releases)
+- Introducing [GTK Turnip for ROCKNIX](https://github.com/mercurious/etk/wiki/Using-MESA-Turnip-GTK)
 - [System Requirements](https://github.com/mercurious/etk/#etk-system-requirements)
 - [ETK Wiki](https://github.com/mercurious/etk/wiki) for full documentation, guides, advanced features
 - [Device Support](https://github.com/mercurious/etk/#handheld-system-support)
@@ -19,12 +20,12 @@ The complete high performance system.
 <img src="docs/etk_hero.svg" width="900"
      alt="Chart: every Gran Turismo session on the SM8250 rig is one dot, height = how long it ran. In the GTK-driver era the median run roughly doubles and the time-to-crash ceiling more than doubles; compile-storm crashes fade as the shader vault saturates, and the GPU hang is pushed about 42% later but not cured." />
 
-*Every Gran Turismo session on the rig is one dot; height = how long it ran before it crashed or banked clean. The kit attacks two crash classes with two mechanisms — a **shader vault** (compile-storm crashes fade as it saturates) and a **custom GTK Turnip driver** (the GPU hang comes **~42% later** — reduced, not cured). Median playtime roughly **doubles** in the GTK-driver era. Generated from the live race ledger. See the [ETK Screenshot Gallery](https://github.com/mercurious/etk/wiki/ETK-Screenshot-Gallery) on the Wiki for on-device captures.*
+*Every Gran Turismo session on the rig is one dot; height = how long it ran before it crashed or banked clean. The kit attacks two crash classes with two mechanisms — a **shader vault** (compile-storm crashes fade as it saturates) and a **[custom GTK Turnip driver](https://github.com/mercurious/etk/wiki/Using-MESA-Turnip-GTK)** (the GPU hang comes **~42% later** — reduced, not cured). Median playtime roughly **doubles** in the GTK-driver era. Generated from the live race ledger. See the [ETK Screenshot Gallery](https://github.com/mercurious/etk/wiki/ETK-Screenshot-Gallery) on the Wiki for on-device captures.*
 
 The Emulation Tuning Kit for ROCKNIX supports experimental PS3 emulation on ARM64 Retrogaming Handhelds. It excels at tuning games with device-specific emulation configurations while harvesting shaders into vaults. **ETK does not share or distribute shaders** — it manages your own, archived privately to your own GitHub, so your rig can swap games and their vaults on the go without a host computer. It also works by equipping your compatible handheld with special features to become a track day rig to literally and figuratively crash your way into making a game such as Gran Turismo 6 playable. Push your handheld to its limits while collecting shaders with tools to recover from crashes so the game plays well after several attempts. ETK automatically tracks sessions on a per-game race ledger.
 
 ## Racing UI
-In the style of a race car Driver Data Unit (DDU) dashboard, the ETK instruments provide shader counts in real-time in a custom in-game overlay using MangoHUD support built-in to ROCKNIX. The kit also adds a custom ETK Pitstop app in the ROCKNIX Tools carousel menu for on-board telemetry analysis, quick tuning of Adreno-centric emulation settings, and simplified game package installation.
+In the style of a race car Driver Data Unit (DDU) dashboard, the ETK instruments provide shader counts in real-time in a custom in-game overlay using MangoHUD support built-in to ROCKNIX. The kit also adds a custom ETK Pitstop app in the ROCKNIX Tools carousel menu for on-board telemetry analysis, quick tuning of Adreno-centric emulation settings, live video-out mirroring, and simplified game package installation.
 
 ## Race Engineering
 More technically, ETK is a custom ROCKNIX middleware composed of shell scripts and python curses that employ brute-force optimization, shader cache management, advanced in-game telematics, on-board screenshot tooling that includes the MangoHUD overlay, operates an automated file-drop headless install of PS3 PKG installations inside of RPCS3, and automatically archives shaders into an optional private, unshared cloud repository on GitHub.
