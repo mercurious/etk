@@ -1209,11 +1209,36 @@ ssh $RIG_SSH "mkdir -p /storage/turnip/drivers /storage/.config/system.d/" 2>/de
 # CERTIFIED release catalog: ship stock (synthetic, no file) + only proven fork
 # build(s). Dev/experimental builds (gtk_0.1, lsd-*) stay LOCAL in drivers/ and
 # are NOT staged, so the user-facing DRIVER tab stays "stock + the proven fork."
-# Add a filename here only after that build proves on the track.
+# Add a build (filename + sha256 in driver_sha) only after it proves on the track.
 CERTIFIED_BUILDS="etk_turnip_rocknix_26.1.3_gtk_0.2.so"
+DRIVER_RELEASE_BASE="https://github.com/mercurious/etk/releases/latest/download"
+# sha256 of each certified build — a fetched binary is verified against this.
+driver_sha() { case "$1" in
+    etk_turnip_rocknix_26.1.3_gtk_0.2.so) echo "245212454bb1809816f52fa7c04209db2ef63cf1b5ddc7a69533636a0a4b7d19" ;;
+    *) echo "" ;; esac; }
+sha256_of() {  # portable host sha256 (Linux sha256sum | macOS shasum)
+    if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}';
+    elif command -v shasum   >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}';
+    else echo ""; fi; }
 TURNIP_KEEP="stock"   # basenames allowed in the on-rig catalog (stock is synthetic)
 staged=0
 for cb in $CERTIFIED_BUILDS; do
+    # drivers/ is gitignored, so a fresh clone has no .so — fetch the certified
+    # build from the latest GitHub release, then sha256-verify it before staging.
+    if [ ! -f "./drivers/$cb" ]; then
+        say "${G}[ETK]${N} Fetching certified driver $cb from the latest ETK release..."
+        mkdir -p ./drivers
+        curl -fL --retry 2 -o "./drivers/$cb" "$DRIVER_RELEASE_BASE/$cb" 2>/dev/null \
+            || { rm -f "./drivers/$cb"; say "${Y}[ETK]${N} Could not fetch $cb (offline or asset missing) — skipping."; }
+    fi
+    want=$(driver_sha "$cb")
+    if [ -f "./drivers/$cb" ] && [ -n "$want" ]; then
+        got=$(sha256_of "./drivers/$cb")
+        if [ -n "$got" ] && [ "$got" != "$want" ]; then
+            rm -f "./drivers/$cb"
+            say "${Y}[ETK]${N} $cb FAILED sha256 verification — refusing to stage (expected $want)."
+        fi
+    fi
     if [ -f "./drivers/$cb" ]; then
         rsync -az "./drivers/$cb" "$RIG_SSH:/storage/turnip/drivers/$cb" >/dev/null 2>&1 \
             && { staged=$((staged + 1)); TURNIP_KEEP="$TURNIP_KEEP $cb"; }
@@ -1222,7 +1247,7 @@ done
 if [ "$staged" -gt 0 ]; then
     say "${G}[ETK]${N} Staged $staged certified Turnip build(s) -> catalog (stock + proven fork)"
 else
-    say "${Y}[ETK]${N} No certified drivers/*.so present — catalog will be stock-only"
+    say "${Y}[ETK]${N} No certified Turnip build available — catalog will be stock-only"
 fi
 # An out-of-tree TURNIP_SO is staged into the catalog too, and names the DEFAULT
 # pick for a rig with no on-rig selection yet (preserves prior single-driver UX).
