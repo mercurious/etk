@@ -16,10 +16,10 @@ The complete high performance system.
 - [Getting Started](https://github.com/mercurious/etk/#getting-started)
 
 # ETK Introduction
-<img src="docs/screenshots/etk_NPEA00502_20260526_194915.png" width="900"
-     alt="Gran Turismo 6 chase-cam: Mini Cooper approaching the ivy-covered tunnel at Trial Mountain at 62 mph, fifth place lap 2 of 2, opponents listed; ETK telemetry HUD strip across the top of the frame" />
+<img src="docs/etk_hero.svg" width="900"
+     alt="Chart: every Gran Turismo session on the SM8250 rig is one dot, height = how long it ran. In the GTK-driver era the median run roughly doubles and the time-to-crash ceiling more than doubles; compile-storm crashes fade as the shader vault saturates, and the GPU hang is pushed about 42% later but not cured." />
 
-*GT6 — Trial Mountain, Lap 2 of 2, Position 5/6, Mini Cooper at 62 mph approaching the ivy-covered tunnel. DDU strip on top: `VULKAN 8FPS 126.6ms BATT 49% ETK 79° 12.46 96% 12+ 29.5k 269MB` — backend, framerate, frametime, battery, GPU temp, system load, GPU utilisation, new shaders harvested this session (`12+`), vault total (`29.5k`), live RAM. The `+` is the productive-crashing pitch made literal: the GPU is grinding hard, and the kit is banking every new shader for the next run.*
+*Every Gran Turismo session on the rig is one dot; height = how long it ran before it crashed or banked clean. The kit attacks two crash classes with two mechanisms — a **shader vault** (compile-storm crashes fade as it saturates) and a **custom GTK Turnip driver** (the GPU hang comes **~42% later** — reduced, not cured). Median playtime roughly **doubles** in the GTK-driver era. Generated from the live race ledger. See the [ETK Screenshot Gallery](https://github.com/mercurious/etk/wiki/ETK-Screenshot-Gallery) on the Wiki for on-device captures.*
 
 The Emulation Tuning Kit for ROCKNIX supports experimental PS3 emulation on ARM64 Retrogaming Handhelds. It excels at tuning games with device-specific emulation configurations while harvesting shaders into vaults. **ETK does not share or distribute shaders** — it manages your own, archived privately to your own GitHub, so your rig can swap games and their vaults on the go without a host computer. It also works by equipping your compatible handheld with special features to become a track day rig to literally and figuratively crash your way into making a game such as Gran Turismo 6 playable. Push your handheld to its limits while collecting shaders with tools to recover from crashes so the game plays well after several attempts. ETK automatically tracks sessions on a per-game race ledger.
 
@@ -33,32 +33,7 @@ More technically, ETK is a custom ROCKNIX middleware composed of shell scripts a
 Built for abuse and race conditions, the ETK guards hard-earned shaders, custom tunings, screenshots, and game saves from SD card failure, OS flashing, data corruption, device failure, loss or theft. The ETK includes an emergency cooldown that automatically puts your device in PIT mode as needed, protecting your engine from overheating — and **automatically recovers back to racing once it cools, with no reboot required**.
 
 ## Gallery
-Captured on-device with the ETK's `L1` screenshot shutter — MangoHUD overlay included (which is the whole point; RPCS3's built-in screenshot strips it).
-
-<img src="docs/screenshots/etk_NPEA00502_20260526_124051.png" width="600"
-     alt="GT6 chase cam: Mini Cooper at the same Trial Mountain tunnel a different lap, position 2 of 6 at 97 mph, 138 shaders banked this session" />
-
-*GT6 — Trial Mountain, same ivy tunnel as the hero shot but a different race: Position 2/6, Lap 2/2, Mini Cooper at 97 mph. HUD: `VULKAN 15FPS 68.9ms BATT 66% ETK 79° 11.96 96% 138+ 28.6k 261MB` — **138 shaders harvested** by lap 2 because the cache from earlier laps is already paying out.*
-
-<img src="docs/screenshots/etk_NPUA80075_20260526_132352.png" width="600"
-     alt="GT5P Suzuka start grid, position 6 of 12 lap 1 of 3, red sedan rival ahead, Honda and Bridgestone trackside signage, speed 101" />
-
-*GT5P — Suzuka Circuit start grid, Position 6/12, Lap 1/3, gear 3 at 101 mph. HUD: `VULKAN 22FPS 45.9ms BATT 48% ETK 75° 7.66 -95% 0+ 19.0k 172MB`. Honda / Bridgestone / Potenza trackside — daylight Suzuka renders cleanly on the cached set.*
-
-<img src="docs/screenshots/etk_NPUA80075_20260526_132550.png" width="600"
-     alt="GT5P Suzuka chase cam, blue Nissan Skyline GT-R approaching a sweeping corner, mini-map visible, position 12 of 12 lap 2 of 3" />
-
-*GT5P — Suzuka, Position 12/12, Lap 2/3, blue Skyline GT-R at 71 mph into a sweeper. HUD: `VULKAN 23FPS 44.4ms BATT 46% ETK 75° 9.03 97% 0+ 19.0k 172MB`. Open daylight track on a saturated shader set is where the kit feels most like a stock console.*
-
-<img src="docs/screenshots/etk_NPUA80075_20260526_132301.png" width="600"
-     alt="Gran Turismo 5 Prologue 'My Page' menu showing a player's garage with eight cars; current car highlighted as Nissan Skyline GT-R V-spec II Nür '02" />
-
-*GT5P — My Page / Garage. Player profile and car collection (`Skyline R34 GT-R V-spec II '02` selected). HUD: `VULKAN 18FPS 54.7ms BATT 49% ETK 72° 6.69 -96% 0+ 19.0k 172MB` — menus run on the cached shader set.*
-
-<img src="docs/screenshots/etk_NPEA00502_20260526_170526.png" width="600"
-     alt="GT6 Nürburgring Nordschleife at night, cockpit view headlights catching a white opponent car ahead through a dark turn; ETK HUD on top showing 132 shaders" />
-
-*GT6 — Nürburgring Nordschleife at night, Lap 1 of 2, cockpit view at 40 mph into a moonlit corner. HUD: `VULKAN 8FPS 131.9ms BATT 54% ETK 79° 11.99 96% 132+ 29.4k 269MB`. The Green Hell at night, on a handheld, running PS3. **A clean lap landed 2026-05-26.***
+On-device captures — MangoHUD overlay included (RPCS3's built-in screenshot strips it) — live in the **[ETK Screenshot Gallery](https://github.com/mercurious/etk/wiki/ETK-Screenshot-Gallery)** on the Wiki.
 
 ## ETK System Requirements
 ETK is certified against **ROCKNIX nightly `20260622`** on SM8250 (Retroid Pocket Flip 2), with a hard architectural floor at 20260520 (DS5 gamepad era). The pin tracks the nightly cadence deliberately: nightly-20260610 first shipped RPCS3 `0.0.41-19444`, which contains the upstream Gran Turismo 5 memory-leak fix ([RPCS3 #18819](https://github.com/RPCS3/rpcs3/issues/18819), ~300 MB leaked per car viewed — fatal on an 8 GB handheld and the prime suspect behind the former dominant "silent crash" class), plus Mesa Turnip 26.1.2 and kernel 7.0.11; certification has since tracked forward to `20260622` (kernel 7.0.11 unchanged). Official release `20260601` predates the fix. The race-stability bar — five consecutive crash-free runs of the same target race to a graceful emulator exit — has been **cleared on GT5 Prologue** (best streak: 16 crash-free sessions / 8 back-to-back clean finishes). That result was earned on a **saturated** shader vault; it is **not yet consistently reproducible from a fresh install**, where the rig re-enters the harvest cycle and crashes until the cache re-saturates. Race-stable is proven *reachable*, not guaranteed every session.
