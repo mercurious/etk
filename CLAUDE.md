@@ -30,9 +30,20 @@ session by reading, in order:
 - **Validate before integrate** — prove speculative tuning on a disposable on-rig harness, cold-booted, before touching locked-down core (`install.sh`, daemons, telemetry schema, the R3 panic path).
 - **Verdict from the operator's screen, mechanism from the log** — don't crown a fix from one run or a mid-process read; the noise floor on this title is huge (GT5P ~77–2886 s). Rule out our own code before blaming hardware (bad cable/card).
 
-## Repo / git
+## Repo / git — TRUNK-BASED protocol (adopted 2026-06-30, operator-directed)
 - `origin` = github.com/mercurious/etk. `garage` = etk-garage (private) — **NEVER push `garage` to `origin`**.
-- Do **not** commit or push unless explicitly asked. Branch off `main` for changes.
+- **Work directly on `main`. Do NOT create feature branches by default** — parked branches and
+  uncommitted work get stranded and wiped (this is how the 0.5.0 input_d chords were lost; see
+  [[feedback_push_promptly_origin_churns]]). Branches are for genuinely risky/experimental spikes
+  ONLY, and even then push the branch to `origin` immediately (never local-only) and delete after merge.
+- **Commit + push to `origin/main` are PRE-AUTHORIZED** for any change the operator has validated —
+  do it the SAME session, no need to ask each time. The done-bar is **"pushed to origin," not
+  "committed locally."** Commit in logical chunks with clear messages.
+- **`origin/main` receives out-of-band edits** (GitHub web-editor commits) and history rewrites.
+  A push may be rejected as stale → **`git fetch` + `git rebase origin/main`, then push. NEVER
+  force-push** (force is what clobbers others' work / causes the losses).
+- Still ask before: force-pushing, anything touching `garage`, history rewrites on `origin`, or
+  destructive ops (hard resets that discard work, branch deletion of unmerged work).
 - Public history was legal-scrubbed (turnip fair-use abandoned, distribution-intent dossiers purged) — keep new docs development/tuning-focused, not distribution-intent.
 
 ## Target rig (verify against `AI_MANIFEST.md` / `README.md` — may drift)
