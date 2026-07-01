@@ -1334,6 +1334,73 @@ fi
 rm -f "$TURNIP_OUT_FILE"
 
 # ==========================================================
+# STEP 6.55: CUSTOM RPCS3 BUILD (dev/experimental) — boot-persistent bind
+# ==========================================================
+# rpcs3-sa also lives on read-only squashfs (/usr/bin), same story as Turnip's
+# /usr/lib driver above. Unlike Turnip this is a single on/off FLAG, not a
+# Pitstop-tab catalog/selector — there's one dev build in flight, not a set of
+# proven ones to pick between, so install.sh's etk.conf is the only control
+# surface. Because this is a bind-mount (never overwrites the underlying
+# squashfs file), the stock binary needs no manual backup: unmounting always
+# recovers it. RPCS3_APPIMAGE set + file exists => staged and bound over
+# /usr/bin/rpcs3-sa on every boot. Unset => any previously-staged custom build
+# is removed and the next boot's resolver falls back to stock. Reboot-gated
+# by the same doctrine as Turnip: a bind-mount can't hot-swap a binary a
+# running RPCS3 already has open.
+ssh $RIG_SSH "mkdir -p /storage/rpcs3 /storage/.config/system.d/" 2>/dev/null
+if [ -n "${RPCS3_APPIMAGE:-}" ] && [ -f "$RPCS3_APPIMAGE" ]; then
+    rsync -az "$RPCS3_APPIMAGE" "$RIG_SSH:/storage/rpcs3/rpcs3-sa.custom" >/dev/null 2>&1 \
+        && say "${G}[ETK]${N} Staged custom RPCS3 build: $(basename "$RPCS3_APPIMAGE")" \
+        || say "${Y}[ETK]${N} Failed to stage custom RPCS3 build (rsync error) — stock stays active."
+else
+    ssh $RIG_SSH "rm -f /storage/rpcs3/rpcs3-sa.custom" 2>/dev/null
+fi
+RPCS3_OUT_FILE=$(mktemp /tmp/etk_rpcs3_XXXXXX)
+ssh $RIG_SSH "sh -s" > "$RPCS3_OUT_FILE" 2>&1 << 'REMOTE'
+    # Boot-time resolver: bind the custom build over stock if present, else
+    # unbind (idempotent; re-run every boot since bind-mounts don't persist).
+cat << 'BIND' > /storage/.config/etk-rpcs3-bind.sh
+#!/bin/sh
+CUSTOM=/storage/rpcs3/rpcs3-sa.custom
+ACTIVE=/usr/bin/rpcs3-sa
+if grep -q " $ACTIVE " /proc/mounts; then
+    umount "$ACTIVE" 2>/dev/null || true
+fi
+if [ -f "$CUSTOM" ] && mount --bind "$CUSTOM" "$ACTIVE"; then
+    echo custom > /storage/rpcs3/loaded
+else
+    echo stock > /storage/rpcs3/loaded
+fi
+BIND
+    chmod +x /storage/.config/etk-rpcs3-bind.sh
+cat << 'SVC' > /storage/.config/system.d/etk-rpcs3.service
+[Unit]
+Description=ETK Custom RPCS3 build selector (bind-mount over stock rpcs3-sa)
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh /storage/.config/etk-rpcs3-bind.sh
+ExecStop=/bin/sh -c 'umount /usr/bin/rpcs3-sa 2>/dev/null || true'
+
+[Install]
+WantedBy=multi-user.target
+SVC
+    systemctl daemon-reload
+    systemctl enable /storage/.config/system.d/etk-rpcs3.service >/dev/null 2>&1
+    systemctl restart etk-rpcs3.service >/dev/null 2>&1
+    loaded=$(cat /storage/rpcs3/loaded 2>/dev/null)
+    echo "RPCS3_OK loaded=${loaded:-stock}"
+REMOTE
+if grep -q RPCS3_OK "$RPCS3_OUT_FILE"; then
+    say "${G}[ETK]${N} $(grep -m1 RPCS3_OK "$RPCS3_OUT_FILE" | sed 's/RPCS3_OK //') (reboot to fully validate)"
+else
+    say "${Y}[ETK]${N} $(grep -m1 -E 'RPCS3|error|denied' "$RPCS3_OUT_FILE" || echo 'RPCS3 custom-build deploy: no status marker')"
+fi
+rm -f "$RPCS3_OUT_FILE"
+
+# ==========================================================
 # STEP 6.6: POWER PROFILE APPLIER (CPU/GPU gov + clock pinning)
 # ==========================================================
 # Pitstop's POWER tab writes /storage/etk-power/profile (path<TAB>value lines).

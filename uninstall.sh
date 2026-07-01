@@ -210,6 +210,15 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
     rm -f /storage/.config/profile.d/097-etk-turnip-dials
     echo "    Removed: 097-etk-turnip-dials (Turnip dials reverted to default)"
 
+    # Custom RPCS3 build (dev/experimental, single on/off flag — no Pitstop
+    # tab): drop the boot bind-mount unit + its resolver + unbind so the rig
+    # falls back to the stock squashfs rpcs3-sa. Leaves /storage/rpcs3/ (the
+    # staged build) in place — build artifact, not ETK runtime.
+    systemctl disable --now etk-rpcs3.service 2>/dev/null
+    umount /usr/bin/rpcs3-sa 2>/dev/null || true
+    rm -f /storage/.config/system.d/etk-rpcs3.service /storage/.config/etk-rpcs3-bind.sh
+    echo "    Removed: etk-rpcs3.service + bind resolver (stock rpcs3-sa restored; /storage/rpcs3/ build kept)"
+
     # POWER profile (Pitstop POWER tab): the boot applier re-pins CPU/GPU
     # governors + clocks every boot, so it would keep overriding stock power
     # management after uninstall. Drop the unit + applier; thermal_d's own

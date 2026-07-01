@@ -49,6 +49,17 @@ VAULT_SYNC="full"
 # Leave EMPTY to default a fresh rig to stock.
 TURNIP_SO=""
 
+# --- Custom RPCS3 build (dev/experimental — optional) ---
+# rpcs3-sa also lives on read-only squashfs (/usr/bin), same story as Turnip's
+# /usr/lib driver. Unlike Turnip there's no Pitstop-tab catalog/selector here —
+# just a single on/off flag, since this is one dev build in flight, not a set
+# of proven ones to pick between. Path to a locally-built RPCS3 AppImage
+# (ROCKNIX aarch64/glibc target, via scripts/build-rocknix-rpcs3 or a manual
+# cross-build) to bind-mount over /usr/bin/rpcs3-sa on every boot. Leave EMPTY
+# to run ROCKNIX's stock rpcs3-sa. Reboot to fully validate (bind-mount can't
+# hot-swap a binary a running RPCS3 already has open).
+RPCS3_APPIMAGE=""
+
 # --- Default thermal intent at boot ---
 # RACE — full performance; thermal_d switches to PIT on overheat
 # PIT  — throttled at boot; restore RACE via the dashboard
