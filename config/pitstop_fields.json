@@ -1,5 +1,13 @@
 [
   {
+    "label": "Resolution Scale",
+    "section": "Video",
+    "yaml_key": "  Resolution Scale",
+    "type": "enum",
+    "options": ["50", "66", "75", "100"],
+    "help": "Internal render scale. Pick by STABILITY, not just sharpness: 66% has been the most crash-stable, and 50% is oddly worse, not better."
+  },
+  {
     "label": "Audio Renderer Backend",
     "section": "Audio",
     "yaml_key": "  Renderer",
@@ -98,14 +106,6 @@
     "help": "Forces exact render-target handling instead of fast approximations -- can fix RTT/shadow glitches but a notable fps hit. A diagnostic/correctness lever; leave OFF unless chasing a visual bug."
   },
   {
-    "label": "Resolution Scale",
-    "section": "Video",
-    "yaml_key": "  Resolution Scale",
-    "type": "enum",
-    "options": ["50", "66", "75", "100"],
-    "help": "Internal render scale. Pick by STABILITY, not just sharpness: 66% has been the most crash-stable, and 50% is oddly worse, not better."
-  },
-  {
     "label": "Frame Limit",
     "section": "Video",
     "yaml_key": "  Frame limit",
@@ -159,7 +159,15 @@
     "min": 1,
     "max": 800,
     "step": 25,
-    "help": "Pause (us) after submitting GPU work -- a coarse anti-fence-timeout knob. Higher can dodge some hangs at a frametime cost. Prefer the DRIVER-tab dials."
+    "help": "Pause (us) after submitting GPU work -- a coarse anti-fence-timeout knob. Higher can dodge some hangs at a frametime cost. Prefer the DRIVER-tab dials. Also shrinks recover_fifo's rapid-retry give-up window (RSXThread.cpp) -- pair with RSX FIFO Accuracy below."
+  },
+  {
+    "label": "RSX FIFO Accuracy",
+    "section": "Core",
+    "yaml_key": "  RSX FIFO Accuracy",
+    "type": "enum",
+    "options": ["Fast", "Atomic", "Ordered & Atomic"],
+    "help": "How strictly RPCS3 syncs its own emulated command-queue reads. Fast (current default) races the FIFO harder; Ordered & Atomic is what RPCS3's own error message recommends after a 'Dead FIFO commands queue' fatal (confirmed live 2026-07-01, ~35min into a session, distinct from the a6xx GPU-hang class -- RSXThread.cpp:2792 recover_fifo()). Trades CPU overhead for not racing the FIFO in the first place. Pair with Driver Wake-Up Delay."
   },
   {
     "label": "Relaxed ZCULL Sync",
