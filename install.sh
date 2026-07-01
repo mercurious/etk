@@ -1349,7 +1349,12 @@ rm -f "$TURNIP_OUT_FILE"
 # running RPCS3 already has open.
 ssh $RIG_SSH "mkdir -p /storage/rpcs3 /storage/.config/system.d/" 2>/dev/null
 if [ -n "${RPCS3_APPIMAGE:-}" ] && [ -f "$RPCS3_APPIMAGE" ]; then
+    # chmod +x BOTH sides regardless of the source file's own mode — an
+    # AppImage staged without the exec bit fails as a silent "quits on
+    # launch" (exit 126, no RPCS3.log/dmesg trace at all), not a crash.
+    chmod +x "$RPCS3_APPIMAGE" 2>/dev/null
     rsync -az "$RPCS3_APPIMAGE" "$RIG_SSH:/storage/rpcs3/rpcs3-sa.custom" >/dev/null 2>&1 \
+        && ssh $RIG_SSH "chmod 755 /storage/rpcs3/rpcs3-sa.custom" 2>/dev/null \
         && say "${G}[ETK]${N} Staged custom RPCS3 build: $(basename "$RPCS3_APPIMAGE")" \
         || say "${Y}[ETK]${N} Failed to stage custom RPCS3 build (rsync error) — stock stays active."
 else
