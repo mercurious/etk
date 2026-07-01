@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 # ==========================================================
-# ETK PHASE 10: PYTHON SHIFTER (v10.1.0 - L3 HUD POSITION)
+# ETK PHASE 10: PYTHON SHIFTER (v10.3.0 - SHOULDER+STICK CHORDS)
 # ==========================================================
 # GEMINI IMMUTABLE RULE:
-# 1. R3 (BTN_THUMBR, code 318) = RECOVERY PANIC BUTTON.
-#    Literal single press. Invokes bin/recovery.sh DIRECTLY
-#    and detached so the rig is fully untethered. Do NOT add
-#    a long-press/double-tap guard and do NOT route this
-#    through CMD_QUEUE (queue needs a tethered consumer).
-# 2. L3 (BTN_THUMBL, code 317) = HUD POSITION TOGGLE.
-#    Flips MangoHud top-left <-> bottom-left in $RIG_MANGO_CONF,
+# 1. L1 + R3 (BTN_TL 310 held + BTN_THUMBR 318) = RECOVERY PANIC.
+#    Chord-gated: a bare R3 stick-click is left to the game so it
+#    can't trip recovery mid-race. When L1 is held, R3 invokes
+#    bin/recovery.sh DIRECTLY and detached so the rig stays fully
+#    untethered. Do NOT add a long-press/double-tap guard and do
+#    NOT route this through CMD_QUEUE (queue needs a tethered
+#    consumer). The chord is the only guard.
+# 2. R1 + L3 (BTN_TR 311 held + BTN_THUMBL 317) = HUD POSITION TOGGLE.
+#    Chord-gated: bare L3 stays with the game. When R1 is held, L3
+#    flips MangoHud top-left <-> bottom-left in $RIG_MANGO_CONF,
 #    persists per-game preference to $HUD_POSITIONS_FILE, and
 #    signals MangoHud reload_cfg so the swap takes effect live.
 #    The Sentry re-applies the per-game pref at IDLE->RUNNING.
@@ -264,6 +267,8 @@ def toggle_hud_position():
 
 def event_loop(device):
     clutch = False
+    l1_held = False   # BTN_TL  (310) — shoulder modifier for the R3 recovery chord
+    r1_held = False   # BTN_TR  (311) — shoulder modifier for the L3 HUD chord
     with open(device, 'rb') as f:
         while True:
             data = f.read(EVENT_SIZE)
@@ -272,12 +277,21 @@ def event_loop(device):
 
             # --- BUTTON MAPPINGS (EV_KEY) ---
             if etype == 1:
-                # 318 = BTN_THUMBR (R3): RECOVERY PANIC BUTTON
-                if code == 318 and val == 1:
+                # 310 = BTN_TL (L1) / 311 = BTN_TR (R1): shoulder modifiers.
+                # Tracked as held-state so the stick-clicks (R3/L3) below only
+                # fire ETK actions when chorded — bare R3/L3 stay free for the
+                # game. Mirrors the SELECT `clutch` modifier used for the DPAD.
+                if code == 310: l1_held = (val == 1)
+                if code == 311: r1_held = (val == 1)
+
+                # L1 + R3 = RECOVERY PANIC. Chord-gated so a bare R3 stick-click
+                # in-game never trips recovery. 318 = BTN_THUMBR (R3).
+                if code == 318 and val == 1 and l1_held:
                     fire_recovery()
 
-                # 317 = BTN_THUMBL (L3): HUD position toggle
-                if code == 317 and val == 1:
+                # R1 + L3 = HUD position toggle. Chord-gated so a bare L3
+                # stick-click stays with the game. 317 = BTN_THUMBL (L3).
+                if code == 317 and val == 1 and r1_held:
                     toggle_hud_position()
 
                 # 310 = BTN_TL (L1): ETK SCREENSHOT (in-race recommended).
