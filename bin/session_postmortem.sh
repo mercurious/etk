@@ -341,6 +341,24 @@ FENCE_AT_CRASH=$(echo "$DMESG_OUT" | grep "rb 0: fence:" | tail -1 \
     | sed -n 's/.*fence:[[:space:]]*\([0-9][0-9]*\).*/\1/p')
 case "$FENCE_AT_CRASH" in ''|*[!0-9]*) FENCE_AT_CRASH=0 ;; esac
 
+# --- GPU FAULT STATUS/FENCE (cols 24-25: gpu_fault_status, gpu_fault_fence_hex) ---
+# GpuFaultTelemetryDossier.md proposed this enrichment (2026-06-18) but the col
+# 17-18 slot it asked for was later claimed by the FPS gauge (cols 17-19 above);
+# it was never actually wired in. Closes the gap: the a6xx_irq line is ALREADY
+# in $DMESG_OUT (windowed, scanned for the Adreno signature at line ~185) — this
+# just keeps the two fields the existing scan throws away. Distinct from
+# fence_at_crash (col 11, decimal, sourced from the separate "rb 0: fence:"
+# line) — these are hex, sourced from the a6xx_irq fault header itself, and are
+# what a fresh capture's ib2 address needs to be cross-checked against (the
+# cockpit spotter's .faultinfo sidecars use the same hex convention).
+GPU_FAULT_LINE=$(echo "$DMESG_OUT" | grep -E 'a6xx_irq.*gpu fault' | tail -1)
+GPU_FAULT_STATUS=$(printf '%s\n' "$GPU_FAULT_LINE" \
+    | sed -n 's/.* status \([0-9A-Fa-f][0-9A-Fa-f]*\).*/\1/p')
+GPU_FAULT_FENCE_HEX=$(printf '%s\n' "$GPU_FAULT_LINE" \
+    | sed -n 's/.* fence \([0-9A-Fa-f][0-9A-Fa-f]*\).*/\1/p')
+case "$GPU_FAULT_STATUS" in ''|*[!0-9A-Fa-f]*) GPU_FAULT_STATUS="-" ;; esac
+case "$GPU_FAULT_FENCE_HEX" in ''|*[!0-9A-Fa-f]*) GPU_FAULT_FENCE_HEX="-" ;; esac
+
 # --- FENCE HONEST-ZERO + STALE-FENCE DEDUP (Bug #1) ---
 # A zero-duration session with no reliable start anchor has no
 # trustworthy fault attribution: the dmesg window fell back to the
@@ -487,12 +505,12 @@ case "$PWR_TAG" in '') PWR_TAG=none ;; esac
 # not corruption. Columns are APPEND-ONLY-TRAILING (ft_jitter_ms is newest), so
 # older narrower ledgers and any cut -f<n> reader stay valid; only fresh ledgers
 # carry the labelled header.
-LEDGER_HEADER='epoch\tduration_s\tbuild\tgame_id\tstatus\tpeak_load\tpeak_ram_mb\tpeak_temp\tavg_temp\tcrash_sig\tfence_at_crash\tshaders_harvested\tdrain_pct\tthermal_overrides\ttune_tag\tcrash_shot\tfps_med\tfps_1low\tft_p99_ms\tres_scale\tgpu_mhz\tpwr\tft_jitter_ms'
+LEDGER_HEADER='epoch\tduration_s\tbuild\tgame_id\tstatus\tpeak_load\tpeak_ram_mb\tpeak_temp\tavg_temp\tcrash_sig\tfence_at_crash\tshaders_harvested\tdrain_pct\tthermal_overrides\ttune_tag\tcrash_shot\tfps_med\tfps_1low\tft_p99_ms\tres_scale\tgpu_mhz\tpwr\tft_jitter_ms\tgpu_fault_status\tgpu_fault_fence_hex'
 if [ ! -f "$SESSIONS_LEDGER" ]; then
     TMP="$SESSIONS_LEDGER.tmp"
     printf "$LEDGER_HEADER\n" > "$TMP"
     mv "$TMP" "$SESSIONS_LEDGER"
-elif ! head -1 "$SESSIONS_LEDGER" | grep -q 'ft_jitter_ms'; then
+elif ! head -1 "$SESSIONS_LEDGER" | grep -q 'gpu_fault_fence_hex'; then
     # Migrate a stale header (older ledgers were created with fewer columns) so
     # the ledger self-describes. Rewrite ONLY the header line; existing rows are
     # untouched — older rows simply lack the newest trailing cols (read as empty).
@@ -500,11 +518,12 @@ elif ! head -1 "$SESSIONS_LEDGER" | grep -q 'ft_jitter_ms'; then
     { printf "$LEDGER_HEADER\n"; tail -n +2 "$SESSIONS_LEDGER"; } > "$TMP" && mv "$TMP" "$SESSIONS_LEDGER"
 fi
 
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$NOW" "$DURATION" "$ETK_BUILD_TYPE" "$GAME_ID" "$STATUS" \
     "$PEAK_LOAD" "$PEAK_RAM" "$PEAK_TEMP" "$AVG_TEMP" \
     "$CRASH_SIG" "$FENCE_AT_CRASH" "$SHADERS" "$DRAIN_PCT" "$THERMAL_OVERRIDES" \
     "$TUNE_TAG" "$CRASH_SHOT" "$FPS_MED" "$FPS_1LOW" "$FT_P99" "$RES_SCALE" "$GPU_MHZ" "$PWR_TAG" "$FT_JITTER" \
+    "$GPU_FAULT_STATUS" "$GPU_FAULT_FENCE_HEX" \
     >> "$SESSIONS_LEDGER"
 
 # --- CAREER ROLLUP ---
