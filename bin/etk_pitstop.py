@@ -255,6 +255,8 @@ EV_KEY = 1                  # button event type
 EV_ABS = 3                  # axis event type
 ABS_HAT0X = 16              # d-pad left/right
 ABS_HAT0Y = 17              # d-pad up/down
+ABS_Z = 2                   # L2 analog trigger, 0-255 on the DS5 target
+ABS_RZ = 5                  # R2 analog trigger, 0-255 on the DS5 target
 BTN_TL = 310                # L1 / LB shoulder
 BTN_TR = 311                # R1 / RB shoulder
 #
@@ -2136,12 +2138,13 @@ def handle_telemetry_pad(state, etype, code, val):
 # the most-reached tool (ROADMAP). Every entry is constant-indexed so the order
 # is a one-line edit here with no hardcoded literals in the dispatch below.
 _TOOLS_MENU = ["Manage Shaders", "Install a staged PS3 Package",
-               "Uninstall a Game", "Screenshot on L1"]
+               "Uninstall a Game", "Trigger Calibration", "Screenshot on L1"]
 _TOOLS_SHADERS_IDX = 0      # Manage Shaders sub-screen entry
 _TOOLS_INSTALL_IDX = 1      # staged-PKG installer
 _TOOLS_UNINSTALL_IDX = 2    # game uninstaller
+_TOOLS_TRIGCAL_IDX = 3      # L2/R2 trigger deadzone calibration (H7)
 # In-place toggle item (label gets ": <mode>" appended at draw).
-_TOOLS_SCREENSHOT_IDX = 3
+_TOOLS_SCREENSHOT_IDX = 4
 
 
 def _read_screenshot_mode():
@@ -3412,6 +3415,9 @@ def draw_tools(stdscr, state):
     elif mode == "shaders_confirm":
         _draw_shader_confirm(stdscr, state, y, h, w)
 
+    elif mode == "trigcal":
+        _draw_trigcal_screen(stdscr, state, y, h, w)
+
     elif mode == "result":
         ok, lines = state.get("tools_result") or (False, ["(no result)"])
         put(y, 2, "DONE" if ok else "FAILED", curses.A_BOLD | (
@@ -3429,6 +3435,224 @@ def draw_tools(stdscr, state):
                 curses.color_pair(1) | curses.A_BOLD)
 
 
+# === TOOLS TAB — TRIGGER CALIBRATION (H7) ===
+# L2/R2 analog deadzone calibration for RPCS3's Player-1 pad config.
+# Why on-device: the DS5 trigger axes rest NONZERO after first actuation
+# (L2 ~12/255, kernel FLAT=0), so RPCS3's 'Trigger Threshold: 0' drags the
+# brake continuously — and RPCS3's own pad dialog is unusable on the 5"
+# panel (the PKG-installer rationale). History: threshold 25 hand-validated
+# 2026-06-16, lost to the 2026-07-02 config regeneration; this screen makes
+# recovery self-service. The live gauge reads the SAME evdev pad fd Pitstop
+# already owns — ABS_Z/ABS_RZ arrive there and were previously dropped; the
+# main loop folds them into the model every frame (bounded drain) so the
+# gauge stays live through analog event storms. SAVE writes ONLY Player 1's
+# threshold lines via the H2 tmp+os.replace idiom, verifies by re-read, and
+# is guarded by _rpcs3_running() at WRITE time (RPCS3 rewrites its config on
+# exit — a save made while it runs silently vanishes; AI_MANIFEST law).
+
+RPCS3_PAD_CONFIG = "/storage/.config/rpcs3/input_configs/global/Default.yml"
+_TRIGCAL_ROWS = ("l2", "r2", "auto", "save")   # cursor order on the screen
+_TRIGCAL_MARGIN = 13   # AUTO = live rest + margin (12+13=25 = the 06-16 fix)
+
+
+def _trigcal_read_thresholds():
+    """Parse Player 1's Left/Right Trigger Threshold from RPCS3_PAD_CONFIG.
+    Returns (l, r, err). Player 1 is the FIRST top-level section in the
+    file; scanning stops at the next col-0 header so the Null pads 2-7 are
+    never read (mirrors the FIX 5 section gate)."""
+    try:
+        with open(RPCS3_PAD_CONFIG) as f:
+            lines = f.readlines()
+    except OSError as e:
+        return None, None, f"cannot read pad config: {e}"
+    l = r = None
+    in_p1 = False
+    for ln in lines:
+        if ln and ln[0] not in " \t" and ln.rstrip().endswith(":"):
+            if in_p1:
+                break
+            in_p1 = True
+            continue
+        if not in_p1:
+            continue
+        s = ln.strip()
+        if s.startswith("Left Trigger Threshold:"):
+            try:
+                l = int(s.split(":", 1)[1])
+            except ValueError:
+                pass
+        elif s.startswith("Right Trigger Threshold:"):
+            try:
+                r = int(s.split(":", 1)[1])
+            except ValueError:
+                pass
+    if l is None or r is None:
+        return None, None, "Trigger Threshold keys not found in Player 1 block"
+    return l, r, None
+
+
+def _trigcal_new_model():
+    l, r, err = _trigcal_read_thresholds()
+    return {
+        "l2_thr": l if l is not None else 25,
+        "r2_thr": r if r is not None else 25,
+        "load_err": err,
+        "l2": 0, "r2": 0,                 # live axis values
+        "l2_min": None, "l2_max": None,   # observed envelope this session
+        "r2_min": None, "r2_max": None,
+        "dirty": False,
+    }
+
+
+def _trigcal_axis(state, code, val):
+    """Fold a live ABS_Z/ABS_RZ event into the model (called per event from
+    the main loop's bounded drain)."""
+    m = state.get("trigcal_model")
+    if not m:
+        return
+    key = "l2" if code == ABS_Z else "r2"
+    m[key] = val
+    mn, mx = m[key + "_min"], m[key + "_max"]
+    m[key + "_min"] = val if mn is None else min(mn, val)
+    m[key + "_max"] = val if mx is None else max(mx, val)
+
+
+def _trigcal_adjust(state, delta):
+    """DPAD left/right on a threshold row: nudge by +/-1, clamp 0-255."""
+    m = state.get("trigcal_model")
+    if not m:
+        return
+    row = _TRIGCAL_ROWS[state.get("tools_cursor", 0) % len(_TRIGCAL_ROWS)]
+    if row in ("l2", "r2"):
+        k = row + "_thr"
+        m[k] = max(0, min(255, (m.get(k) or 0) + delta))
+        m["dirty"] = True
+
+
+def _trigcal_save(state):
+    """Write the model's thresholds into Player 1's block only. Fresh
+    game-running guard at write time, byte-copy backup, H2 tmp+os.replace,
+    then verify by re-read (a silent save failure must never look like a
+    success). Returns a (ok, lines) tools_result."""
+    if _rpcs3_running():
+        return (False, ["RPCS3 is running.",
+                        "Quit the game first, then retry.",
+                        "(RPCS3 rewrites its pad config on exit -",
+                        "a save made now would be silently lost.)"])
+    m = state.get("trigcal_model") or {}
+    want_l, want_r = m.get("l2_thr"), m.get("r2_thr")
+    if want_l is None or want_r is None:
+        return (False, ["No thresholds to save."])
+    try:
+        with open(RPCS3_PAD_CONFIG) as f:
+            lines = f.readlines()
+    except OSError as e:
+        return (False, [f"cannot read pad config: {e}"])
+    if lines and not lines[-1].endswith("\n"):
+        lines[-1] += "\n"
+    out, in_p1, seen_hdr, hit = [], False, False, 0
+    for ln in lines:
+        if ln and ln[0] not in " \t" and ln.rstrip().endswith(":"):
+            in_p1 = not seen_hdr
+            seen_hdr = True
+        if in_p1:
+            s = ln.lstrip()
+            indent = ln[:len(ln) - len(s)]
+            if s.startswith("Left Trigger Threshold:"):
+                ln = f"{indent}Left Trigger Threshold: {want_l}\n"
+                hit += 1
+            elif s.startswith("Right Trigger Threshold:"):
+                ln = f"{indent}Right Trigger Threshold: {want_r}\n"
+                hit += 1
+        out.append(ln)
+    if hit != 2:
+        return (False, [f"Expected 2 threshold lines in Player 1, found {hit}.",
+                        "Pad config layout unrecognized - not writing.",
+                        "(Is a pad configured in RPCS3 at all?)"])
+    bak = RPCS3_PAD_CONFIG + ".etkbak-trigcal"
+    try:
+        with open(RPCS3_PAD_CONFIG, "rb") as src, open(bak, "wb") as dst:
+            dst.write(src.read())
+    except OSError:
+        bak = None
+    tmp = RPCS3_PAD_CONFIG + ".tmp"
+    try:
+        with open(tmp, "w") as f:
+            f.writelines(out)
+        os.replace(tmp, RPCS3_PAD_CONFIG)   # atomic on POSIX
+    except OSError as e:
+        return (False, [f"write failed: {e}"])
+    vl, vr, err = _trigcal_read_thresholds()
+    if err or vl != want_l or vr != want_r:
+        return (False, ["VERIFY FAILED after write:",
+                        err or f"read back L={vl} R={vr}, "
+                               f"wanted L={want_l} R={want_r}"])
+    m["dirty"] = False
+    result = [f"Player 1 trigger thresholds saved: L2={want_l}  R2={want_r}",
+              "Verified by re-read."]
+    if bak:
+        result.append(f"Backup: {os.path.basename(bak)}")
+    result += ["", "Takes effect on the next game launch."]
+    return (True, result)
+
+
+def _draw_trigcal_screen(stdscr, state, y, h, w):
+    def put(row, col, text, attr=curses.A_NORMAL):
+        try:
+            stdscr.addstr(row, col, text[:max(0, w - col - 1)], attr)
+        except curses.error:
+            pass
+    m = state.get("trigcal_model") or {}
+    cur = state.get("tools_cursor", 0) % len(_TRIGCAL_ROWS)
+    put(y, 2, "TRIGGER CALIBRATION  (RPCS3 Player 1)", curses.A_BOLD); y += 1
+    put(y, 2, "-" * (w - 4), curses.A_DIM); y += 1
+    if m.get("load_err"):
+        put(y, 4, m["load_err"], curses.color_pair(PAIR_CRASH)); y += 1
+    y += 1
+    for key, label in (("l2", "L2 (brake)"), ("r2", "R2 (accel)")):
+        live = m.get(key) or 0
+        thr = m.get(key + "_thr") or 0
+        mn, mx = m.get(key + "_min"), m.get(key + "_max")
+        sel = (_TRIGCAL_ROWS[cur] == key)
+        bw = max(20, min(64, w - 26))
+        fill = int(round(live / 255.0 * bw))
+        tpos = min(bw - 1, int(round(thr / 255.0 * (bw - 1))))
+        bar = "".join("#" if i < fill else "-" for i in range(bw))
+        bar = bar[:tpos] + "|" + bar[tpos + 1:]
+        put(y, 4, "> " if sel else "  ",
+            curses.color_pair(1) if sel else curses.A_NORMAL)
+        put(y, 6, f"{label:11s}", curses.A_REVERSE if sel else curses.A_BOLD)
+        active = live > thr
+        put(y, 19, f"[{bar}]",
+            curses.color_pair(PAIR_CLEAN) if active else curses.A_NORMAL)
+        y += 1
+        env = (f"live {live:3d}   threshold {thr:3d}   seen rest/max: "
+               + (f"{mn}/{mx}" if mn is not None else "-/-"))
+        put(y, 19, env, curses.A_DIM)
+        y += 2
+    sel = (_TRIGCAL_ROWS[cur] == "auto")
+    put(y, 4, "> " if sel else "  ",
+        curses.color_pair(1) if sel else curses.A_NORMAL)
+    put(y, 6, "AUTO-SET  (release both triggers fully, then press A)",
+        curses.A_REVERSE if sel else curses.A_NORMAL)
+    y += 2
+    sel = (_TRIGCAL_ROWS[cur] == "save")
+    put(y, 4, "> " if sel else "  ",
+        curses.color_pair(1) if sel else curses.A_NORMAL)
+    lab = "SAVE to RPCS3 pad config" + ("  [UNSAVED]" if m.get("dirty") else "")
+    put(y, 6, lab, curses.A_REVERSE if sel else
+        (curses.A_BOLD if m.get("dirty") else curses.A_NORMAL))
+    y += 2
+    if y < h - 5:
+        put(y, 4, "DPAD up/down: row    left/right: threshold -/+1",
+            curses.A_DIM); y += 1
+        put(y, 4, "Green bar = past threshold (registers in-game). A hair of",
+            curses.A_DIM); y += 1
+        put(y, 4, f"drag after release means threshold too low. AUTO = rest+{_TRIGCAL_MARGIN}.",
+            curses.A_DIM); y += 1
+        put(y, 4, "B: back (discards unsaved changes)", curses.A_DIM)
+
+
 # === TOOLS TAB — INPUT ===
 
 def _tools_move(state, delta):
@@ -3441,6 +3665,8 @@ def _tools_move(state, delta):
             state["tools_cursor"] = (state.get("tools_cursor", 0) + delta) % n
     elif mode == "shaders":
         state["tools_cursor"] = (state.get("tools_cursor", 0) + delta) % len(_SHADER_ROWS)
+    elif mode == "trigcal":
+        state["tools_cursor"] = (state.get("tools_cursor", 0) + delta) % len(_TRIGCAL_ROWS)
 
 
 def _tools_select(state):
@@ -3483,6 +3709,10 @@ def _tools_select(state):
             state["shaders_scope_all"] = False
             state["shaders_model"] = None
             state["shaders_scan_request"] = True     # main loop scans w/ busy frame
+        elif state.get("tools_cursor", 0) == _TOOLS_TRIGCAL_IDX:   # Trigger Cal
+            state["tools_mode"] = "trigcal"
+            state["tools_cursor"] = 0
+            state["trigcal_model"] = _trigcal_new_model()
         else:                                        # Screenshot-on-L1 toggle
             state["status"] = f"Screenshot on L1: {_cycle_screenshot_mode()}"
 
@@ -3538,6 +3768,20 @@ def _tools_select(state):
                                  state.get("shaders_scope_all", False),
                                  (state.get("shaders_model") or {}).get("current"))
 
+    elif mode == "trigcal":
+        m = state.get("trigcal_model") or {}
+        row = _TRIGCAL_ROWS[state.get("tools_cursor", 0) % len(_TRIGCAL_ROWS)]
+        if row == "auto":
+            # Live values ARE the rest residuals when both triggers are
+            # released — the whole point of the DS5 nonzero-rest bug.
+            m["l2_thr"] = max(0, min(255, (m.get("l2") or 0) + _TRIGCAL_MARGIN))
+            m["r2_thr"] = max(0, min(255, (m.get("r2") or 0) + _TRIGCAL_MARGIN))
+            m["dirty"] = True
+        elif row == "save":
+            state["tools_result"] = _trigcal_save(state)
+            state["tools_mode"] = "result"
+        # l2/r2 rows adjust via DPAD left/right; A is a no-op on them
+
     elif mode == "result":
         state["tools_mode"] = "menu"
         state["tools_cursor"] = 0
@@ -3558,6 +3802,9 @@ def _tools_back(state):
     elif mode == "shaders":
         state["tools_mode"] = "menu"
         state["tools_cursor"] = _TOOLS_SHADERS_IDX
+    elif mode == "trigcal":
+        state["tools_mode"] = "menu"
+        state["tools_cursor"] = _TOOLS_TRIGCAL_IDX
     else:
         state["tools_mode"] = "menu"
         state["tools_cursor"] = 0
@@ -3572,6 +3819,10 @@ def handle_tools_kb(state, ch):
         _tools_move(state, -1)
     elif ch == curses.KEY_DOWN:
         _tools_move(state, 1)
+    elif ch == curses.KEY_LEFT and state.get("tools_mode") == "trigcal":
+        _trigcal_adjust(state, -1)
+    elif ch == curses.KEY_RIGHT and state.get("tools_mode") == "trigcal":
+        _trigcal_adjust(state, 1)
     elif ch == ord('\n') or ch == ord('s'):
         return _tools_select(state)
     elif ch in (curses.KEY_BACKSPACE, 8, 127):
@@ -3580,7 +3831,10 @@ def handle_tools_kb(state, ch):
 
 
 def handle_tools_pad(state, etype, code, val):
-    """Gamepad input for TOOLS. L1/R1 intercepted upstream for tabs."""
+    """Gamepad input for TOOLS. L1/R1 intercepted upstream for tabs.
+    Trigger-axis events (ABS_Z/ABS_RZ) never reach here — the main loop's
+    bounded drain folds them into the trigcal model directly. DPAD
+    left/right is only consumed on the trigcal screen (threshold nudge)."""
     if etype == EV_KEY and val == 1 and code == BTN_CONFIRM:
         return _tools_select(state)
     if etype == EV_KEY and val == 1 and code == BTN_BACK:
@@ -3590,6 +3844,12 @@ def handle_tools_pad(state, etype, code, val):
             _tools_move(state, -1)
         elif val == 1:
             _tools_move(state, 1)
+    if (etype == EV_ABS and code == ABS_HAT0X
+            and state.get("tools_mode") == "trigcal"):
+        if val == -1:
+            _trigcal_adjust(state, -1)
+        elif val == 1:
+            _trigcal_adjust(state, 1)
     return "continue"
 
 
@@ -5210,14 +5470,30 @@ def main(stdscr):
                 if verb in ("quit", "save_exit"):
                     running = False
 
-        # Gamepad input — only if fd was successfully opened
+        # Gamepad input — only if fd was successfully opened. Bounded drain:
+        # analog trigger sweeps (ABS_Z/ABS_RZ) emit events far faster than
+        # the 50ms frame clock, so trigger-axis events are folded into the
+        # TRIGGER CAL model here (dropped elsewhere, as before) and at most
+        # ONE other event per frame proceeds to normal dispatch — identical
+        # semantics to the old single-read for everything but triggers,
+        # without the queue backlog that would lag the live gauge.
         if fd is not None:
+            data = None
             try:
-                data = os.read(fd, EVENT_SIZE)
+                for _ in range(128):
+                    chunk = os.read(fd, EVENT_SIZE)
+                    if len(chunk) != EVENT_SIZE:
+                        break
+                    _, _, _t, _c, _v = struct.unpack(EVENT_FORMAT, chunk)
+                    if _t == EV_ABS and _c in (ABS_Z, ABS_RZ):
+                        if state.get("tools_mode") == "trigcal":
+                            _trigcal_axis(state, _c, _v)
+                        continue
+                    data = chunk
+                    break
             except BlockingIOError:
-                data = None
+                pass
             except OSError as e:
-                data = None
                 state["gamepad_status"] = f"PAD READ ERR ({e.errno})"
             if data and len(data) == EVENT_SIZE:
                 _, _, etype, code, val = struct.unpack(EVENT_FORMAT, data)
