@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ==========================================================
-# ETK PHASE 10: PYTHON SHIFTER (v10.4.0 - RSX CAPTURE CHORD)
+# ETK PHASE 10: PYTHON SHIFTER (v10.4.1 - RSX CAPTURE CHORD)
 # ==========================================================
 # GEMINI IMMUTABLE RULE:
 # 1. L1 + R3 (BTN_TL 310 held + BTN_THUMBR 318) = RECOVERY PANIC.
@@ -23,13 +23,18 @@
 #    exist when the Sentry spawns this at boot. The connect
 #    loop MUST keep re-finding the device; do not collapse it
 #    back into a one-shot open.
-# 4. SELECT + DPAD-Down = RSX FRAME CAPTURE (alternating resume).
-#    RPCS3's capture hotkey is Alt+C on the game window and the
-#    Flip 2 has no keyboard, so the chord INJECTS key events by
-#    writing raw input_event structs into the existing
-#    "InputPlumber Keyboard" node (no uinput device creation —
-#    a new device appearing mid-game can retrigger pad
-#    re-enumeration). A SUCCESSFUL capture makes RPCS3 pause
+# 4. R1 + DPAD-Down = RSX FRAME CAPTURE (alternating resume).
+#    Deliberately NOT a SELECT chord: we never EVIOCGRAB, so the
+#    modifier always passes through to the game, and SELECT is
+#    the in-game camera-view toggle — the #11912 repro must HOLD
+#    bumper cam, so a SELECT chord would knock the camera off
+#    the bugged view at the moment of capture (operator call,
+#    2026-07-02). RPCS3's capture hotkey is Alt+C on the game
+#    window and the Flip 2 has no keyboard, so the chord INJECTS
+#    key events by writing raw input_event structs into the
+#    existing "InputPlumber Keyboard" node (no uinput device
+#    creation — a new device appearing mid-game can retrigger
+#    pad re-enumeration). A SUCCESSFUL capture makes RPCS3 pause
 #    itself (visible freeze = capture banked), so the chord
 #    ALTERNATES: odd press = Alt+C (capture), even press =
 #    Ctrl+P (resume). If a capture ever fails (no pause), the
@@ -187,7 +192,7 @@ def _inject_key_combo(modifier, key):
 
 
 def fire_rsx_capture():
-    """SELECT+DPAD-Down: alternate RSX frame capture (Alt+C) / resume (Ctrl+P).
+    """R1+DPAD-Down: alternate RSX frame capture (Alt+C) / resume (Ctrl+P).
     A successful capture pauses RPCS3 (that freeze IS the confirmation the
     .rrc banked); the next press resumes. See immutable rule 4."""
     if _rsx_capture_phase[0] % 2 == 0:
@@ -396,21 +401,26 @@ def event_loop(device):
                 if code == 314: clutch = (val == 1)
 
             # --- DPAD MAPPINGS (EV_ABS) ---
-            elif etype == 3 and clutch:
+            elif etype == 3:
                 # InputPlumber maps DPAD to ABS_HAT0X (16) and ABS_HAT0Y (17)
-                if code == 16: # Horizontal Axis
-                    if val == 1: send_cmd("VAULT") # Right
-                    elif val == -1: os.system("pkill -USR1 mangohud") # Left
-                elif code == 17: # Vertical Axis
-                    # Up: ETK SCREENSHOT (silent grim capture incl. MangoHUD).
-                    # Deliberate chord, NOT gated by SCREENSHOT_MODE_FILE -- the
-                    # mode governs only the bare-L1 trigger above. Lets an
-                    # operator who set L1 'disabled' still grab a shot on demand.
-                    if val == -1: fire_screenshot()
-                    # Down: RSX FRAME CAPTURE / resume toggle (immutable rule 4).
-                    # In-game only by construction: this daemon is Sentry-spawned
-                    # in RUNNING state, so the chord can't fire keystrokes at ES.
-                    elif val == 1: fire_rsx_capture()
+                if clutch:
+                    if code == 16: # Horizontal Axis
+                        if val == 1: send_cmd("VAULT") # Right
+                        elif val == -1: os.system("pkill -USR1 mangohud") # Left
+                    elif code == 17: # Vertical Axis
+                        # Up: ETK SCREENSHOT (silent grim capture incl. MangoHUD).
+                        # Deliberate chord, NOT gated by SCREENSHOT_MODE_FILE -- the
+                        # mode governs only the bare-L1 trigger above. Lets an
+                        # operator who set L1 'disabled' still grab a shot on demand.
+                        if val == -1: fire_screenshot()
+                # R1 + DPAD-Down: RSX FRAME CAPTURE / resume toggle (immutable
+                # rule 4). R1 modifier, NOT SELECT: SELECT passes through to the
+                # game (no EVIOCGRAB) and is the camera-view toggle — the #11912
+                # repro must hold bumper cam. In-game only by construction: this
+                # daemon is Sentry-spawned in RUNNING state, so the chord can't
+                # fire keystrokes at ES.
+                if r1_held and code == 17 and val == 1:
+                    fire_rsx_capture()
 
 if __name__ == "__main__":
     # SELF-HEAL: the virtual controller may not exist yet when the
