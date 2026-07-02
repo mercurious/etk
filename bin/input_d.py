@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ==========================================================
-# ETK PHASE 10: PYTHON SHIFTER (v10.3.0 - SHOULDER+STICK CHORDS)
+# ETK PHASE 10: PYTHON SHIFTER (v10.4.0 - RSX CAPTURE CHORD)
 # ==========================================================
 # GEMINI IMMUTABLE RULE:
 # 1. L1 + R3 (BTN_TL 310 held + BTN_THUMBR 318) = RECOVERY PANIC.
@@ -23,6 +23,19 @@
 #    exist when the Sentry spawns this at boot. The connect
 #    loop MUST keep re-finding the device; do not collapse it
 #    back into a one-shot open.
+# 4. SELECT + DPAD-Down = RSX FRAME CAPTURE (alternating resume).
+#    RPCS3's capture hotkey is Alt+C on the game window and the
+#    Flip 2 has no keyboard, so the chord INJECTS key events by
+#    writing raw input_event structs into the existing
+#    "InputPlumber Keyboard" node (no uinput device creation —
+#    a new device appearing mid-game can retrigger pad
+#    re-enumeration). A SUCCESSFUL capture makes RPCS3 pause
+#    itself (visible freeze = capture banked), so the chord
+#    ALTERNATES: odd press = Alt+C (capture), even press =
+#    Ctrl+P (resume). If a capture ever fails (no pause), the
+#    operator presses twice more to get back in phase — never
+#    stuck, no state to clean up. All I/O fail-silent so this
+#    can never break the R3 panic path.
 # ==========================================================
 import struct, os, time, re, glob, socket
 
@@ -118,6 +131,73 @@ def fire_screenshot():
     """Silent grim capture (incl. MangoHUD overlay), detached so the input
     loop never blocks on grim latency."""
     os.system("nohup bash /storage/games-internal/roms/etk/bin/screenshot.sh >/dev/null 2>&1 &")
+
+# --- RSX capture injection (SELECT+DPAD-Down) ---------------------------
+# Key codes from linux/input-event-codes.h. EV_KEY press/release pairs are
+# written straight into the InputPlumber Keyboard event node; the kernel's
+# input_inject_event() distributes them to sway exactly as if typed, and
+# sway routes them to the focused game window (RPCS3's gs_frame handles the
+# Alt+C "RSX Capture" and Ctrl+P "Toggle Pause" shortcuts itself).
+KEY_LEFTCTRL, KEY_LEFTALT = 29, 56
+KEY_C, KEY_P = 46, 25
+_rsx_capture_phase = [0]   # even = next press captures, odd = next press resumes
+
+
+def _find_keyboard():
+    """Locate the InputPlumber virtual keyboard node (the sibling device the
+    pad finder deliberately excludes). Same /sys walk as find_gamepad."""
+    input_dir = '/sys/class/input/'
+    try:
+        for entry in sorted(os.listdir(input_dir), key=_event_num):
+            if not entry.startswith('event'):
+                continue
+            name_path = os.path.join(input_dir, entry, 'device/name')
+            if os.path.exists(name_path):
+                with open(name_path, 'r') as f:
+                    name = f.read().strip().lower()
+                if 'keyboard' in name and 'inputplumber' in name:
+                    return f"/dev/input/{entry}"
+    except Exception:
+        pass
+    return None
+
+
+def _inject_key_combo(modifier, key):
+    """Write modifier+key press/release into the virtual keyboard node.
+    Fail-silent: a missing node / EPERM must never disturb the input loop."""
+    dev = _find_keyboard()
+    if not dev:
+        print("[!] ETK SHIFTER: no InputPlumber Keyboard node; RSX chord ignored", flush=True)
+        return False
+    try:
+        with open(dev, 'wb', buffering=0) as f:
+            def emit(code, val):
+                # EV_KEY (1) then EV_SYN/SYN_REPORT (0,0) per event, kernel stamps time
+                f.write(struct.pack(EVENT_FORMAT, 0, 0, 1, code, val))
+                f.write(struct.pack(EVENT_FORMAT, 0, 0, 0, 0, 0))
+            emit(modifier, 1)
+            emit(key, 1)
+            time.sleep(0.05)
+            emit(key, 0)
+            emit(modifier, 0)
+        return True
+    except Exception as e:
+        print(f"[!] ETK SHIFTER: key injection failed: {e}", flush=True)
+        return False
+
+
+def fire_rsx_capture():
+    """SELECT+DPAD-Down: alternate RSX frame capture (Alt+C) / resume (Ctrl+P).
+    A successful capture pauses RPCS3 (that freeze IS the confirmation the
+    .rrc banked); the next press resumes. See immutable rule 4."""
+    if _rsx_capture_phase[0] % 2 == 0:
+        ok = _inject_key_combo(KEY_LEFTALT, KEY_C)
+        print(f"[*] ETK SHIFTER: RSX capture requested (Alt+C sent={ok})", flush=True)
+    else:
+        ok = _inject_key_combo(KEY_LEFTCTRL, KEY_P)
+        print(f"[*] ETK SHIFTER: RSX capture resume (Ctrl+P sent={ok})", flush=True)
+    if ok:
+        _rsx_capture_phase[0] += 1
 
 def _read_screenshot_mode():
     """Return the L1-screenshot mode, one of SCREENSHOT_MODES. Re-read on
@@ -327,6 +407,10 @@ def event_loop(device):
                     # mode governs only the bare-L1 trigger above. Lets an
                     # operator who set L1 'disabled' still grab a shot on demand.
                     if val == -1: fire_screenshot()
+                    # Down: RSX FRAME CAPTURE / resume toggle (immutable rule 4).
+                    # In-game only by construction: this daemon is Sentry-spawned
+                    # in RUNNING state, so the chord can't fire keystrokes at ES.
+                    elif val == 1: fire_rsx_capture()
 
 if __name__ == "__main__":
     # SELF-HEAL: the virtual controller may not exist yet when the
