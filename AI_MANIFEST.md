@@ -3,7 +3,7 @@ A custom Rocknix middleware rig to enable PS3 Emulation on ARM64 Retrogaming Han
 
 # ETK (EMULATOR TOOLKIT) MISSION MANIFEST
 **TARGET HARDWARE:** Retroid Pocket Flip 2 (SM8250)
-**TARGET OS:** Rocknix (Read-Only Root, BusyBox Environment) nightly build 20260628 with MESA Turnip 26.1.2 + RPCS3 0.0.41-19444 (nightly pin is deliberate — it carries the upstream GT5 memory-leak fix, RPCS3 PR #18844)
+**TARGET OS:** Rocknix (Read-Only Root, BusyBox Environment) **official release 20260701** (kernel 7.0.11). The old nightly pin existed to pick up emulator/driver fixes; ETK now bind-mounts its OWN RPCS3 (GTK Edition fork, carries the GT5 leak fix lineage + ETK patches) and Turnip (GTK driver) over the stock squashfs binaries, so stock emulator/driver versions are no longer load-bearing — the OS supplies the substrate only (kernel, InputPlumber DS5 pad target, sway/foot, BusyBox). Migration validated 2026-07-02 via tools/etk_drift.py (no structural drift vs pinned 20260628 profile). REMEMBER: OS updates regenerate the grub twins — re-run scripts/arm_blackbox.sh (panic=10) after any update; install.sh STEP 6.65 warns on this drift.
 **CORE PHILOSOPHY:** Defeat Rocknix's filesystem limitations using a hybrid Persistent/Volatile architecture to enable high-performance PS3 emulation.
 
 ## THE IMMUTABLE LAWS (CRITICAL)
