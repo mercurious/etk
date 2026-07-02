@@ -32,8 +32,19 @@ RIG_SSH="${RIG_SSH:-root@SM8250.local}"
 # ramoops module parameters (kernel hands ramoops.* to the module at load
 # time, so this works even if /storage/.config/modprobe.d turns out not to be
 # honored by ROCKNIX — the modprobe.d conf below is redundancy, not the
-# load-bearing path).
-TOKEN='reserve_mem=1M:4096:etk_ramoops ramoops.mem_name=etk_ramoops ramoops.record_size=0x20000 ramoops.max_reason=2 ramoops.ecc=1'
+# load-bearing path). Two hard-won additions (field-tested 2026-07-02):
+#  - efi_pstore.pstore_disable=1: pstore allows ONE backend and the built-in
+#    efi_pstore RACES ramoops for the slot (won the lottery on one boot:
+#    "backend 'efi_pstore' already in use: ignoring 'ramoops'", EBUSY -16).
+#    U-Boot EFI-var persistence is useless on this device; disable it so
+#    ramoops always wins.
+#  - panic=10: the kernel's default after a panic is to HANG forever (frozen
+#    rig, dump written but no reboot). 10s auto-reboot brings the rig back so
+#    blackbox_d harvests and the Sentry synthesizes the PANIC row unattended.
+TOKEN='reserve_mem=1M:4096:etk_ramoops ramoops.mem_name=etk_ramoops ramoops.record_size=0x20000 ramoops.max_reason=2 ramoops.ecc=1 efi_pstore.pstore_disable=1 panic=10'
+# Strip pattern removing ALL blackbox-owned cmdline params (any older token
+# version) — makes arming idempotent across token upgrades and powers revert.
+STRIP='s/ reserve_mem=[^ ]*//g; s/ ramoops\.[^ ]*//g; s/ efi_pstore\.pstore_disable=[^ ]*//g; s/ panic=10//g'
 TWINS='/flash/EFI/BOOT/grub.cfg /flash/boot/grub/grub.cfg'
 
 verify() {
@@ -69,7 +80,7 @@ revert() {
         for f in $TWINS; do
             [ -f \"\$f\" ] || continue
             cp \"\$f\" \"\$f.etkbak-\$stamp\"
-            sed 's/ $TOKEN//g' \"\$f\" > \"\$f.etknew\" && mv \"\$f.etknew\" \"\$f\"
+            sed '$STRIP' \"\$f\" > \"\$f.etknew\" && mv \"\$f.etknew\" \"\$f\"
             echo \"reverted: \$f (backup \$f.etkbak-\$stamp)\"
         done
         sync
@@ -87,17 +98,16 @@ arm() {
         stamp=\$(date +%Y%m%d_%H%M%S)
         for f in $TWINS; do
             if [ ! -f \"\$f\" ]; then echo \"WARN: \$f missing, skipped\"; continue; fi
-            if grep -q '$TOKEN' \"\$f\"; then
-                echo \"already armed: \$f\"
-                continue
-            fi
             cp \"\$f\" \"\$f.etkbak-\$stamp\"
-            # Append the token to every kernel line (menuentry + recovery
-            # variants). awk rewrite + rename: no in-place sed on vfat.
+            # Strip any prior token version, then append the current one to
+            # every kernel line (menuentry + recovery variants) — idempotent
+            # across upgrades. awk rewrite + rename: no in-place sed on vfat.
+            sed '$STRIP' \"\$f\" > \"\$f.etkstrip\"
             awk -v tok='$TOKEN' '
                 /^[[:space:]]*linux / && index(\$0, tok) == 0 { print \$0 \" \" tok; next }
                 { print }
-            ' \"\$f\" > \"\$f.etknew\" && mv \"\$f.etknew\" \"\$f\"
+            ' \"\$f.etkstrip\" > \"\$f.etknew\" && mv \"\$f.etknew\" \"\$f\"
+            rm -f \"\$f.etkstrip\"
             armed=\$(grep -c '$TOKEN' \"\$f\")
             total=\$(grep -c '^[[:space:]]*linux ' \"\$f\")
             echo \"armed: \$f (\$armed/\$total linux lines, backup \$f.etkbak-\$stamp)\"
