@@ -232,6 +232,17 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
     rm -f /storage/.config/system.d/etk-power.service /storage/.config/etk-power-apply.sh
     echo "    Removed: etk-power.service + applier (stock power management restored)"
 
+    # Panic Black Box: stop the recorder + drop the ramoops module confs.
+    # Harvested dumps live under etk_telemetry/blackbox (survives default
+    # uninstall like the rest of telemetry). NOTE: the reserve_mem= grub
+    # cmdline token is NOT auto-reverted here (boot-path edits stay operator-
+    # run: scripts/arm_blackbox.sh --revert); a stale 1MiB reservation is
+    # harmless if left.
+    systemctl disable --now etk-blackbox.service 2>/dev/null
+    rm -f /storage/.config/system.d/etk-blackbox.service
+    rm -f /storage/.config/modules-load.d/etk-ramoops.conf /storage/.config/modprobe.d/etk-ramoops.conf
+    echo "    Removed: etk-blackbox.service + ramoops module confs (grub token left; use arm_blackbox.sh --revert)"
+
     # Private Paddock credential (0.3.0): contains the user's GitHub token —
     # must not survive an uninstall. The paddock repo itself is untouched
     # (it's the user's own backup; uninstall never deletes remote data).

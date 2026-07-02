@@ -1467,6 +1467,63 @@ REMOTE
 say "${G}[ETK]${N} POWER applier deployed (etk-power.service — self-skips until a profile is set)"
 
 # ==========================================================
+# STEP 6.65: PANIC BLACK BOX (pstore harvester + kmsg flight recorder)
+# ==========================================================
+# READ side only: bin/blackbox_d.py harvests /sys/fs/pstore at every boot
+# (previous panic's ramoops dumps -> etk_telemetry/blackbox/) and then tails
+# /dev/kmsg to persistent storage as the lead-up flight recorder. Harmless
+# when ramoops is unarmed. The WRITE side (reserve_mem= grub-cmdline token +
+# module confs) is operator-armed ONCE via scripts/arm_blackbox.sh and cold-
+# boot validated — install.sh NEVER edits grub. This step only detects DRIFT:
+# module confs present but the live cmdline missing the token means a ROCKNIX
+# update reverted grub.cfg — warn loudly, operator re-runs the armer.
+BB_OUT_FILE=$(mktemp /tmp/etk_blackbox_XXXXXX)
+ssh $RIG_SSH "sh -s" > "$BB_OUT_FILE" 2>&1 << 'REMOTE'
+    mkdir -p /storage/.config/system.d/
+cat << 'SVC' > /storage/.config/system.d/etk-blackbox.service
+[Unit]
+Description=ETK Panic Black Box (pstore harvest + kmsg flight recorder)
+After=local-fs.target systemd-modules-load.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /storage/games-internal/roms/etk/bin/blackbox_d.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+SVC
+    systemctl daemon-reload
+    systemctl enable /storage/.config/system.d/etk-blackbox.service >/dev/null 2>&1
+    systemctl restart etk-blackbox.service >/dev/null 2>&1
+    sleep 1
+    systemctl is-active etk-blackbox.service >/dev/null 2>&1 && echo "BLACKBOX_OK" || echo "BLACKBOX_FAIL"
+    # Drift tripwire: armed confs without the live cmdline token = grub reverted.
+    if [ -f /storage/.config/modprobe.d/etk-ramoops.conf ]; then
+        if grep -q 'reserve_mem=' /proc/cmdline; then
+            echo "BLACKBOX_ARMED"
+        else
+            echo "BLACKBOX_DRIFT"
+        fi
+    else
+        echo "BLACKBOX_UNARMED"
+    fi
+REMOTE
+if grep -q BLACKBOX_OK "$BB_OUT_FILE"; then
+    say "${G}[ETK]${N} Panic Black Box recorder deployed (etk-blackbox.service)"
+else
+    say "${Y}[ETK]${N} Panic Black Box service failed to start — check journalctl -u etk-blackbox on the rig."
+fi
+if grep -q BLACKBOX_DRIFT "$BB_OUT_FILE"; then
+    say "${Y}[ETK]${N} WARNING: ramoops confs present but live cmdline lacks reserve_mem= — a ROCKNIX"
+    say "${Y}[ETK]${N}          update likely reverted grub.cfg. Re-run scripts/arm_blackbox.sh + cold boot."
+elif grep -q BLACKBOX_UNARMED "$BB_OUT_FILE"; then
+    say "${B}[ETK]${N} Panic capture (ramoops) not yet armed — run scripts/arm_blackbox.sh when ready."
+fi
+rm -f "$BB_OUT_FILE"
+
+# ==========================================================
 # STEP 6.7: DP-MIRROR DAEMON (USB video-out / capture-card mirror)
 # ==========================================================
 # When the external DisplayPort (DP-over-USB-C) links, bin/dpmirror_d.sh runs
