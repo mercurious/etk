@@ -3455,17 +3455,29 @@ _TRIGCAL_ROWS = ("l2", "r2", "auto", "save")   # cursor order on the screen
 _TRIGCAL_MARGIN = 13   # AUTO = live rest + margin (12+13=25 = the 06-16 fix)
 
 
+def _trigcal_handler_scale(handler):
+    """Config-unit scale for 'Trigger Threshold' per pad handler. The SDL
+    handler stores thresholds in SDL axis units (0-32767: trigger_max =
+    SDL_JOYSTICK_AXIS_MAX, confirmed in rpcs3/Input/sdl_pad_handler.cpp);
+    the HID handlers (DualSense/DualShock/evdev) use the DS byte range
+    0-255. The 2026-07-02 brake-drag regression was exactly this trap: a
+    255-scale '25' written into an SDL-handler config = 0.08% of travel =
+    no deadzone at all. The screen works in RAW pad units (0-255, what the
+    live evdev gauge reads) and converts at the file boundary."""
+    return 32767 if str(handler).strip().upper() == "SDL" else 255
+
+
 def _trigcal_read_thresholds():
-    """Parse Player 1's Left/Right Trigger Threshold from RPCS3_PAD_CONFIG.
-    Returns (l, r, err). Player 1 is the FIRST top-level section in the
-    file; scanning stops at the next col-0 header so the Null pads 2-7 are
-    never read (mirrors the FIX 5 section gate)."""
+    """Parse Player 1's Handler + Left/Right Trigger Threshold (config
+    units) from RPCS3_PAD_CONFIG. Returns (l, r, handler, err). Player 1 is
+    the FIRST top-level section in the file; scanning stops at the next
+    col-0 header so the Null pads 2-7 are never read (FIX 5 section gate)."""
     try:
         with open(RPCS3_PAD_CONFIG) as f:
             lines = f.readlines()
     except OSError as e:
-        return None, None, f"cannot read pad config: {e}"
-    l = r = None
+        return None, None, None, f"cannot read pad config: {e}"
+    l = r = handler = None
     in_p1 = False
     for ln in lines:
         if ln and ln[0] not in " \t" and ln.rstrip().endswith(":"):
@@ -3476,7 +3488,9 @@ def _trigcal_read_thresholds():
         if not in_p1:
             continue
         s = ln.strip()
-        if s.startswith("Left Trigger Threshold:"):
+        if s.startswith("Handler:"):
+            handler = s.split(":", 1)[1].strip().strip('"')
+        elif s.startswith("Left Trigger Threshold:"):
             try:
                 l = int(s.split(":", 1)[1])
             except ValueError:
@@ -3487,15 +3501,24 @@ def _trigcal_read_thresholds():
             except ValueError:
                 pass
     if l is None or r is None:
-        return None, None, "Trigger Threshold keys not found in Player 1 block"
-    return l, r, None
+        return None, None, handler, "Trigger Threshold keys not found in Player 1 block"
+    return l, r, handler, None
 
 
 def _trigcal_new_model():
-    l, r, err = _trigcal_read_thresholds()
+    l, r, handler, err = _trigcal_read_thresholds()
+    scale = _trigcal_handler_scale(handler)
+
+    def to_raw(cfg):
+        if cfg is None:
+            return 25
+        return max(0, min(255, int(round(cfg * 255.0 / scale))))
+
     return {
-        "l2_thr": l if l is not None else 25,
-        "r2_thr": r if r is not None else 25,
+        "l2_thr": to_raw(l),              # RAW pad units (0-255) in the UI
+        "r2_thr": to_raw(r),
+        "handler": handler or "?",
+        "scale": scale,                   # config units per full travel
         "load_err": err,
         "l2": 0, "r2": 0,                 # live axis values
         "l2_min": None, "l2_max": None,   # observed envelope this session
@@ -3540,9 +3563,14 @@ def _trigcal_save(state):
                         "(RPCS3 rewrites its pad config on exit -",
                         "a save made now would be silently lost.)"])
     m = state.get("trigcal_model") or {}
-    want_l, want_r = m.get("l2_thr"), m.get("r2_thr")
-    if want_l is None or want_r is None:
+    raw_l, raw_r = m.get("l2_thr"), m.get("r2_thr")
+    if raw_l is None or raw_r is None:
         return (False, ["No thresholds to save."])
+    # RAW pad units (0-255, the UI/gauge domain) -> the handler's config
+    # units at the file boundary (SDL = 0-32767; HID handlers = 0-255).
+    scale = m.get("scale") or 255
+    want_l = int(round(raw_l * scale / 255.0))
+    want_r = int(round(raw_r * scale / 255.0))
     try:
         with open(RPCS3_PAD_CONFIG) as f:
             lines = f.readlines()
@@ -3582,13 +3610,15 @@ def _trigcal_save(state):
         os.replace(tmp, RPCS3_PAD_CONFIG)   # atomic on POSIX
     except OSError as e:
         return (False, [f"write failed: {e}"])
-    vl, vr, err = _trigcal_read_thresholds()
+    vl, vr, _vh, err = _trigcal_read_thresholds()
     if err or vl != want_l or vr != want_r:
         return (False, ["VERIFY FAILED after write:",
                         err or f"read back L={vl} R={vr}, "
                                f"wanted L={want_l} R={want_r}"])
     m["dirty"] = False
-    result = [f"Player 1 trigger thresholds saved: L2={want_l}  R2={want_r}",
+    result = [f"Player 1 trigger thresholds saved:",
+              f"  L2 raw {raw_l}/255 -> {want_l} ({m.get('handler', '?')} scale {scale})",
+              f"  R2 raw {raw_r}/255 -> {want_r}",
               "Verified by re-read."]
     if bak:
         result.append(f"Backup: {os.path.basename(bak)}")
@@ -3606,6 +3636,8 @@ def _draw_trigcal_screen(stdscr, state, y, h, w):
     cur = state.get("tools_cursor", 0) % len(_TRIGCAL_ROWS)
     put(y, 2, "TRIGGER CALIBRATION  (RPCS3 Player 1)", curses.A_BOLD); y += 1
     put(y, 2, "-" * (w - 4), curses.A_DIM); y += 1
+    put(y, 4, f"pad handler: {m.get('handler', '?')}   "
+              f"(config scale 0-{m.get('scale', 255)})", curses.A_DIM); y += 1
     if m.get("load_err"):
         put(y, 4, m["load_err"], curses.color_pair(PAIR_CRASH)); y += 1
     y += 1
