@@ -1499,13 +1499,11 @@ SVC
     systemctl restart etk-blackbox.service >/dev/null 2>&1
     sleep 1
     systemctl is-active etk-blackbox.service >/dev/null 2>&1 && echo "BLACKBOX_OK" || echo "BLACKBOX_FAIL"
-    # Drift tripwire: armed confs without the live cmdline token = grub reverted.
-    if [ -f /storage/.config/modprobe.d/etk-ramoops.conf ]; then
-        if grep -q 'reserve_mem=' /proc/cmdline; then
-            echo "BLACKBOX_ARMED"
-        else
-            echo "BLACKBOX_DRIFT"
-        fi
+    # Drift tripwire: panic=10 is the certified arming on this platform (RAM
+    # dump capture FALSIFIED on SM8250 — DDR scrambling; see arm_blackbox.sh).
+    # Nightly updates revert grub.cfg, so re-check the live cmdline each install.
+    if grep -q 'panic=10' /proc/cmdline; then
+        echo "BLACKBOX_ARMED"
     else
         echo "BLACKBOX_UNARMED"
     fi
@@ -1515,11 +1513,9 @@ if grep -q BLACKBOX_OK "$BB_OUT_FILE"; then
 else
     say "${Y}[ETK]${N} Panic Black Box service failed to start — check journalctl -u etk-blackbox on the rig."
 fi
-if grep -q BLACKBOX_DRIFT "$BB_OUT_FILE"; then
-    say "${Y}[ETK]${N} WARNING: ramoops confs present but live cmdline lacks reserve_mem= — a ROCKNIX"
-    say "${Y}[ETK]${N}          update likely reverted grub.cfg. Re-run scripts/arm_blackbox.sh + cold boot."
-elif grep -q BLACKBOX_UNARMED "$BB_OUT_FILE"; then
-    say "${B}[ETK]${N} Panic capture (ramoops) not yet armed — run scripts/arm_blackbox.sh when ready."
+if grep -q BLACKBOX_UNARMED "$BB_OUT_FILE"; then
+    say "${Y}[ETK]${N} panic=10 not in the live cmdline (fresh rig, or a ROCKNIX update reverted"
+    say "${Y}[ETK]${N} grub.cfg) — run scripts/arm_blackbox.sh, then reboot on-device."
 fi
 rm -f "$BB_OUT_FILE"
 
