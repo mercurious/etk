@@ -60,6 +60,15 @@ TURNIP_SO=""
 # hot-swap a binary a running RPCS3 already has open).
 RPCS3_APPIMAGE=""
 
+# RPCS3_ENV_FLAGS (optional): space-separated VAR=value pairs exported into
+# the RPCS3 runtime at every game launch via the profile.d vector
+# (/storage/.config/profile.d/096-etk-rpcs3-flags). Used for runtime-gated
+# switches baked into a custom RPCS3 build — e.g. the #11912 road-flicker
+# instrumentation: "GTK_PROBE_11912=1" (diagnostic TIU log) and
+# "GTK_REMAP0_IDENTITY=1" (remap fix A/B). Leave EMPTY to inject nothing;
+# clearing it removes the profile.d entry on the next install.sh run.
+RPCS3_ENV_FLAGS=""
+
 # --- Default thermal intent at boot ---
 # RACE — full performance; thermal_d switches to PIT on overheat
 # PIT  — throttled at boot; restore RACE via the dashboard

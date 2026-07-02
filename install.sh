@@ -1405,6 +1405,23 @@ else
 fi
 rm -f "$RPCS3_OUT_FILE"
 
+# --- STEP 6.56: RPCS3 runtime env flags (profile.d vector) ---
+# Runtime-gated switches for custom RPCS3 builds (e.g. the #11912 probe/fix
+# vars). Same injection vector as the Turnip dials (start_rpcs3.sh sources
+# /etc/profile -> profile.d at every game launch); NOT a Turnip dial, so it
+# does not touch active_tune.txt / tune_tag. Empty flag => entry removed.
+if [ -n "${RPCS3_ENV_FLAGS:-}" ]; then
+    RPCS3_FLAGS_EXPORTS=""
+    for kv in $RPCS3_ENV_FLAGS; do
+        RPCS3_FLAGS_EXPORTS="${RPCS3_FLAGS_EXPORTS}export ${kv}\n"
+    done
+    printf "$RPCS3_FLAGS_EXPORTS" | ssh $RIG_SSH "cat > /storage/.config/profile.d/096-etk-rpcs3-flags" 2>/dev/null \
+        && say "${G}[ETK]${N} RPCS3 env flags injected: ${RPCS3_ENV_FLAGS}" \
+        || say "${Y}[ETK]${N} Failed to write RPCS3 env flags (096-etk-rpcs3-flags)."
+else
+    ssh $RIG_SSH "rm -f /storage/.config/profile.d/096-etk-rpcs3-flags" 2>/dev/null
+fi
+
 # ==========================================================
 # STEP 6.6: POWER PROFILE APPLIER (CPU/GPU gov + clock pinning)
 # ==========================================================

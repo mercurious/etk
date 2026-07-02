@@ -210,6 +210,11 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
     rm -f /storage/.config/profile.d/097-etk-turnip-dials
     echo "    Removed: 097-etk-turnip-dials (Turnip dials reverted to default)"
 
+    # RPCS3 runtime env flags (install.sh STEP 6.56): same OUTSIDE-ETK_ROOT
+    # profile.d story — remove or the flags keep reaching RPCS3 post-uninstall.
+    rm -f /storage/.config/profile.d/096-etk-rpcs3-flags
+    echo "    Removed: 096-etk-rpcs3-flags (RPCS3 env flags cleared)"
+
     # Custom RPCS3 build (dev/experimental, single on/off flag — no Pitstop
     # tab): drop the boot bind-mount unit + its resolver + unbind so the rig
     # falls back to the stock squashfs rpcs3-sa. Leaves /storage/rpcs3/ (the
