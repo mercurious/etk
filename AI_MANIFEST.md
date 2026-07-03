@@ -66,6 +66,34 @@ The a6xx GPU fault → `recover_worker hangcheck` → wedged `rsx::thread` freez
 - **profile.d injections live OUTSIDE `$ETK_ROOT`** (`/storage/.config/profile.d/09x-etk-*`), so an `$ETK_ROOT` cleanup does NOT remove them — `uninstall.sh` must delete them explicitly, or ETK keeps altering Turnip/Mesa after it's "uninstalled."
 - **The telemetry ledger grows by APPEND-ONLY TRAILING columns** (`tune_tag` col 15, `crash_shot` col 16). Every reader indexes positionally (`cut -fN` / `fields[n]` with `len`-guards), so older narrower rows stay valid. NEVER insert a column mid-row — it silently shears every prior row.
 
+## ROCKNIX AUDIO STACK (SM8250) — BOOT RACE + PIPELINE MAP (validated live 2026-07-02)
+The rig's audio path: game SPURS/SPU jobs → cellAudio HLE (256-sample blocks @48 kHz = 5.33 ms each)
+→ cubeb (backend "pulse") → pipewire-pulse → PipeWire (`clock.force-quantum=1024` = 21.3 ms, rate
+locked 48 kHz) → ALSA card 0 "RetroidPocket" (snd-sm8250 machine driver + WCD938x codec over
+soundwire, clocked off the ADSP via q6afe/q6prm).
+1. **PER-BOOT AUDIO COIN FLIP (THE SILENT-BOOT TRAP):** the sound card intermittently NEVER
+   probes (observed 4 of 13 boots, 2026-07-02, incl. panic-reboot clusters). Root: an early
+   `qcom-q6afe: AFE failed to vote (3)` (race against ADSP `audio_pd` bring-up) fails the probe of
+   `3370000.codec` (va_macro — the clock supplier for ALL LPASS macros); every downstream device
+   then parks in `/sys/kernel/debug/devices_deferred` FOREVER (nothing re-triggers deferred probe).
+   Result: zero ALSA cards → PipeWire has only "Dummy Output" → EVERY client (ES, RPCS3 — cubeb
+   pins `auto_null`) is silent for the entire boot. The operator's session sees "no audio", not an error.
+   - **DETECT:** `/proc/asound/cards` → "no soundcards"; `wpctl status` → only Dummy Output;
+     RPCS3.log → `DeviceID: "auto_null"`.
+   - **REVIVE WITHOUT REBOOT (validated live, N=1):** `echo 3370000.codec >
+     /sys/bus/platform/drivers_probe` — the deferred chain cascades up in ~2 s (macros → soundwire
+     → wcd938x → card 0) and PipeWire hot-swaps in the real Speaker/Headphones sinks. NOTE:
+     `drivers/va_macro/bind` is Permission denied — use the bus-level `drivers_probe` node.
+   - **LAW: any audio experiment or A/B session MUST gate on card presence first** — a silent-boot
+     session poisons audio data and masquerades as "audio broken".
+2. **AUDIO UNDERRUNS ARE FORENSICALLY INVISIBLE:** when RPCS3's backend ring runs dry it
+   zero-fills SILENTLY (AudioBackend.cpp memset — no log line, no counter, at any log level).
+   Audible stutter leaves NO trace in RPCS3.log; objective measurement requires fork-side counters
+   (campaign spec: `dossiers/AudioCampaign_20260702.md`).
+3. Dial semantics headline (full map in the dossier): `Time Stretching Threshold` is BUFFER-FILL %
+   (not fps) and is DEAD unless `Enable Time Stretching: true`; buffer size absorbs jitter only —
+   sustained production deficit (game below full speed) is what time stretching exists for.
+
 ## STAGE IV — TURNIP FORK TOOLCHAIN & GPU-HANG FORENSICS (hard-won; not stock-mesa intuition)
 The Stage-IV loop (build a patched Turnip → deploy → spot a hang → decode the `hangrd` redump) has its
 own gotchas. None are obvious from stock Mesa docs; each cost real garage time (2026-06-19). Front-load.
