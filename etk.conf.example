@@ -49,17 +49,18 @@ VAULT_SYNC="full"
 # Leave EMPTY to default a fresh rig to stock.
 TURNIP_SO=""
 
-# --- Custom RPCS3 build (GTK Edition — optional) ---
-# rpcs3-sa also lives on read-only squashfs (/usr/bin), same story as Turnip's
-# /usr/lib driver. Unlike Turnip there's no Pitstop-tab catalog/selector here —
-# just a single on/off flag. Path to an RPCS3 AppImage (ROCKNIX aarch64/glibc
-# target) to bind-mount over /usr/bin/rpcs3-sa on every boot. The 0.6.0
-# "RPCS3 GTK Edition" build ships as an ETK GitHub release asset — download it
-# and point this at the file, e.g.:
-#   RPCS3_APPIMAGE="$HOME/Downloads/rpcs3-etk_gtk-edition-0.6.0_v0.0.41-19544-60c9705a_linux_aarch64.AppImage"
-# (source delta + build recipe: github.com/mercurious/etk-rpcs3-gtk). Leave
-# EMPTY to run ROCKNIX's stock rpcs3-sa. Reboot to fully validate (a
-# bind-mount can't hot-swap a binary a running RPCS3 already has open).
+# --- RPCS3 GTK Edition (the default emulator as of 0.6.0) ---
+# rpcs3-sa lives on read-only squashfs (/usr/bin), same story as Turnip's
+# /usr/lib driver — ETK bind-mounts its build over it on every boot (stock is
+# never modified; unbinding always recovers it). No configuration needed:
+#   RPCS3_APPIMAGE=""            -> AUTO (default): install.sh fetches the
+#                                   certified GTK Edition from the ETK release,
+#                                   sha256-verifies it, and deploys it — the
+#                                   same zero-config pattern as the GTK driver.
+#   RPCS3_APPIMAGE="stock"       -> opt out; run ROCKNIX's stock rpcs3-sa.
+#   RPCS3_APPIMAGE="/path/x.AppImage" -> stage a local build (dev override).
+# Source delta + build recipe: github.com/mercurious/etk-rpcs3-gtk. Reboot to
+# fully validate (a bind-mount can't hot-swap a binary a running RPCS3 holds).
 RPCS3_APPIMAGE=""
 
 # RPCS3_ENV_FLAGS (optional): space-separated VAR=value pairs exported into

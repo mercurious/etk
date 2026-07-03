@@ -1334,29 +1334,68 @@ fi
 rm -f "$TURNIP_OUT_FILE"
 
 # ==========================================================
-# STEP 6.55: CUSTOM RPCS3 BUILD (dev/experimental) — boot-persistent bind
+# STEP 6.55: RPCS3 GTK EDITION (default) — boot-persistent bind
 # ==========================================================
 # rpcs3-sa also lives on read-only squashfs (/usr/bin), same story as Turnip's
-# /usr/lib driver above. Unlike Turnip this is a single on/off FLAG, not a
-# Pitstop-tab catalog/selector — there's one dev build in flight, not a set of
-# proven ones to pick between, so install.sh's etk.conf is the only control
-# surface. Because this is a bind-mount (never overwrites the underlying
-# squashfs file), the stock binary needs no manual backup: unmounting always
-# recovers it. RPCS3_APPIMAGE set + file exists => staged and bound over
-# /usr/bin/rpcs3-sa on every boot. Unset => any previously-staged custom build
-# is removed and the next boot's resolver falls back to stock. Reboot-gated
-# by the same doctrine as Turnip: a bind-mount can't hot-swap a binary a
-# running RPCS3 already has open.
+# /usr/lib driver above. As of 0.6.0 GA the certified GTK Edition build is the
+# DEFAULT emulator — fetched from the ETK release (sha256-verified, exactly the
+# certified-driver pattern in STEP 6.5) with no configuration required. The
+# manual-download + etk.conf-path flow was dev-era plumbing (one experimental
+# build in flight) that had leaked into GA. etk.conf RPCS3_APPIMAGE semantics:
+#   (empty/unset)  -> AUTO: fetch + stage the certified GTK Edition (default)
+#   "stock"        -> explicitly run ROCKNIX's stock rpcs3-sa (opt-out)
+#   /path/to/file  -> stage a local build (dev override, unchanged behavior)
+# Fail-soft: if the AUTO fetch/verify fails (offline, asset missing), warn and
+# fall back to stock — the kit must install cleanly without internet. Because
+# the deploy is a bind-mount (never overwrites the underlying squashfs file),
+# stock needs no backup: unmounting always recovers it. Reboot-gated by the
+# same doctrine as Turnip: a bind-mount can't hot-swap a binary a running
+# RPCS3 already has open.
+CERT_RPCS3="rpcs3-etk_gtk-edition-0.6.0_v0.0.41-19544-60c9705a_linux_aarch64.AppImage"
+CERT_RPCS3_SHA="1d0b490da981c3e05783fa621dcb4f5cdc7a5f48e380dafe8f111bbeb2ed80e8"
+RPCS3_RELEASE_BASE="https://github.com/mercurious/etk/releases/latest/download"
 ssh $RIG_SSH "mkdir -p /storage/rpcs3 /storage/.config/system.d/" 2>/dev/null
-if [ -n "${RPCS3_APPIMAGE:-}" ] && [ -f "$RPCS3_APPIMAGE" ]; then
+RPCS3_STAGE_SRC=""
+case "${RPCS3_APPIMAGE:-}" in
+    stock)
+        say "${G}[ETK]${N} RPCS3: stock ROCKNIX build selected (etk.conf opt-out)."
+        ;;
+    "")
+        # AUTO: certified release build. emulators/ is gitignored (like drivers/),
+        # so a fresh clone fetches once and reuses the cached copy thereafter.
+        mkdir -p ./emulators
+        if [ ! -f "./emulators/$CERT_RPCS3" ]; then
+            say "${G}[ETK]${N} Fetching RPCS3 GTK Edition from the latest ETK release (~78MB, one-time)..."
+            curl -fL --retry 2 -o "./emulators/$CERT_RPCS3" "$RPCS3_RELEASE_BASE/$CERT_RPCS3" 2>/dev/null \
+                || { rm -f "./emulators/$CERT_RPCS3"; say "${Y}[ETK]${N} Could not fetch the GTK Edition (offline or asset missing) — stock RPCS3 stays active."; }
+        fi
+        if [ -f "./emulators/$CERT_RPCS3" ]; then
+            got=$(sha256_of "./emulators/$CERT_RPCS3")
+            if [ -n "$got" ] && [ "$got" != "$CERT_RPCS3_SHA" ]; then
+                rm -f "./emulators/$CERT_RPCS3"
+                say "${Y}[ETK]${N} GTK Edition FAILED sha256 verification — refusing to stage (stock stays active)."
+            else
+                RPCS3_STAGE_SRC="./emulators/$CERT_RPCS3"
+            fi
+        fi
+        ;;
+    *)
+        if [ -f "$RPCS3_APPIMAGE" ]; then
+            RPCS3_STAGE_SRC="$RPCS3_APPIMAGE"
+        else
+            say "${Y}[ETK]${N} RPCS3_APPIMAGE set but file not found: $RPCS3_APPIMAGE — stock stays active."
+        fi
+        ;;
+esac
+if [ -n "$RPCS3_STAGE_SRC" ]; then
     # chmod +x BOTH sides regardless of the source file's own mode — an
     # AppImage staged without the exec bit fails as a silent "quits on
     # launch" (exit 126, no RPCS3.log/dmesg trace at all), not a crash.
-    chmod +x "$RPCS3_APPIMAGE" 2>/dev/null
-    rsync -az "$RPCS3_APPIMAGE" "$RIG_SSH:/storage/rpcs3/rpcs3-sa.custom" >/dev/null 2>&1 \
+    chmod +x "$RPCS3_STAGE_SRC" 2>/dev/null
+    rsync -az "$RPCS3_STAGE_SRC" "$RIG_SSH:/storage/rpcs3/rpcs3-sa.custom" >/dev/null 2>&1 \
         && ssh $RIG_SSH "chmod 755 /storage/rpcs3/rpcs3-sa.custom" 2>/dev/null \
-        && say "${G}[ETK]${N} Staged custom RPCS3 build: $(basename "$RPCS3_APPIMAGE")" \
-        || say "${Y}[ETK]${N} Failed to stage custom RPCS3 build (rsync error) — stock stays active."
+        && say "${G}[ETK]${N} Staged RPCS3 build: $(basename "$RPCS3_STAGE_SRC")" \
+        || say "${Y}[ETK]${N} Failed to stage RPCS3 build (rsync error) — stock stays active."
 else
     ssh $RIG_SSH "rm -f /storage/rpcs3/rpcs3-sa.custom" 2>/dev/null
 fi

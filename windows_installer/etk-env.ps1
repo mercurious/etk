@@ -63,18 +63,17 @@ $HudHeaderHold = "15"      # seconds              (HUD_HEADER_HOLD_S)
 # on-rig selection yet, point this at the file (mirrors etk.conf TURNIP_SO).
 $TurnipSo = ""             # e.g. "C:\etk\drivers\my_dev_build.so"
 
-# --- CUSTOM RPCS3 BUILD (GTK Edition, install Steps 6.55/6.56) ---------
-# Mirrors etk.conf RPCS3_APPIMAGE / RPCS3_ENV_FLAGS. Download the AppImage
-# from the ETK GitHub release, then point this at the downloaded file, e.g.
-#   $Rpcs3AppImage = "$env:USERPROFILE\Downloads\rpcs3-etk_gtk-edition-0.6.0_v0.0.41-19544-60c9705a_linux_aarch64.AppImage"
-# Empty = stock RPCS3 (any previously staged custom build is removed).
-# A Windows download has no Linux exec bit - the installer sets it on the
-# rig copy (an AppImage staged without +x fails as a silent exit-126
-# "quits on launch", not a crash).
+# --- RPCS3 GTK EDITION (the default emulator, install Steps 6.55/6.56) --
+# Mirrors etk.conf RPCS3_APPIMAGE / RPCS3_ENV_FLAGS. No value needed:
+#   ""       -> AUTO (default): the installer fetches the certified GTK
+#               Edition from the ETK release and sha256-verifies it.
+#   "stock"  -> opt out; run ROCKNIX's stock rpcs3-sa.
+#   a path   -> stage a local build (dev override).
 $Rpcs3AppImage = ""
 # Space-separated VAR=value pairs exported into the RPCS3 runtime at every
-# game launch (profile.d vector). For the GTK Edition build set:
-#   $Rpcs3EnvFlags = "GTK_REMAP0_ONE=1"     # the #11912 road-flicker fix
+# game launch (profile.d vector). NOTHING needed for normal play — the
+# road-flicker fix is on by default in the GTK Edition build.
+# Diagnostics: GTK_REMAP0_ONE=0 (kill-switch), GTK_PROBE_11912=1 (dev log).
 $Rpcs3EnvFlags = ""
 
 # --- PRIVATE PADDOCK (0.3.0, optional) --------------------------------

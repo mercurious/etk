@@ -331,20 +331,55 @@ else {
 }
 
 # ==========================================================
-# STEP 6.55: CUSTOM RPCS3 BUILD (GTK Edition)  (install.sh Step 6.55)
-# Single on/off flag ($Rpcs3AppImage), not a catalog. Bind-mount over the
-# read-only squashfs /usr/bin/rpcs3-sa — stock is never overwritten;
-# clearing the flag reverts on the next run. RPCS3REMOTE body verbatim.
+# STEP 6.55: RPCS3 GTK EDITION (default emulator)  (install.sh Step 6.55)
+# As of 0.6.0 GA the certified GTK Edition is the DEFAULT — fetched from the
+# ETK release + sha256-verified, zero config (same pattern as the driver in
+# Step 6.5). $Rpcs3AppImage semantics: "" = AUTO (default); "stock" = opt out;
+# a path = local dev build. Fail-soft: fetch/verify failure warns and falls
+# back to stock. Bind-mount over read-only /usr/bin/rpcs3-sa — stock is never
+# overwritten. RPCS3REMOTE body verbatim.
 # ==========================================================
-Write-Step 6 $TOTAL "STEP 6.55: CUSTOM RPCS3 BUILD (GTK Edition)..."
-if ($Rpcs3AppImage -and (Test-Path -LiteralPath $Rpcs3AppImage)) {
-    Send-File -LocalPath $Rpcs3AppImage -RemotePath "/storage/rpcs3/rpcs3-sa.custom"
-    # A Windows download carries no Linux exec bit — set it on the rig copy
+Write-Step 6 $TOTAL "STEP 6.55: RPCS3 GTK EDITION (default emulator)..."
+$certRpcs3    = "rpcs3-etk_gtk-edition-0.6.0_v0.0.41-19544-60c9705a_linux_aarch64.AppImage"
+$certRpcs3Sha = "1d0b490da981c3e05783fa621dcb4f5cdc7a5f48e380dafe8f111bbeb2ed80e8"
+$rpcs3StageSrc = $null
+if ($Rpcs3AppImage -eq "stock") {
+    Write-Note "RPCS3: stock ROCKNIX build selected (etk-env.ps1 opt-out)."
+} elseif ([string]::IsNullOrWhiteSpace($Rpcs3AppImage)) {
+    # AUTO: certified release build, cached in emulators\ (gitignored) like drivers\.
+    $emuDir = Join-Path $RepoRoot "emulators"
+    if (-not (Test-Path -LiteralPath $emuDir)) { New-Item -ItemType Directory -Path $emuDir -Force | Out-Null }
+    $emuLocal = Join-Path $emuDir $certRpcs3
+    if (-not (Test-Path -LiteralPath $emuLocal)) {
+        Write-Note "Fetching RPCS3 GTK Edition from the latest ETK release (~78MB, one-time)..."
+        try {
+            Invoke-WebRequest -Uri "$driverBase/$certRpcs3" -OutFile $emuLocal -UseBasicParsing
+        } catch {
+            Remove-Item $emuLocal -Force -ErrorAction SilentlyContinue
+            Write-Warn "Could not fetch the GTK Edition (offline or asset missing) - stock RPCS3 stays active."
+        }
+    }
+    if (Test-Path -LiteralPath $emuLocal) {
+        $got = (Get-FileHash -LiteralPath $emuLocal -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($got -ne $certRpcs3Sha) {
+            Remove-Item $emuLocal -Force
+            Write-Warn "GTK Edition FAILED sha256 verification - refusing to stage (stock stays active)."
+        } else {
+            $rpcs3StageSrc = $emuLocal
+        }
+    }
+} elseif (Test-Path -LiteralPath $Rpcs3AppImage) {
+    $rpcs3StageSrc = $Rpcs3AppImage
+} else {
+    Write-Warn "Rpcs3AppImage set but file not found: $Rpcs3AppImage - stock stays active."
+}
+if ($rpcs3StageSrc) {
+    Send-File -LocalPath $rpcs3StageSrc -RemotePath "/storage/rpcs3/rpcs3-sa.custom"
+    # A Windows file carries no Linux exec bit — set it on the rig copy
     # (an AppImage without +x fails as a silent exit-126 "quits on launch").
     Invoke-Rig "chmod 755 /storage/rpcs3/rpcs3-sa.custom" | Out-Null
-    Write-Ok ("Staged custom RPCS3 build: " + (Split-Path $Rpcs3AppImage -Leaf))
+    Write-Ok ("Staged RPCS3 build: " + (Split-Path $rpcs3StageSrc -Leaf))
 } else {
-    if ($Rpcs3AppImage) { Write-Warn "Rpcs3AppImage set but file not found: $Rpcs3AppImage - stock stays active." }
     Invoke-Rig "rm -f /storage/rpcs3/rpcs3-sa.custom" | Out-Null
 }
 $rpcs3Body = Get-Heredoc -Path $InstallSh -Marker "RPCS3REMOTE"
