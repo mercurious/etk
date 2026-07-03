@@ -516,6 +516,19 @@ if [ -f "$AUD_FILE" ]; then
     fi
 fi
 
+# aud2 timeline archive: /dev/shm/rpcs3_audio_log (wall-clock-stamped 2s
+# samples) is wiped at every guest boot AND rig boot — without this copy the
+# phase-resolved curve dies with the session (lost the first 5 instrumented
+# sessions, 2026-07-03). Named by $NOW = ledger col 1, so row and curve join
+# directly. Keep the newest 12 (~2MB max each, usually tens of KB).
+if [ -f /dev/shm/rpcs3_audio_log ] && [ "$AUD_STAT" != "-" ]; then
+    mkdir -p "$TELEMETRY_DIR/audio_logs" 2>/dev/null
+    cp /dev/shm/rpcs3_audio_log "$TELEMETRY_DIR/audio_logs/$NOW.log" 2>/dev/null
+    ls -1t "$TELEMETRY_DIR/audio_logs"/*.log 2>/dev/null | tail -n +13 | while read -r f; do
+        rm -f "$f" 2>/dev/null
+    done
+fi
+
 # snd: did this session have real audio hardware? SM8250 probe-race boots
 # serve only the PipeWire dummy sink = a silent session (AI_MANIFEST
 # "ROCKNIX AUDIO STACK"); such rows must be excludable from audio A/B.

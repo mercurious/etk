@@ -1,6 +1,6 @@
 #!/bin/sh
 # ==========================================================
-# ETK AUDIO WATCHDOG (v0.2.0 - HARNESS + PERSISTENT BOOT STATUS)
+# ETK AUDIO WATCHDOG (v0.3.0 - HARNESS + PERSISTENT STATUS + FAST SETTLE)
 # ==========================================================
 # The SM8250 sound card intermittently NEVER probes at boot (~1 in 4
 # boots observed 2026-07-02): an early q6afe clock-vote race against
@@ -73,12 +73,17 @@ notify() {
         array:string: dict:string:variant: int32:8000 >/dev/null 2>&1
 }
 
-# --- SETTLE: give the normal probe its window (card binds ~4s on good
-# boots; the deferred-pending report fires ~20s on bad ones). ---------
+# --- SETTLE: give the normal probe its window (card binds ~3.9s on good
+# boots). 8s, NOT 25: a real failed boot 2026-07-03 proved the launch race —
+# the operator started a game before the old 25s settle + revive finished,
+# and RPCS3/cubeb PINNED the dummy sink for the whole 468s session (ledger
+# snd=dummy) even though the card was revived moments later. A revive that
+# lands by ~11s beats any human launch. Poking a still-probing good boot is
+# a harmless no-op (drivers_probe on bound devices does nothing). ---------
 UP=$(cut -d. -f1 /proc/uptime 2>/dev/null)
 case "$UP" in ''|*[!0-9]*) UP=0 ;; esac
-if [ "$UP" -lt 25 ]; then
-    sleep $((25 - UP))
+if [ "$UP" -lt 8 ]; then
+    sleep $((8 - UP))
 fi
 
 # --- HEALTHY PATH: silent exit. ---------------------------------------
