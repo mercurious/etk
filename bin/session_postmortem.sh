@@ -499,18 +499,58 @@ GPU_MHZ=$((GPU_HZ / 1000000))
 PWR_TAG=$(sed -n 's/^# pwr=//p' /storage/etk-power/profile 2>/dev/null | head -1)
 case "$PWR_TAG" in '') PWR_TAG=none ;; esac
 
+# --- AUDIO ATTRIBUTION (col 26: aud / col 27: snd) ---
+# aud: end-of-session cellAudio counters from the aud1 GTK-Edition build
+# (/dev/shm/rpcs3_audio_stat — refreshed every ~2s in play + final dump at
+# teardown, so even a hard crash leaves near-final values). Spaces fold to
+# commas so the cell stays one token for whitespace-split readers. Stale-
+# guarded by mtime vs session start; absent (stock build / no dump) => '-'.
+AUD_STAT="-"
+AUD_FILE="/dev/shm/rpcs3_audio_stat"
+if [ -f "$AUD_FILE" ]; then
+    AUD_MT=$(stat -c %Y "$AUD_FILE" 2>/dev/null)
+    case "$AUD_MT" in ''|*[!0-9]*) AUD_MT=0 ;; esac
+    if [ "$START_EPOCH" -gt 0 ] && [ "$AUD_MT" -ge $((START_EPOCH - 60)) ]; then
+        AUD_STAT=$(head -1 "$AUD_FILE" 2>/dev/null | tr ' \t' ',,')
+        case "$AUD_STAT" in '') AUD_STAT="-" ;; esac
+    fi
+fi
+
+# snd: did this session have real audio hardware? SM8250 probe-race boots
+# serve only the PipeWire dummy sink = a silent session (AI_MANIFEST
+# "ROCKNIX AUDIO STACK"); such rows must be excludable from audio A/B.
+# Precedence: dummy (session fact — RPCS3 bound auto_null; device-init lines
+# live in the log HEAD, and a full grep of a 100MB+ log would blow the <2s
+# budget, hence head -c) > nocard (no ALSA card at post-mortem) > revived
+# (watchdog re-probed this boot; epoch-validated so a prior boot's line
+# never lies) > ok.
+SND_STAT="ok"
+ls /proc/asound 2>/dev/null | grep -q "^card[0-9]" || SND_STAT="nocard"
+if head -c 2000000 "$RPCS3_LOG" 2>/dev/null | grep -q 'DeviceID: "auto_null"'; then
+    SND_STAT="dummy"
+elif [ "$SND_STAT" = "ok" ] && [ -f "$TELEMETRY_DIR/audio_boot.txt" ]; then
+    WD_EPOCH=$(awk '{print $1}' "$TELEMETRY_DIR/audio_boot.txt" 2>/dev/null)
+    WD_STATE=$(awk '{print $2}' "$TELEMETRY_DIR/audio_boot.txt" 2>/dev/null)
+    case "$WD_EPOCH" in ''|*[!0-9]*) WD_EPOCH=0 ;; esac
+    UP_NOW=$(cut -d. -f1 /proc/uptime 2>/dev/null)
+    case "$UP_NOW" in ''|*[!0-9]*) UP_NOW=0 ;; esac
+    if [ "$WD_STATE" = "revived" ] && [ "$WD_EPOCH" -ge $((NOW - UP_NOW - 120)) ]; then
+        SND_STAT="revived"
+    fi
+fi
+
 # --- LEDGER WRITE ---
 # Header written exactly once via tmp+mv (atomic on POSIX). Subsequent
 # rows are direct appends; a partial last row on hard crash is a signal,
-# not corruption. Columns are APPEND-ONLY-TRAILING (ft_jitter_ms is newest), so
+# not corruption. Columns are APPEND-ONLY-TRAILING (aud/snd are newest), so
 # older narrower ledgers and any cut -f<n> reader stay valid; only fresh ledgers
 # carry the labelled header.
-LEDGER_HEADER='epoch\tduration_s\tbuild\tgame_id\tstatus\tpeak_load\tpeak_ram_mb\tpeak_temp\tavg_temp\tcrash_sig\tfence_at_crash\tshaders_harvested\tdrain_pct\tthermal_overrides\ttune_tag\tcrash_shot\tfps_med\tfps_1low\tft_p99_ms\tres_scale\tgpu_mhz\tpwr\tft_jitter_ms\tgpu_fault_status\tgpu_fault_fence_hex'
+LEDGER_HEADER='epoch\tduration_s\tbuild\tgame_id\tstatus\tpeak_load\tpeak_ram_mb\tpeak_temp\tavg_temp\tcrash_sig\tfence_at_crash\tshaders_harvested\tdrain_pct\tthermal_overrides\ttune_tag\tcrash_shot\tfps_med\tfps_1low\tft_p99_ms\tres_scale\tgpu_mhz\tpwr\tft_jitter_ms\tgpu_fault_status\tgpu_fault_fence_hex\taud\tsnd'
 if [ ! -f "$SESSIONS_LEDGER" ]; then
     TMP="$SESSIONS_LEDGER.tmp"
     printf "$LEDGER_HEADER\n" > "$TMP"
     mv "$TMP" "$SESSIONS_LEDGER"
-elif ! head -1 "$SESSIONS_LEDGER" | grep -q 'gpu_fault_fence_hex'; then
+elif ! head -1 "$SESSIONS_LEDGER" | grep -q 'snd'; then
     # Migrate a stale header (older ledgers were created with fewer columns) so
     # the ledger self-describes. Rewrite ONLY the header line; existing rows are
     # untouched — older rows simply lack the newest trailing cols (read as empty).
@@ -518,12 +558,12 @@ elif ! head -1 "$SESSIONS_LEDGER" | grep -q 'gpu_fault_fence_hex'; then
     { printf "$LEDGER_HEADER\n"; tail -n +2 "$SESSIONS_LEDGER"; } > "$TMP" && mv "$TMP" "$SESSIONS_LEDGER"
 fi
 
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$NOW" "$DURATION" "$ETK_BUILD_TYPE" "$GAME_ID" "$STATUS" \
     "$PEAK_LOAD" "$PEAK_RAM" "$PEAK_TEMP" "$AVG_TEMP" \
     "$CRASH_SIG" "$FENCE_AT_CRASH" "$SHADERS" "$DRAIN_PCT" "$THERMAL_OVERRIDES" \
     "$TUNE_TAG" "$CRASH_SHOT" "$FPS_MED" "$FPS_1LOW" "$FT_P99" "$RES_SCALE" "$GPU_MHZ" "$PWR_TAG" "$FT_JITTER" \
-    "$GPU_FAULT_STATUS" "$GPU_FAULT_FENCE_HEX" \
+    "$GPU_FAULT_STATUS" "$GPU_FAULT_FENCE_HEX" "$AUD_STAT" "$SND_STAT" \
     >> "$SESSIONS_LEDGER"
 
 # --- CAREER ROLLUP ---

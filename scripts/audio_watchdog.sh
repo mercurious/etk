@@ -1,6 +1,6 @@
 #!/bin/sh
 # ==========================================================
-# ETK AUDIO WATCHDOG (v0.1.0 - HARNESS)
+# ETK AUDIO WATCHDOG (v0.2.0 - HARNESS + PERSISTENT BOOT STATUS)
 # ==========================================================
 # The SM8250 sound card intermittently NEVER probes at boot (~1 in 4
 # boots observed 2026-07-02): an early q6afe clock-vote race against
@@ -43,6 +43,16 @@ log_tw() {
 set_status() {
     mkdir -p "$SHM_DIR" 2>/dev/null
     echo "$1" > "$STATUS_FILE.tmp" 2>/dev/null && mv "$STATUS_FILE.tmp" "$STATUS_FILE" 2>/dev/null
+    # Persistent boot-scoped copy. The SHM copy does NOT survive the Sentry's
+    # session lifecycle (observed 2026-07-03: $SHM_DIR recreated between
+    # sessions — boot status written at 10:47 was gone by 10:57). The ledger's
+    # snd= attribution reads THIS file instead, validating the leading epoch
+    # against the current boot so a stale line from a prior boot never lies.
+    if [ -n "$TELEMETRY_DIR" ]; then
+        mkdir -p "$TELEMETRY_DIR" 2>/dev/null
+        echo "$(date +%s) $1" > "$TELEMETRY_DIR/audio_boot.txt.tmp" 2>/dev/null && \
+            mv "$TELEMETRY_DIR/audio_boot.txt.tmp" "$TELEMETRY_DIR/audio_boot.txt" 2>/dev/null
+    fi
 }
 
 card_present() {
