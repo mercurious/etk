@@ -65,11 +65,14 @@ RPCS3_APPIMAGE=""
 # RPCS3_ENV_FLAGS (optional): space-separated VAR=value pairs exported into
 # the RPCS3 runtime at every game launch via the profile.d vector
 # (/storage/.config/profile.d/096-etk-rpcs3-flags). Used for runtime-gated
-# switches baked into a custom RPCS3 build. For the GTK Edition set:
-#   RPCS3_ENV_FLAGS="GTK_REMAP0_ONE=1"    # the #11912 road-flicker FIX
-# (GTK_PROBE_11912=1 adds the diagnostic TIU log — dev use, not needed for
-# play.) Leave EMPTY to inject nothing; clearing it removes the profile.d
-# entry on the next install.sh run.
+# switches baked into a custom RPCS3 build. The GTK Edition needs NOTHING
+# here for normal play — the #11912 road-flicker FIX is ON BY DEFAULT.
+# Diagnostic switches, if ever asked for:
+#   GTK_REMAP0_ONE=0       # kill-switch: revert to stock decode (flicker returns)
+#   GTK_REMAP0_IDENTITY=1  # identity-crossbar A/B variant of the fix
+#   GTK_PROBE_11912=1      # dev TIU-transition log
+# Leave EMPTY to inject nothing; clearing it removes the profile.d entry on
+# the next install.sh run.
 RPCS3_ENV_FLAGS=""
 
 # --- Default thermal intent at boot ---
