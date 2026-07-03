@@ -12,8 +12,8 @@
     "section": "Audio",
     "yaml_key": "  Renderer",
     "type": "enum",
-    "options": ["Cubeb", "ALSA", "FAudio"],
-    "help": "Audio output path. Cubeb is the ROCKNIX default. GT track audio stutters under 30fps no matter what -- this knob rarely changes that."
+    "options": ["Cubeb", "FAudio", "Null"],
+    "help": "Audio output path. Cubeb (via PipeWire) is the only real ROCKNIX choice; FAudio only exists if the build ships it; Null = silence for tests. (ALSA was never an RPCS3 backend -- old option here wrote an invalid config.)"
   },
   {
     "label": "Desired Buffer Duration",
@@ -23,7 +23,14 @@
     "min": 5,
     "max": 250,
     "step": 5,
-    "help": "Audio latency buffer (ms). Bigger = fewer dropouts but more lag. GT audio is unreliable below 30fps; leave near default."
+    "help": "Audio latency buffer (ms; RPCS3 default 34). Absorbs scheduling JITTER only -- when the game produces audio slower than real-time (GT under full speed), no buffer size can save it; that is Time Stretching's job."
+  },
+  {
+    "label": "Enable Time Stretching",
+    "section": "Audio",
+    "yaml_key": "  Enable Time Stretching",
+    "type": "bool",
+    "help": "MASTER SWITCH -- the Threshold dial below is DEAD while this is OFF. Slows audio tempo (pitch-preserved, SoundTouch) when the buffer runs low, instead of leaving silent gaps. GT HD runs ON and sounds decent; GT5P has never had it ON."
   },
   {
     "label": "Time Stretching Threshold",
@@ -33,7 +40,14 @@
     "min": 0,
     "max": 100,
     "step": 5,
-    "help": "Below this fps%, audio is time-stretched instead of dropped. Raise it to mask stutter -- cosmetic only for GT."
+    "help": "BUFFER-FILL %% below which stretching engages (needs the master switch ON; it is NOT an fps threshold). 100 = stretch whenever below target (GT HD's setting); lower = engage only under real starvation."
+  },
+  {
+    "label": "Disable Sampling Skip",
+    "section": "Audio",
+    "yaml_key": "  Disable Sampling Skip",
+    "type": "bool",
+    "help": "When the game misses an audio period: OFF (default) waits up to ~21ms for late samples before skipping; ON advances immediately. Changes stutter texture (many small gaps vs fewer big ones) -- an A/B dial, not a cure."
   },
   {
     "label": "PPU Threads",
