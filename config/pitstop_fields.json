@@ -70,12 +70,22 @@
     "help": "Cell SPU worker count. 0 lets RPCS3 choose. Pinning too high starves PPU/RSX -- leave Auto unless you are profiling."
   },
   {
+    "label": "Max SPURS Threads",
+    "section": "Core",
+    "yaml_key": "  Max SPURS Threads",
+    "type": "int",
+    "min": 1,
+    "max": 6,
+    "step": 1,
+    "help": "Caps how many SPURS workers RUN concurrently per group (GT schedules audio/physics as SPURS jobs). 6 = stock. Lowering to 5/4 trades throughput for less core contention -- the Phase-3 audio-ladder dial; judge each rung by the ledger aud= skip/sil counts, not by ear alone."
+  },
+  {
     "label": "SPU Block Size",
     "section": "Core",
     "yaml_key": "  SPU Block Size",
     "type": "enum",
     "options": ["Safe", "Mega", "Giga"],
-    "help": "SPU recompiler scope. Mega/Giga compile bigger chunks = fewer hitches once warm, but a longer first-run SPU/shader storm."
+    "help": "SPU recompiler scope. Mega/Giga compile bigger chunks = fewer hitches once warm, but a longer first-run SPU/shader storm. Audio angle: longer blocks run longer uninterrupted -- may delay time-critical audio SPU jobs (Phase-3 A/B: Mega vs Safe)."
   },
   {
     "label": "SPU loop detection",
