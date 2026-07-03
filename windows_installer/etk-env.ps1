@@ -1,5 +1,5 @@
 # ==========================================================
-# ETK WINDOWS HOST CONFIG  (mirror of scripts/env.sh)
+# ETK WINDOWS HOST CONFIG  (mirror of scripts/env.sh + etk.conf)
 # ==========================================================
 # These values MUST match your bash scripts/env.sh. This file is the
 # ONLY place the Windows port duplicates configuration - everything
@@ -45,6 +45,37 @@ $Rpcs3GameDir       = "$Rpcs3DevHdd0/game"                  # RPCS3_GAME_DIR
 $Rpcs3HomeDir       = "$Rpcs3DevHdd0/home"                  # RPCS3_HOME_DIR
 $Rpcs3ExdataDir     = "$Rpcs3DevHdd0/home/00000001/exdata"  # RPCS3_EXDATA_DIR
 $Ps3LauncherDir     = "/storage/games-internal/roms/ps3"   # PS3_LAUNCHER_DIR (resolved from env.sh 2026-05-28)
+
+# --- OPERATOR CONFIG (mirror of etk.conf; generated ONTO the rig) ------
+# The bash installer pushes the repo-root etk.conf so the RIG's env.sh picks
+# these up (build tier, HUD mode, DP mirror). The Windows port has no
+# etk.conf, so the installer GENERATES a minimal one on the rig from here.
+$EtkBuildType  = "FULL"    # FULL | LITE | RAW    (ETK_BUILD_TYPE)
+$DefaultMode   = "RACE"    # RACE | PIT           (DEFAULT_MODE)
+$EtkHudMode    = "BASIC"   # BASIC | GINSTR       (ETK_HUD_MODE)
+$EtkDpMirror   = "1"       # 1 = DP capture mirror on (ETK_DP_MIRROR)
+$HudHeaderHold = "15"      # seconds              (HUD_HEADER_HOLD_S)
+
+# --- CUSTOM TURNIP DRIVER (Stage IV, install Step 6.5) -----------------
+# Certified GTK fork builds are fetched from the latest ETK GitHub release
+# and sha256-verified automatically - no value needed here. To ALSO stage a
+# local out-of-tree .so and make it the DEFAULT pick on a rig that has no
+# on-rig selection yet, point this at the file (mirrors etk.conf TURNIP_SO).
+$TurnipSo = ""             # e.g. "C:\etk\drivers\my_dev_build.so"
+
+# --- CUSTOM RPCS3 BUILD (GTK Edition, install Steps 6.55/6.56) ---------
+# Mirrors etk.conf RPCS3_APPIMAGE / RPCS3_ENV_FLAGS. Download the AppImage
+# from the ETK GitHub release, then point this at the downloaded file, e.g.
+#   $Rpcs3AppImage = "$env:USERPROFILE\Downloads\rpcs3-etk_gtk-edition-0.6.0_v0.0.41-19544-60c9705a_linux_aarch64.AppImage"
+# Empty = stock RPCS3 (any previously staged custom build is removed).
+# A Windows download has no Linux exec bit - the installer sets it on the
+# rig copy (an AppImage staged without +x fails as a silent exit-126
+# "quits on launch", not a crash).
+$Rpcs3AppImage = ""
+# Space-separated VAR=value pairs exported into the RPCS3 runtime at every
+# game launch (profile.d vector). For the GTK Edition build set:
+#   $Rpcs3EnvFlags = "GTK_REMAP0_ONE=1"     # the #11912 road-flicker fix
+$Rpcs3EnvFlags = ""
 
 # --- PRIVATE PADDOCK (0.3.0, optional) --------------------------------
 # Windows mirror of etk.conf's PADDOCK_TOKEN / PADDOCK_REPO. To get private

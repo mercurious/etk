@@ -19,7 +19,16 @@ That's the whole happy path. Different handheld model, a custom IP, or you chang
 
 ## What's different from the bash version
 
-This Windows path is **no-vault**: it does not back your shaders up to the PC, and it does not restore them from the PC. Concretely, `install.sh` Steps 2 and 4 (the rsync vault pull/push) are skipped. Everything else — directory provisioning, daemon/script deploy, the Pitstop Tools-menu app, and the systemd Sentry — is ported faithfully. The rig still vaults shaders **locally**; you just lose the offsite copy.
+This Windows path is **no-vault**: it does not back your shaders up to the PC, and it does not restore them from the PC. Concretely, `install.sh` Steps 2 and 4 (the rsync vault pull/push) are skipped. Everything else — directory provisioning, daemon/script deploy, the Pitstop Tools-menu app, the systemd Sentry, and the 0.6.0-era sub-steps (Turnip driver catalog, RPCS3 GTK Edition bind, RPCS3 env flags, audio watchdog, POWER applier, Panic Black Box read-side, DP-mirror) — is ported faithfully. The rig still vaults shaders **locally**; you just lose the offsite copy.
+
+### v0.6.0 sync highlights (2026-07-03)
+
+- **Turnip GTK driver catalog (Step 6.5):** the certified fork `.so` is fetched from the latest ETK GitHub release and **sha256-verified** before staging — a fresh Windows clone needs internet on first run, or a pre-downloaded copy in `drivers\`.
+- **RPCS3 GTK Edition (Steps 6.55/6.56):** download the AppImage from the ETK release, set `$Rpcs3AppImage` (and `$Rpcs3EnvFlags = "GTK_REMAP0_ONE=1"`) in `etk-env.ps1`, re-run the installer, reboot the rig. The exec bit is set on the rig copy automatically (a Windows download has none — without it the emulator "silently quits" with no trace).
+- **Audio watchdog (Step 6.57):** arms a boot unit that self-heals the SM8250 silent-boot audio race (~1 in 4 boots otherwise lose ALL sound until reboot).
+- **Operator config:** the installer now generates `etk.conf` on the rig from the `etk-env.ps1` values (build tier, HUD mode, DP mirror) — previously the rig silently ran baked-in defaults.
+- The uninstaller needed **no changes**: it already executes `uninstall.sh`'s STOP/HW/CLEAN blocks verbatim, and all the new teardown (Turnip/RPCS3/watchdog/POWER/blackbox units) lives inside those blocks.
+- Status: synced against `install.sh` v0.6.0; awaiting a fresh Windows-host smoke test (alpha-tester preview, as before).
 
 Why no vault: the vault sync is the one piece that depends on rsync's `--ignore-existing` / `--update` / `--delete` semantics over tens of thousands of tiny shader files, which has no clean native-Windows equivalent. Dropping it is what keeps this port small and dependency-free. The Linux/Mac host (`install.sh`) remains the full-featured path.
 

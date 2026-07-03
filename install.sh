@@ -1263,7 +1263,7 @@ fi
 [ "$TURNIP_DEFAULT_SEL" != "stock" ] && TURNIP_KEEP="$TURNIP_KEEP $TURNIP_DEFAULT_SEL"
 ssh $RIG_SSH "KEEP='$TURNIP_KEEP'; for f in /storage/turnip/drivers/*.so; do [ -e \"\$f\" ] || continue; b=\$(basename \"\$f\"); case \" \$KEEP \" in *\" \$b \"*) : ;; *) rm -f \"\$f\";; esac; done" 2>/dev/null
 TURNIP_OUT_FILE=$(mktemp /tmp/etk_turnip_XXXXXX)
-ssh $RIG_SSH "TURNIP_DEFAULT_SEL='$TURNIP_DEFAULT_SEL' sh -s" > "$TURNIP_OUT_FILE" 2>&1 << 'REMOTE'
+ssh $RIG_SSH "TURNIP_DEFAULT_SEL='$TURNIP_DEFAULT_SEL' sh -s" > "$TURNIP_OUT_FILE" 2>&1 << 'TURNIPREMOTE'
     # Boot-time resolver: read the selection, (re)bind or unbind, stamp loaded.
 cat << 'BIND' > /storage/.config/etk-turnip-bind.sh
 #!/bin/sh
@@ -1325,7 +1325,7 @@ SVC
     active=$(strings /usr/lib/libvulkan_freedreno.so 2>/dev/null | grep -m1 -oE 'Mesa [0-9.]+')
     n=$(ls /storage/turnip/drivers/*.so 2>/dev/null | wc -l | tr -d ' ')
     echo "TURNIP_OK catalog=${n} build(s); selected=${sel:-stock}; loaded=${loaded:-stock}; /usr/lib=${active:-?}"
-REMOTE
+TURNIPREMOTE
 if grep -q TURNIP_OK "$TURNIP_OUT_FILE"; then
     say "${G}[ETK]${N} $(grep -m1 TURNIP_OK "$TURNIP_OUT_FILE" | sed 's/TURNIP_OK //')"
 else
@@ -1361,7 +1361,7 @@ else
     ssh $RIG_SSH "rm -f /storage/rpcs3/rpcs3-sa.custom" 2>/dev/null
 fi
 RPCS3_OUT_FILE=$(mktemp /tmp/etk_rpcs3_XXXXXX)
-ssh $RIG_SSH "sh -s" > "$RPCS3_OUT_FILE" 2>&1 << 'REMOTE'
+ssh $RIG_SSH "sh -s" > "$RPCS3_OUT_FILE" 2>&1 << 'RPCS3REMOTE'
     # Boot-time resolver: bind the custom build over stock if present, else
     # unbind (idempotent; re-run every boot since bind-mounts don't persist).
 cat << 'BIND' > /storage/.config/etk-rpcs3-bind.sh
@@ -1397,7 +1397,7 @@ SVC
     systemctl restart etk-rpcs3.service >/dev/null 2>&1
     loaded=$(cat /storage/rpcs3/loaded 2>/dev/null)
     echo "RPCS3_OK loaded=${loaded:-stock}"
-REMOTE
+RPCS3REMOTE
 if grep -q RPCS3_OK "$RPCS3_OUT_FILE"; then
     say "${G}[ETK]${N} $(grep -m1 RPCS3_OK "$RPCS3_OUT_FILE" | sed 's/RPCS3_OK //') (reboot to fully validate)"
 else
@@ -1431,7 +1431,7 @@ fi
 # re-triggers the probe chain; field-validated on a natural failure
 # 2026-07-03 (ledger snd=revived). This unit runs it at every boot; it also
 # writes the persistent boot status that the ledger's snd column reads.
-ssh $RIG_SSH "sh -s" > /dev/null 2>&1 <<'REMOTE'
+ssh $RIG_SSH "sh -s" > /dev/null 2>&1 <<'AUDIOWDREMOTE'
     mkdir -p /storage/.config/system.d/
 cat << 'SVC' > /storage/.config/system.d/etk-audio-watchdog.service
 [Unit]
@@ -1448,7 +1448,7 @@ WantedBy=multi-user.target
 SVC
     systemctl daemon-reload
     systemctl enable /storage/.config/system.d/etk-audio-watchdog.service >/dev/null 2>&1
-REMOTE
+AUDIOWDREMOTE
 say "${G}[ETK]${N} Audio watchdog armed (etk-audio-watchdog.service, boot oneshot)"
 
 # ==========================================================
@@ -1459,7 +1459,7 @@ say "${G}[ETK]${N} Audio watchdog armed (etk-audio-watchdog.service, boot onesho
 # self-skipping pattern as etk-turnip.service. GATED: no profile => unit skips,
 # stock thermal_d governor management is unchanged (zero effect until opted in).
 # The POWER schema (power_profiles.json) is pushed with the other config in STEP 4.
-ssh $RIG_SSH "sh -s" > /dev/null 2>&1 <<'REMOTE'
+ssh $RIG_SSH "sh -s" > /dev/null 2>&1 <<'POWERREMOTE'
     mkdir -p /storage/.config/system.d/ /storage/etk-power
 cat << 'APPLY' > /storage/.config/etk-power-apply.sh
 #!/bin/sh
@@ -1492,7 +1492,7 @@ WantedBy=multi-user.target
 SVC
     systemctl daemon-reload
     systemctl enable /storage/.config/system.d/etk-power.service >/dev/null 2>&1
-REMOTE
+POWERREMOTE
 say "${G}[ETK]${N} POWER applier deployed (etk-power.service — self-skips until a profile is set)"
 
 # ==========================================================
@@ -1507,7 +1507,7 @@ say "${G}[ETK]${N} POWER applier deployed (etk-power.service — self-skips unti
 # module confs present but the live cmdline missing the token means a ROCKNIX
 # update reverted grub.cfg — warn loudly, operator re-runs the armer.
 BB_OUT_FILE=$(mktemp /tmp/etk_blackbox_XXXXXX)
-ssh $RIG_SSH "sh -s" > "$BB_OUT_FILE" 2>&1 << 'REMOTE'
+ssh $RIG_SSH "sh -s" > "$BB_OUT_FILE" 2>&1 << 'BLACKBOXREMOTE'
     mkdir -p /storage/.config/system.d/
 cat << 'SVC' > /storage/.config/system.d/etk-blackbox.service
 [Unit]
@@ -1536,7 +1536,7 @@ SVC
     else
         echo "BLACKBOX_UNARMED"
     fi
-REMOTE
+BLACKBOXREMOTE
 if grep -q BLACKBOX_OK "$BB_OUT_FILE"; then
     say "${G}[ETK]${N} Panic Black Box recorder deployed (etk-blackbox.service)"
 else
@@ -1559,7 +1559,7 @@ rm -f "$BB_OUT_FILE"
 # a DP sink links — and DP only links in the Type-C "normal" orientation (kernel
 # AUX/SBU bug; reverse = no link = no mirror, see project_rocknix_usb_dp_videoout).
 # Toggle with ETK_DP_MIRROR in etk.conf (default on). Long-running; Restart=always.
-ssh $RIG_SSH "sh -s" > /dev/null 2>&1 <<'REMOTE'
+ssh $RIG_SSH "sh -s" > /dev/null 2>&1 <<'DPMIRRORREMOTE'
     mkdir -p /storage/.config/system.d/
 cat << 'SVC' > /storage/.config/system.d/etk-dpmirror.service
 [Unit]
@@ -1579,7 +1579,7 @@ SVC
     systemctl enable /storage/.config/system.d/etk-dpmirror.service >/dev/null 2>&1
     systemctl restart etk-dpmirror.service >/dev/null 2>&1
     systemctl is-active --quiet etk-dpmirror.service && echo "DPMIRROR_OK" || echo "DPMIRROR_FAIL"
-REMOTE
+DPMIRRORREMOTE
 say "${G}[ETK]${N} DP-mirror daemon deployed (etk-dpmirror.service — idle until a capture display links on DP-1)"
 
 # ==========================================================
