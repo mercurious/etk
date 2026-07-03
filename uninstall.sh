@@ -224,6 +224,14 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
     rm -f /storage/.config/system.d/etk-rpcs3.service /storage/.config/etk-rpcs3-bind.sh
     echo "    Removed: etk-rpcs3.service + bind resolver (stock rpcs3-sa restored; /storage/rpcs3/ build kept)"
 
+    # Audio watchdog (install.sh STEP 6.57): boot oneshot pointing into
+    # $ETK_ROOT — must go, or every boot logs a unit failure once ETK_ROOT
+    # is gone. (The probe-race revive is lost post-uninstall: stock ROCKNIX
+    # behavior restored, silent-boot lottery and all.)
+    systemctl disable --now etk-audio-watchdog.service 2>/dev/null
+    rm -f /storage/.config/system.d/etk-audio-watchdog.service
+    echo "    Removed: etk-audio-watchdog.service (stock audio bring-up behavior restored)"
+
     # POWER profile (Pitstop POWER tab): the boot applier re-pins CPU/GPU
     # governors + clocks every boot, so it would keep overriding stock power
     # management after uninstall. Drop the unit + applier; thermal_d's own

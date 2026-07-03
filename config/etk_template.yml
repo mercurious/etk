@@ -9,7 +9,7 @@ Audio:
   Disable Sampling Skip: false
   Dump to file: false
   Enable Buffering: true
-  Enable Time Stretching: false
+  Enable Time Stretching: true
   Master Volume: 100
   Microphone Devices: "@@@@@@@@@@@@"
   Microphone Type: "Null"

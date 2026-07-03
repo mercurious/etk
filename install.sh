@@ -1422,6 +1422,35 @@ else
     ssh $RIG_SSH "rm -f /storage/.config/profile.d/096-etk-rpcs3-flags" 2>/dev/null
 fi
 
+# --- STEP 6.57: AUDIO WATCHDOG (per-boot sound-card bring-up gate) ---
+# The SM8250 sound card intermittently never probes at boot (~1 in 4 boots:
+# q6afe/ADSP clock-vote race kills the va_macro probe, the whole LPASS chain
+# parks in deferred-probe, PipeWire serves only a dummy sink = the entire
+# boot is silent in every app — see AI_MANIFEST "ROCKNIX AUDIO STACK").
+# scripts/audio_watchdog.sh (deployed by STEP 3) detects the failed state and
+# re-triggers the probe chain; field-validated on a natural failure
+# 2026-07-03 (ledger snd=revived). This unit runs it at every boot; it also
+# writes the persistent boot status that the ledger's snd column reads.
+ssh $RIG_SSH "sh -s" > /dev/null 2>&1 <<'REMOTE'
+    mkdir -p /storage/.config/system.d/
+cat << 'SVC' > /storage/.config/system.d/etk-audio-watchdog.service
+[Unit]
+Description=ETK Audio Watchdog - sound-card bring-up gate (SM8250 probe race)
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/storage/games-internal/roms/etk/scripts/audio_watchdog.sh
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target
+SVC
+    systemctl daemon-reload
+    systemctl enable /storage/.config/system.d/etk-audio-watchdog.service >/dev/null 2>&1
+REMOTE
+say "${G}[ETK]${N} Audio watchdog armed (etk-audio-watchdog.service, boot oneshot)"
+
 # ==========================================================
 # STEP 6.6: POWER PROFILE APPLIER (CPU/GPU gov + clock pinning)
 # ==========================================================
