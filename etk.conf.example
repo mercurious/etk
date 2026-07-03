@@ -49,24 +49,27 @@ VAULT_SYNC="full"
 # Leave EMPTY to default a fresh rig to stock.
 TURNIP_SO=""
 
-# --- Custom RPCS3 build (dev/experimental — optional) ---
+# --- Custom RPCS3 build (GTK Edition — optional) ---
 # rpcs3-sa also lives on read-only squashfs (/usr/bin), same story as Turnip's
 # /usr/lib driver. Unlike Turnip there's no Pitstop-tab catalog/selector here —
-# just a single on/off flag, since this is one dev build in flight, not a set
-# of proven ones to pick between. Path to a locally-built RPCS3 AppImage
-# (ROCKNIX aarch64/glibc target, via scripts/build-rocknix-rpcs3 or a manual
-# cross-build) to bind-mount over /usr/bin/rpcs3-sa on every boot. Leave EMPTY
-# to run ROCKNIX's stock rpcs3-sa. Reboot to fully validate (bind-mount can't
-# hot-swap a binary a running RPCS3 already has open).
+# just a single on/off flag. Path to an RPCS3 AppImage (ROCKNIX aarch64/glibc
+# target) to bind-mount over /usr/bin/rpcs3-sa on every boot. The 0.6.0
+# "RPCS3 GTK Edition" build ships as an ETK GitHub release asset — download it
+# and point this at the file, e.g.:
+#   RPCS3_APPIMAGE="$HOME/Downloads/rpcs3-etk_gtk-edition-0.6.0_v0.0.41-19544-60c9705a_linux_aarch64.AppImage"
+# (source delta + build recipe: github.com/mercurious/etk-rpcs3-gtk). Leave
+# EMPTY to run ROCKNIX's stock rpcs3-sa. Reboot to fully validate (a
+# bind-mount can't hot-swap a binary a running RPCS3 already has open).
 RPCS3_APPIMAGE=""
 
 # RPCS3_ENV_FLAGS (optional): space-separated VAR=value pairs exported into
 # the RPCS3 runtime at every game launch via the profile.d vector
 # (/storage/.config/profile.d/096-etk-rpcs3-flags). Used for runtime-gated
-# switches baked into a custom RPCS3 build — e.g. the #11912 road-flicker
-# instrumentation: "GTK_PROBE_11912=1" (diagnostic TIU log) and
-# "GTK_REMAP0_IDENTITY=1" (remap fix A/B). Leave EMPTY to inject nothing;
-# clearing it removes the profile.d entry on the next install.sh run.
+# switches baked into a custom RPCS3 build. For the GTK Edition set:
+#   RPCS3_ENV_FLAGS="GTK_REMAP0_ONE=1"    # the #11912 road-flicker FIX
+# (GTK_PROBE_11912=1 adds the diagnostic TIU log — dev use, not needed for
+# play.) Leave EMPTY to inject nothing; clearing it removes the profile.d
+# entry on the next install.sh run.
 RPCS3_ENV_FLAGS=""
 
 # --- Default thermal intent at boot ---

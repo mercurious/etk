@@ -2,6 +2,34 @@
 
 All notable changes to the ETK are documented here. This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] - 2026-07-03 — "GTK Prologue Edition"
+
+**Introducing the Gran Turismo Kit.** A custom-tuned **RPCS3 emulator** with integrated **Turnip driver**, and a race-tested ROCKNIX middleware with its native ETK Pitstop app, upgrades the SM8250 for track day with advanced crash prevention for maximized but experimental playability — while embedding deep telemetry to chase audio support and console-grade framerates in future releases. Targeted for Gran Turismo 5 Prologue Spec II and Spec III and GT HD Concept only; GT5 and GT6 support pending.
+
+### Added
+- **RPCS3 GTK Edition** — ETK's custom emulator build, shipped as a release asset and deployed via `etk.conf` `RPCS3_APPIMAGE` + a boot-persistent bind (install.sh STEP 6.55, mirroring the Turnip DRIVER pattern). The build carries: the **GT5P road-shadow flicker FIX** (upstream RSX bug [#11912](https://github.com/RPCS3/rpcs3/issues/11912), 5 years open — cured on GT tracks; enable with `RPCS3_ENV_FLAGS="GTK_REMAP0_ONE=1"`), bounded fence-wait timeouts, and end-to-end **audio telemetry** (underrun/skip/stretch counters + a 2-second phase timeline). Full source delta + build recipe published in the sister repo **[etk-rpcs3-gtk](https://github.com/mercurious/etk-rpcs3-gtk)** (GPLv2).
+- `RPCS3_ENV_FLAGS` runtime env injection for build-gated switches (STEP 6.56).
+- **Audio watchdog** (STEP 6.57): the SM8250 silently loses ALL audio on roughly 1 in 4 boots (a q6afe/ADSP probe race at boot — likely a years-old ghost); now detected and self-healed in seconds, validated against a natural failure. Uninstall restores stock behavior.
+- **Ledger audio columns**: `aud` (per-session cellAudio counters from the GTK Edition build) and `snd` (audio-path health: `ok|revived|dummy|nocard`) — silent-boot sessions self-quarantine from audio comparisons; per-session audio timelines are archived under `etk_telemetry/audio_logs/`.
+- **Panic Black Box** (read side): pstore harvester + kmsg flight recorder for kernel-panic forensics; the ramoops write side stays operator-armed via `scripts/arm_blackbox.sh` (install.sh never edits grub).
+- **Trigger Calibration** screen in Pitstop TOOLS (handler-aware threshold scaling).
+- Pitstop TUNING additions: **Enable Time Stretching** master switch (the threshold dial was inert without it), **Disable Sampling Skip**, **Max SPURS Threads**, **RSX FIFO Accuracy**; AUDIO help text corrected (threshold is buffer-fill %, not fps) and the bogus "ALSA" backend option removed (never a real RPCS3 backend).
+- Ledger `gpu_fault_status` / `gpu_fault_fence_hex` columns; RSX frame-capture pad chord (R1+DPAD-Down).
+
+### Changed
+- **Certified against ROCKNIX official release `20260701`** — the nightly treadmill is over. ETK now supplies its own emulator (GTK Edition) and driver (GTK Turnip) via boot-persistent binds; the OS provides the substrate only.
+- `etk_template.yml` audio defaults: time stretching ships **ON** (threshold 75) — validated by the new counters; inert on titles that hold pace.
+- **Windows PowerShell port synced** step-for-step to v0.6.0 (Turnip catalog, GTK Edition bind + env flags, watchdog, POWER applier, Black Box, DP-mirror, rig-side `etk.conf` generation). Runtime smoke test on a Windows host still pending (alpha, as before).
+
+### Fixed
+- GT5P track-shadow flicker (#11912) — fixed in the GTK Edition build (carried as a known upstream issue since 0.5.0).
+- Restored L1+R3 / R1+L3 recovery + HUD-toggle chords (input_d v10.4.1).
+- AppImage staging without the exec bit produced a silent "quits on launch" (exit 126, zero log trace) — install.sh now force-sets it on both sides.
+
+### Known issues / deferred
+- **GT5P race audio stutters under load.** Now instrumented and root-caused: the game's own audio production misses ~15–27% of its 5.33 ms periods when emulation runs below full pace — the delivery layer measures clean (zero backend underruns). The v0.6.1 audio campaign (SPU/SPURS ladder + a production-side fix in the GTK Edition) chases it with the telemetry this release embeds.
+- The **a6xx GPU hang** remains managed-not-cured (GTK driver + dials push it later); the DRM-spawn teardown deadlock remains an intermittent launch race (R3 + relaunch clears it).
+
 ## [0.5.0] - 2026-06-30
 
 **The custom driver goes public.** ETK's flagship is now the **GTK custom Mesa/Turnip driver for ROCKNIX** — a Gran-Turismo-tuned fork that nearly doubles GT playtime on the SM8250 (median run ~204s → ~394s; the p90 ceiling more than doubles; time-to-crash **+42%**) and decouples the shader vault from ROCKNIX nightlies so the cache survives OS updates instead of spoiling on every bump. The a6xx GPU hang is honestly **reduced, not cured** (crash-rate ~73% → ~50%; the hang persists, the dials just push it far later). A new **DRIVER-build selector** swaps whole `.so` builds (reboot-gated), a **POWER tab** pins CPU/GPU governors, and the in-game **G-INSTR HUD** surfaces live frame-pacing so you can watch the driver's limited-slip mitigation working. Re-pinned to ROCKNIX nightly **20260628**.

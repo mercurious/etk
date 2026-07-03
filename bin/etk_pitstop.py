@@ -94,8 +94,8 @@ CAREER_DIR = os.environ.get('CAREER_DIR', f"{TELEMETRY_DIR}/career")
 PIT_NOTE_FILE = os.environ.get('PIT_NOTE_FILE', f"{TELEMETRY_DIR}/pit_note.txt")
 CONFIG_CHANGES_HEADER = "epoch\tgame_id\tfield_label\told_value\tnew_value\n"
 
-# User-facing app version (shown in the title bar: "ETK PITSTOP v0.5.0 // ...").
-APP_VERSION = "0.5.0"
+# User-facing app version (shown in the title bar: "ETK PITSTOP v0.6.0 // ...").
+APP_VERSION = "0.6.0"
 
 # DRIVER tab (Turnip env-var dials). These are NOT RPCS3 config keys — they
 # inject through the proven profile.d path (same mechanism as 098-etk-stage3),

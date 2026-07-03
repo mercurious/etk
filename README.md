@@ -9,6 +9,7 @@ No ETK features, just house tuned.
 ## For the full ROCKNIX rig
 The complete high performance system.
 - [Download latest release](https://github.com/mercurious/etk/releases)
+- **NEW (0.6.0):** RPCS3 **GTK Edition** — ETK's custom-tuned emulator build (road-flicker fix + crash-prevention timeouts + deep audio telemetry), shipped as a [release asset](https://github.com/mercurious/etk/releases); source delta at [etk-rpcs3-gtk](https://github.com/mercurious/etk-rpcs3-gtk). Targeted at GT5 Prologue Spec II/III and GT HD Concept; GT5/GT6 support pending.
 - Introducing [GTK Turnip for ROCKNIX](https://github.com/mercurious/etk/wiki/Using-MESA-Turnip-GTK)
 - [System Requirements](https://github.com/mercurious/etk/#etk-system-requirements)
 - [ETK Wiki](https://github.com/mercurious/etk/wiki) for full documentation, guides, advanced features
@@ -42,7 +43,8 @@ ETK is certified against **ROCKNIX official release `20260701`** on SM8250 (Retr
 |---|---|
 | Host System | macOS or Linux native ([Windows/PC port](#windows-install-guide)) |
 | OS | ROCKNIX (Official release: 20260701) |
-| Driver | MESA Turnip 26.1.2 |
+| Emulator | RPCS3 **GTK Edition** (ETK release asset; stock RPCS3 fallback) |
+| Driver | MESA Turnip 26.1.3 **GTK** catalog (stock nightly fallback) |
 | Shell |  BusyBox v1.36.1 |
 | Custom Overlay |  MangoHUD |
 
