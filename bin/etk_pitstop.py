@@ -3451,8 +3451,16 @@ def draw_tools(stdscr, state):
 # exit — a save made while it runs silently vanishes; AI_MANIFEST law).
 
 RPCS3_PAD_CONFIG = "/storage/.config/rpcs3/input_configs/global/Default.yml"
-_TRIGCAL_ROWS = ("l2", "r2", "auto", "save")   # cursor order on the screen
+_TRIGCAL_ROWS = ("l2", "l2top", "r2", "r2top", "auto", "save")  # cursor order
 _TRIGCAL_MARGIN = 13   # AUTO = live rest + margin (12+13=25 = the 06-16 fix)
+# Top-end calibration (H7b): a trigger that physically saturates below 255
+# (R2 seen max ~<255 on this unit) can never report a full pull, so the game
+# never sees 100% throttle/brake. 'Trigger Max' (GTK Edition >= trigger-cal
+# build; stock RPCS3 ignores it) rescales the calibrated ceiling to full
+# deflection. AUTO sets top = envelope max - margin so a real full pull
+# always saturates; envelope max must clear the floor to count as a pull.
+_TRIGCAL_TOP_MARGIN = 4
+_TRIGCAL_TOP_FLOOR = 200
 
 
 def _trigcal_handler_scale(handler):
@@ -3468,16 +3476,20 @@ def _trigcal_handler_scale(handler):
 
 
 def _trigcal_read_thresholds():
-    """Parse Player 1's Handler + Left/Right Trigger Threshold (config
-    units) from RPCS3_PAD_CONFIG. Returns (l, r, handler, err). Player 1 is
-    the FIRST top-level section in the file; scanning stops at the next
-    col-0 header so the Null pads 2-7 are never read (FIX 5 section gate)."""
+    """Parse Player 1's Handler + Left/Right Trigger Threshold + Left/Right
+    Trigger Max (config units) from RPCS3_PAD_CONFIG. Returns
+    (l, r, lmax, rmax, handler, err). The Max keys are the GTK-Edition
+    top-end calibration and are absent on stock-written configs -> None
+    (stock RPCS3 also drops them on its exit rewrite; the screen then just
+    shows top-end 'off', which is honest). Player 1 is the FIRST top-level
+    section in the file; scanning stops at the next col-0 header so the
+    Null pads 2-7 are never read (FIX 5 section gate)."""
     try:
         with open(RPCS3_PAD_CONFIG) as f:
             lines = f.readlines()
     except OSError as e:
-        return None, None, None, f"cannot read pad config: {e}"
-    l = r = handler = None
+        return None, None, None, None, None, f"cannot read pad config: {e}"
+    l = r = lmax = rmax = handler = None
     in_p1 = False
     for ln in lines:
         if ln and ln[0] not in " \t" and ln.rstrip().endswith(":"):
@@ -3500,13 +3512,24 @@ def _trigcal_read_thresholds():
                 r = int(s.split(":", 1)[1])
             except ValueError:
                 pass
+        elif s.startswith("Left Trigger Max:"):
+            try:
+                lmax = int(s.split(":", 1)[1])
+            except ValueError:
+                pass
+        elif s.startswith("Right Trigger Max:"):
+            try:
+                rmax = int(s.split(":", 1)[1])
+            except ValueError:
+                pass
     if l is None or r is None:
-        return None, None, handler, "Trigger Threshold keys not found in Player 1 block"
-    return l, r, handler, None
+        return None, None, None, None, handler, \
+            "Trigger Threshold keys not found in Player 1 block"
+    return l, r, lmax, rmax, handler, None
 
 
 def _trigcal_new_model():
-    l, r, handler, err = _trigcal_read_thresholds()
+    l, r, lmax, rmax, handler, err = _trigcal_read_thresholds()
     scale = _trigcal_handler_scale(handler)
 
     def to_raw(cfg):
@@ -3514,9 +3537,17 @@ def _trigcal_new_model():
             return 25
         return max(0, min(255, int(round(cfg * 255.0 / scale))))
 
+    def to_raw_top(cfg):
+        # Absent key (stock-written config) or 0 = top-end cal off.
+        if not cfg:
+            return 0
+        return max(0, min(255, int(round(cfg * 255.0 / scale))))
+
     return {
         "l2_thr": to_raw(l),              # RAW pad units (0-255) in the UI
         "r2_thr": to_raw(r),
+        "l2_top": to_raw_top(lmax),       # top-end cal, raw units; 0 = off
+        "r2_top": to_raw_top(rmax),
         "handler": handler or "?",
         "scale": scale,                   # config units per full travel
         "load_err": err,
@@ -3541,7 +3572,11 @@ def _trigcal_axis(state, code, val):
 
 
 def _trigcal_adjust(state, delta):
-    """DPAD left/right on a threshold row: nudge by +/-1, clamp 0-255."""
+    """DPAD left/right on a threshold row: nudge by +/-1, clamp 0-255.
+    Top-end rows: same nudge, except RIGHT from 'off' (0) jumps straight to
+    a useful start (envelope max - margin if a pull was seen, else 251) so
+    the dial isn't 200+ presses away, and LEFT below 64 snaps back to off
+    (a top-end cal that low would multiply the whole axis absurdly)."""
     m = state.get("trigcal_model")
     if not m:
         return
@@ -3549,6 +3584,18 @@ def _trigcal_adjust(state, delta):
     if row in ("l2", "r2"):
         k = row + "_thr"
         m[k] = max(0, min(255, (m.get(k) or 0) + delta))
+        m["dirty"] = True
+    elif row in ("l2top", "r2top"):
+        k = row[:2] + "_top"
+        cur = m.get(k) or 0
+        if cur == 0 and delta > 0:
+            seen = m.get(row[:2] + "_max")
+            new = (seen - _TRIGCAL_TOP_MARGIN) if (seen or 0) >= _TRIGCAL_TOP_FLOOR else 251
+        else:
+            new = cur + delta
+        if new < 64:
+            new = 0
+        m[k] = min(255, new)
         m["dirty"] = True
 
 
@@ -3566,11 +3613,14 @@ def _trigcal_save(state):
     raw_l, raw_r = m.get("l2_thr"), m.get("r2_thr")
     if raw_l is None or raw_r is None:
         return (False, ["No thresholds to save."])
+    top_l, top_r = m.get("l2_top") or 0, m.get("r2_top") or 0
     # RAW pad units (0-255, the UI/gauge domain) -> the handler's config
     # units at the file boundary (SDL = 0-32767; HID handlers = 0-255).
     scale = m.get("scale") or 255
     want_l = int(round(raw_l * scale / 255.0))
     want_r = int(round(raw_r * scale / 255.0))
+    want_lt = int(round(top_l * scale / 255.0))   # 0 stays 0 = cal off
+    want_rt = int(round(top_r * scale / 255.0))
     try:
         with open(RPCS3_PAD_CONFIG) as f:
             lines = f.readlines()
@@ -3578,23 +3628,56 @@ def _trigcal_save(state):
         return (False, [f"cannot read pad config: {e}"])
     if lines and not lines[-1].endswith("\n"):
         lines[-1] += "\n"
-    out, in_p1, seen_hdr, hit = [], False, False, 0
+    # The 'Trigger Max' keys (GTK-Edition top-end cal) are ABSENT from a
+    # config last written by stock RPCS3 (it drops unknown keys on exit).
+    # Replace them in place when present; otherwise INSERT each right after
+    # its Trigger Threshold line, same indent — a deterministic anchor that
+    # already gates the save (hit==2 below).
+    in_p1, seen_hdr = False, False
+    have_lt = have_rt = False
     for ln in lines:
         if ln and ln[0] not in " \t" and ln.rstrip().endswith(":"):
             in_p1 = not seen_hdr
             seen_hdr = True
         if in_p1:
             s = ln.lstrip()
+            if s.startswith("Left Trigger Max:"):
+                have_lt = True
+            elif s.startswith("Right Trigger Max:"):
+                have_rt = True
+    out, in_p1, seen_hdr, hit, hit_top = [], False, False, 0, 0
+    for ln in lines:
+        if ln and ln[0] not in " \t" and ln.rstrip().endswith(":"):
+            in_p1 = not seen_hdr
+            seen_hdr = True
+        inserted = None
+        if in_p1:
+            s = ln.lstrip()
             indent = ln[:len(ln) - len(s)]
             if s.startswith("Left Trigger Threshold:"):
                 ln = f"{indent}Left Trigger Threshold: {want_l}\n"
                 hit += 1
+                if not have_lt:
+                    inserted = f"{indent}Left Trigger Max: {want_lt}\n"
+                    hit_top += 1
             elif s.startswith("Right Trigger Threshold:"):
                 ln = f"{indent}Right Trigger Threshold: {want_r}\n"
                 hit += 1
+                if not have_rt:
+                    inserted = f"{indent}Right Trigger Max: {want_rt}\n"
+                    hit_top += 1
+            elif s.startswith("Left Trigger Max:"):
+                ln = f"{indent}Left Trigger Max: {want_lt}\n"
+                hit_top += 1
+            elif s.startswith("Right Trigger Max:"):
+                ln = f"{indent}Right Trigger Max: {want_rt}\n"
+                hit_top += 1
         out.append(ln)
-    if hit != 2:
-        return (False, [f"Expected 2 threshold lines in Player 1, found {hit}.",
+        if inserted:
+            out.append(inserted)
+    if hit != 2 or hit_top != 2:
+        return (False, [f"Expected 2 threshold + 2 max lines in Player 1,",
+                        f"found {hit} + {hit_top}.",
                         "Pad config layout unrecognized - not writing.",
                         "(Is a pad configured in RPCS3 at all?)"])
     bak = RPCS3_PAD_CONFIG + ".etkbak-trigcal"
@@ -3610,19 +3693,27 @@ def _trigcal_save(state):
         os.replace(tmp, RPCS3_PAD_CONFIG)   # atomic on POSIX
     except OSError as e:
         return (False, [f"write failed: {e}"])
-    vl, vr, _vh, err = _trigcal_read_thresholds()
-    if err or vl != want_l or vr != want_r:
+    vl, vr, vlt, vrt, _vh, err = _trigcal_read_thresholds()
+    if err or vl != want_l or vr != want_r \
+            or (vlt or 0) != want_lt or (vrt or 0) != want_rt:
         return (False, ["VERIFY FAILED after write:",
-                        err or f"read back L={vl} R={vr}, "
-                               f"wanted L={want_l} R={want_r}"])
+                        err or f"read back L={vl} R={vr} Lmax={vlt} Rmax={vrt},"
+                               f" wanted {want_l}/{want_r}/{want_lt}/{want_rt}"])
     m["dirty"] = False
-    result = [f"Player 1 trigger thresholds saved:",
-              f"  L2 raw {raw_l}/255 -> {want_l} ({m.get('handler', '?')} scale {scale})",
-              f"  R2 raw {raw_r}/255 -> {want_r}",
+
+    def _top_str(raw, cfg):
+        return f"raw {raw}/255 -> {cfg}" if raw else "off"
+    result = [f"Player 1 trigger calibration saved:",
+              f"  L2 thr raw {raw_l}/255 -> {want_l} ({m.get('handler', '?')} scale {scale})",
+              f"  R2 thr raw {raw_r}/255 -> {want_r}",
+              f"  L2 top-end {_top_str(top_l, want_lt)}",
+              f"  R2 top-end {_top_str(top_r, want_rt)}",
               "Verified by re-read."]
     if bak:
         result.append(f"Backup: {os.path.basename(bak)}")
-    result += ["", "Takes effect on the next game launch."]
+    result += ["", "Takes effect on the next game launch.",
+               "Top-end cal needs the GTK Edition trigger-cal",
+               "build (stock RPCS3 ignores + drops the Max keys)."]
     return (True, result)
 
 
@@ -3644,6 +3735,7 @@ def _draw_trigcal_screen(stdscr, state, y, h, w):
     for key, label in (("l2", "L2 (brake)"), ("r2", "R2 (accel)")):
         live = m.get(key) or 0
         thr = m.get(key + "_thr") or 0
+        top = m.get(key + "_top") or 0
         mn, mx = m.get(key + "_min"), m.get(key + "_max")
         sel = (_TRIGCAL_ROWS[cur] == key)
         bw = max(20, min(64, w - 26))
@@ -3651,6 +3743,10 @@ def _draw_trigcal_screen(stdscr, state, y, h, w):
         tpos = min(bw - 1, int(round(thr / 255.0 * (bw - 1))))
         bar = "".join("#" if i < fill else "-" for i in range(bw))
         bar = bar[:tpos] + "|" + bar[tpos + 1:]
+        if top:
+            # ']' marks the calibrated top-end ceiling; values there = full.
+            xpos = min(bw - 1, int(round(top / 255.0 * (bw - 1))))
+            bar = bar[:xpos] + "]" + bar[xpos + 1:]
         put(y, 4, "> " if sel else "  ",
             curses.color_pair(1) if sel else curses.A_NORMAL)
         put(y, 6, f"{label:11s}", curses.A_REVERSE if sel else curses.A_BOLD)
@@ -3661,11 +3757,22 @@ def _draw_trigcal_screen(stdscr, state, y, h, w):
         env = (f"live {live:3d}   threshold {thr:3d}   seen rest/max: "
                + (f"{mn}/{mx}" if mn is not None else "-/-"))
         put(y, 19, env, curses.A_DIM)
-        y += 2
+        y += 1
+        # Top-end calibration row (H7b) — its own cursor row so DPAD/A can
+        # drive it; shows the saturation ceiling the fork rescales to full.
+        sel = (_TRIGCAL_ROWS[cur] == key + "top")
+        put(y, 4, "> " if sel else "  ",
+            curses.color_pair(1) if sel else curses.A_NORMAL)
+        put(y, 6, f"{key.upper()} top-end", curses.A_REVERSE if sel else curses.A_NORMAL)
+        topdesc = f"{top:3d}  (full pull rescales to 255)" if top else \
+            "off  (A: set from seen max after a full pull)"
+        put(y, 19, topdesc, curses.A_BOLD if top else curses.A_DIM)
+        y += 1
+    y += 1
     sel = (_TRIGCAL_ROWS[cur] == "auto")
     put(y, 4, "> " if sel else "  ",
         curses.color_pair(1) if sel else curses.A_NORMAL)
-    put(y, 6, "AUTO-SET  (release both triggers fully, then press A)",
+    put(y, 6, "AUTO-SET  (pull both fully, release, then press A)",
         curses.A_REVERSE if sel else curses.A_NORMAL)
     y += 2
     sel = (_TRIGCAL_ROWS[cur] == "save")
@@ -3676,11 +3783,11 @@ def _draw_trigcal_screen(stdscr, state, y, h, w):
         (curses.A_BOLD if m.get("dirty") else curses.A_NORMAL))
     y += 2
     if y < h - 5:
-        put(y, 4, "DPAD up/down: row    left/right: threshold -/+1",
+        put(y, 4, "DPAD up/down: row    left/right: value -/+1",
             curses.A_DIM); y += 1
-        put(y, 4, "Green bar = past threshold (registers in-game). A hair of",
+        put(y, 4, f"AUTO: bottom = rest+{_TRIGCAL_MARGIN} (drag fix); top-end = seen max",
             curses.A_DIM); y += 1
-        put(y, 4, f"drag after release means threshold too low. AUTO = rest+{_TRIGCAL_MARGIN}.",
+        put(y, 4, f"-{_TRIGCAL_TOP_MARGIN} (saturation fix; needs GTK trigger-cal build).",
             curses.A_DIM); y += 1
         put(y, 4, "B: back (discards unsaved changes)", curses.A_DIM)
 
@@ -3808,11 +3915,27 @@ def _tools_select(state):
             # released — the whole point of the DS5 nonzero-rest bug.
             m["l2_thr"] = max(0, min(255, (m.get("l2") or 0) + _TRIGCAL_MARGIN))
             m["r2_thr"] = max(0, min(255, (m.get("r2") or 0) + _TRIGCAL_MARGIN))
+            # Top-end: only when a genuine full pull was observed this
+            # session (envelope max past the floor). Max at true 255 means
+            # no top deadzone -> cal off. Never clobber an existing cal
+            # with 'no pull seen'.
+            for k in ("l2", "r2"):
+                mx = m.get(k + "_max")
+                if mx is not None and mx >= _TRIGCAL_TOP_FLOOR:
+                    m[k + "_top"] = 0 if mx >= 255 else max(64, mx - _TRIGCAL_TOP_MARGIN)
             m["dirty"] = True
+        elif row in ("l2top", "r2top"):
+            # A on a top-end row = set from this session's observed max
+            # (per-trigger AUTO). No pull seen yet -> leave unchanged.
+            k = row[:2]
+            mx = m.get(k + "_max")
+            if mx is not None and mx >= _TRIGCAL_TOP_FLOOR:
+                m[k + "_top"] = 0 if mx >= 255 else max(64, mx - _TRIGCAL_TOP_MARGIN)
+                m["dirty"] = True
         elif row == "save":
             state["tools_result"] = _trigcal_save(state)
             state["tools_mode"] = "result"
-        # l2/r2 rows adjust via DPAD left/right; A is a no-op on them
+        # l2/r2 threshold rows adjust via DPAD left/right; A is a no-op there
 
     elif mode == "result":
         state["tools_mode"] = "menu"
