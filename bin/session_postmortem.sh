@@ -452,7 +452,11 @@ FPS_MED=0; FPS_1LOW=0; FT_P99=0; FT_JITTER=0
 MANGOLOG_DIR="$SHM_DIR/mangolog"
 FPS_CSV=$(ls -1t "$MANGOLOG_DIR"/*.csv 2>/dev/null | head -1)
 if [ -n "$FPS_CSV" ] && [ -f "$FPS_CSV" ]; then
-    VALID=$(awk -F, 'NR>3 && ($1+0)>0 && ($2+0)>=25 {printf "%s %s\n", $1, $2}' "$FPS_CSV")
+    # Upper bound 500ms: per-frame logging (log_interval=0, 2026-07-04) emits
+    # pause/load sentinel rows (observed: one 6,116,220ms "frame") that the
+    # old 1Hz sampling never surfaced; unbounded they poison fps_1low and
+    # explode ft_jitter (ledger rows 1783195788/1783196336: jit 16-18k ms).
+    VALID=$(awk -F, 'NR>3 && ($1+0)>0 && ($2+0)>=25 && ($2+0)<=500 {printf "%s %s\n", $1, $2}' "$FPS_CSV")
     NV=$(printf '%s\n' "$VALID" | grep -c .)
     case "$NV" in ''|*[!0-9]*) NV=0 ;; esac
     if [ "$NV" -ge 3 ]; then
@@ -467,7 +471,7 @@ if [ -n "$FPS_CSV" ] && [ -f "$FPS_CSV" ]; then
         # >=25ms race-gate is applied inline so menu/transition frames neither
         # contribute deltas nor bridge a spurious one. Validated 2026-06-24
         # (6.3ms on a real 1761-delta run). BusyBox-awk safe.
-        FT_JITTER=$(awk -F, 'NR>3 { ft=$2+0; fps=$1+0; r=(ft>=25 && fps>0);
+        FT_JITTER=$(awk -F, 'NR>3 { ft=$2+0; fps=$1+0; r=(ft>=25 && ft<=500 && fps>0);
             if (r && p) { d=ft-q; if(d<0)d=-d; s+=d; n++ }
             q=ft; p=r } END{ if(n>1) printf "%.1f", s/n; else printf "0" }' "$FPS_CSV")
     fi
