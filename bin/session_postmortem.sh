@@ -592,6 +592,19 @@ printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t
     "$GPU_FAULT_STATUS" "$GPU_FAULT_FENCE_HEX" "$AUD_STAT" "$SND_STAT" \
     >> "$SESSIONS_LEDGER"
 
+# --- FORENSICS HYGIENE: per-crash core prune ---
+# Cores land 2-7GB EACH; the boot-time prune (02-etk-coredump.sh) cannot stop
+# a within-boot storm — two teardown-segfault cores filled the 6.6GB UFS
+# system partition on 2026-07-04 and silently broke emulator staging. This
+# runs after EVERY session (each crash session ends here), keeps the newest
+# 2 on the SD cores dir and clears legacy /storage strays. Fail-silent.
+ls -t "$ETK_ROOT/cores"/*.core 2>/dev/null | tail -n +3 | while read -r c; do
+    rm -f "$c" 2>/dev/null
+done
+ls -t /storage/cores/*.core 2>/dev/null | tail -n +3 | while read -r c; do
+    rm -f "$c" 2>/dev/null
+done
+
 # --- CAREER ROLLUP ---
 [ -x "$ETK_ROOT/scripts/career_aggregate.sh" ] && \
     "$ETK_ROOT/scripts/career_aggregate.sh" "$GAME_ID" >/dev/null 2>&1

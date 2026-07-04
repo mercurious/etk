@@ -1355,6 +1355,19 @@ CERT_RPCS3="rpcs3-etk_gtk-edition-0.6.0_v0.0.41-19544-60c9705a_linux_aarch64.App
 CERT_RPCS3_SHA="1d0b490da981c3e05783fa621dcb4f5cdc7a5f48e380dafe8f111bbeb2ed80e8"
 RPCS3_RELEASE_BASE="https://github.com/mercurious/etk/releases/latest/download"
 ssh $RIG_SSH "mkdir -p /storage/rpcs3 /storage/.config/system.d/" 2>/dev/null
+# Pre-flight: the staging target lives on /storage — the small UFS SYSTEM
+# partition on internal-boot rigs, which also backs the emulator/driver
+# bind-mount sources and all config writes. When it fills, the staging rsync
+# below fails FAIL-SOFT ("stock stays active") and the rig silently keeps the
+# OLD emulator (bitten 2026-07-04: 8.5GB of segfault cores → ENOSPC → the
+# teardown-guard build never landed; caught only by sha verify). Warn loudly
+# so a full partition is a headline, not a footnote.
+STORAGE_FREE_KB=$(ssh $RIG_SSH "df -k /storage 2>/dev/null | tail -1 | awk '{print \$4}'")
+case "$STORAGE_FREE_KB" in ''|*[!0-9]*) STORAGE_FREE_KB=999999999 ;; esac
+if [ "$STORAGE_FREE_KB" -lt 204800 ]; then
+    say "${R}[ETK] /storage has only $((STORAGE_FREE_KB / 1024))MB free — emulator staging WILL fail (needs ~80MB + temp).${N}"
+    say "${R}[ETK] Check $ETK_ROOT/cores and /storage/cores for crash cores, then re-run install.${N}"
+fi
 RPCS3_STAGE_SRC=""
 case "${RPCS3_APPIMAGE:-}" in
     stock)
@@ -1652,10 +1665,28 @@ PROF
 
 cat << 'CORE' > /storage/.config/custom_scripts/02-etk-coredump.sh
 #!/bin/bash
-# ETK Stage III: route core dumps to SD, keep newest 2 (cores can be ~7GB)
-mkdir -p /storage/cores
-echo "/storage/cores/%e.%p.%s.core" > /proc/sys/kernel/core_pattern
-ls -t /storage/cores/*.core 2>/dev/null | tail -n +3 | xargs -r rm -f
+# ETK Stage III: core capture for silent-class crashes.
+# Cores are HUGE (2-7GB sparse each). On an internal-boot rig /storage is the
+# ~6.6GB UFS SYSTEM partition — it also backs the emulator/driver bind-mount
+# sources and every config write. Two teardown-segfault cores filled it to
+# 100% on 2026-07-04 and silently broke emulator staging (rsync ENOSPC,
+# fail-soft "stock stays active"). Route cores to the big game card
+# ($ETK_ROOT/cores, mount-guarded) and fall back to the legacy /storage path
+# (keep 1 only) when the card is absent. Boot prune here; the PER-CRASH prune
+# lives in session_postmortem.sh — boot-only pruning cannot stop a
+# within-boot core storm.
+CORES_SD=/storage/games-internal/roms/etk/cores
+if grep -q " /storage/games-internal " /proc/mounts; then
+    mkdir -p "$CORES_SD"
+    echo "$CORES_SD/%e.%p.%s.core" > /proc/sys/kernel/core_pattern
+    ls -t "$CORES_SD"/*.core 2>/dev/null | tail -n +3 | xargs -r rm -f
+    # clear strays from the legacy UFS path — they squat on the system partition
+    rm -f /storage/cores/*.core 2>/dev/null
+else
+    mkdir -p /storage/cores
+    echo "/storage/cores/%e.%p.%s.core" > /proc/sys/kernel/core_pattern
+    ls -t /storage/cores/*.core 2>/dev/null | tail -n +2 | xargs -r rm -f
+fi
 CORE
 chmod +x /storage/.config/custom_scripts/02-etk-coredump.sh
 
@@ -1676,7 +1707,7 @@ S3SVC
 systemctl daemon-reload
 systemctl enable etk-stage3.service > /dev/null 2>&1
 systemctl restart etk-stage3.service
-grep -q "^/storage/cores/" /proc/sys/kernel/core_pattern && echo "STAGE3_OK" || echo "STAGE3_FAIL"
+grep -qE "^/storage/(games-internal/roms/etk/)?cores/" /proc/sys/kernel/core_pattern && echo "STAGE3_OK" || echo "STAGE3_FAIL"
 REMOTE
 STAGE3_OUTPUT=$(cat "$STAGE3_OUTPUT_FILE")
 rm -f "$STAGE3_OUTPUT_FILE"
