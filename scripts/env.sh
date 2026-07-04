@@ -198,7 +198,14 @@ else
 fi
 
 # --- [ RESTORED UI & ENGINES ] ---
-export PYTHONPATH="${PYTHONPATH}:/storage/etk/lib/python3.13/site-packages"
+# ABSOLUTE assignment, NEVER a ${PYTHONPATH}:... self-append: the Sentry and
+# mango_bridge re-source this file EVERY tick (Law #2), so an append grows the
+# env +42 bytes/tick until the kernel's 128KB per-variable exec limit trips at
+# ~1h45m uptime — at which point every execve in the loop fails E2BIG
+# ("Argument list too long"), pgrep goes blind, ignition never fires, and the
+# loop spins a core. Root-caused live 2026-07-03 (the recurring "WAITING FOR
+# IGNITION / reboot to fix" wedge); see memory project_sentry_env_bomb.
+export PYTHONPATH="/storage/etk/lib/python3.13/site-packages"
 export G='\033[0;32m'; export R='\033[0;31m'; export Y='\033[1;33m'; export C='\033[0;36m'; export N='\033[0m'
 # DEFAULT_MODE is sourced via OPERATOR CONFIG block (etk.conf).
 
