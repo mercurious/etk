@@ -4,8 +4,8 @@
     "section": "Video",
     "yaml_key": "  Resolution Scale",
     "type": "enum",
-    "options": ["50", "66", "75", "100"],
-    "help": "Internal render scale. Pick by STABILITY, not just sharpness: 66% has been the most crash-stable, and 50% is oddly worse, not better."
+    "options": ["50", "66", "75", "85", "90", "100"],
+    "help": "Internal render scale. Pick by STABILITY, not just sharpness: 66% has been the most crash-stable, and 50% is oddly worse, not better. 85/90 are the headroom rungs: 90 renders ~19% fewer pixels than 100 (the GT HD slush-to-locked conversion test), 85 ~28% fewer (GT5P dyno ladder)."
   },
   {
     "label": "Audio Renderer Backend",
