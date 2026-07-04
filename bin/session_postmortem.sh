@@ -471,6 +471,15 @@ if [ -n "$FPS_CSV" ] && [ -f "$FPS_CSV" ]; then
             if (r && p) { d=ft-q; if(d<0)d=-d; s+=d; n++ }
             q=ft; p=r } END{ if(n>1) printf "%.1f", s/n; else printf "0" }' "$FPS_CSV")
     fi
+    # Archive the per-frame curve BEFORE pruning (audio_logs pattern, keep 12).
+    # The ledger's fps cols are race-gated (>=25ms) for GT5P semantics — 60fps
+    # stretches (GT HD Eiger) are invisible in them and the raw CSV was dying
+    # here every session. Named by $NOW = ledger col 1 for a direct row join.
+    mkdir -p "$TELEMETRY_DIR/mango_logs" 2>/dev/null
+    cp "$FPS_CSV" "$TELEMETRY_DIR/mango_logs/$NOW.csv" 2>/dev/null
+    ls -1t "$TELEMETRY_DIR/mango_logs"/*.csv 2>/dev/null | tail -n +13 | while read -r f; do
+        rm -f "$f" 2>/dev/null
+    done
     # Prune the session CSV(s) so SHM stays lean and the next session's
     # newest-CSV pick is unambiguous. MangoHud is already dead at postmortem.
     rm -f "$MANGOLOG_DIR"/*.csv 2>/dev/null
