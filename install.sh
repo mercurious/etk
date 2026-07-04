@@ -499,7 +499,7 @@ for pair in \
         # devcoredumps from the Tier-B mirror: they bloat every sync (re-pulling
         # ~900 MB redumps on each deploy) and are decoded in-container, not
         # re-read from the host backup. The tiny .faultinfo sidecars stay synced.
-        tui_rsync 1 $PCT_LO $PCT_HI "Mirroring $NAME" --exclude='.DS_Store' --exclude='*.rd' --exclude='*.devcd' "$RIG_SSH:$SRC/" "$DST/"
+        tui_rsync 1 $PCT_LO $PCT_HI "Mirroring $NAME" --exclude='.DS_Store' --exclude='*.rd' --exclude='*.devcd' --exclude='crash_forensics' --exclude='forensics' "$RIG_SSH:$SRC/" "$DST/"
     else
         say "${Y}[SKIP] rig source absent: $SRC${N}"
         tui_step_progress 1 $PCT_HI
@@ -512,6 +512,33 @@ done
 if ssh $RIG_SSH "[ -f $RECENT_ID_FILE ]" 2>/dev/null; then
     tui_rsync 1 98 100 "Pulling last_played_id" --exclude='.DS_Store' "$RIG_SSH:$RECENT_ID_FILE" "./vault/last_played_id.txt"
 fi
+
+# --- FORENSICS OFFLOAD: rig -> host MOVE (operator-directed 2026-07-04) ---
+# Heavy crash artifacts (hangrd redumps 600MB+, devcoredumps, teardown bts)
+# have no reason to live on the rig: every deploy runs this installer, all
+# analysis happens on the host, and rig storage must stay lean for card
+# swaps. rsync --remove-source-files deletes ONLY files that transferred
+# verified; the dirs stay (spotter/postmortem recreate content freely).
+# First run moves the accumulated backlog (~13GB, one-time; subsequent runs
+# are a trickle). Excluded from the Tier-B mirror above so nothing is
+# double-archived. Cores are NOT archived (2-7GB each; superseded by the
+# live-gdb doctrine) — pruned to newest 1 here, keep-2 per-crash in the
+# postmortem, boot sweep in 02-etk-coredump.sh.
+mkdir -p "$HOST_STATE_DIR/forensics/crash_forensics" "$HOST_STATE_DIR/forensics/forensics"
+for FDIR in "$TELEMETRY_DIR/crash_forensics" "$TELEMETRY_DIR/forensics"; do
+    FBASE=$(basename "$FDIR")
+    if ssh $RIG_SSH "[ -d $FDIR ] && ls $FDIR 2>/dev/null | grep -q ." 2>/dev/null; then
+        FSIZE_KB=$(ssh $RIG_SSH "du -k $FDIR 2>/dev/null | tail -1 | awk '{print \$1}'")
+        case "$FSIZE_KB" in ''|*[!0-9]*) FSIZE_KB=0 ;; esac
+        tui_log "Offloading $FBASE (rig → host, $((FSIZE_KB / 1024))MB, move+prune)"
+        if [ "$TUI_ACTIVE" = "1" ]; then
+            rsync -az --remove-source-files --exclude='.DS_Store' "$RIG_SSH:$FDIR/" "$HOST_STATE_DIR/forensics/$FBASE/" >/dev/null 2>&1
+        else
+            $RSYNC_CMD --remove-source-files --exclude='.DS_Store' "$RIG_SSH:$FDIR/" "$HOST_STATE_DIR/forensics/$FBASE/"
+        fi
+    fi
+done
+ssh $RIG_SSH "ls -t $ETK_ROOT/cores/*.core 2>/dev/null | tail -n +2 | xargs -r rm -f; ls -t /storage/cores/*.core 2>/dev/null | tail -n +2 | xargs -r rm -f" 2>/dev/null
 tui_step_done 1
 
 # ==========================================================
