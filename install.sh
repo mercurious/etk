@@ -179,6 +179,23 @@ elif [ "$DO_PAIR_ONLY" = "1" ]; then
     exit 1
 fi
 
+# ==========================================================
+# LIVE-SESSION GUARD (operator-directed 2026-07-05)
+# NEVER deploy over an active race. STEP 0 kills the telemetry
+# daemons and STEP 6 restarts the Sentry, which re-seeds SHM and
+# re-fires ignition mid-game — the running session's ledger
+# baseline (and the driver's race) are the casualties. Refuse to
+# proceed while the emulator is running; finish or exit the game,
+# then re-run. The bracketed pgrep pattern defeats the
+# ssh-cmdline self-match (the AI_MANIFEST `pgrep -f` trap).
+# ==========================================================
+if ssh $RIG_SSH 'pgrep -f "AppRun.wrappe[d]|rpcs3-s[a]" >/dev/null 2>&1'; then
+    echo -e "${R}>>> A game session is RUNNING on the rig — install refused.${N}"
+    echo -e "${R}    Deploying now would kill live telemetry and could cost the${N}"
+    echo -e "${R}    current race. Finish or exit the game, then re-run ./install.sh.${N}"
+    exit 1
+fi
+
 # Source the install-time TUI library (host-only; never pushed to rig).
 # Provides tui_step_start, tui_step_progress, tui_step_done, tui_rsync, etc.
 # Falls back to no-op stubs / passthrough behaviour in verbose / non-tty mode.
