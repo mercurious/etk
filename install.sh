@@ -1288,6 +1288,15 @@ fi
 # left on the rig from prior dev installs — so the DRIVER-tab catalog ends up
 # exactly stock + the certified set (no stale gtk_0.1 / lsd-* lingering).
 [ "$TURNIP_DEFAULT_SEL" != "stock" ] && TURNIP_KEEP="$TURNIP_KEEP $TURNIP_DEFAULT_SEL"
+# Also keep the rig's CURRENT DRIVER-tab selection: staging a new dev build
+# must never prune the .so the selection still points at (bitten twice
+# 2026-07-04 — prune → bind service falls back to STOCK at install time, and
+# a reboot without re-selecting would silently race on the stock driver).
+RIG_SELECTED=$(ssh $RIG_SSH "cat /storage/turnip/selected 2>/dev/null" | tr -d '[:space:]')
+case "$RIG_SELECTED" in
+    ""|stock) : ;;
+    *) TURNIP_KEEP="$TURNIP_KEEP $RIG_SELECTED" ;;
+esac
 ssh $RIG_SSH "KEEP='$TURNIP_KEEP'; for f in /storage/turnip/drivers/*.so; do [ -e \"\$f\" ] || continue; b=\$(basename \"\$f\"); case \" \$KEEP \" in *\" \$b \"*) : ;; *) rm -f \"\$f\";; esac; done" 2>/dev/null
 TURNIP_OUT_FILE=$(mktemp /tmp/etk_turnip_XXXXXX)
 ssh $RIG_SSH "TURNIP_DEFAULT_SEL='$TURNIP_DEFAULT_SEL' sh -s" > "$TURNIP_OUT_FILE" 2>&1 << 'TURNIPREMOTE'
