@@ -187,44 +187,48 @@ while true; do
         JIT="${G_OUT%% *}"; SLIP="${G_OUT##* }"
     fi
 
-    # 5. ATOMIC HUD INJECTION [MANIFEST RULE: HUD FORMAT]
-    case "$STAGE" in
-        1) FINAL_STRING="${ETK_BUILD_TYPE}|${TARGET_ID}|SHDRS ${VAULT_STR}" ;;
-        2) if [ "$HUD_MODE" = "GINSTR" ]; then
-               FINAL_STRING="TEMP ${T_STAT}|JITTER ${JIT}|SLIP ${SLIP}|"
-           else
-               FINAL_STRING="TEMP ${T_STAT}|LOAD ${LOAD_RAW}${L_STAT}|RAM ${RAM_VAL}%${R_STAT}|"
-           fi ;;
-        *) if [ "$HUD_MODE" = "GINSTR" ]; then
-               FINAL_STRING="${T_STAT}|${JIT}|${SLIP}|${VAULT_STR}"
-           else
-               FINAL_STRING="${T_STAT}|${LOAD_RAW}${L_STAT}|${RAM_VAL}%${R_STAT}|${VAULT_STR}"
-           fi ;;
-    esac
-    
-    # 5.1 RESCUE FLASH OVERRIDE — a fresh keepalive survive replaces the HUD
-    # body with the rescue banner for ~12s of ticks (generous: the freeze
-    # itself eats the first seconds before MangoHud can repaint). Dense
-    # Latin-1 pipes only, per the HUD strict-lock; pulses via the phase.
+    # 4.7 RESCUE GAUGE (2026-07-06, operator-corrected same day: the full-body
+    # takeover was obnoxious and against the HUD format principles). RESCUE is
+    # a TRANSIENT THIRD GAUGE slot — |JITTER|SLIP|»RESCUE«|VAULT| — present
+    # only while a fresh keepalive survive is being announced, then GONE; the
+    # segment appearing/disappearing is itself the eye-catcher. Dense Latin-1,
+    # no gauge is displaced, strict-lock intact. Pulses »RESCUE«/«RESCUE» by
+    # phase while shown.
     CUR_SURV=$(dmesg 2>/dev/null | grep -c 'context_keepalive: surviving hang')
     case "$CUR_SURV" in ''|*[!0-9]*) CUR_SURV=0 ;; esac
     if [ "$CUR_SURV" -gt "$SURV_SEEN" ]; then
         SURV_SEEN=$CUR_SURV
         if [ "$HUD_MODE" = "GINSTR" ] && [ "$FRAC_SLEEP_OK" = "1" ]; then
-            RESCUE_TTL=24    # 0.5s ticks
+            RESCUE_TTL=16    # 0.5s ticks (~8s on screen)
         else
-            RESCUE_TTL=12    # 1s ticks
+            RESCUE_TTL=8     # 1s ticks
         fi
     fi
+    RESCUE_SEG=""
     if [ "$RESCUE_TTL" -gt 0 ]; then
         RESCUE_TTL=$((RESCUE_TTL - 1))
         if [ $((TICK % 2)) -eq 0 ]; then
-            FINAL_STRING="»RESCUE«|GPU HANG ABSORBED|DRIVE ON|"
+            RESCUE_SEG="»RESCUE«|"
         else
-            FINAL_STRING="RESCUE|GPU HANG ABSORBED|DRIVE ON|"
+            RESCUE_SEG="«RESCUE»|"
         fi
     fi
 
+    # 5. ATOMIC HUD INJECTION [MANIFEST RULE: HUD FORMAT]
+    case "$STAGE" in
+        1) FINAL_STRING="${ETK_BUILD_TYPE}|${TARGET_ID}|${RESCUE_SEG}SHDRS ${VAULT_STR}" ;;
+        2) if [ "$HUD_MODE" = "GINSTR" ]; then
+               FINAL_STRING="TEMP ${T_STAT}|JITTER ${JIT}|SLIP ${SLIP}|${RESCUE_SEG}"
+           else
+               FINAL_STRING="TEMP ${T_STAT}|LOAD ${LOAD_RAW}${L_STAT}|RAM ${RAM_VAL}%${R_STAT}|${RESCUE_SEG}"
+           fi ;;
+        *) if [ "$HUD_MODE" = "GINSTR" ]; then
+               FINAL_STRING="${T_STAT}|${JIT}|${SLIP}|${RESCUE_SEG}${VAULT_STR}"
+           else
+               FINAL_STRING="${T_STAT}|${LOAD_RAW}${L_STAT}|${RAM_VAL}%${R_STAT}|${RESCUE_SEG}${VAULT_STR}"
+           fi ;;
+    esac
+    
     # Write to temp file then move to prevent MangoHud from reading an incomplete file
     echo "$FINAL_STRING" > "${LIVE_STAT}.tmp"
     mv "${LIVE_STAT}.tmp" "$LIVE_STAT"
