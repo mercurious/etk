@@ -188,17 +188,18 @@ while true; do
         JIT="${G_OUT%% *}"; SLIP="${G_OUT##* }"
     fi
 
-    # 4.7 ANTI-LOCK GAUGE (operator-designed v3, 2026-07-06 — supersedes the
+    # 4.7 ANTI-LOCK GAUGE (operator-designed v3.1, 2026-07-06 — supersedes the
     # v2 transient »RESCUE« text segment; automotive metaphor, symbols only).
-    # A PERSISTENT fourth gauge between SLIP and VAULT:
-    #   idle:   |‡04|   — ‡ = the anti-lock system pictogram (chassis), digits
-    #                     = keepalive rescues THIS SESSION (zero-padded, the
-    #                     VAULT new-shader "3+" convention: brutality-o-meter)
-    #   active: |‹!›|   — alert while a rescue is being announced (~8s), then
-    #                     back to idle with the count incremented.
+    # A PERSISTENT fourth gauge between SLIP and VAULT, 5 slots wide to match
+    # JITTER/SLIP, dot-padded:
+    #   idle:   |·×00·|  — × = the anti-lock pictogram, digits = keepalive
+    #                      rescues THIS SESSION (zero-padded, the VAULT
+    #                      new-shader "3+" convention: brutality-o-meter)
+    #   active: |·«!»·|  — alert while a rescue is being announced (~8s),
+    #                      then back to idle with the count incremented.
     # The idle→alert→idle movement is the eye-catcher; no gauge is displaced.
-    # NOTE ‡/‹/› are Unicode (beyond Latin-1) — MangoHud's font renders them;
-    # first on-rig look validates (operator-picked glyphs).
+    # ALL glyphs Latin-1 (·=B7 ×=D7 «=AB »=BB) — v3.0's ‡/‹/› rendered as
+    # tofu on the rig font (validated 2026-07-06); stay in Latin-1 range.
     CUR_SURV=$(dmesg 2>/dev/null | grep -c 'context_keepalive: surviving hang')
     case "$CUR_SURV" in ''|*[!0-9]*) CUR_SURV=0 ;; esac
     if [ "$CUR_SURV" -gt "$SURV_SEEN" ]; then
@@ -211,9 +212,9 @@ while true; do
     fi
     if [ "$RESCUE_TTL" -gt 0 ]; then
         RESCUE_TTL=$((RESCUE_TTL - 1))
-        ALOCK_SEG="‹!›"
+        ALOCK_SEG="·«!»·"
     else
-        ALOCK_SEG=$(printf '‡%02d' $((SURV_SEEN - SURV_BASE)))
+        ALOCK_SEG=$(printf '·×%02d·' $((SURV_SEEN - SURV_BASE)))
     fi
 
     # 5. ATOMIC HUD INJECTION [MANIFEST RULE: HUD FORMAT]
