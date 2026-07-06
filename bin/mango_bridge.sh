@@ -36,17 +36,18 @@ echo "INITIALIZING" > "$LIVE_STAT"
 TICK=0
 if sleep 0.2 2>/dev/null; then FRAC_SLEEP_OK=1; else FRAC_SLEEP_OK=0; fi
 
-# RESCUE FLASH state (2026-07-06, operator: "the system really works, although
-# it can be jarring if you don't know what's happening"). The kernel keepalive
-# absorbs a GPU hang invisibly — the emulator usually never even sees it (the
-# fence re-signals under the emulator-side warn threshold), so the RPCS3
-# overlay can't announce it. THIS layer can: the survive line is in dmesg the
-# moment it happens, the bridge keeps ticking through the freeze, and MangoHud
-# repaints the HUD at the FIRST recovered frame — exactly when the driver
-# needs "keep your hands on the wheel". Baseline the counter at launch so
-# earlier survives this boot don't flash on session start.
+# ANTI-LOCK gauge state (2026-07-06, operator-designed v3: automotive metaphor,
+# symbols not text). The kernel keepalive absorbs a GPU hang invisibly — the
+# emulator usually never even sees it (the fence re-signals under the
+# emulator-side warn threshold), so the RPCS3 overlay can't announce it. THIS
+# layer can: the survive line is in dmesg the moment it happens, the bridge
+# keeps ticking through the freeze, and MangoHud repaints the HUD at the FIRST
+# recovered frame — exactly when the driver needs "keep your hands on the
+# wheel". Baseline the counter at launch so earlier survives this boot don't
+# count into this session's gauge.
 SURV_SEEN=$(dmesg 2>/dev/null | grep -c 'context_keepalive: surviving hang')
 case "$SURV_SEEN" in ''|*[!0-9]*) SURV_SEEN=0 ;; esac
+SURV_BASE=$SURV_SEEN
 RESCUE_TTL=0
 
 while true; do
@@ -187,45 +188,46 @@ while true; do
         JIT="${G_OUT%% *}"; SLIP="${G_OUT##* }"
     fi
 
-    # 4.7 RESCUE GAUGE (2026-07-06, operator-corrected same day: the full-body
-    # takeover was obnoxious and against the HUD format principles). RESCUE is
-    # a TRANSIENT THIRD GAUGE slot — |JITTER|SLIP|»RESCUE«|VAULT| — present
-    # only while a fresh keepalive survive is being announced, then GONE; the
-    # segment appearing/disappearing is itself the eye-catcher. Dense Latin-1,
-    # no gauge is displaced, strict-lock intact. Pulses »RESCUE«/«RESCUE» by
-    # phase while shown.
+    # 4.7 ANTI-LOCK GAUGE (operator-designed v3, 2026-07-06 — supersedes the
+    # v2 transient »RESCUE« text segment; automotive metaphor, symbols only).
+    # A PERSISTENT fourth gauge between SLIP and VAULT:
+    #   idle:   |‡04|   — ‡ = the anti-lock system pictogram (chassis), digits
+    #                     = keepalive rescues THIS SESSION (zero-padded, the
+    #                     VAULT new-shader "3+" convention: brutality-o-meter)
+    #   active: |‹!›|   — alert while a rescue is being announced (~8s), then
+    #                     back to idle with the count incremented.
+    # The idle→alert→idle movement is the eye-catcher; no gauge is displaced.
+    # NOTE ‡/‹/› are Unicode (beyond Latin-1) — MangoHud's font renders them;
+    # first on-rig look validates (operator-picked glyphs).
     CUR_SURV=$(dmesg 2>/dev/null | grep -c 'context_keepalive: surviving hang')
     case "$CUR_SURV" in ''|*[!0-9]*) CUR_SURV=0 ;; esac
     if [ "$CUR_SURV" -gt "$SURV_SEEN" ]; then
         SURV_SEEN=$CUR_SURV
         if [ "$HUD_MODE" = "GINSTR" ] && [ "$FRAC_SLEEP_OK" = "1" ]; then
-            RESCUE_TTL=16    # 0.5s ticks (~8s on screen)
+            RESCUE_TTL=16    # 0.5s ticks (~8s alert)
         else
             RESCUE_TTL=8     # 1s ticks
         fi
     fi
-    RESCUE_SEG=""
     if [ "$RESCUE_TTL" -gt 0 ]; then
         RESCUE_TTL=$((RESCUE_TTL - 1))
-        if [ $((TICK % 2)) -eq 0 ]; then
-            RESCUE_SEG="»RESCUE«|"
-        else
-            RESCUE_SEG="«RESCUE»|"
-        fi
+        ALOCK_SEG="‹!›"
+    else
+        ALOCK_SEG=$(printf '‡%02d' $((SURV_SEEN - SURV_BASE)))
     fi
 
     # 5. ATOMIC HUD INJECTION [MANIFEST RULE: HUD FORMAT]
     case "$STAGE" in
-        1) FINAL_STRING="${ETK_BUILD_TYPE}|${TARGET_ID}|${RESCUE_SEG}SHDRS ${VAULT_STR}" ;;
+        1) FINAL_STRING="${ETK_BUILD_TYPE}|${TARGET_ID}|SHDRS ${VAULT_STR}" ;;
         2) if [ "$HUD_MODE" = "GINSTR" ]; then
-               FINAL_STRING="TEMP ${T_STAT}|JITTER ${JIT}|SLIP ${SLIP}|${RESCUE_SEG}"
+               FINAL_STRING="TEMP ${T_STAT}|JITTER ${JIT}|SLIP ${SLIP}|${ALOCK_SEG}|"
            else
-               FINAL_STRING="TEMP ${T_STAT}|LOAD ${LOAD_RAW}${L_STAT}|RAM ${RAM_VAL}%${R_STAT}|${RESCUE_SEG}"
+               FINAL_STRING="TEMP ${T_STAT}|LOAD ${LOAD_RAW}${L_STAT}|RAM ${RAM_VAL}%${R_STAT}|${ALOCK_SEG}|"
            fi ;;
         *) if [ "$HUD_MODE" = "GINSTR" ]; then
-               FINAL_STRING="${T_STAT}|${JIT}|${SLIP}|${RESCUE_SEG}${VAULT_STR}"
+               FINAL_STRING="${T_STAT}|${JIT}|${SLIP}|${ALOCK_SEG}|${VAULT_STR}"
            else
-               FINAL_STRING="${T_STAT}|${LOAD_RAW}${L_STAT}|${RAM_VAL}%${R_STAT}|${RESCUE_SEG}${VAULT_STR}"
+               FINAL_STRING="${T_STAT}|${LOAD_RAW}${L_STAT}|${RAM_VAL}%${R_STAT}|${ALOCK_SEG}|${VAULT_STR}"
            fi ;;
     esac
     
