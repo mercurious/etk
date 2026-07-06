@@ -663,12 +663,16 @@ fi
 # not corruption. Columns are APPEND-ONLY-TRAILING (aud/snd are newest), so
 # older narrower ledgers and any cut -f<n> reader stay valid; only fresh ledgers
 # carry the labelled header.
-LEDGER_HEADER='epoch\tduration_s\tbuild\tgame_id\tstatus\tpeak_load\tpeak_ram_mb\tpeak_temp\tavg_temp\tcrash_sig\tfence_at_crash\tshaders_harvested\tdrain_pct\tthermal_overrides\ttune_tag\tcrash_shot\tfps_med\tfps_1low\tft_p99_ms\tres_scale\tgpu_mhz\tpwr\tft_jitter_ms\tgpu_fault_status\tgpu_fault_fence_hex\taud\tsnd\tlock_pct\tperfect_pct'
+# rescues (col 30, 2026-07-06): the keepalive survive COUNT for this session —
+# the cost side of the LSD gear trade now that a wedge is a hitch, not a
+# session death. Judged alongside perfect_pct: a lighter gear that buys pace
+# but pays multiple freeze-rescues per race may still lose.
+LEDGER_HEADER='epoch\tduration_s\tbuild\tgame_id\tstatus\tpeak_load\tpeak_ram_mb\tpeak_temp\tavg_temp\tcrash_sig\tfence_at_crash\tshaders_harvested\tdrain_pct\tthermal_overrides\ttune_tag\tcrash_shot\tfps_med\tfps_1low\tft_p99_ms\tres_scale\tgpu_mhz\tpwr\tft_jitter_ms\tgpu_fault_status\tgpu_fault_fence_hex\taud\tsnd\tlock_pct\tperfect_pct\trescues'
 if [ ! -f "$SESSIONS_LEDGER" ]; then
     TMP="$SESSIONS_LEDGER.tmp"
     printf "$LEDGER_HEADER\n" > "$TMP"
     mv "$TMP" "$SESSIONS_LEDGER"
-elif ! head -1 "$SESSIONS_LEDGER" | grep -q 'perfect_pct'; then
+elif ! head -1 "$SESSIONS_LEDGER" | grep -q 'rescues'; then
     # Migrate a stale header (older ledgers were created with fewer columns) so
     # the ledger self-describes. Rewrite ONLY the header line; existing rows are
     # untouched — older rows simply lack the newest trailing cols (read as empty).
@@ -676,12 +680,12 @@ elif ! head -1 "$SESSIONS_LEDGER" | grep -q 'perfect_pct'; then
     { printf "$LEDGER_HEADER\n"; tail -n +2 "$SESSIONS_LEDGER"; } > "$TMP" && mv "$TMP" "$SESSIONS_LEDGER"
 fi
 
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$NOW" "$DURATION" "$ETK_BUILD_TYPE" "$GAME_ID" "$STATUS" \
     "$PEAK_LOAD" "$PEAK_RAM" "$PEAK_TEMP" "$AVG_TEMP" \
     "$CRASH_SIG" "$FENCE_AT_CRASH" "$SHADERS" "$DRAIN_PCT" "$THERMAL_OVERRIDES" \
     "$TUNE_TAG" "$CRASH_SHOT" "$FPS_MED" "$FPS_1LOW" "$FT_P99" "$RES_SCALE" "$GPU_MHZ" "$PWR_TAG" "$FT_JITTER" \
-    "$GPU_FAULT_STATUS" "$GPU_FAULT_FENCE_HEX" "$AUD_STAT" "$SND_STAT" "$LOCK_PCT" "$PERFECT_PCT" \
+    "$GPU_FAULT_STATUS" "$GPU_FAULT_FENCE_HEX" "$AUD_STAT" "$SND_STAT" "$LOCK_PCT" "$PERFECT_PCT" "$SURVIVES" \
     >> "$SESSIONS_LEDGER"
 
 # --- FORENSICS HYGIENE: per-crash core prune ---

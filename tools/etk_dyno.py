@@ -31,7 +31,7 @@ MIN_DUR = 60
 
 COLS = {"epoch": 0, "dur": 1, "game": 3, "status": 4, "sig": 9, "shd": 11,
         "tune": 14, "fps_med": 16, "ft_jit": 22, "res": 19, "clk": 20,
-        "pwr": 21, "lock": 27, "perfect": 28}
+        "pwr": 21, "lock": 27, "perfect": 28, "rescues": 29}
 
 
 def f(row, key, default=0.0):
@@ -88,7 +88,7 @@ def main():
         return statistics.median(vals) if vals else 0.0
 
     print(f"{'ARM (tune | res | clk | pwr)':<46} {'N':>3} {'PERFECT%':>8} "
-          f"{'LOCK%':>6} {'JIT ms':>6} {'DUR p50':>8} {'DUR max':>8}  CRASH")
+          f"{'LOCK%':>6} {'JIT ms':>6} {'RESC/h':>6} {'DUR p50':>8} {'DUR max':>8}  CRASH")
     scored = []
     for arm, rows in arms.items():
         n = len(rows)
@@ -102,8 +102,12 @@ def main():
         label = f"{arm[0]} | {arm[1]} | {arm[2]} | {arm[3]}"
         durs = sorted(f(r, "dur") for r in rows)
         flag = "" if n >= 3 else "  LOW-N"
+        # rescue rate: keepalive survives per hour of play (the freeze-hitch
+        # cost of a lighter LSD gear; 0.0 on pre-col-30 rows = honest unknown)
+        total_dur = sum(durs)
+        resc_hr = sum(f(r, "rescues") for r in rows) / total_dur * 3600 if total_dur else 0.0
         print(f"{label:<46} {n:>3} {perfect:>8.1f} {lock:>6.1f} "
-              f"{med(rows, 'ft_jit'):>6.1f} {durs[len(durs)//2]:>7.0f}s {durs[-1]:>7.0f}s"
+              f"{med(rows, 'ft_jit'):>6.1f} {resc_hr:>6.1f} {durs[len(durs)//2]:>7.0f}s {durs[-1]:>7.0f}s"
               f"  {crashes}/{n}{flag}")
     print("\nKPI = PERFECT% (5s windows >=95% locked-16.7ms, no hitch) at res 100."
           "\nNo verdicts below N=3; res<100 arms are context, not wins.")
