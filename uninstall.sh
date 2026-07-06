@@ -251,6 +251,36 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
     rm -f /storage/.config/modules-load.d/etk-ramoops.conf /storage/.config/modprobe.d/etk-ramoops.conf
     echo "    Removed: etk-blackbox.service + ramoops module confs (grub token left; use arm_blackbox.sh --revert)"
 
+    # Custom kernel (Tier K / STEP 6.4): strip the ETK-managed grub entries
+    # (TEST + fallback-stock), un-seed the auto-boot if KERNEL_DEPLOY_MODE=
+    # default pointed saved_entry at the GTK kernel, and drop the staged
+    # Images. The DEFAULT device entries were never touched, so after this
+    # the next boot is pure stock. Safe even while running the GTK kernel
+    # (the Image is in RAM; the files are only read at boot).
+    if [ -f /flash/KERNEL.gtktest ] || grep -q etk-gtk-test /flash/EFI/BOOT/grub.cfg 2>/dev/null; then
+        mount -o remount,rw /flash 2>/dev/null
+        for CFG in /flash/EFI/BOOT/grub.cfg /flash/boot/grub/grub.cfg; do
+            [ -f "$CFG" ] || continue
+            awk '
+                (index($0,"etk-gtk-test") || index($0,"etk-fallback-stock")) && /menuentry/ {inblk=1; next}
+                inblk && /^}/ {inblk=0; next}
+                !inblk {print}
+            ' "$CFG" > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"
+        done
+        for GE in /flash/EFI/BOOT/grubenv /flash/boot/grub/grubenv; do
+            if grep -q 'saved_entry=etk-gtk-test' "$GE" 2>/dev/null; then
+                printf '# GRUB Environment Block\nsaved_entry=rpflip2\n' > "$GE.tmp"
+                N=$(wc -c < "$GE.tmp")
+                dd if=/dev/zero bs=1 count=$((1024 - N)) 2>/dev/null | tr '\0' '#' >> "$GE.tmp"
+                mv "$GE.tmp" "$GE"
+            fi
+        done
+        rm -f /flash/KERNEL.gtktest /flash/KERNEL.etk-stock
+        sync
+        mount -o remount,ro /flash 2>/dev/null
+        echo "    Removed: GTK kernel entries + staged Images (default boot = stock device entry)"
+    fi
+
     # Private Paddock credential (0.3.0): contains the user's GitHub token —
     # must not survive an uninstall. The paddock repo itself is untouched
     # (it's the user's own backup; uninstall never deletes remote data).

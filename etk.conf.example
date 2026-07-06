@@ -65,6 +65,15 @@ KERNEL_IMAGE=""
 # boot; the runtime toggle /sys/module/msm/parameters/context_keepalive still
 # works on top for A/B. Harmless (ignored) on a stock kernel. Default 0.
 KERNEL_CONTEXT_KEEPALIVE="0"
+# KERNEL_DEPLOY_MODE: "test" (default) => the GTK entry is pick-per-boot at the
+# grub menu; the saved default stays whatever was last chosen (stock on a virgin
+# rig). "default" => AUTO-BOOT the GTK kernel on every reboot (2-second menu
+# window). Fallbacks in default mode: the stock device entries stay in the menu
+# (picking one re-sticks stock as the default), and a managed
+# 'ROCKNIX-GTK fallback -- stock kernel' entry boots the pristine OS kernel
+# snapshot (/flash/KERNEL.etk-stock, taken on first kernel deploy) with the
+# verbose forensic console. Setting this back to "test" un-seeds the auto-boot.
+KERNEL_DEPLOY_MODE="test"
 
 # --- RPCS3 GTK Edition (the default emulator as of 0.6.0) ---
 # rpcs3-sa lives on read-only squashfs (/usr/bin), same story as Turnip's
