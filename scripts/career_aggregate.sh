@@ -72,7 +72,12 @@ AGG=$(awk -F'\t' -v gid="$GID" -v mindur="${TELEMETRY_MIN_SESSION_S:-60}" '
         # rows do not drag the benchmark toward zero.
         if ($17+0 > 0) { sum_fps += $17+0; n_fps++ }
         if ($23+0 > 0) { sum_jit += $23+0; n_jit++ }
-        if ($5 == "CLEAN") {
+        # SURVIVED:* (keepalive absorbed a hang, session ran to graceful
+        # exit) counts as clean/streak-continuing: the race-stability bar is
+        # crash-free runs to a graceful exit, and a survive meets it. The
+        # absorbed fault stays visible on the row itself (SURVIVED label +
+        # KEEPALIVE_SURVIVE sig).
+        if ($5 == "CLEAN" || index($5, "SURVIVED:") == 1) {
             clean++
             cur_streak++
             if (cur_streak > best_streak) best_streak = cur_streak

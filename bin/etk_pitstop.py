@@ -1436,6 +1436,10 @@ def _status_attr(status):
         return curses.color_pair(PAIR_CRASH) | curses.A_BOLD
     if status.startswith("RECOVERY:"):
         return curses.color_pair(PAIR_RECOV)
+    if status.startswith("SURVIVED:"):
+        # Keepalive absorbed the hang and the session ran on to a graceful
+        # exit — green like CLEAN, unbolded so the absorbed fault is visible.
+        return curses.color_pair(PAIR_CLEAN)
     if status == "ABORTED":
         return curses.A_DIM
     return curses.A_NORMAL

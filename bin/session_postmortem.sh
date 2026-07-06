@@ -255,6 +255,34 @@ fi
 # poison the next session's classification.
 rm -f "$R3_SENTINEL" 2>/dev/null
 
+# --- SURVIVED RECLASSIFICATION (GTK full-stack, 2026-07-05) ---
+# The parity kernel (msm.context_keepalive=1) can absorb an a6xx hang and
+# keep the context usable — first live proof: row 1783302963 (GT5P 00E51485,
+# freeze -> control regained -> race FINISHED, graceful exit, zero RPCS3.log
+# errors). The signature scan alone mislabels that as RECOVERY:Adreno.
+# Relabel to SURVIVED:<label> only when ALL of these hold (each guard is a
+# real failure mode, not paranoia):
+#   1. every windowed hangcheck recovery carries a keepalive survive line
+#      (a survived hang followed by an UNsurvived one is still a crash);
+#   2. no VK_DEVICE_LOST fatal in the scan (tguard fast-exit = the emulator
+#      DIED of a fault, even if an earlier hang was absorbed);
+#   3. the operator never pressed R3 (a survive that still needed a nuke
+#      isn't a survive);
+#   4. not a PANIC (kernel reboot outranks everything).
+SURVIVES=$(echo "$DMESG_OUT" | grep -c 'context_keepalive: surviving hang')
+HANGRECOVERS=$(echo "$DMESG_OUT" | grep -c 'hangcheck recover')
+case "$SURVIVES" in ''|*[!0-9]*) SURVIVES=0 ;; esac
+case "$HANGRECOVERS" in ''|*[!0-9]*) HANGRECOVERS=0 ;; esac
+if [ "$SURVIVES" -gt 0 ] && [ "$SURVIVES" -ge "$HANGRECOVERS" ] \
+   && [ "$R3_HONORED" -eq 0 ] && [ "$STATUS" != "PANIC" ] \
+   && ! echo "$SIG_LIST" | grep -q 'VK_DEVICE_LOST'; then
+    case "$STATUS" in
+        RECOVERY:*) STATUS="SURVIVED:${STATUS#RECOVERY:}" ;;
+        CLEAN)      STATUS="SURVIVED:Adreno" ;;
+    esac
+    CRASH_SIG="KEEPALIVE_SURVIVE${CRASH_SIG:+,$CRASH_SIG}"
+fi
+
 # --- CRASH FRAME (col 16, crash_shot) ---
 # recovery.sh drops $SHM_DIR/crash_shot.txt (the frozen-frame basename) before
 # the flush when it grabbed a frame. Bind it to THIS row so the ledger narrative
