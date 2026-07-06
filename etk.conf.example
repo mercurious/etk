@@ -49,6 +49,23 @@ VAULT_SYNC="full"
 # Leave EMPTY to default a fresh rig to stock.
 TURNIP_SO=""
 
+# --- Custom kernel (Tier K — optional, advanced) ---
+# ETK can build its own ROCKNIX 7.0.11 kernel (mainline tarball + ROCKNIX patch
+# stack + rig config; see the RocknixGtkKernel pipeline). Point KERNEL_IMAGE at a
+# built Image and install.sh stages it as a SEPARATE boot entry
+# (/flash/KERNEL.gtktest, 'ROCKNIX-GTK TEST kernel') — the DEFAULT boot entry
+# still loads the stock kernel, so recovery is one reboot-to-default away. Reboot
+# on-device and PICK the TEST entry to run it. The grub entry is refreshed on
+# every install (survives OS grub-twin reverts). Leave EMPTY = don't touch the
+# kernel (the normal case; stock installs are unaffected).
+KERNEL_IMAGE=""
+# KERNEL_CONTEXT_KEEPALIVE: 1 => bake `msm.context_keepalive=1` into the TEST
+# entry's cmdline (KGSL parity — the guilty GPU context survives a hangcheck
+# recovery instead of being banned; needs a parity-built kernel). Auto-arms at
+# boot; the runtime toggle /sys/module/msm/parameters/context_keepalive still
+# works on top for A/B. Harmless (ignored) on a stock kernel. Default 0.
+KERNEL_CONTEXT_KEEPALIVE="0"
+
 # --- RPCS3 GTK Edition (the default emulator as of 0.6.0) ---
 # rpcs3-sa lives on read-only squashfs (/usr/bin), same story as Turnip's
 # /usr/lib driver — ETK bind-mounts its build over it on every boot (stock is

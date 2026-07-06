@@ -1233,6 +1233,93 @@ else
 fi
 
 # ==========================================================
+# STEP 6.4: CUSTOM KERNEL (Tier K) — boot-persistent TEST entry, config-driven
+# ==========================================================
+# The ROCKNIX-GTK kernel toolchain builds our own 7.0.11 Image (mainline tarball
+# + ROCKNIX patch stack + rig config; see RocknixGtkKernelPipeline_20260705).
+# A custom kernel is deployed HERE, through install.sh, like every other rig
+# change — never a one-off scp/hand-grub-edit (that reverts on the next reinstall
+# / an OS grub-twin regen). Config-driven via etk.conf:
+#   KERNEL_IMAGE             path to an Image artifact (empty => don't touch the
+#                            kernel at all; stock installs are unaffected)
+#   KERNEL_CONTEXT_KEEPALIVE 1 => bake `msm.context_keepalive=1` into the entry's
+#                            cmdline (KGSL parity; the param auto-arms at boot, no
+#                            manual sysfs poke — the runtime toggle still works on
+#                            top for A/B). Unknown to the stock kernel = ignored.
+# SAFE TEST MODEL (matches the proven standalone --test): the custom kernel is
+# staged as /flash/KERNEL.gtktest under its OWN grub entry; the DEFAULT boot entry
+# still loads the stock /flash/KERNEL, so a bad kernel is one reboot-to-default
+# away from recovery (no separate fallback needed while default==stock). The entry
+# is REFRESHED every install (strip prior block + trailing blanks, re-append) so a
+# cmdline change takes effect AND an OS-update grub-twin revert is re-applied —
+# same drift-proofing panic=10 gets, but self-healing instead of warn-only.
+# NEVER reboots the rig (operator does that on-device); NEVER edits the default
+# entry. Promotion to the default KERNEL slot is a future KERNEL_DEPLOY_MODE knob.
+if [ -n "${KERNEL_IMAGE:-}" ] && [ -f "${KERNEL_IMAGE:-}" ]; then
+    # portable host sha256 (Linux sha256sum | macOS shasum)
+    if command -v sha256sum >/dev/null 2>&1; then
+        K_HOST_SHA=$(sha256sum "$KERNEL_IMAGE" | awk '{print $1}')
+    else
+        K_HOST_SHA=$(shasum -a 256 "$KERNEL_IMAGE" | awk '{print $1}')
+    fi
+    # Build the TEST entry cmdline (verbose console for forensics; + parity token).
+    K_CMDLINE="boot=LABEL=ROCKNIX disk=LABEL=STORAGE grub_portable rootwait console=tty0 loglevel=7 panic=30"
+    [ "${KERNEL_CONTEXT_KEEPALIVE:-0}" = "1" ] && K_CMDLINE="$K_CMDLINE msm.context_keepalive=1"
+    K_FLIP2_DTB="/boot/grub/sm8250-retroidpocket-flip2.dtb"
+    # Skip re-staging if the rig already carries this exact Image (idempotent).
+    K_RIG_SHA=$(ssh $RIG_SSH "sha256sum /flash/KERNEL.gtktest 2>/dev/null | cut -d' ' -f1" 2>/dev/null)
+    scp -q "$KERNEL_IMAGE" "$RIG_SSH:/storage/rocknix-gtk.KERNEL.staging" 2>/dev/null
+    K_OUT=$(ssh $RIG_SSH "HOST_SHA='$K_HOST_SHA' K_CMDLINE='$K_CMDLINE' FLIP2_DTB='$K_FLIP2_DTB' sh -s" 2>&1 << 'KERNELREMOTE'
+set -e
+S=$(sha256sum /storage/rocknix-gtk.KERNEL.staging 2>/dev/null | cut -d' ' -f1)
+[ "$S" = "$HOST_SHA" ] || { echo "KERNEL_FAIL staging sha mismatch ($S)"; rm -f /storage/rocknix-gtk.KERNEL.staging; exit 1; }
+mount -o remount,rw /flash
+cp /storage/rocknix-gtk.KERNEL.staging /flash/KERNEL.gtktest
+sync
+F=$(sha256sum /flash/KERNEL.gtktest | cut -d' ' -f1)
+[ "$F" = "$HOST_SHA" ] || { echo "KERNEL_FAIL flash sha mismatch ($F)"; mount -o remount,ro /flash || true; exit 1; }
+rm -f /storage/rocknix-gtk.KERNEL.staging
+TS=$(date +%Y%m%d_%H%M%S)
+for CFG in /flash/EFI/BOOT/grub.cfg /flash/boot/grub/grub.cfg; do
+    [ -f "$CFG" ] || continue
+    cp "$CFG" "$CFG.etkbak-$TS"
+    # strip any prior etk-gtk-test block, then trailing blank lines
+    awk '
+        index($0,"etk-gtk-test") && /menuentry/ {inblk=1; next}
+        inblk && /^}/ {inblk=0; next}
+        !inblk {print}
+    ' "$CFG" | awk 'NF{last=NR} {ln[NR]=$0} END{for(i=1;i<=last;i++)print ln[i]}' > "$CFG.tmp"
+    {
+        cat "$CFG.tmp"
+        printf '\n'
+        printf "menuentry 'ROCKNIX-GTK TEST kernel (verbose console)' \$menuentry_id_option 'etk-gtk-test' {\n"
+        printf '        search --set -f /KERNEL.gtktest\n'
+        printf '        linux /KERNEL.gtktest %s\n' "$K_CMDLINE"
+        printf '        devicetree %s\n' "$FLIP2_DTB"
+        printf '}\n'
+    } > "$CFG"
+    rm -f "$CFG.tmp"
+done
+sync
+mount -o remount,ro /flash || true
+echo "KERNEL_OK gtktest_sha=$F keepalive=$(grep -qc 'msm.context_keepalive=1' /flash/EFI/BOOT/grub.cfg && echo on || echo off)"
+KERNELREMOTE
+)
+    if echo "$K_OUT" | grep -q KERNEL_OK; then
+        K_KA=$(echo "$K_OUT" | sed -n 's/.*keepalive=\([a-z]*\).*/\1/p')
+        if [ "$K_RIG_SHA" = "$K_HOST_SHA" ]; then
+            say "${G}[ETK]${N} Custom kernel: $(basename "$KERNEL_IMAGE") already staged; TEST grub entry refreshed (parity=${K_KA:-off})"
+        else
+            say "${G}[ETK]${N} Custom kernel staged -> /flash/KERNEL.gtktest (TEST entry, parity=${K_KA:-off}); default boot stays stock. Reboot on-device + pick 'ROCKNIX-GTK TEST kernel'."
+        fi
+    else
+        say "${Y}[ETK]${N} Custom kernel deploy FAILED: $(echo "$K_OUT" | grep -m1 KERNEL_FAIL || echo "$K_OUT" | tail -1)"
+    fi
+else
+    [ -n "${KERNEL_IMAGE:-}" ] && say "${Y}[ETK]${N} KERNEL_IMAGE set but file missing ($KERNEL_IMAGE) — skipping kernel deploy."
+fi
+
+# ==========================================================
 # STEP 6.5: CUSTOM TURNIP DRIVER CATALOG (Stage IV) — boot-persistent selector
 # ==========================================================
 # The stock Turnip lives on read-only squashfs (/usr/lib), so a forked/bumped
