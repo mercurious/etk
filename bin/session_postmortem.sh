@@ -504,25 +504,36 @@ if [ -n "$FPS_CSV" ] && [ -f "$FPS_CSV" ]; then
             q=ft; p=r } END{ if(n>1) printf "%.1f", s/n; else printf "0" }' "$FPS_CSV")
     fi
     # --- FABLE'S CHALLENGE KPI (cols 28-29: lock_pct, perfect_pct) ---
-    # The winning metric is locked 60 fps / 16.7 ms at native res 100 — judged
-    # by PERFECT-window share, NEVER by fps averages (project_fables_challenge).
-    # The race-gated cols above (>=25ms) are structurally blind to 60 fps
-    # frames (GT HD Eiger lesson), so the lock lives in its own columns:
-    #   lock_pct    = % of gameplay frames in the locked window [15.5, 18.0]ms
-    #                 (roadfeel_decode.py's canonical definition, 2026-07-04)
+    # Judged by PERFECT-window share, NEVER by fps averages
+    # (project_fables_challenge). The race-gated cols above (>=25ms) are
+    # structurally blind to locked frames (GT HD Eiger lesson), so the lock
+    # lives in its own columns:
+    #   lock_pct    = % of gameplay frames inside the game's locked window
     #   perfect_pct = % of 5-second windows that are PERFECT (>=95% locked
-    #                 frames AND no >40ms hitch) — THE KPI number.
+    #                 frames AND no hitch) — THE KPI number.
+    # PER-TITLE TARGET (operator-set 2026-07-05): GT HD races for the full
+    # console lock (60 fps / 16.7 ms); the GT5P family races for a locked 30
+    # (33.3 ms) as the reasonable rung. Window scales with the target using
+    # the canonical 60fps ratios (15.5/18.0 around 16.7; hitch 40ms = 2.4x):
+    #   60 fps: lock [15.5, 18.0] ms, hitch > 40 ms
+    #   30 fps: lock [31.0, 36.0] ms, hitch > 80 ms
+    # A row's target is implied by game_id — compare KPI numbers only within
+    # a title, never across targets.
+    case "$GAME_ID" in
+        NPEA00050|NPUA80075|NPEA00502) KPI_LO=31.0; KPI_HI=36.0; KPI_HITCH=80 ;;  # GT5P EU/US + GT6 digital: locked-30
+        *)                             KPI_LO=15.5; KPI_HI=18.0; KPI_HITCH=40 ;;  # console lock (GT HD + default)
+    esac
     # Gameplay frame = fps>0, 4ms <= ft <= 500ms (drops present-spikes and
     # pause sentinels, keeps menus+race alike — cross-check vs res_scale col
     # for KPI validity; bake sessions excluded at analysis time via shd).
     # Single awk pass; well under the <2s postmortem budget.
-    LOCKSTATS=$(awk -F, 'NR>3 {
+    LOCKSTATS=$(awk -F, -v lo="$KPI_LO" -v hi="$KPI_HI" -v hit="$KPI_HITCH" 'NR>3 {
         fps=$1+0; t=$2+0
         if (fps<=0 || t<4 || t>500) next
-        n++; lk=(t>=15.5 && t<=18.0)
+        n++; lk=(t>=lo && t<=hi)
         if (lk) nl++
         acc+=t/1000; wn++; if (lk) wl++
-        if (t>40) whit=1
+        if (t>hit) whit=1
         if (acc>=5) { wt++; if (wn>0 && wl/wn>=0.95 && whit==0) wp++
                       acc=0; wn=0; wl=0; whit=0 }
     } END {

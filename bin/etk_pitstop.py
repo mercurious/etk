@@ -2024,7 +2024,10 @@ def _draw_session_detail(stdscr, state, sessions, config_changes):
         lock_pct = row.get("lock_pct", 0.0)
         if lock_pct > 0:
             y += 1
-            put(y, 4, "FABLE'S CHALLENGE  (60fps/16.7ms lock)",
+            # Per-title target (2026-07-05): GT HD = locked 60 / 16.7ms;
+            # GT5P family = locked 30 / 33.3ms. The row's game_id implies
+            # which window its lock/PERFECT numbers were scored against.
+            put(y, 4, "FABLE'S CHALLENGE  (frame-time lock)",
                 curses.color_pair(PAIR_CLEAN) | curses.A_BOLD); y += 1
             put(y, 4, f"{'locked':<8}{(format(lock_pct, '.1f')+'% frames'):<20}"
                       f"{_gauge_bar(lock_pct, 100)}"); y += 1
