@@ -1267,6 +1267,13 @@ def load_sessions_ledger(filter_game_id=None):
                         # |Δframetime| over adjacent race frames. len-guarded so
                         # older rows (no jitter col) read 0 and render "----".
                         "ft_jitter_ms": float(fields[22]) if len(fields) > 22 and fields[22] else 0.0,
+                        # Fable's Challenge KPI (cols 28-29, 2026-07-05):
+                        # lock_pct = share of gameplay frames in the 15.5-18.0ms
+                        # locked-60 window; perfect_pct = share of 5s windows
+                        # >=95% locked with no >40ms hitch — THE winning metric.
+                        # len-guarded; older rows read 0 and render "----".
+                        "lock_pct": float(fields[27]) if len(fields) > 27 and fields[27] else 0.0,
+                        "perfect_pct": float(fields[28]) if len(fields) > 28 and fields[28] else 0.0,
                         "_kind": "session",
                     }
                 except ValueError:
@@ -2006,6 +2013,23 @@ def _draw_session_detail(stdscr, state, sessions, config_changes):
             if jitter > 0:
                 put(y, 4, f"{'jitter':<8}{(format(jitter, '.1f')+'ms |dft|'):<20}"
                           f"{_gauge_bar(jitter, _GAUGE_JITTER_MAX)}"); y += 1
+        # FABLE'S CHALLENGE (cols 28-29) — deliberately OUTSIDE the fps_med
+        # gate: the race-gated fps cols are 0 on a locked-60 session (GT HD
+        # Eiger lesson), which is exactly when these matter most. Fuller bar
+        # = closer to the lock; the KPI is perfect_pct at res 100.
+        lock_pct = row.get("lock_pct", 0.0)
+        if lock_pct > 0:
+            y += 1
+            put(y, 4, "FABLE'S CHALLENGE  (60fps/16.7ms lock)",
+                curses.color_pair(PAIR_CLEAN) | curses.A_BOLD); y += 1
+            put(y, 4, f"{'locked':<8}{(format(lock_pct, '.1f')+'% frames'):<20}"
+                      f"{_gauge_bar(lock_pct, 100)}"); y += 1
+            perfect = row.get("perfect_pct", 0.0)
+            put(y, 4, f"{'PERFECT':<8}{(format(perfect, '.1f')+'% windows'):<20}"
+                      f"{_gauge_bar(perfect, 100)}"); y += 1
+        # Tune context rides with EITHER instrument block (a locked-60 session
+        # has fps_med 0 but its res/clk attribution matters just as much).
+        if fps_med > 0 or lock_pct > 0:
             res = row.get("res_scale", 0)
             clk = row.get("gpu_mhz", 0)
             ctx = []

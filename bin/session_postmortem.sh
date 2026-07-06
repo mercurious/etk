@@ -448,7 +448,7 @@ TUNE_TAG=$(head -n1 "$ACTIVE_TUNE_FILE" 2>/dev/null | tr -d '\t\r')
 #     feel worse), p99 only catches the worst hitch — jitter is the felt
 #     frame-pacing consistency the driver reads as accurate speed/time.
 # Absent CSV / too few race frames (crash before race, menu-only) => 0.
-FPS_MED=0; FPS_1LOW=0; FT_P99=0; FT_JITTER=0
+FPS_MED=0; FPS_1LOW=0; FT_P99=0; FT_JITTER=0; LOCK_PCT=0; PERFECT_PCT=0
 MANGOLOG_DIR="$SHM_DIR/mangolog"
 FPS_CSV=$(ls -1t "$MANGOLOG_DIR"/*.csv 2>/dev/null | head -1)
 if [ -n "$FPS_CSV" ] && [ -f "$FPS_CSV" ]; then
@@ -475,6 +475,35 @@ if [ -n "$FPS_CSV" ] && [ -f "$FPS_CSV" ]; then
             if (r && p) { d=ft-q; if(d<0)d=-d; s+=d; n++ }
             q=ft; p=r } END{ if(n>1) printf "%.1f", s/n; else printf "0" }' "$FPS_CSV")
     fi
+    # --- FABLE'S CHALLENGE KPI (cols 28-29: lock_pct, perfect_pct) ---
+    # The winning metric is locked 60 fps / 16.7 ms at native res 100 — judged
+    # by PERFECT-window share, NEVER by fps averages (project_fables_challenge).
+    # The race-gated cols above (>=25ms) are structurally blind to 60 fps
+    # frames (GT HD Eiger lesson), so the lock lives in its own columns:
+    #   lock_pct    = % of gameplay frames in the locked window [15.5, 18.0]ms
+    #                 (roadfeel_decode.py's canonical definition, 2026-07-04)
+    #   perfect_pct = % of 5-second windows that are PERFECT (>=95% locked
+    #                 frames AND no >40ms hitch) — THE KPI number.
+    # Gameplay frame = fps>0, 4ms <= ft <= 500ms (drops present-spikes and
+    # pause sentinels, keeps menus+race alike — cross-check vs res_scale col
+    # for KPI validity; bake sessions excluded at analysis time via shd).
+    # Single awk pass; well under the <2s postmortem budget.
+    LOCKSTATS=$(awk -F, 'NR>3 {
+        fps=$1+0; t=$2+0
+        if (fps<=0 || t<4 || t>500) next
+        n++; lk=(t>=15.5 && t<=18.0)
+        if (lk) nl++
+        acc+=t/1000; wn++; if (lk) wl++
+        if (t>40) whit=1
+        if (acc>=5) { wt++; if (wn>0 && wl/wn>=0.95 && whit==0) wp++
+                      acc=0; wn=0; wl=0; whit=0 }
+    } END {
+        if (n>=60) printf "%.1f %.1f", nl/n*100, (wt>0 ? wp/wt*100 : 0)
+        else printf "0 0"
+    }' "$FPS_CSV")
+    LOCK_PCT=${LOCKSTATS% *}
+    PERFECT_PCT=${LOCKSTATS#* }
+
     # Archive the per-frame curve BEFORE pruning (audio_logs pattern, keep 12).
     # The ledger's fps cols are race-gated (>=25ms) for GT5P semantics — 60fps
     # stretches (GT HD Eiger) are invisible in them and the raw CSV was dying
@@ -492,6 +521,8 @@ case "$FPS_MED" in ''|*[!0-9.]*) FPS_MED=0 ;; esac
 case "$FPS_1LOW" in ''|*[!0-9.]*) FPS_1LOW=0 ;; esac
 case "$FT_P99" in ''|*[!0-9.]*) FT_P99=0 ;; esac
 case "$FT_JITTER" in ''|*[!0-9.]*) FT_JITTER=0 ;; esac
+case "$LOCK_PCT" in ''|*[!0-9.]*) LOCK_PCT=0 ;; esac
+case "$PERFECT_PCT" in ''|*[!0-9.]*) PERFECT_PCT=0 ;; esac
 
 # --- TUNE ATTRIBUTION (cols 20-21: res_scale, gpu_mhz) ---
 # Stamp the run's RPCS3 internal resolution scale (TUNING tab) + GPU max clock
@@ -571,12 +602,12 @@ fi
 # not corruption. Columns are APPEND-ONLY-TRAILING (aud/snd are newest), so
 # older narrower ledgers and any cut -f<n> reader stay valid; only fresh ledgers
 # carry the labelled header.
-LEDGER_HEADER='epoch\tduration_s\tbuild\tgame_id\tstatus\tpeak_load\tpeak_ram_mb\tpeak_temp\tavg_temp\tcrash_sig\tfence_at_crash\tshaders_harvested\tdrain_pct\tthermal_overrides\ttune_tag\tcrash_shot\tfps_med\tfps_1low\tft_p99_ms\tres_scale\tgpu_mhz\tpwr\tft_jitter_ms\tgpu_fault_status\tgpu_fault_fence_hex\taud\tsnd'
+LEDGER_HEADER='epoch\tduration_s\tbuild\tgame_id\tstatus\tpeak_load\tpeak_ram_mb\tpeak_temp\tavg_temp\tcrash_sig\tfence_at_crash\tshaders_harvested\tdrain_pct\tthermal_overrides\ttune_tag\tcrash_shot\tfps_med\tfps_1low\tft_p99_ms\tres_scale\tgpu_mhz\tpwr\tft_jitter_ms\tgpu_fault_status\tgpu_fault_fence_hex\taud\tsnd\tlock_pct\tperfect_pct'
 if [ ! -f "$SESSIONS_LEDGER" ]; then
     TMP="$SESSIONS_LEDGER.tmp"
     printf "$LEDGER_HEADER\n" > "$TMP"
     mv "$TMP" "$SESSIONS_LEDGER"
-elif ! head -1 "$SESSIONS_LEDGER" | grep -q 'snd'; then
+elif ! head -1 "$SESSIONS_LEDGER" | grep -q 'perfect_pct'; then
     # Migrate a stale header (older ledgers were created with fewer columns) so
     # the ledger self-describes. Rewrite ONLY the header line; existing rows are
     # untouched — older rows simply lack the newest trailing cols (read as empty).
@@ -584,12 +615,12 @@ elif ! head -1 "$SESSIONS_LEDGER" | grep -q 'snd'; then
     { printf "$LEDGER_HEADER\n"; tail -n +2 "$SESSIONS_LEDGER"; } > "$TMP" && mv "$TMP" "$SESSIONS_LEDGER"
 fi
 
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$NOW" "$DURATION" "$ETK_BUILD_TYPE" "$GAME_ID" "$STATUS" \
     "$PEAK_LOAD" "$PEAK_RAM" "$PEAK_TEMP" "$AVG_TEMP" \
     "$CRASH_SIG" "$FENCE_AT_CRASH" "$SHADERS" "$DRAIN_PCT" "$THERMAL_OVERRIDES" \
     "$TUNE_TAG" "$CRASH_SHOT" "$FPS_MED" "$FPS_1LOW" "$FT_P99" "$RES_SCALE" "$GPU_MHZ" "$PWR_TAG" "$FT_JITTER" \
-    "$GPU_FAULT_STATUS" "$GPU_FAULT_FENCE_HEX" "$AUD_STAT" "$SND_STAT" \
+    "$GPU_FAULT_STATUS" "$GPU_FAULT_FENCE_HEX" "$AUD_STAT" "$SND_STAT" "$LOCK_PCT" "$PERFECT_PCT" \
     >> "$SESSIONS_LEDGER"
 
 # --- FORENSICS HYGIENE: per-crash core prune ---
