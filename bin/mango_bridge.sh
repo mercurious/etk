@@ -36,6 +36,19 @@ echo "INITIALIZING" > "$LIVE_STAT"
 TICK=0
 if sleep 0.2 2>/dev/null; then FRAC_SLEEP_OK=1; else FRAC_SLEEP_OK=0; fi
 
+# RESCUE FLASH state (2026-07-06, operator: "the system really works, although
+# it can be jarring if you don't know what's happening"). The kernel keepalive
+# absorbs a GPU hang invisibly — the emulator usually never even sees it (the
+# fence re-signals under the emulator-side warn threshold), so the RPCS3
+# overlay can't announce it. THIS layer can: the survive line is in dmesg the
+# moment it happens, the bridge keeps ticking through the freeze, and MangoHud
+# repaints the HUD at the FIRST recovered frame — exactly when the driver
+# needs "keep your hands on the wheel". Baseline the counter at launch so
+# earlier survives this boot don't flash on session start.
+SURV_SEEN=$(dmesg 2>/dev/null | grep -c 'context_keepalive: surviving hang')
+case "$SURV_SEEN" in ''|*[!0-9]*) SURV_SEEN=0 ;; esac
+RESCUE_TTL=0
+
 while true; do
     # 1. IDENTIFICATION
     source /storage/games-internal/roms/etk/scripts/env.sh
@@ -189,6 +202,29 @@ while true; do
            fi ;;
     esac
     
+    # 5.1 RESCUE FLASH OVERRIDE — a fresh keepalive survive replaces the HUD
+    # body with the rescue banner for ~12s of ticks (generous: the freeze
+    # itself eats the first seconds before MangoHud can repaint). Dense
+    # Latin-1 pipes only, per the HUD strict-lock; pulses via the phase.
+    CUR_SURV=$(dmesg 2>/dev/null | grep -c 'context_keepalive: surviving hang')
+    case "$CUR_SURV" in ''|*[!0-9]*) CUR_SURV=0 ;; esac
+    if [ "$CUR_SURV" -gt "$SURV_SEEN" ]; then
+        SURV_SEEN=$CUR_SURV
+        if [ "$HUD_MODE" = "GINSTR" ] && [ "$FRAC_SLEEP_OK" = "1" ]; then
+            RESCUE_TTL=24    # 0.5s ticks
+        else
+            RESCUE_TTL=12    # 1s ticks
+        fi
+    fi
+    if [ "$RESCUE_TTL" -gt 0 ]; then
+        RESCUE_TTL=$((RESCUE_TTL - 1))
+        if [ $((TICK % 2)) -eq 0 ]; then
+            FINAL_STRING="»RESCUE«|GPU HANG ABSORBED|DRIVE ON|"
+        else
+            FINAL_STRING="RESCUE|GPU HANG ABSORBED|DRIVE ON|"
+        fi
+    fi
+
     # Write to temp file then move to prevent MangoHud from reading an incomplete file
     echo "$FINAL_STRING" > "${LIVE_STAT}.tmp"
     mv "${LIVE_STAT}.tmp" "$LIVE_STAT"

@@ -115,13 +115,35 @@ fi
 # ~now and excludes the whole session's faults, so a real RECOVERY
 # misclassifies as CLEAN. When the anchor is unreliable, fall back to
 # the 10-minute net regardless of whether mtime gave a nonzero epoch.
+# SUSPEND SKEW (found live 2026-07-06, the 14:54 mis-marked-CLEAN row):
+# dmesg timestamps are CLOCK_MONOTONIC (frozen during s2idle suspend) but
+# /proc/uptime is CLOCK_BOOTTIME (includes suspend). After the rig sleeps,
+# epoch arithmetic overshoots the dmesg clock by the suspended time — a
+# 2h27m suspend put window_start at 9071s while every dmesg line sat below
+# ~1200s, so ALL FOUR of the session's keepalive rescues were excluded and
+# the row wrote CLEAN. Anchor the window on the MONOTONIC clock instead:
+#   window_start_mono = mono_now - (NOW - START_EPOCH)
+# mono_now comes from /proc/timer_list ("now at N nsecs", CLOCK_MONOTONIC).
+# If timer_list is unreadable, fall back to the old boottime math (correct
+# on any boot that never suspended).
+MONO_NOW=$(awk '/^now at/ {print int($3 / 1000000000); exit}' /proc/timer_list 2>/dev/null)
+case "$MONO_NOW" in ''|*[!0-9]*) MONO_NOW=0 ;; esac
 DMESG_WINDOW_START=0
 if [ "$ANCHOR_RELIABLE" -eq 1 ]; then
-    DMESG_WINDOW_START=$((START_EPOCH - BOOT_EPOCH))
+    if [ "$MONO_NOW" -gt 0 ]; then
+        DMESG_WINDOW_START=$((MONO_NOW - (NOW - START_EPOCH)))
+    else
+        DMESG_WINDOW_START=$((START_EPOCH - BOOT_EPOCH))
+    fi
 else
     # No reliable session anchor — fall back to the last 10 minutes of
-    # uptime so at least pre-session faults don't bleed in wholesale.
-    DMESG_WINDOW_START=$((UPTIME_SEC - 600))
+    # the DMESG clock so at least pre-session faults don't bleed in
+    # wholesale (monotonic when available, else boottime).
+    if [ "$MONO_NOW" -gt 0 ]; then
+        DMESG_WINDOW_START=$((MONO_NOW - 600))
+    else
+        DMESG_WINDOW_START=$((UPTIME_SEC - 600))
+    fi
 fi
 [ "$DMESG_WINDOW_START" -lt 0 ] && DMESG_WINDOW_START=0
 
