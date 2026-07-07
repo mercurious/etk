@@ -262,7 +262,7 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
         for CFG in /flash/EFI/BOOT/grub.cfg /flash/boot/grub/grub.cfg; do
             [ -f "$CFG" ] || continue
             awk '
-                (index($0,"etk-gtk-test") || index($0,"etk-fallback-stock")) && /menuentry/ {inblk=1; next}
+                (index($0,"etk-gtk") || index($0,"etk-fallback")) && /menuentry/ {inblk=1; next}
                 inblk && /^}/ {inblk=0; next}
                 !inblk {print}
             ' "$CFG" > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"

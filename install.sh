@@ -415,31 +415,42 @@ SHOTREADME
 
 # ETK mako notification style: a criteria section scoped to app-name
 # "ETK Pitstop" so ETK toasts are wide and readable WITHOUT altering
-# Rocknix's own notifications. Idempotent -- appended only once.
+# Rocknix's own notifications. REWRITTEN IN PLACE on every install (was
+# append-once) so a restyle/reposition actually reaches already-installed rigs:
+# strip any prior ETK block (header -> next [section]/EOF), then append the
+# current one. anchor=top-center + a top margin drops the toast below the top
+# HUD band (operator-approved 2026-07-07) so it no longer hugs the top edge.
 # Output captured + summarized so the [OK]/[SKIP] echo doesn't break the TUI.
 tui_log "Installing ETK mako notification style"
 MAKO_OUT=$(ssh $RIG_SSH 'bash -s' 2>&1 <<'ETKMAKO'
 MCFG=/storage/.config/mako/config
-if [ -f "$MCFG" ] && ! grep -q 'app-name="ETK Pitstop"' "$MCFG"; then
-cat >> "$MCFG" <<'MK'
+if [ -f "$MCFG" ]; then
+awk '
+  /^\[app-name="ETK Pitstop"\]/ { skip=1; next }
+  skip && /^\[/ { skip=0 }
+  !skip { print }
+' "$MCFG" > "$MCFG.etk.tmp"
+cat >> "$MCFG.etk.tmp" <<'MK'
 
 [app-name="ETK Pitstop"]
+anchor=top-center
 width=1280
 height=560
 font=monospace 24
 default-timeout=8000
 padding=20
-margin=24
+margin=240,24,24,24
 border-size=3
 border-color=#00b4d8
 border-radius=14
 text-alignment=left
 background-color=#10141a
 MK
+mv "$MCFG.etk.tmp" "$MCFG"
 XDG_RUNTIME_DIR=/var/run/0-runtime-dir makoctl reload 2>/dev/null
-echo "    [OK] ETK mako notification style installed."
+echo "    [OK] ETK mako notification style installed/updated."
 else
-echo "    [SKIP] ETK mako style already present (or mako config absent)."
+echo "    [SKIP] mako config absent."
 fi
 ETKMAKO
 )
@@ -684,6 +695,10 @@ tui_rsync 4 0 12 "Deploying Pitstop engine (etk_pitstop.py)" --exclude='.DS_Stor
 tui_rsync 4 12 24 "Deploying field schema (pitstop_fields.json)" --exclude='.DS_Store' ./config/pitstop_fields.json    $RIG_SSH:$ETK_ROOT/config/
 tui_rsync 4 24 30 "Deploying POWER schema (power_profiles.json)" --exclude='.DS_Store' ./config/power_profiles.json   $RIG_SSH:$ETK_ROOT/config/
 tui_rsync 4 30 36 "Deploying crash signatures" --exclude='.DS_Store' ./config/crash_signatures.json  $RIG_SSH:$ETK_ROOT/config/
+# HUD punchbox masters (bin/hud_apply.sh reads these): the pristine ETK DDU
+# conf + the minimal "default" preset, both to $ETK_ROOT/config/.
+tui_rsync 4 36 37 "Deploying HUD punchbox master" --exclude='.DS_Store' ./config/MangoHud.conf $RIG_SSH:$ETK_ROOT/config/
+tui_rsync 4 37 38 "Deploying HUD default preset" --exclude='.DS_Store' ./config/MangoHud.default.conf $RIG_SSH:$ETK_ROOT/config/
 # ETK default per-game RPCS3 config template (TOOLS-tab installer copies this
 # to custom_configs/config_<ID>.yml for each newly installed game).
 tui_rsync 4 36 48 "Deploying RPCS3 template (etk_template.yml)" --exclude='.DS_Store' ./config/etk_template.yml       $RIG_SSH:$ETK_ROOT/config/
@@ -1088,34 +1103,18 @@ while true; do
         # ATOMIC SESSION RESET: Zero new-shader counter at ignition
         echo "0" > "$SHM_DIR/vault_new.txt"
 
-        # --- PER-GAME HUD POSITION ---
-        # Apply the remembered MangoHud position for this game (if any) and
-        # signal MangoHud to reload its config so the swap takes effect mid-
-        # launch (the 4s sleep above gives MangoHud time to open its control
-        # socket as RPCS3 initialises Vulkan). Default = bottom-left
-        # (dashboard convention); a per-game override at $HUD_POSITIONS_FILE
-        # wins. L3 (bin/input_d.py) is the user-side toggle that writes that
-        # file. The reload signal is best-effort — if the socket isn't there
-        # yet, the conf is still correct for any subsequent launches.
-        if [ -f "$HUD_POSITIONS_FILE" ] && [ -f "$RIG_MANGO_CONF" ] && [ -n "$ID_STR" ]; then
-            PREF_POS=$(awk -F'\t' -v gid="$ID_STR" '$1==gid {print $2; exit}' "$HUD_POSITIONS_FILE")
-            if [ -n "$PREF_POS" ]; then
-                # Atomic in-place sed; MangoHud.conf has exactly one
-                # position= line by convention.
-                sed -i "s|^position=.*|position=$PREF_POS|" "$RIG_MANGO_CONF"
-                # Inline Python — BusyBox nc lacks reliable -U Unix socket
-                # support. Mirrors the helper in bin/input_d.py so the two
-                # paths stay behaviour-compatible without sharing state.
-                python3 -c "
-import socket, glob
-for p in glob.glob('/tmp/MangoHud*') + glob.glob('/tmp/mangohud*'):
-    try:
-        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        s.settimeout(0.3); s.connect(p)
-        s.send(b'reload_cfg\n'); s.close(); break
-    except Exception: pass
-" 2>/dev/null
-            fi
+        # --- PER-GAME HUD PUNCHBOX STATE ---
+        # Restore this game's remembered HUD state (top/bottom/default/off) via
+        # the shared applier (bin/hud_apply.sh), which writes the live conf AND
+        # signals MangoHud reload — the same path R1+L3 uses, so the two never
+        # drift. The 4s sleep above gives MangoHud time to open its control
+        # socket as RPCS3 initialises Vulkan; if it isn't up yet the conf is
+        # still correct on disk for the next launch. R1+L3 (bin/input_d.py)
+        # cycles + persists the state per-game to $HUD_STATE_FILE. Detached +
+        # fail-silent so it can NEVER stall ignition. Default = bottom.
+        if [ -f "$HUD_STATE_FILE" ] && [ -n "$ID_STR" ]; then
+            PREF_STATE=$(awk -F'\t' -v gid="$ID_STR" '$1==gid {print $2; exit}' "$HUD_STATE_FILE")
+            [ -n "$PREF_STATE" ] && bash "$ETK_ROOT/bin/hud_apply.sh" "$PREF_STATE" >/dev/null 2>&1 &
         fi
 
         # Spawn workers according to build tier
@@ -1278,14 +1277,23 @@ if [ -n "${KERNEL_IMAGE:-}" ] && [ -f "${KERNEL_IMAGE:-}" ]; then
         K_HOST_SHA=$(shasum -a 256 "$KERNEL_IMAGE" | awk '{print $1}')
     fi
     # Build the TEST entry cmdline (verbose console for forensics; + parity token).
+    # Two GTK cmdlines: the QUIET primary ("ROCKNIX-GTK for Flip 2", the default
+    # boot) and the VERBOSE diagnostic twin (loglevel=7 console — the proven
+    # cmdline, one grub-pick away). 'quiet loglevel=3' only quiets the console —
+    # NO video= change (the DSI black-screen risk is stale-grub, not quiet).
+    # Validate the quiet boot on a COLD boot; verbose + stock are the fallbacks.
     K_CMDLINE="boot=LABEL=ROCKNIX disk=LABEL=STORAGE grub_portable rootwait console=tty0 loglevel=7 panic=30"
-    [ "${KERNEL_CONTEXT_KEEPALIVE:-0}" = "1" ] && K_CMDLINE="$K_CMDLINE msm.context_keepalive=1"
+    K_CMDLINE_QUIET="boot=LABEL=ROCKNIX disk=LABEL=STORAGE grub_portable rootwait console=tty0 quiet loglevel=3 panic=30"
+    if [ "${KERNEL_CONTEXT_KEEPALIVE:-0}" = "1" ]; then
+        K_CMDLINE="$K_CMDLINE msm.context_keepalive=1"
+        K_CMDLINE_QUIET="$K_CMDLINE_QUIET msm.context_keepalive=1"
+    fi
     K_FLIP2_DTB="/boot/grub/sm8250-retroidpocket-flip2.dtb"
     K_MODE="${KERNEL_DEPLOY_MODE:-test}"
     # Skip re-staging if the rig already carries this exact Image (idempotent).
     K_RIG_SHA=$(ssh $RIG_SSH "sha256sum /flash/KERNEL.gtktest 2>/dev/null | cut -d' ' -f1" 2>/dev/null)
     scp -q "$KERNEL_IMAGE" "$RIG_SSH:/storage/rocknix-gtk.KERNEL.staging" 2>/dev/null
-    K_OUT=$(ssh $RIG_SSH "HOST_SHA='$K_HOST_SHA' K_CMDLINE='$K_CMDLINE' FLIP2_DTB='$K_FLIP2_DTB' K_MODE='$K_MODE' sh -s" 2>&1 << 'KERNELREMOTE'
+    K_OUT=$(ssh $RIG_SSH "HOST_SHA='$K_HOST_SHA' K_CMDLINE='$K_CMDLINE' K_CMDLINE_QUIET='$K_CMDLINE_QUIET' FLIP2_DTB='$K_FLIP2_DTB' K_MODE='$K_MODE' sh -s" 2>&1 << 'KERNELREMOTE'
 set -e
 S=$(sha256sum /storage/rocknix-gtk.KERNEL.staging 2>/dev/null | cut -d' ' -f1)
 [ "$S" = "$HOST_SHA" ] || { echo "KERNEL_FAIL staging sha mismatch ($S)"; rm -f /storage/rocknix-gtk.KERNEL.staging; exit 1; }
@@ -1304,30 +1312,44 @@ TS=$(date +%Y%m%d_%H%M%S)
 for CFG in /flash/EFI/BOOT/grub.cfg /flash/boot/grub/grub.cfg; do
     [ -f "$CFG" ] || continue
     cp "$CFG" "$CFG.etkbak-$TS"
-    # strip any prior etk-managed blocks (TEST + fallback), then trailing blanks
+    # Strip any prior etk-managed blocks (primary + verbose + fallback), then
+    # trailing blanks. Matcher broadened to 'etk-gtk' so the verbose entry
+    # (etk-gtk-verbose) is refreshed/removed too.
     awk '
-        (index($0,"etk-gtk-test") || index($0,"etk-fallback-stock")) && /menuentry/ {inblk=1; next}
+        (index($0,"etk-gtk") || index($0,"etk-fallback")) && /menuentry/ {inblk=1; next}
         inblk && /^}/ {inblk=0; next}
         !inblk {print}
-    ' "$CFG" | awk 'NF{last=NR} {ln[NR]=$0} END{for(i=1;i<=last;i++)print ln[i]}' > "$CFG.tmp"
+    ' "$CFG" | awk 'NF{last=NR} {ln[NR]=$0} END{for(i=1;i<=last;i++)print ln[i]}' > "$CFG.stripped"
+    # Build the three managed entries: primary (QUIET, the default boot),
+    # verbose twin, then the stock-kernel fallback.
     {
-        cat "$CFG.tmp"
-        printf '\n'
+        printf "menuentry 'ROCKNIX-GTK for Flip 2' \$menuentry_id_option 'etk-gtk-test' {\n"
+        [ "$K_MODE" = "default" ] && printf '        savedefault\n'
+        printf '        search --set -f /KERNEL.gtktest\n'
+        printf '        linux /KERNEL.gtktest %s\n' "$K_CMDLINE_QUIET"
+        printf '        devicetree %s\n' "$FLIP2_DTB"
+        printf '}\n'
+        printf "menuentry 'ROCKNIX-GTK for Flip 2 (verbose)' \$menuentry_id_option 'etk-gtk-verbose' {\n"
+        printf '        search --set -f /KERNEL.gtktest\n'
+        printf '        linux /KERNEL.gtktest %s\n' "$K_CMDLINE"
+        printf '        devicetree %s\n' "$FLIP2_DTB"
+        printf '}\n'
         printf "menuentry 'ROCKNIX-GTK fallback -- stock kernel' \$menuentry_id_option 'etk-fallback-stock' {\n"
         printf '        savedefault\n'
         printf '        search --set -f /KERNEL.etk-stock\n'
         printf '        linux /KERNEL.etk-stock %s\n' "$K_STOCK_CMDLINE"
         printf '        devicetree %s\n' "$FLIP2_DTB"
         printf '}\n'
-        printf '\n'
-        printf "menuentry 'ROCKNIX-GTK TEST kernel (verbose console)' \$menuentry_id_option 'etk-gtk-test' {\n"
-        [ "$K_MODE" = "default" ] && printf '        savedefault\n'
-        printf '        search --set -f /KERNEL.gtktest\n'
-        printf '        linux /KERNEL.gtktest %s\n' "$K_CMDLINE"
-        printf '        devicetree %s\n' "$FLIP2_DTB"
-        printf '}\n'
-    } > "$CFG"
-    rm -f "$CFG.tmp"
+    } > "$CFG.etkblock"
+    # Insert the ETK block BEFORE the first existing menuentry so ROCKNIX-GTK
+    # leads the menu (was appended at the end). Degrades safely to append if no
+    # menuentry is found. grubenv still drives the DEFAULT boot (saved_entry).
+    awk -v bf="$CFG.etkblock" '
+        !ins && /^menuentry / { while ((getline line < bf) > 0) print line; close(bf); ins=1 }
+        { print }
+        END { if (!ins) { while ((getline line < bf) > 0) print line } }
+    ' "$CFG.stripped" > "$CFG"
+    rm -f "$CFG.stripped" "$CFG.etkblock"
 done
 # grubenv seeding — ROCKNIX grub auto-boots `saved_entry` with a 2-s menu.
 # The env block is a fixed 1024-byte file ('#'-padded); no grub-editenv on the
@@ -1828,7 +1850,7 @@ DPMIRRORREMOTE
 say "${G}[ETK]${N} DP-mirror daemon deployed (etk-dpmirror.service — idle until a capture display links on DP-1)"
 
 # ==========================================================
-# STEP 6: STAGE III STABILITY HARNESS
+# STEP 6.8: STAGE III STABILITY HARNESS
 # Two rig-side primitives validated on-rig 2026-06-11 (see
 # dossiers/Stage3CustomRigDossier.md §T0):
 #   1. profile.d/098-etk-stage3 — lifts Mesa's silent 1 GB disk-cache
