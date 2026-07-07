@@ -1818,10 +1818,16 @@ SVC
     systemctl restart etk-blackbox.service >/dev/null 2>&1
     sleep 1
     systemctl is-active etk-blackbox.service >/dev/null 2>&1 && echo "BLACKBOX_OK" || echo "BLACKBOX_FAIL"
-    # Drift tripwire: panic=10 is the certified arming on this platform (RAM
-    # dump capture FALSIFIED on SM8250 — DDR scrambling; see arm_blackbox.sh).
-    # Nightly updates revert grub.cfg, so re-check the live cmdline each install.
-    if grep -q 'panic=10' /proc/cmdline; then
+    # Drift tripwire: the working blackbox value on THIS SoC is panic auto-reboot
+    # (RAM-dump capture is FALSIFIED — DDR scrambling; see arm_blackbox.sh). ANY
+    # panic=N arms auto-reboot, so gate on the PRESENCE of a panic reboot token,
+    # not a specific value: the GTK kernel grub entries bake panic=30 by
+    # construction (STEP 6.4 + the Tier-I image), while arm_blackbox.sh writes
+    # panic=10 onto stock entries — both are "armed". Hardcoding panic=10 here
+    # false-warned on every GTK-default boot. Only a boot with NO panic= (stock
+    # kernel, unarmed) needs the armer. ROCKNIX updates revert grub, so re-check
+    # the live cmdline each install.
+    if grep -qE 'panic=[1-9][0-9]*' /proc/cmdline; then
         echo "BLACKBOX_ARMED"
     else
         echo "BLACKBOX_UNARMED"
@@ -1833,8 +1839,9 @@ else
     say "${Y}[ETK]${N} Panic Black Box service failed to start — check journalctl -u etk-blackbox on the rig."
 fi
 if grep -q BLACKBOX_UNARMED "$BB_OUT_FILE"; then
-    say "${Y}[ETK]${N} panic=10 not in the live cmdline (fresh rig, or a ROCKNIX update reverted"
-    say "${Y}[ETK]${N} grub.cfg) — run scripts/arm_blackbox.sh, then reboot on-device."
+    say "${Y}[ETK]${N} No panic auto-reboot token in the live cmdline (stock-kernel boot, or a"
+    say "${Y}[ETK]${N} ROCKNIX update reverted grub). The GTK kernel bakes panic=30; on a stock"
+    say "${Y}[ETK]${N} boot run scripts/arm_blackbox.sh, then reboot on-device."
 fi
 rm -f "$BB_OUT_FILE"
 
