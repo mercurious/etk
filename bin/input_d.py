@@ -10,12 +10,12 @@
 #    untethered. Do NOT add a long-press/double-tap guard and do
 #    NOT route this through CMD_QUEUE (queue needs a tethered
 #    consumer). The chord is the only guard.
-# 2. R1 + L3 (BTN_TR 311 held + BTN_THUMBL 317) = HUD POSITION TOGGLE.
+# 2. R1 + L3 (BTN_TR 311 held + BTN_THUMBL 317) = HUD PUNCHBOX CYCLE.
 #    Chord-gated: bare L3 stays with the game. When R1 is held, L3
-#    flips MangoHud top-left <-> bottom-left in $RIG_MANGO_CONF,
-#    persists per-game preference to $HUD_POSITIONS_FILE, and
-#    signals MangoHud reload_cfg so the swap takes effect live.
-#    The Sentry re-applies the per-game pref at IDLE->RUNNING.
+#    advances the HUD one stop: top -> bottom -> default -> off ->
+#    repeat. The state is persisted per-game to $HUD_STATE_FILE; the
+#    conf swap + live reload is done by bin/hud_apply.sh (shared with
+#    the Sentry, which re-applies the per-game state at IDLE->RUNNING).
 #    PIT/RACE thermal mode is now thermal_d.sh-internal only
 #    (auto-PIT at RACE_THRESHOLD; auto-recovers to RACE at
 #    RECOVER_THRESHOLD — no reboot, since thermal_d.sh v14).
@@ -54,6 +54,14 @@ RIG_MANGO_CONF = os.environ.get('RIG_MANGO_CONF',
 HUD_POSITIONS_FILE = os.environ.get(
     'HUD_POSITIONS_FILE',
     '/storage/games-internal/roms/etk/etk_telemetry/hud_positions.tsv')
+# PUNCHBOX (4-state) per-game HUD memory + the shared applier that writes the
+# live conf. Supersede the position-only file above.
+HUD_STATE_FILE = os.environ.get(
+    'HUD_STATE_FILE',
+    '/storage/games-internal/roms/etk/etk_telemetry/hud_state.tsv')
+HUD_APPLY = os.environ.get(
+    'ETK_HUD_APPLY',
+    '/storage/games-internal/roms/etk/bin/hud_apply.sh')
 SCREENSHOT_MODE_FILE = os.environ.get(
     'SCREENSHOT_MODE_FILE',
     '/storage/games-internal/roms/etk/etk_telemetry/screenshot_mode.txt')
@@ -71,6 +79,12 @@ SCREENSHOT_MODE_DEFAULT = 'in-game'
 # elements crowd the bottom edge (e.g. GT5P).
 HUD_POSITIONS = ('top-left', 'bottom-left')
 HUD_DEFAULT = 'bottom-left'
+
+# PUNCHBOX cycle (R1+L3): the four HUD stops in cycle order. top/bottom are the
+# ETK DDU (position); default = minimal stock readout; off = hidden. The conf
+# swap + reload for each stop is done by bin/hud_apply.sh (shared w/ the Sentry).
+HUD_STATES = ('top', 'bottom', 'default', 'off')
+HUD_STATE_DEFAULT = 'bottom'
 
 # Pad-model-agnostic substrings. Rocknix has flipped the InputPlumber
 # virtual target between models across nightlies (Xbox -> DS5 in 20260520);
@@ -329,8 +343,67 @@ def _remember_position(game_id, pos):
         pass
 
 
+def _read_hud_state(game_id):
+    """This game's remembered punchbox state, or the default. No game id
+    (rig idle / unresolved) => the global default (never a sentinel key).
+    An unrecognized stored token also collapses to the default."""
+    if game_id:
+        try:
+            with open(HUD_STATE_FILE) as f:
+                for line in f:
+                    parts = line.rstrip('\n').split('\t')
+                    if len(parts) >= 2 and parts[0] == game_id:
+                        return parts[1] if parts[1] in HUD_STATES else HUD_STATE_DEFAULT
+        except Exception:
+            pass
+    return HUD_STATE_DEFAULT
+
+
+def _write_hud_state(game_id, state):
+    """Upsert game_id -> state in HUD_STATE_FILE. No-op for a None game id
+    (idle / unresolved) so a sentinel is never written as a game key. Same
+    tmp+mv idiom as the position writer above."""
+    if not game_id:
+        return
+    rows = {}
+    try:
+        with open(HUD_STATE_FILE) as f:
+            for line in f:
+                parts = line.rstrip('\n').split('\t')
+                if len(parts) >= 2:
+                    rows[parts[0]] = parts[1]
+    except FileNotFoundError:
+        pass
+    except Exception:
+        return
+    rows[game_id] = state
+    try:
+        os.makedirs(os.path.dirname(HUD_STATE_FILE), exist_ok=True)
+        tmp = HUD_STATE_FILE + '.tmp'
+        with open(tmp, 'w') as f:
+            for gid, st in sorted(rows.items()):
+                f.write(f'{gid}\t{st}\n')
+        os.replace(tmp, HUD_STATE_FILE)
+    except Exception:
+        pass
+
+
+def cycle_hud_state():
+    """R1+L3 PUNCHBOX: advance the HUD one stop (top -> bottom -> default ->
+    off -> repeat), persist it per-game, and hand the conf swap + live reload
+    to bin/hud_apply.sh — detached and fail-silent so it can never stall the
+    input loop or break the R3 panic path."""
+    gid = _read_active_game_id()
+    cur = _read_hud_state(gid)
+    nxt = HUD_STATES[(HUD_STATES.index(cur) + 1) % len(HUD_STATES)]
+    _write_hud_state(gid, nxt)
+    os.system(f"bash {HUD_APPLY} {nxt} >/dev/null 2>&1 &")
+
+
 def toggle_hud_position():
-    """L3: flip MangoHud position top-left <-> bottom-left.
+    """DEPRECATED (superseded by cycle_hud_state, the 4-state punchbox) — kept
+    only until the next release-cut dead-code sweep. L3: flip MangoHud position
+    top-left <-> bottom-left.
     1. Read current position from the live conf (default to HUD_DEFAULT).
     2. Pick the OTHER position from HUD_POSITIONS.
     3. Atomic write back to conf.
@@ -374,10 +447,11 @@ def event_loop(device):
                 if code == 318 and val == 1 and l1_held:
                     fire_recovery()
 
-                # R1 + L3 = HUD position toggle. Chord-gated so a bare L3
+                # R1 + L3 = HUD PUNCHBOX cycle. Chord-gated so a bare L3
                 # stick-click stays with the game. 317 = BTN_THUMBL (L3).
+                # Cycles top -> bottom -> default -> off -> repeat.
                 if code == 317 and val == 1 and r1_held:
-                    toggle_hud_position()
+                    cycle_hud_state()
 
                 # 310 = BTN_TL (L1): ETK SCREENSHOT (in-race recommended).
                 # Single-button trigger so the chord can't pass-through any

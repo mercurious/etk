@@ -244,6 +244,16 @@ export SESSION_ANCHOR="$TELEMETRY_DIR/session_anchor.txt"
 # (bottom-left, the dashboard convention).
 export HUD_POSITIONS_FILE="$TELEMETRY_DIR/hud_positions.tsv"
 
+# Per-game MangoHud PUNCHBOX state: one of top | bottom | default | off.
+# Written by bin/input_d.py on the R1+L3 cycle; read by the Sentry at
+# IDLE->RUNNING to restore this game's HUD state via bin/hud_apply.sh (the
+# shared applier). Supersedes the position-only HUD_POSITIONS_FILE above for
+# the 4-state punchbox. Absent / unknown => 'bottom' (dashboard default).
+export HUD_STATE_FILE="$TELEMETRY_DIR/hud_state.tsv"
+# Shared HUD-state applier (state -> live MangoHud.conf + reload). Absolute so
+# both the Sentry and input_d resolve it identically.
+export ETK_HUD_APPLY="$ETK_ROOT/bin/hud_apply.sh"
+
 # L1-screenshot gating mode. One of: always | in-game | disabled.
 #  - always   : L1 fires a screenshot whenever pressed (incl. frontend / Pitstop)
 #  - in-game  : L1 fires only while a PS3 game is resolved (the default)
