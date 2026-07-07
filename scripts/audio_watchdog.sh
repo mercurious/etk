@@ -1,20 +1,36 @@
 #!/bin/sh
 # ==========================================================
-# ETK AUDIO WATCHDOG (v0.3.0 - HARNESS + PERSISTENT STATUS + FAST SETTLE)
+# ETK AUDIO WATCHDOG (v0.4.0 - DEPRECATED: KERNEL FIX VALIDATION HARNESS + BACKSTOP)
 # ==========================================================
-# The SM8250 sound card intermittently NEVER probes at boot (~1 in 4
-# boots observed 2026-07-02): an early q6afe clock-vote race against
-# ADSP audio_pd bring-up fails the probe of 3370000.codec (va_macro,
-# the clock supplier for ALL LPASS macros), the whole audio chain
-# parks in deferred-probe forever, and PipeWire serves only "Dummy
-# Output" — the entire boot is silent in every app. See
-# AI_MANIFEST.md "ROCKNIX AUDIO STACK" + dossiers/AudioCampaign_20260702.md §1.
+# ** DEPRECATED 2026-07-06 — the bug is now fixed in the kernel. **
+# The SM8250 probe race (~1 in 4 boots: q6afe AFE clock-vote rejected
+# while ADSP audio_pd settles → va_macro hard-fails → whole LPASS
+# chain parks in deferred-probe forever → silent boot) is fixed at
+# the root by ROCKNIX-GTK kernel patch 0002-q6afe-vote-probe-race
+# (KERNEL.rocknix-gtk-20260706-audiofix0+): the dropped ADSP error
+# reply now wakes the vote waiter, and the vote retries in place
+# (250ms period, 15s bound) until the ADSP is ready — the probe
+# succeeds on the first boot pass, no userspace revive needed.
+# A kernel-side recovery is announced in dmesg as
+#   "etk: AFE vote (N) recovered after N retries".
 #
-# This one-shot detects the failed state and re-triggers the probe
-# via the bus-level drivers_probe node (validated live 2026-07-02:
-# the deferred chain cascades up in ~2s, PipeWire hot-swaps the real
-# sinks in). Run at boot by etk-audio-watchdog.service (HARNESS: the
-# unit is hand-provisioned; fold into install.sh when promoted).
+# This script's remaining jobs, until the kernel fix has absorbed
+# N>=3 NATURAL races across cold boots (the race is a ~1-in-4 coin
+# flip — only cold-boot mileage validates it):
+#   1. VALIDATION TRIPWIRE: log when the kernel fix engaged (turns
+#      every raced boot into a validation datapoint).
+#   2. STATUS WRITER: audio_boot.txt feeds the ledger snd= column.
+#   3. BACKSTOP: the old drivers_probe revive still runs if the card
+#      is missing — on an audiofix kernel that firing means the
+#      kernel fix REGRESSED (or a pre-fix kernel is booted) and is
+#      logged as such.
+# RETIREMENT PLAN (after validation): remove install.sh STEP 6.57
+# (which writes etk-audio-watchdog.service) + the uninstall.sh
+# removal block + this script, and move the audio_boot.txt status
+# write into the Sentry or drop snd= attribution to
+# card-presence-only in session_postmortem.sh.
+# History: userspace revive validated live 2026-07-02/03; see
+# AI_MANIFEST.md "ROCKNIX AUDIO STACK" + dossiers/AudioCampaign_20260702.md §1.
 #
 # GEMINI IMMUTABLE RULE:
 # - BusyBox/POSIX only. No GNU-isms.
@@ -86,14 +102,38 @@ if [ "$UP" -lt 8 ]; then
     sleep $((8 - UP))
 fi
 
-# --- HEALTHY PATH: silent exit. ---------------------------------------
+# --- HEALTHY PATH: silent exit — UNLESS the kernel fix saved this boot,
+# which is a validation datapoint worth one tripwire line. ---------------
 if card_present; then
+    KFIX=$(dmesg 2>/dev/null | grep "etk: AFE vote" | tail -1)
+    if [ -n "$KFIX" ]; then
+        log_tw "kernel probe-race fix ENGAGED this boot:${KFIX#*]}"
+    fi
     set_status "ok"
     exit 0
 fi
 
-# --- FAILED BOOT: detect, log, revive. --------------------------------
-log_tw "no sound card at boot (deferred-probe race) — attempting revive"
+# --- NO CARD AT 8s: the kernel's in-place vote retry (patch 0002) is
+# bounded at 15s from the va_macro probe (~1s), so it may still be
+# in flight. Grace-poll to ~20s uptime before declaring it failed —
+# exit the moment the card lands (kernel fix win, just late). -----------
+while :; do
+    UP=$(cut -d. -f1 /proc/uptime 2>/dev/null)
+    case "$UP" in ''|*[!0-9]*) UP=20 ;; esac
+    [ "$UP" -ge 20 ] && break
+    sleep 1
+    if card_present; then
+        KFIX=$(dmesg 2>/dev/null | grep "etk: AFE vote" | tail -1)
+        log_tw "kernel probe-race fix ENGAGED (late, card at ${UP}s):${KFIX#*]}"
+        set_status "ok"
+        exit 0
+    fi
+done
+
+# --- FAILED BOOT: detect, log, revive (BACKSTOP). On an audiofix kernel
+# (patch 0002) reaching this line means the kernel fix regressed or a
+# pre-fix kernel is booted — say so, then revive as before. -------------
+log_tw "no sound card at boot (deferred-probe race) — kernel fix ABSENT or FAILED; attempting userspace revive"
 
 ATTEMPT=1
 while [ "$ATTEMPT" -le 3 ]; do

@@ -2,6 +2,12 @@
 
 All notable changes to the ETK are documented here. This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **The SM8250 silent-boot audio bug is now fixed in the kernel** ([rocknix-gtk](https://github.com/mercurious/rocknix-gtk) Patch #2 `q6afe-vote-probe-race`, in `KERNEL.rocknix-gtk-20260706-audiofix0`): the ADSP's error reply to the LPASS clock vote never woke the waiter, and the resulting hard probe failure parked the whole audio chain in deferred-probe forever on ~1 in 4 boots. The kernel now retries the vote in place — the card comes up on the first boot pass.
+- **Audio watchdog deprecated to a validation tripwire + backstop** (`scripts/audio_watchdog.sh` v0.4.0): logs each kernel-fix engagement to the tripwire, keeps feeding the ledger `snd=` column, and still runs the old userspace revive only if the kernel fix is absent or regressed. Scheduled for removal after N≥3 natural races are absorbed kernel-side.
+
 ## [0.6.0] - 2026-07-03 — "GTK Prologue Edition"
 
 **Introducing the Gran Turismo Kit.** A custom-tuned **RPCS3 emulator** with integrated **Turnip driver**, and a race-tested ROCKNIX middleware with its native ETK Pitstop app, upgrades the SM8250 for track day with advanced crash prevention for maximized but experimental playability — while embedding deep telemetry to chase audio support and console-grade framerates in future releases. Targeted for Gran Turismo 5 Prologue Spec II and Spec III and GT HD Concept only; GT5 and GT6 support pending.
