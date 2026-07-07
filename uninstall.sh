@@ -181,6 +181,10 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
     rm -f /storage/.config/system.d/etk.service
     echo "    Removed: etk.service"
 
+    # GTK boot-identity line (oneshot + its basic.target.wants enable symlink)
+    rm -f /storage/.config/system.d/etk-gtk-version.service /storage/.config/system.d/basic.target.wants/etk-gtk-version.service
+    echo "    Removed: etk-gtk-version.service (boot line)"
+
     # Sentry script — correct filename (legacy uninstall referenced 01-etk-startup.sh)
     rm -f /storage/.config/custom_scripts/01-etk-sentry.sh
     echo "    Removed: 01-etk-sentry.sh"

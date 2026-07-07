@@ -1290,6 +1290,18 @@ if [ -n "${KERNEL_IMAGE:-}" ] && [ -f "${KERNEL_IMAGE:-}" ]; then
     fi
     K_FLIP2_DTB="/boot/grub/sm8250-retroidpocket-flip2.dtb"
     K_MODE="${KERNEL_DEPLOY_MODE:-test}"
+    # Flip-2 device-guard: KERNEL_DEPLOY_MODE=default AUTO-boots the GTK kernel,
+    # but the GTK Image carries the Flip 2 DTB and is verified only on the Flip 2.
+    # On any other SD865 device (RP5 / Mini / Thor), downgrade to TEST mode — the
+    # GTK kernel stays one grub-pick away and stock remains the default boot — so
+    # an unverified rig never auto-boots an untested kernel. Guard on the
+    # device-tree compatible ('retroidpocket,rpflip2'); all SD865 share 'sm8250'.
+    if [ "$K_MODE" = "default" ]; then
+        if ! ssh $RIG_SSH "tr '\0' '\n' < /sys/firmware/devicetree/base/compatible 2>/dev/null | grep -q rpflip2" 2>/dev/null; then
+            echo "    [GUARD] KERNEL_DEPLOY_MODE=default is Flip-2-only (the only verified device); this rig is not a Flip 2 -> using TEST mode (stock stays default; GTK kernel one grub-pick away)."
+            K_MODE="test"
+        fi
+    fi
     # Skip re-staging if the rig already carries this exact Image (idempotent).
     K_RIG_SHA=$(ssh $RIG_SSH "sha256sum /flash/KERNEL.gtktest 2>/dev/null | cut -d' ' -f1" 2>/dev/null)
     scp -q "$KERNEL_IMAGE" "$RIG_SSH:/storage/rocknix-gtk.KERNEL.staging" 2>/dev/null
@@ -1387,6 +1399,17 @@ KERNELREMOTE
         else
             say "${G}[ETK]${N} Custom kernel staged -> /flash/KERNEL.gtktest (parity=${K_KA:-off}); $K_BOOTMSG. Reboot on-device."
         fi
+        # --- GTK boot-identity line (no image rebuild) ---
+        # /etc/os-release (the stock boot version/date) is read-only squashfs, so
+        # rebranding it needs the image lane. Instead we deploy a oneshot that
+        # prints "ROCKNIX-GTK <ver>-<date>" to the boot console right after the
+        # stock show-version.service — via ETK's /storage/.config/system.d/
+        # vector, enabled into basic.target. It self-gates on the live cmdline
+        # (silent on a stock-kernel boot). Date is derived from the Image name.
+        GTK_KDATE=$(basename "$KERNEL_IMAGE" | grep -oE '[0-9]{8}' | head -1)
+        tui_log "Deploying GTK boot-identity line"
+        scp -q ./config/etk-gtk-version.service "$RIG_SSH:/storage/.config/system.d/etk-gtk-version.service" 2>/dev/null
+        ssh $RIG_SSH "sed -i 's/@KDATE@/${GTK_KDATE:-dev}/' /storage/.config/system.d/etk-gtk-version.service 2>/dev/null; mkdir -p /storage/.config/system.d/basic.target.wants; ln -sf /storage/.config/system.d/etk-gtk-version.service /storage/.config/system.d/basic.target.wants/etk-gtk-version.service" 2>/dev/null
     else
         say "${Y}[ETK]${N} Custom kernel deploy FAILED: $(echo "$K_OUT" | grep -m1 KERNEL_FAIL || echo "$K_OUT" | tail -1)"
     fi

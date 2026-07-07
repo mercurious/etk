@@ -1,0 +1,21 @@
+[Unit]
+# ETK boot-identity line for the ROCKNIX-GTK Edition. The stock version/date on
+# the boot logo comes from /etc/os-release printed by show-version.service, but
+# os-release is read-only squashfs (branding it needs the image lane). This
+# oneshot ADDS a "ROCKNIX-GTK <ver>-<date>" line to the same boot console right
+# after show-version — no image rebuild. It self-gates on the live cmdline, so
+# it stays silent on a stock-kernel boot. @KDATE@ is sed'd to the deployed GTK
+# kernel's build date by install.sh; the same !morequiet guard as show-version.
+Description=Show ETK ROCKNIX-GTK Edition version at boot
+DefaultDependencies=false
+ConditionKernelCommandLine=!morequiet
+After=show-version.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'grep -q KERNEL.gtktest /proc/cmdline && echo "ROCKNIX-GTK 0.7.0-@KDATE@" || true'
+RemainAfterExit=yes
+StandardOutput=tty
+
+[Install]
+WantedBy=basic.target
