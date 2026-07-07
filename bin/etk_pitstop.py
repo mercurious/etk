@@ -94,8 +94,11 @@ CAREER_DIR = os.environ.get('CAREER_DIR', f"{TELEMETRY_DIR}/career")
 PIT_NOTE_FILE = os.environ.get('PIT_NOTE_FILE', f"{TELEMETRY_DIR}/pit_note.txt")
 CONFIG_CHANGES_HEADER = "epoch\tgame_id\tfield_label\told_value\tnew_value\n"
 
-# User-facing app version (shown in the title bar: "ETK PITSTOP v0.6.0 // ...").
-APP_VERSION = "0.6.0"
+# User-facing versions in the title bar. Two now: APP_VERSION = the ETK
+# middleware; GTK_EDITION_VERSION = the kernel+emulator+driver stack it drives
+# (the "GTK Edition"). Title reads "// ETK PITSTOP vX // GTK Edition vY //".
+APP_VERSION = "0.7.0"
+GTK_EDITION_VERSION = "0.7.0"
 
 # DRIVER tab (Turnip env-var dials). These are NOT RPCS3 config keys — they
 # inject through the proven profile.d path (same mechanism as 098-etk-stage3),
@@ -813,9 +816,11 @@ def _refresh_baseline(matrix):
 # === CHROME (rendered around every tab) ===
 
 def _draw_title_bar(stdscr, w):
-    # Top line carries the kit version + the live driver .so — driver moved off
-    # the meta line (row 2) where it was too tight next to the game info.
-    title = f" ETK PITSTOP v{APP_VERSION} // powered by {_powered_by()} "
+    # Two-part identity: the ETK middleware version // the GTK Edition
+    # (kernel+emulator+driver) stack version. The loaded driver .so now lives on
+    # the DRIVER tab (driver_string()) — the header names the release, the
+    # DRIVER tab names the bound build.
+    title = f" // ETK PITSTOP v{APP_VERSION} // GTK Edition v{GTK_EDITION_VERSION} // "
     stdscr.attron(curses.color_pair(1))
     stdscr.addstr(0, 2, title[:max(0, w - 3)], curses.A_BOLD)
     stdscr.attroff(curses.color_pair(1))
@@ -1274,6 +1279,11 @@ def load_sessions_ledger(filter_game_id=None):
                         # len-guarded; older rows read 0 and render "----".
                         "lock_pct": float(fields[27]) if len(fields) > 27 and fields[27] else 0.0,
                         "perfect_pct": float(fields[28]) if len(fields) > 28 and fields[28] else 0.0,
+                        # Full split kept verbatim for the detail card's RAW
+                        # LEDGER ROW dump — surfaces every stamped column,
+                        # incl. the ones the analytics doesn't (aud/snd/rescues/
+                        # gpu_fault/pwr).
+                        "raw_fields": fields,
                         "_kind": "session",
                     }
                 except ValueError:
@@ -1483,7 +1493,7 @@ def draw_telemetry(stdscr, state):
         bot = state.get("_detail_view_bot", h - 4)
         try:
             if sc > 0:
-                stdscr.addstr(5, w - 11, "[^ DPAD]", curses.A_DIM)
+                stdscr.addstr(3, w - 11, "[^ DPAD]", curses.A_DIM)
             if state.get("_detail_content_h", 0) - sc > bot:
                 stdscr.addstr(bot, w - 11, "[v DPAD]", curses.A_DIM)
         except curses.error:
@@ -1491,7 +1501,7 @@ def draw_telemetry(stdscr, state):
         return
 
     # === CAREER ANCHOR ===
-    y = 5
+    y = 4   # right under the meta rule (row 3); the blank row-4 break is dropped
     stdscr.addstr(y, 2, f"CAREER - {GAME_NAME} ({TARGET_ID})", curses.A_BOLD)
     y += 1
     stdscr.addstr(y, 2, "-" * (w - 4), curses.A_DIM)
@@ -1835,6 +1845,34 @@ def _draw_session_row(stdscr, y, w, row, selected=False):
             pass
 
 
+_LEDGER_SCHEMA = (
+    "epoch", "dur_s", "tier", "game", "status", "peak_load", "ram_mb",
+    "temp_pk", "temp_avg", "crash_sig", "fence", "shaders", "drain%",
+    "therm_ovr", "tune_tag", "crash_shot", "fps_med", "fps_1low", "ft_p99",
+    "res%", "gpu_mhz", "pwr", "jitter_ms", "gpu_fault", "fault_fence",
+    "aud", "snd", "lock%", "perfect%", "rescues",
+)
+
+
+def _draw_raw_ledger(put, y, w, raw):
+    """Bottom-of-card dump of every column in the ledger row, two per line, so
+    the top of the card is the story (gauges + advice) and the bottom is the raw
+    data. Labels track $SESSIONS_LEDGER's column order (session_postmortem.sh);
+    extra trailing columns beyond the schema still print under a numeric label."""
+    put(y, 2, "RAW LEDGER ROW", curses.A_BOLD); y += 1
+    cw = max(22, (w - 8) // 2)
+    cells = []
+    for i in range(max(len(_LEDGER_SCHEMA), len(raw))):
+        lbl = _LEDGER_SCHEMA[i] if i < len(_LEDGER_SCHEMA) else f"col{i}"
+        val = raw[i] if i < len(raw) else "-"
+        cells.append(f"{lbl}={val}")
+    for j in range(0, len(cells), 2):
+        left = cells[j][:cw - 1].ljust(cw)
+        right = cells[j + 1][:cw - 1] if j + 1 < len(cells) else ""
+        put(y, 4, (left + right).rstrip(), curses.A_DIM); y += 1
+    return y
+
+
 def _draw_session_detail(stdscr, state, sessions, config_changes):
     """Full-screen card for the cursor-selected row (telemetry_mode='detail').
     CLEAN/ABORTED -> ASCII gauges; RECOVERY/PANIC -> crash_signatures.json
@@ -1844,14 +1882,14 @@ def _draw_session_detail(stdscr, state, sessions, config_changes):
     merged = sorted(list(sessions) + list(config_changes),
                     key=lambda r: r["epoch"], reverse=True)
     cur = state.get("telemetry_cursor", 0)
-    y = 5
+    y = 3   # start just under the tab row (detail mode draws no meta line)
     # Scroll window: the detail card can exceed the panel height (the G-INSTR
     # FRAMERATE gauges pushed a CLEAN card past the bottom), so render through a
     # scroll offset. put() tracks the content extent into _detail_content_h and
     # clips to the visible window; handle_telemetry_pad/_kb scroll via D-pad and
     # clamp against what put() measured. Same cursor-window spirit as the
     # DRIVER-tab scroll fix (587b652), minus the cursor (a card has none).
-    _D_TOP, _D_BOT = 5, h - 4
+    _D_TOP, _D_BOT = 3, h - 4
     _dscroll = state.get("telemetry_detail_scroll", 0)
     state["_detail_view_bot"] = _D_BOT
     state["_detail_content_h"] = _D_TOP
@@ -1940,6 +1978,19 @@ def _draw_session_detail(stdscr, state, sessions, config_changes):
         fence = row.get("fence_at_crash", 0)
         put(y, 4, f"Died at fence: {fence if fence else 'n/a'}     Ran: {dur_h}"
                   f"     Temp peak: {peak_t}C     RAM peak: {ram_str(ram)}"); y += 2
+        # Anti-lock context (col 30): keepalive rescues absorbed before the stop
+        # — the crash-net era's headline, surfacing what the old advice couldn't:
+        # many wedges are now caught, not fatal.
+        try:
+            _nres = (int(row["raw_fields"][29])
+                     if len(row.get("raw_fields", [])) > 29 and row["raw_fields"][29]
+                     else 0)
+        except (ValueError, IndexError):
+            _nres = 0
+        if _nres > 0:
+            put(y, 4, f"Anti-lock absorbed {_nres} rescue"
+                      f"{'s' if _nres != 1 else ''} this session before the stop.",
+                curses.color_pair(PAIR_CLEAN)); y += 2
         # The DRIVER-dial condition + the captured frame — the link from the
         # ledger row to the tune / the visual. ONE compact line so it never
         # pushes the SUGGESTED FIX off a short, non-scrolling card.
@@ -2046,6 +2097,15 @@ def _draw_session_detail(stdscr, state, sessions, config_changes):
                 ctx.append(f"{clk}MHz")
             if ctx:
                 put(y, 4, "Tune:    " + "  ".join(ctx), curses.A_DIM); y += 1
+
+    # RAW LEDGER ROW — every stamped column, below the analytics (top = the
+    # story, bottom = the raw data). Both the crash and clean/survived cards
+    # fall through here; config rows returned earlier, so raw_fields is present.
+    raw = row.get("raw_fields")
+    if raw:
+        y += 1
+        rule(y); y += 1
+        y = _draw_raw_ledger(put, y, w, raw)
 
 
 def _draw_config_row(stdscr, y, w, row, selected=False):
@@ -2984,17 +3044,26 @@ def _sweep_porcelain():
         return per, False, "error"
 
 
-def _scan_vault_hygiene(state):
+def _scan_vault_hygiene(state, _progress=None):
     """Build the Manage Shaders model: per-game total/fresh/stale sizes + the
     RPCS3 runtime-cache sizes. Scope-agnostic (reclaim derived per-scope at
     draw). Slow-ish (du + the dry-run stat pass) so callers draw a busy frame
-    first. Cached in state['shaders_model'] until an action invalidates it."""
+    first. Cached in state['shaders_model'] until an action invalidates it.
+
+    `_progress` (optional, injected by _run_with_spinner): a dict whose "frac"
+    this advances 0..1 as the per-game du pass runs, driving the on-screen bar."""
+    def _prog(f):
+        if _progress is not None:
+            _progress["frac"] = f
     game_ids = _vault_game_ids()
     current = _resolve_current_vault_id(game_ids)
+    _prog(0.05)
     stale_map, boundary_ok, sweep_reason = _sweep_porcelain()
+    _prog(0.15)
 
     games = []
-    for gid in game_ids:
+    n_games = len(game_ids) or 1
+    for scan_idx, gid in enumerate(game_ids):
         # disk_kb = true on-disk footprint (what Delete Vault frees). stale_kb /
         # fresh_kb = shard-tree shader bytes by generation (what the graph splits
         # and Sweep frees). disk_kb >= stale_kb+fresh_kb; the gap is Mesa
@@ -3008,6 +3077,7 @@ def _scan_vault_hygiene(state):
             "fresh_kb": st.get("fresh_kb", 0),
             "stale_files": st.get("stale_files", 0),
         })
+        _prog(0.15 + 0.80 * (scan_idx + 1) / n_games)
     games.sort(key=lambda g: g["disk_kb"], reverse=True)
 
     model = {
@@ -3020,6 +3090,7 @@ def _scan_vault_hygiene(state):
         "rpcs3_cur_mb": _du_kb(os.path.join(RPCS3_RUNTIME_CACHE, current)) // 1024,
         "rpcs3_running": _rpcs3_running(),
     }
+    _prog(1.0)
     state["shaders_model"] = model
     return model
 
@@ -3284,10 +3355,11 @@ def _run_shader_op(op, scope_all, gid, notify):
 _SPINNER_FRAMES = "|/-\\"
 
 
-def _tools_busy_msg(stdscr, msg, spin=None):
+def _tools_busy_msg(stdscr, msg, spin=None, bar=None):
     """Generic 'working' frame for a blocking TOOLS op that doesn't hand the
-    screen to RPCS3 (shader scans/cleans). When `spin` is a single glyph it is
-    drawn centered on the line below the message as a throbber frame."""
+    screen to RPCS3 (shader scans/cleans). `spin` is a throbber glyph centered
+    below the message; `bar` is an optional pre-rendered progress bar drawn under
+    the throbber (the vault scan reports a real fraction — see _run_with_spinner)."""
     try:
         stdscr.erase()
         h, w = stdscr.getmaxyx()
@@ -3298,19 +3370,31 @@ def _tools_busy_msg(stdscr, msg, spin=None):
         if spin:
             stdscr.addstr(h // 2 + 2, max(2, (w - 1) // 2), spin[:1],
                           curses.A_BOLD)
+        if bar:
+            stdscr.addstr(h // 2 + 3, max(2, (w - len(bar)) // 2), bar[:w - 4],
+                          curses.A_BOLD)
         stdscr.refresh()
     except curses.error:
         pass
 
 
-def _run_with_spinner(stdscr, msg, work, *args, draw=_tools_busy_msg, **kwargs):
+def _run_with_spinner(stdscr, msg, work, *args, draw=_tools_busy_msg,
+                      progress=None, indeterminate=False, **kwargs):
     """Run a blocking, curses-free `work(*args, **kwargs)` on a background
     thread while animating the ROCKNIX throbber under `msg` on the main thread.
-    `draw(stdscr, msg, spin)` paints each frame — defaults to the TOOLS busy
+    `draw(stdscr, msg, spin, bar)` paints each frame — defaults to the TOOLS busy
     frame; pass `draw=_paddock_busy` for the PADDOCK tab so the right tab strip
     shows. Returns work()'s value (None if it raised — logged). The worker MUST
-    NOT touch stdscr: curses is single-threaded, so only this (main) thread draws."""
+    NOT touch stdscr: curses is single-threaded, so only this (main) thread draws.
+
+    Progress bar (complements the throbber): pass `progress={"frac": 0.0}` and the
+    worker receives it as the `_progress` kwarg; each frame renders a determinate
+    bar from `progress["frac"]` (0..1). For an opaque op with no measurable
+    fraction (network / git), pass `indeterminate=True` for a marquee sweep
+    instead. Neither = throbber only (legacy)."""
     box = {}
+    if progress is not None:
+        kwargs["_progress"] = progress
 
     def _runner():
         try:
@@ -3322,7 +3406,13 @@ def _run_with_spinner(stdscr, msg, work, *args, draw=_tools_busy_msg, **kwargs):
     t.start()
     i = 0
     while t.is_alive():
-        draw(stdscr, msg, _SPINNER_FRAMES[i % len(_SPINNER_FRAMES)])
+        bar = None
+        if progress is not None and progress.get("frac") is not None:
+            f = max(0.0, min(1.0, progress["frac"]))
+            bar = f"{_ascii_bar(f)} {int(f * 100):3d}%"
+        elif indeterminate:
+            bar = _marquee(i)
+        draw(stdscr, msg, _SPINNER_FRAMES[i % len(_SPINNER_FRAMES)], bar)
         i += 1
         curses.napms(120)                            # ~8 fps; cheap, smooth enough
     t.join()
@@ -3370,7 +3460,7 @@ def draw_tools(stdscr, state):
 
     if mode == "menu":
         put(y, 2, "TOOLS", curses.A_BOLD); y += 1
-        put(y, 2, "-" * (w - 4), curses.A_DIM); y += 2
+        put(y, 2, "-" * (w - 4), curses.A_DIM); y += 1
         for i, label in enumerate(_TOOLS_MENU):
             if i == _TOOLS_SCREENSHOT_IDX:
                 label = f"{label}: {_read_screenshot_mode()}"
@@ -4075,6 +4165,31 @@ _TU_DEBUG_ADVANCED = ("nobin", "forcebin", "nocb",
 _TU_DEBUG_KNOWN = set(_TU_DEBUG_PRIMARY) | set(_TU_DEBUG_ADVANCED)
 
 
+# --- ROAD FEEL dial (the simple DRIVER view) -------------------------------
+# Translates the cryptic TU_DEBUG gears into three plain stops on a
+# stability<->performance axis. Each stop sets tu_debug to a PROVEN combo
+# (etk-turnip-gtk/GEARS.md): syncdraw is the best-tested crash floor; sddepth
+# is the validated FPS-recovery gear (lighter, more wedge-prone — but the
+# anti-lock net now absorbs those as SURVIVED rescues); no barrier is
+# stock/leanest. The falsified lighter gears (sdmem/sdme) are deliberately NOT
+# offered here — they stay in Advanced for the operator's own A/B work.
+_DIAL_STOPS = (
+    ("Max Stability",   "syncdraw - safest; the proven crash floor, fewest saves", {"syncdraw"}),
+    ("Balanced",        "sddepth - more FPS in heavy scenes; anti-lock covers the wedges", {"sddepth"}),
+    ("Max Performance", "no barrier - leanest, most FPS; leans hardest on anti-lock", set()),
+)
+
+
+def _dial_index(model):
+    """Which ROAD FEEL stop the live tu_debug matches EXACTLY, or None
+    ('Custom' — a hand-mixed / experimental flag set from Advanced)."""
+    td = model["tu_debug"]
+    for i, (_lbl, _desc, s) in enumerate(_DIAL_STOPS):
+        if td == s:
+            return i
+    return None
+
+
 def _driver_default_model():
     return {"autotune_idx": 0, "tu_debug": set(),
             "show_advanced": False, "applied_sig": "default",
@@ -4116,7 +4231,10 @@ def _driver_load(state):
                                          if f in _TU_DEBUG_KNOWN}
     except OSError:
         pass
-    if model["tu_debug"] & set(_TU_DEBUG_ADVANCED):
+    # Open Advanced automatically only when the live tune ISN'T a simple ROAD
+    # FEEL stop (a hand-mixed / experimental flag set the dial can't show) —
+    # a plain syncdraw / sddepth / none tune stays on the simple dial view.
+    if _dial_index(model) is None and model["tu_debug"]:
         model["show_advanced"] = True
     model["applied_sig"] = _driver_sig(model)
     # BUILD selector state: catalog + the persisted pick + the live bind.
@@ -4218,11 +4336,11 @@ def _driver_rows(model):
     """Flat selectable-row list, rebuilt each frame so draw + input agree.
     Each entry = (kind, payload). The BUILD selector leads (it's the bigger
     lever — which driver), then the env-var dials that tune it."""
-    rows = [("build", None), ("build_apply", None), ("reboot", None)]
-    rows += [("autotune", None)]
-    rows += [("flag", f) for f in _TU_DEBUG_PRIMARY]
-    rows.append(("advanced", None))
+    rows = [("build", None), ("build_apply", None), ("reboot", None),
+            ("dial", None), ("advanced", None)]
     if model["show_advanced"]:
+        rows += [("autotune", None)]
+        rows += [("flag", f) for f in _TU_DEBUG_PRIMARY]
         rows += [("flag", f) for f in _TU_DEBUG_ADVANCED]
     rows += [("apply", None), ("reset", None)]
     return rows
@@ -4253,9 +4371,8 @@ def draw_driver(stdscr, state):
     put(y, 2, _chassis_string(), curses.A_DIM); y += 1
     put(y, 2, "TURNIP DRIVER", curses.A_BOLD); y += 1
     put(y, 2, "-" * (w - 4), curses.A_DIM); y += 1
-    put(y, 4, "BUILD = which .so loads (reboot to apply). Dials tune it (next launch).",
-        curses.A_DIM); y += 1
-    put(y, 4, "One change per soak: swap one thing, drive real laps, read the ledger.",
+    put(y, 4, f"Loaded now: {driver_string()}", curses.A_BOLD); y += 1
+    put(y, 4, "BUILD picks the .so (reboot to load); dials tune it next launch.",
         curses.A_DIM); y += 1
 
     cap = max(1, (h - y) - 7)
@@ -4292,6 +4409,10 @@ def draw_driver(stdscr, state):
             armed = model.get("reboot_arm")
             put(y, 6, "REBOOT to load build" + ("   CONFIRM?" if armed else ""),
                 base | (curses.A_BOLD if armed else curses.A_DIM))
+        elif kind == "dial":
+            di = _dial_index(model)
+            lbl = _DIAL_STOPS[di][0] if di is not None else "Custom (Advanced)"
+            put(y, 6, f"ROAD FEEL   < {lbl} >", base | curses.A_BOLD)
         elif kind == "autotune":
             put(y, 6, f"TU_AUTOTUNE_ALGO   < {_AUTOTUNE_VALUES[model['autotune_idx']]} >", base)
         elif kind == "flag":
@@ -4310,6 +4431,10 @@ def draw_driver(stdscr, state):
     if scroll + cap < len(rows):
         put(y, w - 10, "(more v)", curses.A_DIM)
     y += 1
+    di = _dial_index(model)
+    feel = (_DIAL_STOPS[di][1] if di is not None
+            else "Custom - raw flags set via Advanced")
+    put(y, 4, "Road feel: " + feel, curses.A_DIM); y += 1
     loaded_lbl = _build_label(model["loaded_build"])
     sel_lbl = _build_label(model["selected_build"])
     if _build_reboot_pending(model):
@@ -4349,11 +4474,26 @@ def _driver_adjust(state, delta):
         model["build_idx"] = (model["build_idx"] + delta) % len(model["builds"])
         model["reboot_arm"] = False
         state["driver_notice"] = None
+    elif kind == "dial":
+        _driver_set_dial(state, delta)
     elif kind == "autotune":
         model["autotune_idx"] = (model["autotune_idx"] + delta) % len(_AUTOTUNE_VALUES)
         state["driver_notice"] = None
     elif kind == "flag":
         _driver_toggle_flag(state, payload)
+
+
+def _driver_set_dial(state, delta):
+    """Cycle the ROAD FEEL dial and set tu_debug to that stop's proven combo.
+    From 'Custom', a step enters the ladder at the nearest end."""
+    model = state["driver_model"]
+    idx = _dial_index(model)
+    if idx is None:
+        idx = 0 if delta >= 0 else len(_DIAL_STOPS) - 1
+    else:
+        idx = (idx + delta) % len(_DIAL_STOPS)
+    model["tu_debug"] = set(_DIAL_STOPS[idx][2])
+    state["driver_notice"] = None
 
 
 def _driver_toggle_flag(state, flag):
@@ -4393,6 +4533,8 @@ def _driver_select(state):
             state["driver_notice"] = (ok, "REBOOTING…" if ok else "REBOOT FAILED")
     elif kind == "flag":
         _driver_toggle_flag(state, payload)
+    elif kind == "dial":
+        _driver_set_dial(state, 1)
     elif kind == "advanced":
         model["show_advanced"] = not model["show_advanced"]
         state["driver_notice"] = None
@@ -5011,9 +5153,10 @@ def _paddock_refresh(state):
     state["paddock_field"] = 0
 
 
-def _paddock_busy(stdscr, msg, spin=None):
-    """PADDOCK 'working' frame. When `spin` is a glyph it animates the ROCKNIX
-    throbber centered between the message and the notifications hint."""
+def _paddock_busy(stdscr, msg, spin=None, bar=None):
+    """PADDOCK 'working' frame. `spin` animates the ROCKNIX throbber; `bar` is an
+    optional pre-rendered progress bar (indeterminate marquee for the opaque
+    network / git sync) drawn between the throbber and the notifications hint."""
     try:
         stdscr.erase()
         h, w = stdscr.getmaxyx()
@@ -5023,6 +5166,9 @@ def _paddock_busy(stdscr, msg, spin=None):
                       curses.A_BOLD)
         if spin:
             stdscr.addstr(h // 2 + 2, max(2, (w - 1) // 2), spin[:1],
+                          curses.A_BOLD)
+        if bar:
+            stdscr.addstr(h // 2 + 3, max(2, (w - len(bar)) // 2), bar[:w - 4],
                           curses.A_BOLD)
         hint = "Watch the on-screen notifications for progress."
         stdscr.addstr(h // 2 + 4, max(2, (w - len(hint)) // 2), hint[:w - 4],
@@ -5269,6 +5415,18 @@ def _ascii_bar(frac, width=18):
     frac = 0.0 if frac < 0 else (1.0 if frac > 1 else frac)
     fill = int(frac * width)
     return "[" + "#" * fill + "-" * (width - fill) + "]"
+
+
+def _marquee(i, width=18, block=4):
+    """Indeterminate progress sweep: a `block`-wide run of # that walks (and
+    wraps) across a `width` track by frame index `i`. For opaque ops (network /
+    git) that can't report a real fraction — a moving bar reads as 'still
+    working' where a static 0% bar would read as stalled."""
+    start = i % width
+    cells = ["-"] * width
+    for k in range(block):
+        cells[(start + k) % width] = "#"
+    return "[" + "".join(cells) + "]"
 
 
 def _curl_total_bytes(url):
@@ -5726,7 +5884,8 @@ def main(stdscr):
         # a busy frame covers the multi-second read.
         if state.pop("shaders_scan_request", None):
             _run_with_spinner(stdscr, "Scanning shader vault…",
-                              _scan_vault_hygiene, state)
+                              _scan_vault_hygiene, state,
+                              progress={"frac": 0.0})
 
         action = state.pop("tools_action", None)
         if action:
@@ -5765,7 +5924,8 @@ def main(stdscr):
         # frame can be drawn while the API round-trip blocks.
         if state.pop("paddock_refresh_request", None):
             _run_with_spinner(stdscr, "Syncing with your paddock…",
-                              _paddock_refresh, state, draw=_paddock_busy)
+                              _paddock_refresh, state, draw=_paddock_busy,
+                              indeterminate=True)
 
         # PADDOCK: queued PUSH/PULL — shell out to paddock_sync.sh for the
         # selected game, streaming progress to mako. Same long-op pattern as
@@ -5776,7 +5936,7 @@ def main(stdscr):
             res = _run_with_spinner(
                 stdscr, f"{pact['verb'].upper()}: {prow['name']} ↔ your paddock",
                 _run_paddock_sync, pact["verb"], prow, _Notifier(),
-                draw=_paddock_busy)
+                draw=_paddock_busy, indeterminate=True)
             ok, lines = res if res else (False, ["sync failed — see log"])
             state["paddock_result"] = (ok, lines)
             state["paddock_mode"] = "result"
