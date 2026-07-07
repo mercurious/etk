@@ -169,12 +169,26 @@ while true; do
                     h=int(m/2); so=0; sr=0
                     for(i=1;i<=h;i++) so+=dd[i]; for(i=h+1;i<=m;i++) sr+=dd[i]
                     older=(h>0)?so/h:0; recent=((m-h)>0)?sr/(m-h):0; tr=recent-older
-                    # JITTER: count=velocity (0..SLOTS); »=improving(tr<0)/«=degrading; marquee by phase
-                    at=(tr<0)?-tr:tr; c=0; if(at>=T1)c=1; if(at>=T2)c=2; if(at>=T3)c=3; if(at>=T4)c=4; if(at>=T5)c=5
-                    if(c==0){ jg=pad }
+                    # JITTER (numeral gauge, operator-designed 2026-07-07): the
+                    # rounded |trend| magnitude (ms) sits as a single digit in the
+                    # CENTER slot; the 4 side slots carry the direction arrow
+                    # (» improving = tr<0 / « degrading = tr>0) with one rotating
+                    # gap so the arrows read as flowing behind the number. 0 -> all
+                    # dots (calm); >=10 -> the digit gives way to an arrow (a
+                    # 1-char slot cannot show two digits). Latin-1 « » only; the
+                    # single-guillemet glyphs render as tofu on the rig font. NB:
+                    # no apostrophes in this awk body (single-quoted). T1..T5 unused.
+                    at=(tr<0)?-tr:tr; val=int(at+0.5)
+                    if(val<=0){ jg=pad }
                     else{
-                        ar=(tr<0)?"»":"«"; sh=(tr<0)?phase:-phase; jg=""
-                        for(i=0;i<SLOTS;i++){ j=((i-sh)%SLOTS+SLOTS)%SLOTS; jg=jg ((j<c)?ar:"·") }
+                        ar=(tr<0)?"»":"«"
+                        gap=(tr<0)?(phase%SLOTS):((SLOTS-(phase%SLOTS))%SLOTS)
+                        jg=""
+                        for(i=0;i<SLOTS;i++){
+                            ch=(i==gap)?"·":ar
+                            if(i==2){ ch=(val>=10)?ar:val }
+                            jg=jg ch
+                        }
                     }
                     # SLIP: level 0..SLOTS by jit; fill + ; at MAX pulse +++++/===== by phase
                     L=0; if(jit>=J1)L=1; if(jit>=J2)L=2; if(jit>=J3)L=3; if(jit>=J4)L=4; if(jit>=J5)L=5
