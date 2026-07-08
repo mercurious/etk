@@ -8,7 +8,6 @@ The Gran Turismo Kit (GTK) is a specialty installation for your Retroid Pocket F
 - [Tested Games](https://github.com/mercurious/etk/wiki/Tested-Games)
 
 ## Why Install ROCKNIX-GTK and the ETK?
-*You won’t be able to play Gran Turismo PS3 games on the SM8250 series without it.*
 1. **CRASH PREVENTION:** By forking and patching the entire stack on the device, we were able to cross-integrate the OS to the emulator with the video driver as a single “chassis” and wire it to the native MangoHUD overlay so you can see in real-time an alert when you’ve just been rescued from a GPU wedge crash `|·«!»·|`. The same GTK ANTI-LOCK gauge keeps a live counter `|·×03·|` for the current boot so you know when it’s time to refresh the rig with a reboot. This “anti-lock” system emulates how Android provides a similar level of stability, enabling the Adreno Kernel Graphics Support Layer (KGSL) but running on the bare metal of linux opens up tremendous performance headroom by comparison.
 2. **BUGS FIXED:** Owning the chassis allowed us to fix the stubborn “road flicker” [bug](https://github.com/RPCS3/rpcs3/issues/11912) that affects GT5P on all platforms, solved a glitchy audio card boot sequence in ROCKNIX, and more.
 3. **FEATURES ADDED:** We’ve added new core capabilities to the device such as video mirroring, easy firmware & package install, advanced shader management, on-device tuning down to the overclock and Turnip dials, advanced trigger calibration for the top-end, and an advanced telemetry UI/UX to inform your tuning choices.
@@ -34,6 +33,10 @@ See [Getting Started](https://github.com/mercurious/etk/#getting-started) to ins
 | VAULT + PADDOCK | Advanced shader protection and management | overlay gauge `2+ 34.5k 167MB` |
 | Thermal Guard | Automatically protect silicon from overheats | overlay gauge `89°HOT»»»`  |
 | ETK Pitstop App | Native ROCKNIX tools app for onboard telemetry, tuning, tools, and more | native app in ROCKNIX ES Tools carousel |
+| DDU Overlay | Native MangoHUD customized with ETK gauges | `R1` + `L3` to toggle between top, bottom, default, off |
+| Crash Recovery | Safely exit from crash or freeze | `L1` + `R3` to safely recover to ES frontend |
+| ETK Screenshot | One-finger shutter screenshots with overlay | `L1` configurable in ETK Pitstop tools |
+| On Device Installations | One-tap, on-device firmware and game installs. | Drop `.pup` in `etk/firmware_drop` and `.pkg` in `etk/pkg_drop` and open ETT Pitstop `TOOLS` tab |
 | Video Mirroring | Device screen on while USB-DisplayPort-HDMI out active | turn USB plug upside-down to solve video-out issue |
 | Flicker-free Road Surfaces | 5 year emulator old [bug](https://github.com/RPCS3/rpcs3/issues/11912) solved | perfectly rendered road surfaces |
 | Audio card boot fixed | Sound works reliably vs official release | sound just works now, finally; solving race stutter is a different problem |
