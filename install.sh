@@ -1742,34 +1742,27 @@ else
     ssh $RIG_SSH "rm -f /storage/.config/profile.d/096-etk-rpcs3-flags" 2>/dev/null
 fi
 
-# --- STEP 6.57: AUDIO WATCHDOG (per-boot sound-card bring-up gate) ---
-# The SM8250 sound card intermittently never probes at boot (~1 in 4 boots:
-# q6afe/ADSP clock-vote race kills the va_macro probe, the whole LPASS chain
-# parks in deferred-probe, PipeWire serves only a dummy sink = the entire
-# boot is silent in every app — see AI_MANIFEST "ROCKNIX AUDIO STACK").
-# scripts/audio_watchdog.sh (deployed by STEP 3) detects the failed state and
-# re-triggers the probe chain; field-validated on a natural failure
-# 2026-07-03 (ledger snd=revived). This unit runs it at every boot; it also
-# writes the persistent boot status that the ledger's snd column reads.
+# --- STEP 6.57: RETIRE the audio watchdog (SM8250 silent-boot fixed in kernel) ---
+# The SM8250 silent-boot probe race (~1 in 4 boots: q6afe/ADSP clock-vote race
+# kills the va_macro probe → whole LPASS chain parks in deferred-probe → dummy
+# sink → silent boot) is now fixed at the ROOT in the ROCKNIX-GTK kernel (patch
+# 0002-q6afe-vote-probe-race, KERNEL.rocknix-gtk-20260706-audiofix0, shipped by
+# STEP 6.4 + etk.conf KERNEL_IMAGE): the vote retries in place until the ADSP is
+# ready, so no userspace revive is needed. The old etk-audio-watchdog.service +
+# scripts/audio_watchdog.sh are RETIRED (2026-07-07). This step actively tears
+# the unit down on rigs that still carry it from an earlier install (idempotent
+# — a no-op once gone). SCOPE: this is ONLY the card-STARTUP workaround; the
+# stutter/underrun telemetry (ledger aud= from the RPCS3 fork's
+# /dev/shm/rpcs3_audio_stat) is a SEPARATE mechanism and is untouched.
 ssh $RIG_SSH "sh -s" > /dev/null 2>&1 <<'AUDIOWDREMOTE'
-    mkdir -p /storage/.config/system.d/
-cat << 'SVC' > /storage/.config/system.d/etk-audio-watchdog.service
-[Unit]
-Description=ETK Audio Watchdog - sound-card bring-up gate (SM8250 probe race)
-After=multi-user.target
-
-[Service]
-Type=oneshot
-ExecStart=/storage/games-internal/roms/etk/scripts/audio_watchdog.sh
-RemainAfterExit=no
-
-[Install]
-WantedBy=multi-user.target
-SVC
+    systemctl disable --now etk-audio-watchdog.service >/dev/null 2>&1
+    rm -f /storage/.config/system.d/etk-audio-watchdog.service
+    rm -f /storage/.config/system.d/multi-user.target.wants/etk-audio-watchdog.service
+    rm -f /storage/games-internal/roms/etk/scripts/audio_watchdog.sh
+    systemctl reset-failed etk-audio-watchdog.service >/dev/null 2>&1
     systemctl daemon-reload
-    systemctl enable /storage/.config/system.d/etk-audio-watchdog.service >/dev/null 2>&1
 AUDIOWDREMOTE
-say "${G}[ETK]${N} Audio watchdog armed (etk-audio-watchdog.service, boot oneshot)"
+say "${G}[ETK]${N} Audio watchdog retired (SM8250 silent-boot fixed in the GTK kernel)"
 
 # ==========================================================
 # STEP 6.6: POWER PROFILE APPLIER (CPU/GPU gov + clock pinning)

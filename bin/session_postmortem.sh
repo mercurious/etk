@@ -634,27 +634,18 @@ if [ -f /dev/shm/rpcs3_audio_log ] && [ "$AUD_STAT" != "-" ]; then
     done
 fi
 
-# snd: did this session have real audio hardware? SM8250 probe-race boots
-# serve only the PipeWire dummy sink = a silent session (AI_MANIFEST
-# "ROCKNIX AUDIO STACK"); such rows must be excludable from audio A/B.
-# Precedence: dummy (session fact — RPCS3 bound auto_null; device-init lines
-# live in the log HEAD, and a full grep of a 100MB+ log would blow the <2s
-# budget, hence head -c) > nocard (no ALSA card at post-mortem) > revived
-# (watchdog re-probed this boot; epoch-validated so a prior boot's line
-# never lies) > ok.
+# snd: did this session have real audio hardware? A silent session (only the
+# PipeWire dummy sink) must be excludable from audio A/B. CARD-PRESENCE-ONLY
+# since 2026-07-07: the SM8250 probe race is fixed in the GTK kernel and the
+# audio watchdog (which wrote the old "revived" sub-state via audio_boot.txt)
+# is retired — see AI_MANIFEST "ROCKNIX AUDIO STACK". Precedence: dummy
+# (session fact — RPCS3 bound auto_null; device-init lines live in the log
+# HEAD, and a full grep of a 100MB+ log would blow the <2s budget, hence
+# head -c) > nocard (no ALSA card at post-mortem) > ok.
 SND_STAT="ok"
 ls /proc/asound 2>/dev/null | grep -q "^card[0-9]" || SND_STAT="nocard"
 if head -c 2000000 "$RPCS3_LOG" 2>/dev/null | grep -q 'DeviceID: "auto_null"'; then
     SND_STAT="dummy"
-elif [ "$SND_STAT" = "ok" ] && [ -f "$TELEMETRY_DIR/audio_boot.txt" ]; then
-    WD_EPOCH=$(awk '{print $1}' "$TELEMETRY_DIR/audio_boot.txt" 2>/dev/null)
-    WD_STATE=$(awk '{print $2}' "$TELEMETRY_DIR/audio_boot.txt" 2>/dev/null)
-    case "$WD_EPOCH" in ''|*[!0-9]*) WD_EPOCH=0 ;; esac
-    UP_NOW=$(cut -d. -f1 /proc/uptime 2>/dev/null)
-    case "$UP_NOW" in ''|*[!0-9]*) UP_NOW=0 ;; esac
-    if [ "$WD_STATE" = "revived" ] && [ "$WD_EPOCH" -ge $((NOW - UP_NOW - 120)) ]; then
-        SND_STAT="revived"
-    fi
 fi
 
 # --- LEDGER WRITE ---

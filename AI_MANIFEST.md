@@ -77,9 +77,13 @@ soundwire, clocked off the ADSP via q6afe/q6prm).
    (rocknix-gtk Patch #2 `q6afe-vote-probe-race`, first in `KERNEL.rocknix-gtk-20260706-audiofix0`):
    the ADSP's error reply to the LPASS HW clock vote never woke the q6afe waiter and the hard
    probe failure was never retried; the kernel now retries the vote in place (250ms, 15s bound;
-   dmesg marker `etk: AFE vote (N) recovered after N retries`). `scripts/audio_watchdog.sh` is
-   DEPRECATED to a validation tripwire + backstop (v0.4.0) until N≥3 natural races are absorbed
-   kernel-side. Historic mechanism (still live on any pre-audiofix kernel): the sound card intermittently NEVER
+   dmesg marker `etk: AFE vote (N) recovered after N retries`). `scripts/audio_watchdog.sh` +
+   `etk-audio-watchdog.service` are **RETIRED** (2026-07-07, operator-directed: the fix ships in the
+   0.7.0 default kernel, so no userspace revive is needed; install.sh STEP 6.57 tears the unit down on
+   existing rigs; `snd=` is now card-presence-only). The manual revive below stays as an emergency
+   fallback. **SCOPE — do not re-conflate:** this retires ONLY the card-STARTUP workaround. The
+   stutter/underrun telemetry (ledger `aud=`, from the RPCS3 fork's `/dev/shm/rpcs3_audio_stat`) is a
+   SEPARATE, still-live mechanism — untouched. Historic mechanism (still live on any pre-audiofix kernel): the sound card intermittently NEVER
    probes (observed 4 of 13 boots, 2026-07-02, incl. panic-reboot clusters). Root: an early
    `qcom-q6afe: AFE failed to vote (3)` (race against ADSP `audio_pd` bring-up) fails the probe of
    `3370000.codec` (va_macro — the clock supplier for ALL LPASS macros); every downstream device

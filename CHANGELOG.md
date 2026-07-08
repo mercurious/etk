@@ -6,7 +6,7 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ### Changed
 - **The SM8250 silent-boot audio bug is now fixed in the kernel** ([rocknix-gtk](https://github.com/mercurious/rocknix-gtk) Patch #2 `q6afe-vote-probe-race`, in `KERNEL.rocknix-gtk-20260706-audiofix0`): the ADSP's error reply to the LPASS clock vote never woke the waiter, and the resulting hard probe failure parked the whole audio chain in deferred-probe forever on ~1 in 4 boots. The kernel now retries the vote in place — the card comes up on the first boot pass.
-- **Audio watchdog deprecated to a validation tripwire + backstop** (`scripts/audio_watchdog.sh` v0.4.0): logs each kernel-fix engagement to the tripwire, keeps feeding the ledger `snd=` column, and still runs the old userspace revive only if the kernel fix is absent or regressed. Scheduled for removal after N≥3 natural races are absorbed kernel-side.
+- **Audio watchdog retired.** With the silent-boot bug fixed at the root in the kernel (above), the userspace `etk-audio-watchdog.service` + `scripts/audio_watchdog.sh` are removed; `install.sh` tears the unit down on rigs that still carry it from an earlier install. The ledger's `snd=` column is now card-presence-only (`ok`/`nocard`/`dummy`). (Unrelated and unchanged: the RPCS3-fork audio **stutter/underrun** telemetry, ledger `aud=`, is a separate mechanism and stays.)
 
 ## [0.6.0] - 2026-07-03 — "GTK Prologue Edition"
 
