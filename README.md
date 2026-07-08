@@ -30,7 +30,7 @@ See [Getting Started](https://github.com/mercurious/etk/#getting-started) for ho
 | Thermal Guard | Automatically protect silicon from overheats |
 | ETK Pitstop App | Native ROCKNIX tools app for onboard telemetry, tuning, tools, and more |
 | Video Mirroring | Device screen on while USB-DisplayPort-HDMI out active | 
-| Flicker-free Road Surfaces | 5 year emulator old bug solved |
+| Flicker-free Road Surfaces | 5 year emulator old [bug](https://github.com/RPCS3/rpcs3/issues/11912) solved |
 | Audio card boot fixed | Sound works reliably vs official release | 
 
 
