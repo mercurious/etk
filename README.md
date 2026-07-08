@@ -1,5 +1,5 @@
 # The Emulation Tuning Kit - GTK Edition
-The Gran Turismo Kit (GTK) is a specialty installation for your Retroid Pocket Flip2 SM8250 (or [sibling device](https://github.com/mercurious/etk/#handheld-system-support)) built on patched forks of [ROCKNIX](https://github.com/mercurious/rocknix-gtk) (OS/kernel), [RCPS3](https://github.com/mercurious/etk-rpcs3-gtk) (PS3 emulator) and [MESA Turnip](https://github.com/mercurious/etk-turnip-gtk) (Adreno Vulkan video driver) integrated with a custom middleware (the ETK), and all of it is **specifically tuned** for the **Gran Turismo series only**. GT HD Concept, GT 5 Prologue Spec II and Spec III are supported. GT5 and GT6 support is pending. Other game support is incidental.
+The Gran Turismo Kit (GTK) is a specialty installation for your Retroid Pocket Flip2 SM8250 (or [sibling device](https://github.com/mercurious/etk/#handheld-system-support)) built on patched forks of [ROCKNIX](https://github.com/mercurious/rocknix-gtk) (OS/kernel), [RCPS3](https://github.com/mercurious/etk-rpcs3-gtk) (PS3 emulator) and [MESA Turnip](https://github.com/mercurious/etk-turnip-gtk) (Adreno Vulkan video driver) integrated with a custom middleware (the ETK), and all of it is **specifically tuned** for the **Gran Turismo series only**. GT HD Concept, GT 5 Prologue Spec II and Spec III are supported. GT5 and GT6 support is *pending*. Other game support is *incidental*.
 - [Download latest release](https://github.com/mercurious/etk/releases)
 - [Quick Start](https://github.com/mercurious/etk/#quick-start)
 - [ETK Wiki](https://github.com/mercurious/etk/wiki) for full documentation, guides, advanced features
@@ -28,15 +28,15 @@ See [Getting Started](https://github.com/mercurious/etk/#getting-started) to ins
 | Exclusive Feature or Fix | Description | Interface |
 |---|---|---|
 | GTK Anti-Lock | Automatic live recovery of GPU wedge crashes | overlay gauge `·«!»·` `·×03·` |
-| Adreno Traction Control | Automatic "limited-slip-differential" holds GPU down | overlay gauge `++···` `=====` |
+| GTK Turnip Traction Control | Automatic "limited-slip-differential" holds the Adrendo GPU down | overlay gauge `++···` `=====` |
 | G-INSTR Telemetry | Animated jitter gauge in HUD | overlay gauge `··2»»` |
 | VAULT + PADDOCK | Advanced shader protection and management | overlay gauge `2+ 34.5k 167MB` |
 | Thermal Guard | Automatically protect silicon from overheats | overlay gauge `89°HOT»»»`  |
 | ETK Pitstop App | Native ROCKNIX tools app for onboard telemetry, tuning, tools, and more | native app in ROCKNIX ES Tools carousel |
 | DDU Overlay | Native MangoHUD customized with ETK gauges | `R1` + `L3` to toggle between top, bottom, default, off |
 | Crash Recovery | Safely exit from crash or freeze | `L1` + `R3` to safely recover to ES frontend |
-| ETK Screenshot | One-finger shutter screenshots with overlay | `L1` configurable in ETK Pitstop tools |
-| On Device Installations | One-tap, on-device firmware and game installs. | Drop `.pup` in `etk/firmware_drop` and `.pkg` in `etk/pkg_drop` and open ETT Pitstop `TOOLS` tab |
+| ETK Screenshot | One-finger shutter screenshots with overlay | `L1` configurable in ETK Pitstop |
+| On Device Installations | One-tap, on-device firmware and game installs | Drop `.pup` in `etk/firmware_drop`, `.pkg` in `etk/pkg_drop`, open ETK Pitstop `TOOLS` tab |
 | Video Mirroring | Device screen on while USB-DisplayPort-HDMI out active | turn USB plug upside-down to solve video-out issue |
 | Flicker-free Road Surfaces | 5 year emulator old [bug](https://github.com/RPCS3/rpcs3/issues/11912) solved | perfectly rendered road surfaces |
 | Audio card boot fixed | Sound works reliably vs official release | sound just works now, finally; solving race stutter is a different problem |
