@@ -4,6 +4,12 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ## [Unreleased]
 
+### Changed
+- **Kernel artifact renamed to a version-only scheme** (AI_MANIFEST law #8): the GTK kernel that shipped in v0.7.0 as `KERNEL.rocknix-gtk-20260706-audiofix0` is renamed `KERNEL.rocknix-gtk-20260706-0.2` for the next build (same bits; sha256 `7207dbce…` unchanged). The **published v0.7.0 asset is left as-is** — renaming it would break the `install.sh` kernel deploy and the release download links — so this only affects the next release's build inputs.
+
+### Added
+- **`tools/release_sanity.sh`** — a release gate that enforces version-only artifact filenames (law #8): a strict `KERNEL.rocknix-gtk-<date>-<n.n>` pattern plus a feature-word denylist over the shipping config (`etk.conf`, the image-builder default, `drivers/`, `install.sh` CERTs), so feature-name cruft like `-audiofix0` can't ship again.
+
 ## [0.7.0] - 2026-07-07 — "GTK Edition"
 
 **ETK now owns the whole stack.** Where 0.6.0 introduced the custom RPCS3 emulator, v0.7.0 completes the set — a custom **kernel**, **Turnip driver**, and **RPCS3 emulator**, all ETK-built and deployed by `install.sh` — and turns the headline feature on **by default**: the **anti-lock rescue system** that catches a GPU wedge mid-race and keeps you driving instead of dropping to the menu. It also closes the last turn-key gap with a **one-tap PS3 firmware installer**, and lands the SM8250 silent-boot audio fix at the kernel root. Still targeted at Gran Turismo 5 Prologue (Spec II/III) and GT HD Concept, with GT5/GT6 riding the crash-net.
