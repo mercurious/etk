@@ -199,6 +199,14 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
     echo "|/bin/false" > /proc/sys/kernel/core_pattern 2>/dev/null
     echo "    Removed: etk-stage3.service / 02-etk-coredump.sh / 098-etk-stage3 (core_pattern restored)"
 
+    # SD game-tree rebind (crash-card storage model): drop the oneshot unit +
+    # its script. The live bind-mounts (if a SDGAMES card is in) clear on the
+    # next boot once the service is gone — no risky in-session unmount here.
+    systemctl disable --now etk-sd-rebind.service 2>/dev/null
+    rm -f /storage/.config/system.d/etk-sd-rebind.service
+    rm -f /storage/.config/custom_scripts/etk-sd-rebind.sh
+    echo "    Removed: etk-sd-rebind.service / etk-sd-rebind.sh (SD game-tree binds clear on next boot)"
+
     # Custom Turnip (Stage IV): drop the boot bind-mount unit + its resolver +
     # unbind so the rig falls back to the stock squashfs driver. Leaves
     # /storage/turnip/ (the driver catalog + the operator's selection) in place —
