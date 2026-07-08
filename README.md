@@ -48,7 +48,7 @@ See [Getting Started](https://github.com/mercurious/etk/#getting-started) for ho
 The GTK fork was built from **ROCKNIX official release `20260701`** 
 | Type | Detail |
 |---|---|
-| Host System | macOS or Linux native, Windows support via img flash, WLS, PowerShell Port  |
+| Host System | macOS or Linux native, Windows support via img flash, WLS, [PowerShell Port](https://github.com/mercurious/etk/tree/main/windows_installer) |
 | OS | ROCKNIX-GTK |
 | Emulator | RPCS3 **GTK Edition** |
 | Driver | MESA Turnip 26.1.3 **GTK** |
