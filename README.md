@@ -10,12 +10,12 @@ The Gran Turismo Kit (GTK) is a specialty installation for your Retroid Pocket F
 
 ## Quick Start
 ### Don't have ROCKNIX?
-Try the kit with a spare SD card and reader. Revert back to Android or your primary card at any time.
-1. Download the ROCKNIX-GTK SD Card image from [releases](https://github.com/mercurious/etk/releases) and use a tool like Balena Etcher to flash a blank card
-1. Insert your new flashed card to autoboot into ROCKNIX-GTK with your Android boot preserved
+It's easy to try out the kit with a spare SD card and USB card reader, revert back to Android, or standard ROCKNIX anytime.
+1. Download the ROCKNIX-GTK SD Card image from [releases](https://github.com/mercurious/etk/releases) and then use a tool like Balena Etcher to flash a blank card with ROCKNIX-GTK.
+1. Insert your new flashed card to autoboot into ROCKNIX-GTK with your Android boot preserved. Hold Volume-Down before Retroid logo to switch boot. Use GRUB menu to boot into standard ROCKNIX.
 1. Add your WiFi in network settings and enable SSH, etc.
-1. Add PS3 firmware and ROMS to the provided etk drop folders over SMB or SFTP `etk/firmware_drop` `etk/pkg_drop`
-1. Use ETK Pitstop app TOOLS to install your staged firmware and PKG files
+1. Add PS3 firmware and ROMS to the provided etk drop folders over SMB or SFTP: `etk/firmware_drop`, `etk/pkg_drop`
+1. Use the ETK Pitstop app TOOLS to install your staged firmware and PKG files and much more.
 1. Ready to play
 ### Already have ROCKNIX installed?
 See [Getting Started](https://github.com/mercurious/etk/#getting-started) for how to install the ETK and the GTK forks into your existing ROCKNIX setup.
