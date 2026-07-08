@@ -4,9 +4,44 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-07 — "GTK Edition"
+
+**ETK now owns the whole stack.** Where 0.6.0 introduced the custom RPCS3 emulator, v0.7.0 completes the set — a custom **kernel**, **Turnip driver**, and **RPCS3 emulator**, all ETK-built and deployed by `install.sh` — and turns the headline feature on **by default**: the **anti-lock rescue system** that catches a GPU wedge mid-race and keeps you driving instead of dropping to the menu. It also closes the last turn-key gap with a **one-tap PS3 firmware installer**, and lands the SM8250 silent-boot audio fix at the kernel root. Still targeted at Gran Turismo 5 Prologue (Spec II/III) and GT HD Concept, with GT5/GT6 riding the crash-net.
+
+### Added
+- **PS3 Firmware Installer** (Pitstop TOOLS → *Install PS3 Firmware*). Drop the official Sony `PS3UPDAT.PUP` into `roms/etk/firmware_drop/` and install it on-device — RPCS3 runs headless in the background (~1 min, no dialog to confirm). Firmware is system-wide, installed once; the `.pup` is kept for reuse. This removes the last setup step that needed a desktop RPCS3 (legal, free firmware — the download link + steps ship in the drop folder's README).
+- **Fable's Challenge KPIs** — the race ledger now scores every session against the console-quality bar: `lock%` (share of the race at the locked frame target) and `perfect%` (share inside the perfect frame window), plus a per-session `rescues` count. Per-title targets (GT HD = locked-60, GT5P/GT6 = locked-30) and a **`SURVIVED`** classification that labels a keepalive-absorbed hang honestly instead of scoring it as a crash or a clean finish.
+- **ETK Dyno** — a host-side, ledger-driven A/B judge that ranks a knob's settings by `perfect%` across N trials, so tuning calls come from data, not vibes.
+- **Cockpit UX pass** in Pitstop: a 4-stop **MangoHUD punchbox** (R1+L3 cycles custom-top → custom-bottom → default → off, remembered per game); the **JITTER** and **ANTI-LOCK** DDU gauges (frame-pacing flow + a per-session rescue counter); a **Stability↔Performance** driver dial-view over proven `TU_DEBUG`+gear combos (raw dials demoted to Advanced); on-screen progress bars for the Manage-Shaders and Paddock long ops; and raw-ledger-data blocks in the telemetry detail views.
+- **Resolution Scale** 85% and 90% rungs; **Trigger Calibration** top-end (H7b) for a saturating R2/L2.
+- **Per-frame MangoHUD logging** + a per-session frame-curve archive (`mango_logs/`) — the data behind the road-feel detector.
+- **`KERNEL_DEPLOY_MODE`** (Tier-K): `install.sh` deploys and default-boots the GTK kernel with a stock fallback entry, one grub-pick away.
+- Forensics offload (rig → host move at every deploy) and core-dump hygiene (SD routing + per-crash prune + staging pre-flight).
+
 ### Changed
-- **The SM8250 silent-boot audio bug is now fixed in the kernel** ([rocknix-gtk](https://github.com/mercurious/rocknix-gtk) Patch #2 `q6afe-vote-probe-race`, in `KERNEL.rocknix-gtk-20260706-audiofix0`): the ADSP's error reply to the LPASS clock vote never woke the waiter, and the resulting hard probe failure parked the whole audio chain in deferred-probe forever on ~1 in 4 boots. The kernel now retries the vote in place — the card comes up on the first boot pass.
-- **Audio watchdog retired.** With the silent-boot bug fixed at the root in the kernel (above), the userspace `etk-audio-watchdog.service` + `scripts/audio_watchdog.sh` are removed; `install.sh` tears the unit down on rigs that still carry it from an earlier install. The ledger's `snd=` column is now card-presence-only (`ok`/`nocard`/`dummy`). (Unrelated and unchanged: the RPCS3-fork audio **stutter/underrun** telemetry, ledger `aud=`, is a separate mechanism and stays.)
+- **Full stack, and anti-lock is now DEFAULT-ON.** The certified stack is ETK's own **RPCS3 GTK Edition 0.7.0** (fence force-signal / RSX watchdog / FIFO-resync all on in-build), **GTK Turnip `gtk_0.4`** (query-survive on), and the **GTK kernel** (`audiofix0`, KGSL-parity keepalive baked into the boot cmdline). A GPU wedge that used to freeze the handheld is now caught and released mid-race — no `etk.conf` flags required. Each switch keeps a documented `=0` kill-switch. GTK-kernel default-boot is **Flip 2-guarded** (other SD865 devices stay stock-default until a tester verifies them).
+- **SM8250 silent-boot audio is fixed in the kernel** ([rocknix-gtk](https://github.com/mercurious/rocknix-gtk) Patch #2 `q6afe-vote-probe-race`): the ADSP's dropped clock-vote reply used to park the whole audio chain in deferred-probe on ~1-in-4 boots; the kernel now retries the vote in place and the card comes up first pass.
+- **The forks self-identify** — RPCS3's About/version string, the Turnip driver marker, and a GTK boot-identity line now report "GTK Edition v0.7.0", so a field build is unambiguous.
+- **Boot menu** reordered — "ROCKNIX-GTK for Flip 2" is the default entry, a verbose entry second, stock fallback third.
+- The install-time **notification** (mako) is centered and its applier rewritten in place, so already-installed rigs pick up the reposition on update instead of appending a duplicate.
+- **RACE** power preset pins the GPU at the 800 MHz OPP ceiling (a floor pin, not a runtime OC).
+- **PS3 install storage-coherence** — the firmware and PKG installers now resolve RPCS3's real data paths (its config-dir symlinks under `/storage/roms/bios/rpcs3`), self-provision the tree on a fresh card (RPCS3 checks free space *before* creating the folder, which broke a first install), and refuse a split-brain (a second SD card shadowing your games tree) with a clear message.
+
+### Fixed
+- **SD game-tree rebind** (crash-card storage model) rewritten to v3: discovers the games card by **label** instead of a hard-coded UUID, exits cleanly when no games card is present, and can no longer stall UI bring-up ~30 s on boot. Now generated by `install.sh` (previously a hand-pushed script that could silently drift).
+- The **Sentry env bomb** — `PYTHONPATH` self-appended every tick and eventually blew the environment-size limit (`E2BIG`), wedging the Sentry after ~1h45m uptime; env exports are now absolute.
+- `install.sh` refuses to deploy while a game is running (a mid-race install cost a session).
+- The DRIVER tab's currently-selected build is never pruned from the Turnip catalog.
+- The Black Box drift tripwire accepts any `panic=` value; ETK daemons/scripts ship with the exec bit set.
+
+### Removed
+- **Audio watchdog** (`etk-audio-watchdog.service` + `scripts/audio_watchdog.sh`) — the silent-boot bug it worked around is fixed in the kernel (above), so the userspace revive is retired; `install.sh` tears the old unit down on update. The ledger `snd=` column is now card-presence-only (`ok`/`nocard`/`dummy`). (Unrelated and unchanged: the RPCS3-fork audio **stutter/underrun** telemetry, ledger `aud=`, stays.)
+
+### Known issues / deferred
+- **Image branding deferred.** The flashable plug-n-play image gets its boot logo + OS self-report in a dedicated post-0.7.0 image session (they need a SYSTEM squashfs repack); this release ships the light fork-ID only.
+- The **a6xx GPU hang** is now *absorbed* by anti-lock (a wedge becomes a brief hitch scored `SURVIVED`, not a session death) but not cured; the DRM-spawn teardown deadlock remains an intermittent launch race.
+- **"Boot roulette":** on a handheld that already has ROCKNIX on internal storage, an inserted SD mounts as secondary rather than booting standalone — so the single-card plug-n-play image can't be full-boot-tested there (it's validated by construction; a GRUB switcher is planned to make the boot a choice).
+- The **Windows PowerShell** installer is frozen at 0.6.0 (`install.sh` is the maintained engine going forward).
 
 ## [0.6.0] - 2026-07-03 — "GTK Prologue Edition"
 
