@@ -171,8 +171,28 @@ RPCS3_HDD1_CACHE = os.environ.get(
 RPCS3_RUNTIME_CACHE = os.environ.get(
     'RPCS3_RUNTIME_CACHE', '/storage/.cache/rpcs3/cache')
 RPCS3_LOG = os.environ.get('RPCS3_LOG', '/storage/.cache/rpcs3/RPCS3.log')
+# dev_flash holds the installed PS3 firmware. RPCS3's config dir is
+# /storage/.config/rpcs3/ and its dev_flash is symlinked to the games tree, so
+# use the CONFIG-DIR path — it's what RPCS3 actually resolves at runtime.
+# version.txt is RPCS3's own firmware-version marker.
+RPCS3_DEV_FLASH = os.environ.get(
+    'RPCS3_DEV_FLASH', '/storage/.config/rpcs3/dev_flash')
+RPCS3_FW_VERSION_FILE = os.environ.get(
+    'RPCS3_FW_VERSION_FILE', f"{RPCS3_DEV_FLASH}/vsh/etc/version.txt")
+# RPCS3's config-dir game path (dev_hdd0/game under /storage/.config/rpcs3/,
+# symlinked to the games tree) — where RPCS3 ACTUALLY installs a PKG. On a
+# coherent rig this resolves to the same place as RPCS3_GAME_DIR; a foreign SD
+# card shadowing /storage/roms (split-brain) makes them diverge, so the PKG
+# installer would extract where it isn't watching and read as a silent failure.
+RPCS3_CFG_GAME_DIR = os.environ.get(
+    'RPCS3_CFG_GAME_DIR', '/storage/.config/rpcs3/dev_hdd0/game')
 PKG_STAGING_DIR = os.environ.get(
     'PKG_STAGING_DIR', f"{os.environ.get('ETK_ROOT', '/storage/games-internal/roms/etk')}/pkg_install_drop")
+# Firmware drop folder — the user places the official Sony PS3UPDAT.PUP here.
+# Unlike PKG staging, the .pup is KEPT after a successful install (firmware is a
+# reusable, system-wide asset installed once, not a per-game staging file).
+FIRMWARE_DROP_DIR = os.environ.get(
+    'FIRMWARE_DROP_DIR', f"{os.environ.get('ETK_ROOT', '/storage/games-internal/roms/etk')}/firmware_drop")
 ETK_TEMPLATE_CONFIG = os.environ.get(
     'ETK_TEMPLATE_CONFIG', f"{os.environ.get('ETK_ROOT', '/storage/games-internal/roms/etk')}/config/etk_template.yml")
 ROCKNIX_SYSTEM_CFG = os.environ.get(
@@ -2229,13 +2249,15 @@ def handle_telemetry_pad(state, etype, code, val):
 # the most-reached tool (ROADMAP). Every entry is constant-indexed so the order
 # is a one-line edit here with no hardcoded literals in the dispatch below.
 _TOOLS_MENU = ["Manage Shaders", "Install a staged PS3 Package",
-               "Uninstall a Game", "Trigger Calibration", "Screenshot on L1"]
+               "Uninstall a Game", "Trigger Calibration", "Screenshot on L1",
+               "Install PS3 Firmware"]
 _TOOLS_SHADERS_IDX = 0      # Manage Shaders sub-screen entry
 _TOOLS_INSTALL_IDX = 1      # staged-PKG installer
 _TOOLS_UNINSTALL_IDX = 2    # game uninstaller
 _TOOLS_TRIGCAL_IDX = 3      # L2/R2 trigger deadzone calibration (H7)
 # In-place toggle item (label gets ": <mode>" appended at draw).
 _TOOLS_SCREENSHOT_IDX = 4
+_TOOLS_FIRMWARE_IDX = 5     # headless PS3 firmware (PS3UPDAT.PUP) installer
 
 
 def _read_screenshot_mode():
@@ -2682,6 +2704,29 @@ def _deploy_template_config(title_id):
 
 # --- the blocking install / uninstall sequences -------------
 
+def _storage_incoherent_msg():
+    """Error line-list if RPCS3's games tree (/storage/roms/...) and ETK's
+    (/storage/games-internal/...) are on DIFFERENT storage right now — else None.
+    RPCS3 reaches its PS3 data through ROCKNIX's config-dir symlinks under
+    /storage/roms/bios/rpcs3/, while ETK deploys under /storage/games-internal.
+    On a coherent boot they are ONE storage (single-card: both on the boot card;
+    UFS+SDGAMES: the rebind binds BOTH to the games card), so the two paths share
+    a device. A FOREIGN SD card shadowing /storage/roms puts them on different
+    devices (the split-brain) — RPCS3 would read/write a card that isn't your
+    games tree. Compare st_dev; can't-tell -> don't block."""
+    try:
+        if os.stat("/storage/roms").st_dev == os.stat("/storage/games-internal").st_dev:
+            return None
+    except Exception:
+        return None
+    return ["Games storage is split across two cards:",
+            "  RPCS3 uses /storage/roms, ETK uses /storage/games-internal,",
+            "  and they are on different cards right now.",
+            "",
+            "Remove the extra SD card (or fix the SD rebind) so your games",
+            "tree is the only one mounted, then retry."]
+
+
 def _run_install(pkg_path, rap_path, notify):
     """Blocking install of one staged .pkg. Returns (ok, [result lines]).
     RPCS3 owns the screen for the duration; progress goes to mako."""
@@ -2691,6 +2736,25 @@ def _run_install(pkg_path, rap_path, notify):
     if _rpcs3_running():
         return False, ["RPCS3 is already running.",
                        "Close the game first, then retry."]
+
+    # Pre-flight (same guard as the firmware installer): refuse a split-brain,
+    # then SELF-PROVISION RPCS3's game dir. On a freshly-flashed card the
+    # bios/rpcs3 tree is absent, so create dev_hdd0/game at the path RPCS3
+    # actually resolves (its config-dir symlink -> the games tree) before
+    # launching. On a coherent boot /storage/roms IS the games-internal tree, so
+    # the completion watcher below sees the new folder.
+    incoherent = _storage_incoherent_msg()
+    if incoherent:
+        return False, incoherent
+    game_real = os.path.realpath(RPCS3_CFG_GAME_DIR)
+    try:
+        os.makedirs(game_real, exist_ok=True)
+    except Exception as e:
+        return False, ["Could not prepare RPCS3 game storage:",
+                       f"  {game_real}",
+                       f"  {e.__class__.__name__}: {str(e)[:44]}",
+                       "",
+                       "Is your games card inserted, writable and not full?"]
 
     # Install lock — the Sentry stays parked in IDLE while we drive RPCS3
     # so no phantom telemetry session fires. Clear any stale lock first
@@ -2943,6 +3007,195 @@ def _run_uninstall(game, notify):
         "Press START > Game Settings > Update Gamelists",
         "on the handheld to refresh your library.",
     ]
+
+
+# === TOOLS TAB — PS3 FIRMWARE INSTALLER (headless) ===
+# Unlike the PKG installer (which drives RPCS3's GUI install dialog with a
+# /dev/uinput Enter tap because --installpkg pops a confirm window), firmware
+# installs through RPCS3's NATIVE headless CLI: `rpcs3 --headless --installfw`.
+# In headless mode RPCS3 builds a non-GUI application, so main_window::InstallPup
+# is called with a null main window and EVERY prompt is skipped (the confirm,
+# the "old firmware" and "already installed / overwrite" questions, the progress
+# dialog and the error popups are all gated on `mw != nullptr`). It installs to
+# dev_flash, logs "Successfully installed PS3 firmware version X" and self-exits
+# (return 0) — so no window polling and no uinput are needed here. The .pup is
+# KEPT (firmware is a one-time, reusable, system-wide asset). (--no-gui is a
+# DIFFERENT flag that RPCS3 explicitly refuses for installs; it must be
+# --headless.)
+
+def _scan_firmware():
+    """Return sorted absolute paths of .pup files in the firmware drop folder.
+    Dotfiles are skipped (a macOS copy litters '._PS3UPDAT.PUP' AppleDouble
+    siblings that would otherwise read as a second firmware file)."""
+    pups = []
+    try:
+        for entry in sorted(os.listdir(FIRMWARE_DROP_DIR)):
+            if entry.startswith('.'):
+                continue
+            full = os.path.join(FIRMWARE_DROP_DIR, entry)
+            if os.path.isfile(full) and entry.lower().endswith('.pup'):
+                pups.append(full)
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        _log(f"firmware scan failed: {e}")
+    return pups
+
+
+def _installed_fw_version():
+    """Best-effort current PS3 firmware version from dev_flash/vsh/etc/version.txt.
+    Mirrors RPCS3's utils::get_firmware_version parse: the field between the
+    first two ':' with leading/trailing zeros trimmed (e.g. '04.8900' -> '4.89').
+    Returns the version string, or None if no firmware is installed / unreadable —
+    it is only a confirm-screen hint, so any doubt yields None."""
+    try:
+        with open(RPCS3_FW_VERSION_FILE) as f:
+            raw = f.read()
+    except Exception:
+        return None
+    try:
+        a = raw.find(':')
+        if a < 0:
+            return None
+        b = raw.find(':', a + 1)
+        if b < 0:
+            return None
+        ver = raw[a + 1:b].strip().lstrip('0')
+        if ver.startswith('.'):
+            ver = '0' + ver
+        if '.' in ver:
+            ver = ver.rstrip('0').rstrip('.')
+        return ver or None
+    except Exception:
+        return None
+
+
+def _run_install_fw(pup_path, notify, _progress=None):
+    """Blocking headless install of one staged PS3 firmware .pup. Runs
+    `rpcs3 --headless --installfw <pup>` — no GUI dialog, no uinput, no sway
+    juggling (see the section header). RPCS3 self-exits when done; we confirm
+    from its log tail (+ dev_flash version.txt for the reported version). On
+    success the .pup is KEPT. Returns (ok, [result lines]). Runs on the spinner
+    worker thread, so it MUST NOT touch curses."""
+    if _rpcs3_running():
+        return False, ["RPCS3 is already running.",
+                       "Close the game first, then retry."]
+
+    # Pre-flight. First refuse if storage is split across two cards (else we'd
+    # provision + install onto a foreign card that isn't your games tree).
+    incoherent = _storage_incoherent_msg()
+    if incoherent:
+        return False, incoherent
+    # Then SELF-PROVISION RPCS3's dev_flash. RPCS3 resolves dev_flash through its
+    # config dir (/storage/.config/rpcs3/dev_flash -> the games tree) and statfs's
+    # it for free space BEFORE creating it — so on a freshly-flashed card, where
+    # the whole bios/rpcs3 tree is still absent, RPCS3 fails with a cryptic
+    # "Couldn't retrieve available disk space". Create the tree ourselves at
+    # EXACTLY the path RPCS3 resolves (realpath follows the symlink) so firmware
+    # lands where RPCS3 reads it. Fail only if the storage root is read-only/full.
+    df_real = os.path.realpath(RPCS3_DEV_FLASH)
+    try:
+        os.makedirs(df_real, exist_ok=True)
+    except Exception as e:
+        return False, ["Could not prepare RPCS3 firmware storage:",
+                       f"  {df_real}",
+                       f"  {e.__class__.__name__}: {str(e)[:44]}",
+                       "",
+                       "Is your games card inserted, writable and not full?"]
+
+    # Install lock — park the Sentry in IDLE so no phantom telemetry session
+    # fires while we drive RPCS3 (same contract as the PKG installer).
+    try:
+        os.makedirs(SHM_DIR, exist_ok=True)
+        open(ETK_INSTALL_LOCK, 'w').close()
+    except Exception as e:
+        _log(f"fw install lock write failed: {e}")
+
+    name = os.path.basename(pup_path)
+    prev_ver = _installed_fw_version()
+    # Note the log size up front so we read only THIS run's tail afterwards
+    # (robust whether or not RPCS3 rotates RPCS3.log on launch).
+    try:
+        log_base = os.path.getsize(RPCS3_LOG)
+    except Exception:
+        log_base = 0
+
+    proc = None
+    try:
+        notify.post("Installing PS3 firmware",
+                    f"Installing {name} in the background.\n"
+                    "This takes about a minute - please wait.")
+        proc = subprocess.Popen(
+            [RPCS3_BIN, "--headless", "--installfw", pup_path],
+            env=_tools_env(),
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            start_new_session=True)
+        try:
+            out = proc.communicate(timeout=420)[0]
+            out = (out or b"").decode('utf-8', 'ignore')
+        except subprocess.TimeoutExpired:
+            _kill_rpcs3()
+            return False, ["Firmware install timed out (7 min).",
+                           "RPCS3 may be wedged - reboot and retry.",
+                           f"The {name} file was kept."]
+
+        # Read only this run's slice of RPCS3.log (from the pre-launch offset;
+        # if the file shrank, RPCS3 rotated it -> read the whole current file).
+        log_tail = ""
+        try:
+            with open(RPCS3_LOG, 'r', errors='ignore') as f:
+                try:
+                    if os.fstat(f.fileno()).st_size >= log_base:
+                        f.seek(log_base)
+                except Exception:
+                    pass
+                log_tail = f.read()[-262144:]
+        except Exception:
+            pass
+        blob = out + "\n" + log_tail
+
+        new_ver = _installed_fw_version()
+        ok_m = re.search(
+            r'Successfully installed PS3 firmware version ([0-9.]+)', blob)
+        err_m = re.search(r'Error while installing firmware:\s*(.+)', blob)
+
+        # Success = RPCS3 logged it, OR a clean exit that left firmware present
+        # with no error line (covers a log we couldn't read).
+        if ok_m or (proc.returncode == 0 and new_ver and not err_m):
+            ver = (ok_m.group(1) if ok_m else new_ver) or "?"
+            notify.post("Firmware installed",
+                        f"PS3 firmware {ver} installed.\n"
+                        "Your PS3 games can now boot.", timeout=15000)
+            lines = [f"INSTALLED:  PS3 firmware {ver}",
+                     f"  source : {name}  (kept in firmware_drop/)"]
+            if prev_ver and prev_ver != ver:
+                lines.append(f"  note   : replaced firmware {prev_ver}")
+            lines += ["",
+                      "Firmware is system-wide - you only install it once.",
+                      "Commercial PS3 games can now boot in RPCS3."]
+            return True, lines
+
+        # Failure — surface RPCS3's own reason if we captured one.
+        reason = (err_m.group(1).strip()[:56] if err_m
+                  else "RPCS3 exited without confirming the install.")
+        _log(f"fw install failed rc={proc.returncode}: {reason}")
+        notify.post("Firmware install failed", reason, timeout=12000)
+        return False, ["Firmware install did NOT complete.",
+                       f"  {reason}",
+                       "",
+                       f"The {name} file was kept so you can retry.",
+                       "Re-download PS3UPDAT.PUP from Sony if this repeats."]
+    except Exception as e:
+        _log(f"fw install flow error: {e}\n{traceback.format_exc()}")
+        return False, ["Firmware install error:",
+                       f"  {e.__class__.__name__}: {str(e)[:48]}"]
+    finally:
+        if proc is not None and proc.poll() is None:
+            _kill_rpcs3()
+        try:
+            os.remove(ETK_INSTALL_LOCK)
+        except Exception:
+            pass
 
 
 # === TOOLS TAB — SHADER HYGIENE (Manage Shaders) ===
@@ -3475,7 +3728,10 @@ def draw_tools(stdscr, state):
                   "(CONFIRM cycles)", curses.A_DIM); y += 2
         put(y, 4, "Staging drop folder (place ONE .pkg + .rap):",
             curses.A_DIM); y += 1
-        put(y, 6, PKG_STAGING_DIR, curses.A_DIM)
+        put(y, 6, PKG_STAGING_DIR, curses.A_DIM); y += 2
+        put(y, 4, "Firmware drop folder (place PS3UPDAT.PUP):",
+            curses.A_DIM); y += 1
+        put(y, 6, FIRMWARE_DROP_DIR, curses.A_DIM)
 
     elif mode == "install_confirm":
         pkg, rap, tid = state["tools_pkg"]
@@ -3489,6 +3745,29 @@ def draw_tools(stdscr, state):
             curses.A_BOLD); y += 1
         put(y, 4, "Do NOT touch the controller while it installs.",
             curses.A_BOLD); y += 2
+        put(y, 4, "B: Install     A: Cancel",
+            curses.color_pair(1) | curses.A_BOLD)
+
+    elif mode == "firmware_confirm":
+        pup, cur_ver = state["tools_fw"]
+        try:
+            mb = os.path.getsize(pup) // (1024 * 1024)
+        except Exception:
+            mb = 0
+        put(y, 2, "INSTALL PS3 FIRMWARE - CONFIRM", curses.A_BOLD); y += 1
+        put(y, 2, "-" * (w - 4), curses.A_DIM); y += 2
+        put(y, 4, f"File     : {os.path.basename(pup)}  ({mb} MB)"); y += 1
+        if cur_ver:
+            put(y, 4, f"Installed: firmware {cur_ver}  "
+                      "(this will reinstall / overwrite)"); y += 1
+        else:
+            put(y, 4, "Installed: none yet - PS3 games need this to boot"); y += 1
+        y += 1
+        put(y, 4, "RPCS3 installs it headless, in the background (~1 min).",
+            curses.A_BOLD); y += 1
+        put(y, 4, "Do not launch a game until it finishes.",
+            curses.A_BOLD); y += 1
+        put(y, 4, "The .pup file is KEPT for reuse.", curses.A_DIM); y += 2
         put(y, 4, "B: Install     A: Cancel",
             curses.color_pair(1) | curses.A_BOLD)
 
@@ -3973,12 +4252,38 @@ def _tools_select(state):
             state["tools_mode"] = "trigcal"
             state["tools_cursor"] = 0
             state["trigcal_model"] = _trigcal_new_model()
+        elif state.get("tools_cursor", 0) == _TOOLS_FIRMWARE_IDX:   # Firmware
+            pups = _scan_firmware()
+            if len(pups) == 0:
+                state["tools_result"] = (False, [
+                    "No firmware file staged.",
+                    "",
+                    "Download the official PS3 firmware (PS3UPDAT.PUP)",
+                    "from Sony's PS3 system-software page, then drop it",
+                    "into the firmware folder:",
+                    "  " + FIRMWARE_DROP_DIR,
+                    "and choose Install PS3 Firmware again."])
+                state["tools_mode"] = "result"
+            elif len(pups) > 1:
+                state["tools_result"] = (False, [
+                    f"{len(pups)} .pup files staged - keep only one.",
+                    "",
+                    "Leave a single PS3UPDAT.PUP in the folder:",
+                    "  " + FIRMWARE_DROP_DIR])
+                state["tools_mode"] = "result"
+            else:
+                state["tools_fw"] = (pups[0], _installed_fw_version())
+                state["tools_mode"] = "firmware_confirm"
         else:                                        # Screenshot-on-L1 toggle
             state["status"] = f"Screenshot on L1: {_cycle_screenshot_mode()}"
 
     elif mode == "install_confirm":
         pkg, rap, _tid = state["tools_pkg"]
         state["tools_action"] = ("install", pkg, rap)
+
+    elif mode == "firmware_confirm":
+        pup, _ver = state["tools_fw"]
+        state["tools_action"] = ("firmware", pup)
 
     elif mode == "uninstall_list":
         if state.get("tools_games"):
@@ -5894,6 +6199,15 @@ def main(stdscr):
             if kind == "install":
                 _draw_tools_busy(stdscr, "install")
                 ok, lines = _run_install(action[1], action[2], notifier)
+            elif kind == "firmware":
+                # Headless install: RPCS3 runs in the background (no screen
+                # handoff), so we keep the Pitstop spinner alive on the main
+                # thread while _run_install_fw blocks on the worker.
+                res = _run_with_spinner(
+                    stdscr, "Installing PS3 firmware — about a minute…",
+                    _run_install_fw, action[1], notifier, indeterminate=True)
+                ok, lines = res if res else (
+                    False, ["firmware install failed — see log"])
             elif kind == "uninstall":
                 _draw_tools_busy(stdscr, "uninstall")
                 ok, lines = _run_uninstall(action[1], notifier)

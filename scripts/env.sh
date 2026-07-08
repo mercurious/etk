@@ -292,11 +292,26 @@ export RPCS3_CUSTOM_CONFIGS="/storage/games-internal/roms/bios/rpcs3/custom_conf
 export RPCS3_HDD1_CACHE="/storage/games-internal/roms/bios/rpcs3/dev_hdd1/caches"
 export RPCS3_RUNTIME_CACHE="/storage/.cache/rpcs3/cache"
 export RPCS3_LOG="/storage/.cache/rpcs3/RPCS3.log"
+# dev_flash holds the installed PS3 firmware. RPCS3's config dir is
+# /storage/.config/rpcs3/ and its dev_flash is symlinked out to the games tree
+# (-> /storage/roms/bios/rpcs3/dev_flash). Use the CONFIG-DIR path so we track
+# exactly what RPCS3 resolves at runtime, wherever the games tree is mounted.
+# version.txt is RPCS3's own firmware-version marker.
+export RPCS3_DEV_FLASH="/storage/.config/rpcs3/dev_flash"
+# RPCS3's config-dir game path (where it ACTUALLY installs a PKG). Same file as
+# RPCS3_GAME_DIR on a coherent rig; the PKG installer compares the two to catch
+# a split-brain (a foreign SD card shadowing /storage/roms).
+export RPCS3_CFG_GAME_DIR="/storage/.config/rpcs3/dev_hdd0/game"
 
 # Staging drop folder — the user places ONE .pkg (+ optional .rap) here; the
 # installer deletes the staged files on a SUCCESSFUL install only.
 export PKG_STAGING_DIR="$ETK_ROOT/pkg_install_drop"
 export PS3_LAUNCHER_DIR="/storage/games-internal/roms/ps3"
+
+# Firmware drop folder — the user places the official Sony PS3UPDAT.PUP here.
+# Unlike PKG staging, the .pup is KEPT after a successful install (firmware is a
+# reusable, system-wide asset installed once, not a per-game staging file).
+export FIRMWARE_DROP_DIR="$ETK_ROOT/firmware_drop"
 
 # ETK default per-game RPCS3 config — copied to custom_configs/config_<ID>.yml
 # for each newly installed game so first launch runs tuned.

@@ -348,6 +348,7 @@ ssh $RIG_SSH "mkdir -p \
     $ETK_ROOT/screenshots \
     $ETK_ROOT/pro-tuning \
     $PKG_STAGING_DIR \
+    $FIRMWARE_DROP_DIR \
     /storage/.config/custom_scripts \
     /storage/.config/system.d \
     /storage/.config/modules \
@@ -376,6 +377,35 @@ On a SUCCESSFUL install the .pkg and .rap are deleted from this
 folder automatically. A failed install leaves them here so you
 can retry. One game at a time.
 PKGREADME
+
+# Document the PS3 firmware drop folder. Firmware is a one-time, system-wide
+# prerequisite (commercial PS3 games refuse to boot without it). Unlike the
+# .pkg staging folder, the .pup is KEPT after install so it can be reused.
+ssh $RIG_SSH "cat > '$FIRMWARE_DROP_DIR/README.txt'" <<'FWREADME'
+ETK PITSTOP - PS3 FIRMWARE INSTALL DROP FOLDER
+==============================================
+
+Commercial PS3 games need Sony's PS3 firmware installed once before
+they will boot. This is a legal, free download from Sony.
+
+1. On any computer, download the PS3 system-software update file
+   (it is named  PS3UPDAT.PUP ) from Sony's official page:
+     https://www.playstation.com/en-us/support/hardware/ps3/system-software/
+
+2. Copy that PS3UPDAT.PUP into THIS folder (over the SMB share, or
+   straight onto the SD card).
+
+3. On the handheld:
+     Tools > ETK Pitstop > TOOLS tab > Install PS3 Firmware
+
+RPCS3 installs the firmware headless, in the background (about a
+minute) - no on-screen dialog to confirm. You only do this once;
+the firmware is shared by every PS3 game.
+
+The PS3UPDAT.PUP file is KEPT here after installing (it is reusable
+and survives an ETK reinstall). You can delete it yourself once the
+firmware is in, if you want the space back.
+FWREADME
 
 # Document the ETK screenshots folder so a user browsing the SD card
 # (or the mapped \\<rig-ip>\games-internal SMB share) understands what
