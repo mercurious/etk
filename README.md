@@ -14,8 +14,8 @@ Try the kit with a spare SD card and reader. Revert back to Android or your prim
 1. Download the ROCKNIX-GTK SD Card image from [releases](https://github.com/mercurious/etk/releases) and use a tool like Balena Etcher to flash a blank card
 1. Insert your new flashed card to autoboot into ROCKNIX-GTK with your Android boot preserved
 1. Add your WiFi in network settings and enable SSH, etc.
-1. Add PS3 firmware and ROMS to the provided etk drop folders over SMB or SFTP
-1. Use ETK Pitstop app TOOLS to install firmware and PKG files
+1. Add PS3 firmware and ROMS to the provided etk drop folders over SMB or SFTP `etk/firmware_drop` `etk/pkg_drop`
+1. Use ETK Pitstop app TOOLS to install your staged firmware and PKG files
 1. Ready to play
 ### Already have ROCKNIX installed?
 See [Getting Started](https://github.com/mercurious/etk/#getting-started) for how to install the ETK and the GTK forks into your existing ROCKNIX setup.
