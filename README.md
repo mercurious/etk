@@ -1,37 +1,42 @@
 # The Emulation Tuning Kit - GTK Edition
 The Gran Turismo Kit (GTK) is a specialty installation for your Retroid Pocket Flip2 SM8250 (or [sibling device](https://github.com/mercurious/etk/#handheld-system-support)) built on patched forks of [ROCKNIX](https://github.com/mercurious/rocknix-gtk) (OS/kernel), [RCPS3](https://github.com/mercurious/etk-rpcs3-gtk) (PS3 emulator) and [MESA Turnip](https://github.com/mercurious/etk-turnip-gtk) (Adreno Vulkan video driver) integrated with a custom middleware (the ETK), and all of it is **specifically tuned** for the **Gran Turismo series only**. GT HD Concept, GT 5 Prologue Spec II and Spec III are supported. GT5 and GT6 support is pending. Other game support is incidental. 
 - [Download latest release](https://github.com/mercurious/etk/releases)
-- Introducing [GTK Turnip for ROCKNIX](https://github.com/mercurious/etk/wiki/Using-MESA-Turnip-GTK)
-- [System Requirements](https://github.com/mercurious/etk/#etk-system-requirements)
+- [Quick Start](https://github.com/mercurious/etk/#quick-start)
 - [ETK Wiki](https://github.com/mercurious/etk/wiki) for full documentation, guides, advanced features
+- [System Requirements](https://github.com/mercurious/etk/#etk-system-requirements)
 - [Device Support](https://github.com/mercurious/etk/#handheld-system-support)
 - [Tested Games](https://github.com/mercurious/etk/wiki/Tested-Games)
-- [Getting Started](https://github.com/mercurious/etk/#getting-started)
+
+## Why Install ROCKNIX-GTK and the ETK?
+*You won’t be able to play Gran Turismo PS3 games on the SM8250 series without it.*
+1. **CRASH PREVENTION:** By forking and patching the entire stack on the device, we were able to cross-integrate the OS to the emulator with the video driver as a single “chassis” and wire it to the native MangoHUD overlay so you can see in real-time an alert when you’ve just been rescued from a GPU wedge crash `|·«!»·|`. The same GTK ANTI-LOCK gauge keeps a live counter `|·×03·|` for the current boot so you know when it’s time to refresh the rig with a reboot. This “anti-lock” system emulates how Android provides a similar level of stability, enabling the Adreno Kernel Graphics Support Layer (KGSL) but running on the bare metal of linux opens up tremendous performance headroom by comparison.
+2. **BUGS FIXED:** Owning the chassis allowed us to fix the stubborn “road flicker” [bug](https://github.com/RPCS3/rpcs3/issues/11912) that affects GT5P on all platforms, solved a glitchy audio card boot sequence in ROCKNIX, and more.
+3. **FEATURES ADDED:** We’ve added new core capabibiliies to the device such as video mirroring, firmware & package install, shader management, on-device tuning down to the overclock and Turnip dials, advanced trigger calibration for the top-end, and an advanced telemetry UI/UX to inform your tuning choices.
 
 ## Quick Start
-### Don't have ROCKNIX?
-It's easy to try out the kit with a spare SD card and USB card reader, revert back to Android, or standard ROCKNIX anytime.
-1. Download the ROCKNIX-GTK SD Card image from [releases](https://github.com/mercurious/etk/releases) and then use a tool like Balena Etcher to flash a blank card with ROCKNIX-GTK.
-1. Insert your new flashed card to autoboot into ROCKNIX-GTK with your Android boot preserved. Hold Volume-Down before Retroid logo to switch boot. Use GRUB menu to boot into standard ROCKNIX.
-1. Add your WiFi in network settings and enable SSH, etc.
+### Don’t have ROCKNIX?
+It’s easy to try out the kit with a spare SD card and USB card reader, revert back to Android, or standard ROCKNIX anytime.
+1. Download the ROCKNIX-GTK SD Card image from [releases](https://github.com/mercurious/etk/releases) and then use a tool like Balena Etcher to flash a blank card with ROCKNIX-GTK. Safe to ignore Balena validation error.
+1. Insert your new flashed card and hold down `Volume-Up` before the Retroid Pocket logo and release as soon as you see the sideways U-Boot logo. The GRUB menu automatically boots into ROCKNIX-GTK. (In GRUB, you can use `Volume` and `Power` buttons to boot into the standard ROCKNIX kernel.) (By holding Volume-down at boot, you can also set the rig to [auto-boot in Rocknix](https://github.com/mercurious/etk/wiki/Using-ROCKNIX-Guide#to-always-boot-into-rocknix-as-the-default-os) instead of Android so you don't have to play race the logos every boot.)
+1. Add your WiFi in network settings and enable SSH, etc. once in the ROCKNIX EmulationStation frontend.
 1. Add PS3 firmware and ROMS to the provided etk drop folders over SMB or SFTP: `etk/firmware_drop`, `etk/pkg_drop`
-1. Use the ETK Pitstop app TOOLS to install your staged firmware and PKG files and much more.
+1. Use the [ETK Pitstop app TOOLS](https://github.com/mercurious/etk/wiki/ETK-Pitstop-App#how-to-install-ps3-games-with-the-etk) to install your staged firmware and PKG files and games will automatically appear in the ES carousel and much more.
 1. Ready to play
 ### Already have ROCKNIX installed?
-See [Getting Started](https://github.com/mercurious/etk/#getting-started) for how to install the ETK and the GTK forks into your existing ROCKNIX setup.
+See [Getting Started](https://github.com/mercurious/etk/#getting-started) to install the ETK and GTK forks into your existing ROCKNIX setup.
 
 ## Key Kit Features
-| Exclusive Feature or Fix | Description |
-|---|---|
-| GTK Anti-Lock | Automatic live recovery of GPU wedge crashes |
-| Adreno Traction Control | Automatic "limited-slip-differential" holds GPU down |
-| G-INSTR Telemetry | Animated jitter gauge in HUD |
-| VAULT + PADDOCK | Advanced shader protection and management |
-| Thermal Guard | Automatically protect silicon from overheats |
-| ETK Pitstop App | Native ROCKNIX tools app for onboard telemetry, tuning, tools, and more |
-| Video Mirroring | Device screen on while USB-DisplayPort-HDMI out active | 
-| Flicker-free Road Surfaces | 5 year emulator old [bug](https://github.com/RPCS3/rpcs3/issues/11912) solved |
-| Audio card boot fixed | Sound works reliably vs official release | 
+| Exclusive Feature or Fix | Description | Interface |
+|---|---|---|
+| GTK Anti-Lock | Automatic live recovery of GPU wedge crashes | overlay gauge `·«!»·` `·×03·` |
+| Adreno Traction Control | Automatic "limited-slip-differential" holds GPU down | overlay gauge `++···` `=====` |
+| G-INSTR Telemetry | Animated jitter gauge in HUD | overlay gauge `··2»»` |
+| VAULT + PADDOCK | Advanced shader protection and management | overlay gauge `2+ 34.5k 167MB` |
+| Thermal Guard | Automatically protect silicon from overheats | overlay gauge `89°HOT»»»`  |
+| ETK Pitstop App | Native ROCKNIX tools app for onboard telemetry, tuning, tools, and more | native app in ROCKNIX ES Tools carousel |
+| Video Mirroring | Device screen on while USB-DisplayPort-HDMI out active | turn USB plug upside-down to solve video-out issue |
+| Flicker-free Road Surfaces | 5 year emulator old [bug](https://github.com/RPCS3/rpcs3/issues/11912) solved | perfectly rendered road surfaces |
+| Audio card boot fixed | Sound works reliably vs official release | sound just works now, finally; solving race stutter is a different problem |
 
 
 ## Handheld System Support
@@ -42,6 +47,7 @@ See [Getting Started](https://github.com/mercurious/etk/#getting-started) for ho
 | Retroid Pocket | Mini | SM8250 Adreno 650 | `SM8250` | Expected (untested) |
 | Retroid Pocket | Mini V2 | SM8250 Adreno 650 | `SM8250` | Expected (untested) |
 | AYN | Thor Lite | SM8250 Adreno 650 | `SM8250` | Expected (untested) |
+| MANGMI | Pocket Max | SM250 Adreno 650 | `SM8250` | Expected (untested |
 | Retroid Pocket | 6 | SM8550 Adreno 740 | (needs new profile + vault) | Not yet supported |
 
 ## ETK System Requirements
