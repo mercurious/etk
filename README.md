@@ -1,5 +1,5 @@
 # The Emulation Tuning Kit - GTK Edition
-The Gran Turismo Kit (GTK) is a specialty installation for your Retroid Pocket Flip2 SM8250 (or [sibling device](https://github.com/mercurious/etk/#handheld-system-support)) built on patched forks of [ROCKNIX](https://github.com/mercurious/rocknix-gtk) (OS/kernel), [RCPS3](https://github.com/mercurious/etk-rpcs3-gtk) (PS3 emulator) and [MESA Turnip](https://github.com/mercurious/etk-turnip-gtk) (Adreno Vulkan video driver) integrated with a custom middleware (the ETK), and all of it is **specifically tuned** for the **Gran Turismo series only**. GT HD Concept, GT 5 Prologue Spec II and Spec III are supported. GT5 and GT6 support is *pending*. Other game support is *incidental*. The GTK installs easy. Either flash an SD Card and boot or run an installer script from your Mac or PC.
+The **Gran Turismo Kit** (GTK) is a specialty installation for your **Retroid Pocket Flip2 SM8250** (or [sibling device](https://github.com/mercurious/etk/#handheld-system-support)) built on patched forks of [ROCKNIX](https://github.com/mercurious/rocknix-gtk) (OS/kernel), [RCPS3](https://github.com/mercurious/etk-rpcs3-gtk) (PS3 emulator) and [MESA Turnip](https://github.com/mercurious/etk-turnip-gtk) (Adreno Vulkan video driver) integrated with a custom middleware (the **ETK**), and all of it is **specifically tuned** for the **Gran Turismo series only**. GT HD Concept, GT 5 Prologue Spec II and Spec III are supported. GT5 and GT6 support remains *pending*. Other game support is *incidental* at best. The GTK installs easy. Either flash an SD Card and boot into ROCKNIX or run an installer script from your Mac or PC if you already have it.
 
 <img src="https://raw.githubusercontent.com/mercurious/etk/main/docs/screenshots/etk_NPUA80075_20260526_132550.png" width="640"
      alt="GT5P Suzuka chase cam, blue Nissan Skyline GT-R approaching a sweeping corner, mini-map visible, position 12 of 12 lap 2 of 3." />
@@ -11,8 +11,19 @@ The Gran Turismo Kit (GTK) is a specialty installation for your Retroid Pocket F
 - [Tested Games](https://github.com/mercurious/etk/wiki/Tested-Games)
 - [Android-Only Options](https://github.com/mercurious/etk/blob/main/README.md#android-only-support)
 
+# ETK-Tuned Products by Platform
+House developed Gran Turismo-specific bug fixes and special tunings to the emulator are validated across platforms with executables available for download and testing. Only ROCKNIX offers the complete kit and functionality.
+
+| OS | chipset | vulkan | emulator | fork | download | source | ETK Features |
+|---|---|---|---|---|---|---|---|
+| Android | arm64 | Adreno 650 on Mesa Turnip | aPS3e | ETK-tuned fork | [.apk](https://github.com/mercurious/aps3e/releases/tag/v0.0.5) | [repo](https://github.com/mercurious/aps3e) | Shader Manager, Claude [Cockpit Skill](https://github.com/mercurious/etk/wiki/Claude-Cockpit-Skill) support |
+| macOS | arm64 | Metal | RPCS3 | ETK-tuned fork | [.app](https://github.com/mercurious/etk-rpcs3-gtk/releases/tag/gtk-edition-0.6.0-macos) | [repo](https://github.com/mercurious/etk-rpcs3-gtk) | none, just GT bug fixes |
+| ROCKNIX | SM8250 | Adreno 650 on Mesa Turnip | RPCS3 | ROCKNIX-GTK fork | [.img.gz](https://github.com/mercurious/etk/releases/tag/v0.7.0) | [repo](https://github.com/mercurious/etk-rpcs3-gtk) | **complete**🏁  |
+| Windows | x64 | AMD Radeon | RPCS3 | ETK-tuned fork | .exe | repo | none, just GT bug fixes (*test in progress*) |
+  
+
 ## Why Install ROCKNIX-GTK and the ETK?
-*You've tried getting a PS3 Gran Turismo game working on Retroid Pocket Flip2 or similar handheld and concluded the device supports GT for PS2 and PSP only.*
+*Perhaps you've tried getting a PS3 Gran Turismo game working on Retroid Pocket Flip2 or similar handheld and concluded the device supports GT for PS2 and PSP only.*
 1. **HIGH PERFORMANCE RIG**: It's faster and more playable than anything I've attempted to get running on the Android boot, including our own [aPS3e fork](https://github.com/mercurious/aps3e/releases) `.apk`.
 2. **CRASH PREVENTION:** By forking and patching the entire stack on the device, we were able to cross-integrate the OS to the emulator with the video driver as a single “chassis” and wire it to the native MangoHUD overlay so you can see in real-time an alert when you’ve just been rescued from a GPU wedge crash `|·«!»·|`. The same GTK ANTI-LOCK gauge keeps a live counter `|·×03·|` for the current boot so you know when it’s time to refresh the rig with a reboot. This “anti-lock” system emulates how Android provides a similar level of stability, enabling the Adreno Kernel Graphics Support Layer (KGSL) but running on the bare metal of linux opens up tremendous performance headroom by comparison.
 3. **BUGS FIXED:** Owning the chassis allowed us to fix the stubborn “road flicker” [bug](https://github.com/RPCS3/rpcs3/issues/11912) that affects GT5P on all platforms, solved a glitchy audio card boot sequence in ROCKNIX, and more.
