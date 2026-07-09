@@ -9,6 +9,7 @@ The Gran Turismo Kit (GTK) is a specialty installation for your Retroid Pocket F
 - [System Requirements](https://github.com/mercurious/etk/#etk-system-requirements)
 - [Device Support](https://github.com/mercurious/etk/#handheld-system-support)
 - [Tested Games](https://github.com/mercurious/etk/wiki/Tested-Games)
+- [Android-Only Options](https://github.com/mercurious/etk/blob/main/README.md#android-only-support)
 
 ## Why Install ROCKNIX-GTK and the ETK?
 *You've tried getting a PS3 Gran Turismo game working on Retroid Pocket Flip2 or similar handheld and concluded the device supports GT for PS2 and PSP only.*
