@@ -24,7 +24,7 @@ It’s easy to try out the kit with a spare SD card and USB card reader, revert 
 1. Download the ROCKNIX-GTK SD Card image from [releases](https://github.com/mercurious/etk/releases) and then use a tool like Balena Etcher to flash a blank card with ROCKNIX-GTK. Safe to ignore Balena validation error.
 1. Insert your new flashed card and hold down `Volume-Up` before the Retroid Pocket logo and release as soon as you see the sideways U-Boot logo. The GRUB menu automatically boots into ROCKNIX-GTK. (In GRUB, you can use `Volume` and `Power` buttons to boot into the standard ROCKNIX kernel.) (By holding Volume-down at boot, you can also set the rig to [auto-boot in Rocknix](https://github.com/mercurious/etk/wiki/Using-ROCKNIX-Guide#to-always-boot-into-rocknix-as-the-default-os) instead of Android so you don't have to play race the logos every boot.)
 1. Add your WiFi in network settings and enable SSH, etc. once in the ROCKNIX EmulationStation frontend.
-1. Add PS3 firmware and ROMS to the provided etk drop folders over SMB or SFTP: `/storage/roms/etk/firmware_drop`, `/storage/roms/etk/pkg_drop`
+1. Add the PS3 firmware and a game PKG to the provided etk drop folders over SMB or SFTP: `/storage/roms/etk/firmware_drop`, `/storage/roms/etk/pkg_drop`
 1. Use the [ETK Pitstop app TOOLS](https://github.com/mercurious/etk/wiki/ETK-Pitstop-App#how-to-install-ps3-games-with-the-etk) to install your staged firmware and PKG files and games will automatically appear in the ES carousel and much more.
 1. Ready to play
 ### Already have ROCKNIX installed?
