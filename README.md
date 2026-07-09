@@ -92,7 +92,7 @@ cd ~/etk
 
 ## Android-only Support
 No ETK or GTK features, just a house tuned Android aPS3e fork. Offers stable but low-framerates vs. ROCKNIX+GTK rig.
-- Use [aPS3e Shader Patch Edition](https://github.com/mercurious/aps3e/releases) for Android (until main release is updated with cache fix)
+- Use [aPS3e ETK-tuned](https://github.com/mercurious/aps3e/releases) for Android (until main release is updated with cache fix) which backports fixes for GT related bugs in RPCS3.
 - Use the latest [ETK MESA Turnip drivers](https://github.com/mercurious/aps3e/releases/tag/etk-turnip-26.1.3) for Android during the aPS3e setup wizard or configuration.
 - Use an ETK config tuning from [Tested Games](https://github.com/mercurious/etk/wiki/Tested-Games).
 - Try the ETK [Claude Code Cockpit skill](https://github.com/mercurious/etk/wiki/Claude-Cockpit-Skill) for real-time pit-engineering advice, crash forensics, tuning suggestions, track photography analysis and more. Works over USB with any Android device and USB & `ssh` on ROCKNIX.
