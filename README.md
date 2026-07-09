@@ -18,7 +18,7 @@ House developed Gran Turismo-specific bug fixes and special tunings to the emula
 |---|---|---|---|---|---|---|---|
 | Android | arm64 | Adreno 650 on Mesa Turnip | aPS3e | ETK-tuned fork | [.apk](https://github.com/mercurious/aps3e/releases/tag/v0.0.5) | [repo](https://github.com/mercurious/aps3e) | Shader Manager, Claude [Cockpit Skill](https://github.com/mercurious/etk/wiki/Claude-Cockpit-Skill) support |
 | macOS | arm64 | Metal | RPCS3 | ETK-tuned fork | [.app](https://github.com/mercurious/etk-rpcs3-gtk/releases/tag/gtk-edition-0.6.0-macos) | [repo](https://github.com/mercurious/etk-rpcs3-gtk) | none, just GT bug fixes |
-| ROCKNIX | SM8250 | Adreno 650 on Mesa Turnip | RPCS3 | ROCKNIX-GTK fork | [.img.gz](https://github.com/mercurious/etk/releases/tag/v0.7.0) | [repo](https://github.com/mercurious/etk-rpcs3-gtk) | **complete**🏁  |
+| ROCKNIX | arm64 (SM8250) | Adreno 650 on Mesa Turnip | RPCS3 | ROCKNIX-GTK fork | [.img.gz](https://github.com/mercurious/etk/releases/tag/v0.7.0) | [repo](https://github.com/mercurious/etk-rpcs3-gtk) | **complete**🏁  |
 | Windows | x64 | AMD Radeon | RPCS3 | ETK-tuned fork | .exe | repo | none, just GT bug fixes (*test in progress*) |
   
 
