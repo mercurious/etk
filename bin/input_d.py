@@ -164,7 +164,7 @@ def fire_bog_profile():
     no game/no perf, so this can never block the loop or the R3 path."""
     os.system("nohup sh /storage/games-internal/roms/etk/bin/bog_profile.sh >/dev/null 2>&1 &")
 
-# --- RSX capture injection (SELECT+DPAD-Down) ---------------------------
+# --- RSX capture injection (R1+DPAD-Up; relocated from R1+Down 2026-07-10) ---
 # Key codes from linux/input-event-codes.h. EV_KEY press/release pairs are
 # written straight into the InputPlumber Keyboard event node; the kernel's
 # input_inject_event() distributes them to sway exactly as if typed, and
