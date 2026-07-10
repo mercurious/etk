@@ -228,5 +228,45 @@
     "type": "enum",
     "options": ["Safe", "Fast"],
     "help": "Vulkan submission scheduler. Fast lowers latency; Safe is steadier and is the SM8250 default."
+  },
+  {
+    "label": "Perf Overlay",
+    "section": "Video",
+    "yaml_key": "    Enabled",
+    "type": "bool",
+    "help": "RPCS3's OWN in-frame performance overlay (separate from the MangoHUD DDU -- both can show at once). This is the attribution instrument the DDU can't give: at Detail=High it splits the frame budget into PPU / SPU / RSX usage, so a pack-race bog finally says WHO ate the frame -- CPU emulation (PPU/SPU) or the GPU (RSX). Turn on with Detail=High for a pack stint, then off; it costs a little to draw."
+  },
+  {
+    "label": "Perf Overlay Detail",
+    "section": "Video",
+    "yaml_key": "    Detail level",
+    "type": "enum",
+    "options": ["None", "Minimal", "Low", "Medium", "High"],
+    "help": "How much the Perf Overlay reports. HIGH is the one that matters: per-subsystem PPU%/SPU%/RSX% -- the pack-bog and audio-deficit attribution. Minimal/Low = fps + frametime only (redundant with the DDU). Only reads if Perf Overlay is on."
+  },
+  {
+    "label": "Perf Overlay Position",
+    "section": "Video",
+    "yaml_key": "    Position",
+    "type": "enum",
+    "options": ["Top Left", "Top Right", "Bottom Left", "Bottom Right"],
+    "help": "Which corner the Perf Overlay sits in. Park it OPPOSITE the DDU (DDU is bottom-left by default) so the two don't overlap -- Top Right is the safe pick."
+  },
+  {
+    "label": "Perf Frametime Graph",
+    "section": "Video",
+    "yaml_key": "    Enable Frametime Graph",
+    "type": "bool",
+    "help": "Draws the live frametime curve in the Perf Overlay -- the shape of the pacing, not just the number. Useful for SEEING a pack-section spike land vs a steady bog. Only reads if Perf Overlay is on."
+  },
+  {
+    "label": "Perf Overlay Interval (ms)",
+    "section": "Video",
+    "yaml_key": "    Metrics update interval (ms)",
+    "type": "int",
+    "min": 20,
+    "max": 1000,
+    "step": 10,
+    "help": "How often the Perf Overlay refreshes its numbers (RPCS3 default 350ms). Lower = twitchier read of a transient pack spike; higher = calmer average. Does not affect the frametime graph resolution."
   }
 ]

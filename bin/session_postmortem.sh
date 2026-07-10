@@ -634,6 +634,34 @@ if [ -f /dev/shm/rpcs3_audio_log ] && [ "$AUD_STAT" != "-" ]; then
     done
 fi
 
+# Perf attribution (col 31, v0.7.1): /dev/shm/rpcs3_perf_stat — the RPCS3 fork's
+# perf-overlay-at-Detail=High mirrors its OWN computed frame split there every
+# ~overlay-interval (perfstat-v1 patch). Names the pack-bog: fps/ft_ms/cpu +
+# ppu/spu/rsx %. Spaces fold to commas (one whitespace-split token). mtime-guarded
+# vs session start; absent (overlay off / stock build) => '-'. The always-live
+# reader len-guards, so pre-v0.7.1 rows without this column stay valid.
+PERF_STAT="-"
+PERF_FILE="/dev/shm/rpcs3_perf_stat"
+if [ -f "$PERF_FILE" ]; then
+    PERF_MT=$(stat -c %Y "$PERF_FILE" 2>/dev/null)
+    case "$PERF_MT" in ''|*[!0-9]*) PERF_MT=0 ;; esac
+    if [ "$START_EPOCH" -gt 0 ] && [ "$PERF_MT" -ge $((START_EPOCH - 60)) ]; then
+        PERF_STAT=$(head -1 "$PERF_FILE" 2>/dev/null | tr ' \t' ',,')
+        case "$PERF_STAT" in '') PERF_STAT="-" ;; esac
+    fi
+fi
+
+# perf timeline archive: /dev/shm/rpcs3_perf_log (wall-clock 2s-ish samples),
+# wiped every guest/rig boot — copy it out named by $NOW so the frame-split curve
+# joins its ledger row directly (same convention as audio_logs). Keep newest 12.
+if [ -f /dev/shm/rpcs3_perf_log ] && [ "$PERF_STAT" != "-" ]; then
+    mkdir -p "$TELEMETRY_DIR/perf_logs" 2>/dev/null
+    cp /dev/shm/rpcs3_perf_log "$TELEMETRY_DIR/perf_logs/$NOW.log" 2>/dev/null
+    ls -1t "$TELEMETRY_DIR/perf_logs"/*.log 2>/dev/null | tail -n +13 | while read -r f; do
+        rm -f "$f" 2>/dev/null
+    done
+fi
+
 # snd: did this session have real audio hardware? A silent session (only the
 # PipeWire dummy sink) must be excludable from audio A/B. CARD-PRESENCE-ONLY
 # since 2026-07-07: the SM8250 probe race is fixed in the GTK kernel and the
@@ -658,7 +686,7 @@ fi
 # the cost side of the LSD gear trade now that a wedge is a hitch, not a
 # session death. Judged alongside perfect_pct: a lighter gear that buys pace
 # but pays multiple freeze-rescues per race may still lose.
-LEDGER_HEADER='epoch\tduration_s\tbuild\tgame_id\tstatus\tpeak_load\tpeak_ram_mb\tpeak_temp\tavg_temp\tcrash_sig\tfence_at_crash\tshaders_harvested\tdrain_pct\tthermal_overrides\ttune_tag\tcrash_shot\tfps_med\tfps_1low\tft_p99_ms\tres_scale\tgpu_mhz\tpwr\tft_jitter_ms\tgpu_fault_status\tgpu_fault_fence_hex\taud\tsnd\tlock_pct\tperfect_pct\trescues'
+LEDGER_HEADER='epoch\tduration_s\tbuild\tgame_id\tstatus\tpeak_load\tpeak_ram_mb\tpeak_temp\tavg_temp\tcrash_sig\tfence_at_crash\tshaders_harvested\tdrain_pct\tthermal_overrides\ttune_tag\tcrash_shot\tfps_med\tfps_1low\tft_p99_ms\tres_scale\tgpu_mhz\tpwr\tft_jitter_ms\tgpu_fault_status\tgpu_fault_fence_hex\taud\tsnd\tlock_pct\tperfect_pct\trescues\tperf'
 if [ ! -f "$SESSIONS_LEDGER" ]; then
     TMP="$SESSIONS_LEDGER.tmp"
     printf "$LEDGER_HEADER\n" > "$TMP"
@@ -671,12 +699,12 @@ elif ! head -1 "$SESSIONS_LEDGER" | grep -q 'rescues'; then
     { printf "$LEDGER_HEADER\n"; tail -n +2 "$SESSIONS_LEDGER"; } > "$TMP" && mv "$TMP" "$SESSIONS_LEDGER"
 fi
 
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$NOW" "$DURATION" "$ETK_BUILD_TYPE" "$GAME_ID" "$STATUS" \
     "$PEAK_LOAD" "$PEAK_RAM" "$PEAK_TEMP" "$AVG_TEMP" \
     "$CRASH_SIG" "$FENCE_AT_CRASH" "$SHADERS" "$DRAIN_PCT" "$THERMAL_OVERRIDES" \
     "$TUNE_TAG" "$CRASH_SHOT" "$FPS_MED" "$FPS_1LOW" "$FT_P99" "$RES_SCALE" "$GPU_MHZ" "$PWR_TAG" "$FT_JITTER" \
-    "$GPU_FAULT_STATUS" "$GPU_FAULT_FENCE_HEX" "$AUD_STAT" "$SND_STAT" "$LOCK_PCT" "$PERFECT_PCT" "$SURVIVES" \
+    "$GPU_FAULT_STATUS" "$GPU_FAULT_FENCE_HEX" "$AUD_STAT" "$SND_STAT" "$LOCK_PCT" "$PERFECT_PCT" "$SURVIVES" "$PERF_STAT" \
     >> "$SESSIONS_LEDGER"
 
 # --- FORENSICS HYGIENE: per-crash core prune ---
