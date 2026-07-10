@@ -4,7 +4,14 @@
     "section": "Video",
     "yaml_key": "  Resolution Scale",
     "type": "enum",
-    "options": ["50", "66", "75", "85", "90", "100"],
+    "options": [
+      "50",
+      "66",
+      "75",
+      "85",
+      "90",
+      "100"
+    ],
     "help": "Internal render scale. Pick by STABILITY, not just sharpness: 66% has been the most crash-stable, and 50% is oddly worse, not better. 85/90 are the headroom rungs: 90 renders ~19% fewer pixels than 100 (the GT HD slush-to-locked conversion test), 85 ~28% fewer (GT5P dyno ladder)."
   },
   {
@@ -12,7 +19,11 @@
     "section": "Audio",
     "yaml_key": "  Renderer",
     "type": "enum",
-    "options": ["Cubeb", "FAudio", "Null"],
+    "options": [
+      "Cubeb",
+      "FAudio",
+      "Null"
+    ],
     "help": "Audio output path. Cubeb (via PipeWire) is the only real ROCKNIX choice; FAudio only exists if the build ships it; Null = silence for tests. (ALSA was never an RPCS3 backend -- old option here wrote an invalid config.)"
   },
   {
@@ -67,7 +78,7 @@
     "min": 0,
     "max": 6,
     "step": 1,
-    "help": "Cell SPU worker count. 0 lets RPCS3 choose. Pinning too high starves PPU/RSX -- leave Auto unless you are profiling."
+    "help": "SPU worker pool size. OPERATOR-VALIDATED 2026-07-10: 3 keeps the MENUS springy while racing performance holds (auto/other values make menu navigation sluggish). The audio-only SPURS ladder (guest-side) is a different dial -- don't conflate."
   },
   {
     "label": "Max SPURS Threads",
@@ -84,8 +95,12 @@
     "section": "Core",
     "yaml_key": "  SPU Block Size",
     "type": "enum",
-    "options": ["Safe", "Mega", "Giga"],
-    "help": "SPU recompiler scope. Mega/Giga compile bigger chunks = fewer hitches once warm, but a longer first-run SPU/shader storm. Audio angle: longer blocks run longer uninterrupted -- may delay time-critical audio SPU jobs (Phase-3 A/B: Mega vs Safe)."
+    "options": [
+      "Safe",
+      "Mega",
+      "Giga"
+    ],
+    "help": "SPU code-compilation granularity. OPERATOR-VALIDATED 2026-07-10: MEGA is REQUIRED for good GT5P performance on this rig -- Safe costs real framerate. Giga untested beyond spot checks; Mega is the certified setting."
   },
   {
     "label": "SPU loop detection",
@@ -134,7 +149,15 @@
     "section": "Video",
     "yaml_key": "  Frame limit",
     "type": "enum",
-    "options": ["Off", "30", "50", "60", "120", "Auto", "PS3 Native"],
+    "options": [
+      "Off",
+      "30",
+      "50",
+      "60",
+      "120",
+      "Auto",
+      "PS3 Native"
+    ],
     "help": "Caps fps. GT runs under 30 here anyway, so 'Off' lets it run free; a cap mainly steadies frametime and heat, not crashes."
   },
   {
@@ -142,7 +165,10 @@
     "section": "Video",
     "yaml_key": "  MSAA",
     "type": "enum",
-    "options": ["Auto", "Disabled"],
+    "options": [
+      "Auto",
+      "Disabled"
+    ],
     "help": "Edge smoothing. Disabled is the safe SM8250 pick -- buys fps; Auto looks cleaner but loads the GPU harder."
   },
   {
@@ -164,7 +190,12 @@
     "section": "Video",
     "yaml_key": "  Shader Mode",
     "type": "enum",
-    "options": ["Legacy Recompiler (single-threaded)", "Async Recompiler (multi-threaded)", "Async Recompiler with Shader Interpreter", "Shader Interpreter only"],
+    "options": [
+      "Legacy Recompiler (single-threaded)",
+      "Async Recompiler (multi-threaded)",
+      "Async Recompiler with Shader Interpreter",
+      "Shader Interpreter only"
+    ],
     "help": "Async multi-threaded is the only sane SM8250 choice; the others stall or are debug-only. WARNING: changing this invalidates the shader vault."
   },
   {
@@ -172,7 +203,11 @@
     "section": "Video",
     "yaml_key": "  Minimum Scalable Dimension",
     "type": "enum",
-    "options": ["16", "512", "1024"],
+    "options": [
+      "16",
+      "512",
+      "1024"
+    ],
     "help": "Smallest texture the upscaler touches. 16 upscales everything (sharper, heavier); higher skips small textures to save GPU."
   },
   {
@@ -190,7 +225,11 @@
     "section": "Core",
     "yaml_key": "  RSX FIFO Accuracy",
     "type": "enum",
-    "options": ["Fast", "Atomic", "Ordered & Atomic"],
+    "options": [
+      "Fast",
+      "Atomic",
+      "Ordered & Atomic"
+    ],
     "help": "How strictly RPCS3 syncs its own emulated command-queue reads. Fast (current default) races the FIFO harder; Ordered & Atomic is what RPCS3's own error message recommends after a 'Dead FIFO commands queue' fatal (confirmed live 2026-07-01, ~35min into a session, distinct from the a6xx GPU-hang class -- RSXThread.cpp:2792 recover_fifo()). Trades CPU overhead for not racing the FIFO in the first place. Pair with Driver Wake-Up Delay."
   },
   {
@@ -226,7 +265,10 @@
     "section": "Video",
     "yaml_key": "    Asynchronous Queue Scheduler",
     "type": "enum",
-    "options": ["Safe", "Fast"],
+    "options": [
+      "Safe",
+      "Fast"
+    ],
     "help": "Vulkan submission scheduler. Fast lowers latency; Safe is steadier and is the SM8250 default."
   },
   {
@@ -241,7 +283,13 @@
     "section": "Video",
     "yaml_key": "    Detail level",
     "type": "enum",
-    "options": ["None", "Minimal", "Low", "Medium", "High"],
+    "options": [
+      "None",
+      "Minimal",
+      "Low",
+      "Medium",
+      "High"
+    ],
     "help": "How much the Perf Overlay reports. HIGH is the one that matters: per-subsystem PPU%/SPU%/RSX% -- the pack-bog and audio-deficit attribution. Minimal/Low = fps + frametime only (redundant with the DDU). Only reads if Perf Overlay is on."
   },
   {
@@ -249,7 +297,12 @@
     "section": "Video",
     "yaml_key": "    Position",
     "type": "enum",
-    "options": ["Top Left", "Top Right", "Bottom Left", "Bottom Right"],
+    "options": [
+      "Top Left",
+      "Top Right",
+      "Bottom Left",
+      "Bottom Right"
+    ],
     "help": "Which corner the Perf Overlay sits in. Park it OPPOSITE the DDU (DDU is bottom-left by default) so the two don't overlap -- Top Right is the safe pick."
   },
   {
