@@ -122,7 +122,7 @@ while true; do
     fi
 
     # 4.6 BOG-SAMPLE PROGRESS GAUGE (operator-approved 2026-07-10). While the
-    # chord-triggered perf sampler (bin/bog_profile.sh, SELECT+DPAD-Down) is
+    # chord-triggered perf sampler (bin/bog_profile.sh, R1+DPAD-Down) is
     # inside its record window, the VAULT segment becomes `§~~~··` — § = the
     # sampling pictogram, then 5 slots filling with ~ across the window (30s
     # default => ~6s/tick; both HUD refresh rates outrun it). GLYPH LAW: § is

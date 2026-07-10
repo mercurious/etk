@@ -15,7 +15,8 @@
 # (nice -19, after the sampled window so it cannot pollute the sample) runs
 # immediately, while the mount is alive.
 #
-# Trigger:  input_d.py chord SELECT + DPAD-Down (in-game only by construction)
+# Trigger:  input_d.py chord R1 + DPAD-Down (in-game only by construction;
+#           NOT SELECT — that is the camera toggle, operator 2026-07-10)
 #           or manual: bog_profile.sh [SECONDS]   (default $BOG_PROFILE_SECS or 30)
 # Output:   $TELEMETRY_DIR/perf_samples/bog_<epoch>.{perf.data,stacks.gz,summary.txt,meta}
 #           pruned to the newest 6 sets. Host-side sweep: cockpit skill

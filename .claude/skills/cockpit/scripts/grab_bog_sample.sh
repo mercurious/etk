@@ -19,7 +19,7 @@ N="${1:-1}"
 RDIR=/storage/games-internal/roms/etk/etk_telemetry/perf_samples
 
 SETS=$(ssh -o ConnectTimeout=8 "$RIG" "ls -1t $RDIR/bog_*.meta 2>/dev/null | head -$N" 2>/dev/null)
-[ -z "$SETS" ] && { echo "no bog samples on $RIG ($RDIR) — chord SELECT+DPAD-Down mid-race first" >&2; exit 2; }
+[ -z "$SETS" ] && { echo "no bog samples on $RIG ($RDIR) — chord R1+DPAD-Down mid-race first" >&2; exit 2; }
 
 mkdir -p "$OUT"
 for m in $SETS; do

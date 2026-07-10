@@ -23,13 +23,17 @@
 #    exist when the Sentry spawns this at boot. The connect
 #    loop MUST keep re-finding the device; do not collapse it
 #    back into a one-shot open.
-# 4. R1 + DPAD-Down = RSX FRAME CAPTURE (alternating resume).
-#    Deliberately NOT a SELECT chord: we never EVIOCGRAB, so the
+# 4. R1 + DPAD-Up = RSX FRAME CAPTURE (alternating resume);
+#    R1 + DPAD-Down = BOG PROFILER (operator-assigned 2026-07-10;
+#    RSX capture relocated Down->Up the same day, same mechanics).
+#    Both deliberately NOT SELECT chords: we never EVIOCGRAB, so the
 #    modifier always passes through to the game, and SELECT is
-#    the in-game camera-view toggle — the #11912 repro must HOLD
-#    bumper cam, so a SELECT chord would knock the camera off
-#    the bugged view at the moment of capture (operator call,
-#    2026-07-02). RPCS3's capture hotkey is Alt+C on the game
+#    the in-game camera-view toggle — a SELECT chord knocks the
+#    camera as collateral (the #11912 repro had to HOLD bumper
+#    cam; a mid-race bog mark must not flip the view either).
+#    R1 is the mid-race chord modifier; SELECT-clutch chords are
+#    for rare tool actions only (operator call 2026-07-02,
+#    generalized 2026-07-10). RPCS3's capture hotkey is Alt+C on the game
 #    window and the Flip 2 has no keyboard, so the chord INJECTS
 #    key events by writing raw input_event structs into the
 #    existing "InputPlumber Keyboard" node (no uinput device
@@ -152,9 +156,10 @@ def fire_screenshot():
     os.system("nohup bash /storage/games-internal/roms/etk/bin/screenshot.sh >/dev/null 2>&1 &")
 
 def fire_bog_profile():
-    """SELECT+DPAD-Down: BOG PROFILER — perf-sample the emulator through the
+    """R1+DPAD-Down: BOG PROFILER — perf-sample the emulator through the
     section the driver just entered (bin/bog_profile.sh; default 30s, then
-    symbolize + bank to telemetry). Detached + fail-silent by construction:
+    symbolize + bank to telemetry). R1 chord, NOT SELECT (camera toggle —
+    operator correction 2026-07-10). Detached + fail-silent by construction:
     the script itself debounces (double-press = no-op) and exits clean with
     no game/no perf, so this can never block the loop or the R3 path."""
     os.system("nohup sh /storage/games-internal/roms/etk/bin/bog_profile.sh >/dev/null 2>&1 &")
@@ -495,20 +500,26 @@ def event_loop(device):
                         # mode governs only the bare-L1 trigger above. Lets an
                         # operator who set L1 'disabled' still grab a shot on demand.
                         if val == -1: fire_screenshot()
-                        # Down: BOG PROFILER (the last free SELECT-clutch slot).
-                        # Driver marks the section start as the pack bogs; the
-                        # sampler runs 30s from HERE and banks symbolized stacks
-                        # (spec: dossiers/GridModeAffinity_Spec_20260710.md kill
-                        # branch -- name the contended lock). Completion = mako
-                        # toast; sweep with cockpit "grab sample".
-                        elif val == 1: fire_bog_profile()
-                # R1 + DPAD-Down: RSX FRAME CAPTURE / resume toggle (immutable
-                # rule 4). R1 modifier, NOT SELECT: SELECT passes through to the
-                # game (no EVIOCGRAB) and is the camera-view toggle — the #11912
-                # repro must hold bumper cam. In-game only by construction: this
-                # daemon is Sentry-spawned in RUNNING state, so the chord can't
-                # fire keystrokes at ES.
+                        # (SELECT+DPAD-Down stays FREE — and note for future
+                        # chords: SELECT is the in-game CAMERA TOGGLE, so any
+                        # SELECT chord flips the driver's view as collateral.
+                        # Acceptable for rare tool actions (VAULT/mango/shot),
+                        # WRONG for mid-race marks — those go on R1. Operator
+                        # correction 2026-07-10, the rule-4 lesson generalized.)
+                # R1 + DPAD chords (rule 4's constraint generalized: R1, never
+                # SELECT, for anything fired mid-race — SELECT is the camera
+                # toggle and would knock the view). In-game only by construction:
+                # this daemon is Sentry-spawned in RUNNING state.
+                #   R1+DPAD-Down = BOG PROFILER (operator-assigned 2026-07-10):
+                #     mark the section start as the pack bogs; bin/bog_profile.sh
+                #     samples 30s from HERE, DDU VAULT segment shows the s-bar,
+                #     mako toast on banked. Debounced in the script.
+                #   R1+DPAD-Up = RSX FRAME CAPTURE / resume toggle (RELOCATED
+                #     from R1+Down 2026-07-10 when the operator assigned Down to
+                #     the bog profiler; same R1 mechanics, rule 4 intact).
                 if r1_held and code == 17 and val == 1:
+                    fire_bog_profile()
+                elif r1_held and code == 17 and val == -1:
                     fire_rsx_capture()
 
 if __name__ == "__main__":
