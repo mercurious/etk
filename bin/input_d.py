@@ -151,6 +151,14 @@ def fire_screenshot():
     loop never blocks on grim latency."""
     os.system("nohup bash /storage/games-internal/roms/etk/bin/screenshot.sh >/dev/null 2>&1 &")
 
+def fire_bog_profile():
+    """SELECT+DPAD-Down: BOG PROFILER — perf-sample the emulator through the
+    section the driver just entered (bin/bog_profile.sh; default 30s, then
+    symbolize + bank to telemetry). Detached + fail-silent by construction:
+    the script itself debounces (double-press = no-op) and exits clean with
+    no game/no perf, so this can never block the loop or the R3 path."""
+    os.system("nohup sh /storage/games-internal/roms/etk/bin/bog_profile.sh >/dev/null 2>&1 &")
+
 # --- RSX capture injection (SELECT+DPAD-Down) ---------------------------
 # Key codes from linux/input-event-codes.h. EV_KEY press/release pairs are
 # written straight into the InputPlumber Keyboard event node; the kernel's
@@ -487,6 +495,13 @@ def event_loop(device):
                         # mode governs only the bare-L1 trigger above. Lets an
                         # operator who set L1 'disabled' still grab a shot on demand.
                         if val == -1: fire_screenshot()
+                        # Down: BOG PROFILER (the last free SELECT-clutch slot).
+                        # Driver marks the section start as the pack bogs; the
+                        # sampler runs 30s from HERE and banks symbolized stacks
+                        # (spec: dossiers/GridModeAffinity_Spec_20260710.md kill
+                        # branch -- name the contended lock). Completion = mako
+                        # toast; sweep with cockpit "grab sample".
+                        elif val == 1: fire_bog_profile()
                 # R1 + DPAD-Down: RSX FRAME CAPTURE / resume toggle (immutable
                 # rule 4). R1 modifier, NOT SELECT: SELECT passes through to the
                 # game (no EVIOCGRAB) and is the camera-view toggle — the #11912

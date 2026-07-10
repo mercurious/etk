@@ -136,5 +136,6 @@ derivation differ.
 - `scripts/frame.sh` — grab a single frame (and notes for high-fps screenrecord/scrcpy).
 - `scripts/pad.sh` — gamepad input actions via sendevent (driver mode, Android).
 - `scripts/rocknix_spotter_loop.sh` — ROCKNIX telemetry + **auto-catch crash-watch** over ssh (the ROCKNIX instrument): arms at idle, breaks on a6xx-fault / `live_stat`-stale / core-log-fatal, captures status+frame+state. Args: `DUR INT [STALE_TICKS]`. Run backgrounded so it notifies on catch.
+- `scripts/grab_bog_sample.sh` — **"grab sample"** (ROCKNIX/ssh): one-sweep pull of the newest BOG-PROFILER set(s) — `bog_<epoch>.{meta,summary.txt,stacks.gz}` from rig `etk_telemetry/perf_samples/` — and prints the perf-report head (the named hotspots/locks). Flow: the driver chords **SELECT+DPAD-Down** mid-race to mark the section start; `bin/bog_profile.sh` (ETK, on-rig) perf-samples 30s from there and symbolizes AT CAPTURE TIME (the AppImage mount dies with the session — a later `perf script` resolves nothing), then toasts "BOG SAMPLE BANKED". Operator says "grab sample" → run this. Args: `[N]` newest sets; `GRAB_PERF_DATA=1` to also pull the raw perf.data.
 - `scripts/padmovie.sh` — native pad-movie record/replay control (Android fork; T3 / repro harness).
 - `scripts/analyze_padmovie.py` / `synth_padmovie.py` / `extract_lap.py` — multi-lap capture analysis + synthesis.
