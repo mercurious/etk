@@ -121,6 +121,32 @@ while true; do
         VAULT_STR="${NEW_SHADERS}+ ${BANK_STR} ${V_SIZE_STR}"
     fi
 
+    # 4.6 BOG-SAMPLE PROGRESS GAUGE (operator-approved 2026-07-10). While the
+    # chord-triggered perf sampler (bin/bog_profile.sh, SELECT+DPAD-Down) is
+    # inside its record window, the VAULT segment becomes `§~~~··` — § = the
+    # sampling pictogram, then 5 slots filling with ~ across the window (30s
+    # default => ~6s/tick; both HUD refresh rates outrun it). GLYPH LAW: § is
+    # Latin-1 (A7), ~ ASCII, · B7 — all inside the proven-rendering range.
+    # Rides the existing per-tick live_stat update, so it adds ZERO rendering
+    # cost inside the measured window (unlike a toast, which would pollute it).
+    # Self-healing: a stale marker (sampler died pre-cleanup, elapsed >= dur)
+    # falls through to the normal VAULT gauge — same doctrine as the anti-lock
+    # alert's idle->alert->idle movement.
+    if [ -f "$SHM_DIR/bog_sample" ]; then
+        read -r BOG_T0 BOG_DUR < "$SHM_DIR/bog_sample" 2>/dev/null
+        case "$BOG_T0$BOG_DUR" in *[!0-9]*|'') BOG_T0=0; BOG_DUR=0 ;; esac
+        BOG_EL=$(( $(date +%s) - BOG_T0 ))
+        if [ "$BOG_DUR" -gt 0 ] && [ "$BOG_EL" -ge 0 ] && [ "$BOG_EL" -lt "$BOG_DUR" ]; then
+            BOG_FILL=$(( BOG_EL * 5 / BOG_DUR ))
+            BOG_SEG="§"; BOG_I=0
+            while [ "$BOG_I" -lt 5 ]; do
+                if [ "$BOG_I" -lt "$BOG_FILL" ]; then BOG_SEG="${BOG_SEG}~"; else BOG_SEG="${BOG_SEG}·"; fi
+                BOG_I=$((BOG_I + 1))
+            done
+            VAULT_STR="$BOG_SEG"
+        fi
+    fi
+
     # --- TIME-GATED LAUNCH HEADER (three stages) ---
     # Stage 1 (0..HOLD):     MODE|GAMEID| + telemetry body
     # Stage 2 (HOLD..2HOLD): labeled telemetry body (TEMP:/CORES:/MEM:/SHDRS:)

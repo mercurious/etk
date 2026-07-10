@@ -56,7 +56,13 @@ EP=$(date +%s)
 OUT="$OUTDIR/bog_$EP"
 
 # --- SAMPLE the bog window (199 Hz, callgraphs, whole emulator process) ---
+# DDU progress marker (operator-approved 2026-07-10): while this file exists and
+# is inside its window, mango_bridge swaps the VAULT gauge for the sampling
+# gauge `§~~~··` (5 progress slots over $DUR). Removed the instant the record
+# window closes; the bridge also self-heals on a stale marker (elapsed >= dur).
+echo "$(date +%s) $DUR" > "$SHM/bog_sample" 2>/dev/null
 perf record -F 199 -g -p "$EPID" -o "$OUT.perf.data" -- sleep "$DUR" >/dev/null 2>&1
+rm -f "$SHM/bog_sample" 2>/dev/null
 
 # --- SYMBOLIZE NOW (mount-alive window), nice'd so it can't cause a bog ---
 if [ -s "$OUT.perf.data" ]; then
