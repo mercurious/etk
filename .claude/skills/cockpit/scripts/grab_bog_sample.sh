@@ -1,7 +1,7 @@
 #!/bin/bash
 # grab_bog_sample.sh — ONE SWEEP: pull the newest bog-profiler sample set off the
 # ROCKNIX rig and print its verdict-ready summary. The operator says "grab sample"
-# after chording SELECT+DPAD-Down mid-race (bin/bog_profile.sh banks
+# after chording R1+DPAD-Down mid-race (bin/bog_profile.sh banks
 # bog_<epoch>.{perf.data,stacks.gz,summary.txt,meta} on the rig, newest 6 kept).
 #
 # Usage: grab_bog_sample.sh [N]          # N = how many newest sets (default 1)
