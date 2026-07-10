@@ -197,7 +197,7 @@ Input/Output:
   GHLtar emulated controller: "Null"
   Pad handler mode: Single-threaded
   Keep pads connected: false
-  Pad handler sleep (microseconds): 1000
+  Pad handler sleep (microseconds): 4000
   Background input enabled: true
   Show move cursor: false
   Paint move spheres: false

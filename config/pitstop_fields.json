@@ -328,5 +328,15 @@
     "yaml_key": "  Accurate ZCULL stats",
     "type": "bool",
     "help": "Precise (slower) accumulation of ZCULL query statistics. OFF pairs with Relaxed ZCULL Sync to cut query-poll pressure further (bog-profiler lane 2026-07-10). GT tolerates approximate stats; flip back ON if glare/flare misbehave."
+  },
+  {
+    "label": "Pad Poll Interval (us)",
+    "section": "Input/Output",
+    "yaml_key": "  Pad handler sleep (microseconds)",
+    "type": "int",
+    "min": 1000,
+    "max": 16000,
+    "step": 1000,
+    "help": "How often the pad thread polls the controller (us; RPCS3 default 1000=1kHz). BOG-PROFILER FINDING 2026-07-10: at 1kHz the pad-connection re-check (SDL_HasEvents in update_connection) burns ~8%% of ALL cycles during GT5P pack racing -- pure waste. 4000 (250Hz) cuts that ~4x with imperceptible added latency (<3ms; GT frames are 16-33ms). Higher = less overhead, laggier feel; back off if inputs feel sticky."
   }
 ]

@@ -104,7 +104,7 @@ Input/Output:
   Mouse Debug overlay: false
   Move: "Null"
   Pad handler mode: Single-threaded
-  Pad handler sleep (microseconds): 1000
+  Pad handler sleep (microseconds): 4000
   Paint move spheres: false
   SDL Camera ID: Default
   Show move cursor: false
