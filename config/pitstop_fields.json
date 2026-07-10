@@ -237,7 +237,7 @@
     "section": "Video",
     "yaml_key": "  Relaxed ZCULL Sync",
     "type": "bool",
-    "help": "Loosens depth-cull timing. ON boosts fps and GT tolerates it well; can cause minor pop-in."
+    "help": "Loosens how often the RSX thread force-syncs occlusion-query (ZCULL) results. BOG-PROFILER FINDING 2026-07-10: the ZCULL query poll burns ~5%% of ALL cycles during pack racing (the same poll the boss campaign fought at wedges). ON = fewer forced polls, frees rsx-thread time; watch glare/lens-flare (GT uses queries for them). Full queries-OFF was rejected (choppy feel) -- this is the middle path."
   },
   {
     "label": "Disable ZCull Occlusion Queries",
@@ -321,5 +321,12 @@
     "max": 1000,
     "step": 10,
     "help": "How often the Perf Overlay refreshes its numbers (RPCS3 default 350ms). Lower = twitchier read of a transient pack spike; higher = calmer average. Does not affect the frametime graph resolution."
+  },
+  {
+    "label": "Accurate ZCULL stats",
+    "section": "Video",
+    "yaml_key": "  Accurate ZCULL stats",
+    "type": "bool",
+    "help": "Precise (slower) accumulation of ZCULL query statistics. OFF pairs with Relaxed ZCULL Sync to cut query-poll pressure further (bog-profiler lane 2026-07-10). GT tolerates approximate stats; flip back ON if glare/flare misbehave."
   }
 ]
