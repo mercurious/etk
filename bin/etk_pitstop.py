@@ -4970,6 +4970,11 @@ def _power_load(state):
         k["id"]: (k["options"][0]["v"] if k.get("options") else "")
         for k in schema.get("knobs", [])}
     vals.update({k: v for k, v in saved_vals.items() if _power_knob(schema, k)})
+    # Knobs the presets deliberately omit (e.g. `grid`: presets don't define it so
+    # the preset identity / pwr= tag is unaffected by the rung) still need a value
+    # for the UI row and the profile record — default to their first option.
+    for k in schema.get("knobs", []):
+        vals.setdefault(k["id"], k["options"][0]["v"] if k.get("options") else "")
     state["power_model"] = {
         "schema": schema,
         "values": vals,
@@ -4994,7 +4999,14 @@ def _power_cur_preset(model):
 
 def _power_tag(model):
     p = _power_cur_preset(model)
-    return p.lower() if p != "CUSTOM" else "custom"
+    tag = p.lower() if p != "CUSTOM" else "custom"
+    # GRID rides the tag as a suffix (race+gA) instead of a preset flip: presets
+    # omit the grid knob, so the rung never mushes preset identity to CUSTOM and
+    # the ledger's pwr= column attributes both dimensions in one token.
+    g = model["values"].get("grid")
+    if g and g != "off":
+        tag += "+g" + g
+    return tag
 
 
 def _power_dirty(model):
@@ -5054,6 +5066,17 @@ def _power_apply(model):
             live += 1
         except OSError:
             pass  # a knob may reject live (min/max ordering); the boot applier retries
+    # GRID knob has no sysfs path — its engine is bin/grid_apply.sh (thread
+    # affinity on the live emulator). Apply the rung now (fail-silent, non-
+    # blocking; a no-game state is a clean no-op) — thermal_d re-asserts it at
+    # every ignition, which is what makes the knob reboot-safe.
+    g = vals.get("grid")
+    if g is not None:
+        try:
+            subprocess.Popen([os.path.join(ETK_ROOT, "bin", "grid_apply.sh"), g],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
     model["saved_values"] = dict(vals)
     model["applied_tag"] = tag
     return True, f"{tag} — {live}/{len(writes)} knobs live + reboot-safe"

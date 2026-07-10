@@ -68,6 +68,16 @@ while true; do
         echo "$(date +%s) SAMPLE $TEMP ${LOADAVG:-0}" >> "$ETK_ROOT/telemetry.log"
     fi
 
+    # GRID affinity re-assert (POWER-tab `grid` knob; engine = bin/grid_apply.sh,
+    # spec dossiers/GridModeAffinity_Spec_20260710.md). thermal_d is the Governor
+    # and runs per-session, so applying here at tick 1 + every 30 ticks (60s) is
+    # what makes the knob ignition- and reboot-safe AND collects late-spawned SPU
+    # workers. grid_apply reads the rung from the POWER profile itself; off/absent
+    # = clean no-op reset. Fail-silent by construction — can never break the loop.
+    if [ "$TICK" -eq 1 ] || [ $((TICK % 30)) -eq 0 ]; then
+        [ -x "$ETK_ROOT/bin/grid_apply.sh" ] && "$ETK_ROOT/bin/grid_apply.sh" >/dev/null 2>&1
+    fi
+
     # 3. INTENT SENSING
     read -r CURRENT_MODE < "$MODE_FILE" 2>/dev/null || CURRENT_MODE="$DEFAULT_MODE"
 
