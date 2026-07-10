@@ -73,5 +73,10 @@ for t in /proc/"$EPID"/task/*; do
     taskset -pc "$m" "$tid" >/dev/null 2>&1 && N=$((N + 1))
 done
 
-echo "ep=$(date +%s) grid=$RUNG threads=$N" >> "${SHM_DIR:-/dev/shm/etk_shm}/grid_mark" 2>/dev/null
+# Mark BOTH volatile (SHM, for live timeline splits) and persistent (telemetry,
+# so mask-engagement evidence survives the reboot — /dev/shm ate the first
+# stint's marks and left "did the masks land?" unanswerable post-hoc).
+MARK="ep=$(date +%s) grid=$RUNG threads=$N"
+echo "$MARK" >> "${SHM_DIR:-/dev/shm/etk_shm}/grid_mark" 2>/dev/null
+echo "$MARK" >> "${TELEMETRY_DIR:-/storage/games-internal/roms/etk/etk_telemetry}/grid_marks.log" 2>/dev/null
 exit 0
