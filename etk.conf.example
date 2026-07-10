@@ -148,3 +148,10 @@ ETK_DP_MIRROR=1
 PADDOCK_TOKEN=""
 # Optional override; default is <token-owner>/etk-paddock
 PADDOCK_REPO=""
+
+# --- Bog Profiler (R1+DPAD-Down mid-race; bin/bog_profile.sh) ---
+# Seconds sampled per chord press. 30 = the default deep sample; 15 fits a
+# single track SECTION for lap-mapping stints (e.g. Eiger lock-vs-slush:
+# chord in the slush AND in the locked stretches — each sample self-labels
+# via its fps_end meta + the perf timeline join). Newest 12 sets kept on-rig.
+BOG_PROFILE_SECS="30"

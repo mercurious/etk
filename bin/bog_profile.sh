@@ -26,7 +26,16 @@
 # ============================================================================
 [ -f /storage/games-internal/roms/etk/scripts/env.sh ] && . /storage/games-internal/roms/etk/scripts/env.sh 2>/dev/null
 
-DUR="${1:-${BOG_PROFILE_SECS:-30}}"
+# Duration precedence: arg > env > etk.conf BOG_PROFILE_SECS > 30. The etk.conf
+# read is direct (not via env.sh) because the chord launches us under plain sh
+# and env.sh's operator-config block is BASH_SOURCE-tied. For section-mapping
+# stints (e.g. Eiger lock-vs-slush laps) set BOG_PROFILE_SECS=15 in etk.conf —
+# a 15s window fits one track section; 30s spans several.
+DUR="${1:-${BOG_PROFILE_SECS:-}}"
+if [ -z "$DUR" ]; then
+    DUR=$(sed -n 's/^ *\(export \)\{0,1\}BOG_PROFILE_SECS=["'\'']\{0,1\}\([0-9]\{1,\}\).*/\2/p' \
+        /storage/games-internal/roms/etk/etk.conf 2>/dev/null | head -1)
+fi
 case "$DUR" in ''|*[!0-9]*) DUR=30 ;; esac
 TDIR="${TELEMETRY_DIR:-/storage/games-internal/roms/etk/etk_telemetry}"
 OUTDIR="$TDIR/perf_samples"
@@ -72,6 +81,9 @@ if [ -s "$OUT.perf.data" ]; then
 fi
 
 # --- META sidecar: joins the sample to its ledger row ---
+# fps_end: the perfstat SHM line at window close (needs Perf Overlay High) —
+# self-labels the sample bog-vs-perfect for lap mapping without the timeline
+# join. The perf_logs timeline remains the full-context second witness.
 {
     echo "epoch=$EP"
     echo "duration_s=$DUR"
@@ -79,10 +91,12 @@ fi
     echo "tune=$(cat "$TDIR/active_tune.txt" 2>/dev/null)"
     echo "pwr=$(sed -n 's/^# pwr=//p' /storage/etk-power/profile 2>/dev/null | head -1)"
     echo "perf_data_bytes=$(stat -c %s "$OUT.perf.data" 2>/dev/null)"
+    echo "fps_end=$(head -1 /dev/shm/rpcs3_perf_stat 2>/dev/null | tr ' ' ',')"
 } > "$OUT.meta" 2>/dev/null
 
-# --- PRUNE to the newest 6 sample sets (SD-card hygiene) ---
-ls -1t "$OUTDIR"/bog_*.meta 2>/dev/null | tail -n +7 | while read -r m; do
+# --- PRUNE to the newest 12 sample sets (a lap-mapping stint banks many;
+#     ~6MB/set => ~72MB ceiling, fine for the card) ---
+ls -1t "$OUTDIR"/bog_*.meta 2>/dev/null | tail -n +13 | while read -r m; do
     b="${m%.meta}"
     rm -f "$b.meta" "$b.perf.data" "$b.stacks.gz" "$b.summary.txt" 2>/dev/null
 done
