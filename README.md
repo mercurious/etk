@@ -16,7 +16,8 @@ House developed Gran Turismo-specific bug fixes and special tunings to the emula
 
 | OS | chipset | vulkan | emulator | fork | download | source | ETK Features |
 |---|---|---|---|---|---|---|---|
-| Android | arm64 | Adreno 650/Mesa Turnip | aPS3e | ETK-tuned fork | [.apk](https://github.com/mercurious/aps3e/releases/tag/v0.0.5) | [repo](https://github.com/mercurious/aps3e) | Shader Manager, Claude [Cockpit Skill](https://github.com/mercurious/etk/wiki/Claude-Cockpit-Skill) support |
+| Android | arm64 | Adreno 650/Mesa Turnip | aPS3e | ETK-tuned fork | [.apk](https://github.com/mercurious/aps3e/releases/) | [repo](https://github.com/mercurious/aps3e) | Shader Manager, Claude [Cockpit Skill](https://github.com/mercurious/etk/wiki/Claude-Cockpit-Skill) support |
+| Android | arm64 | Adreno 650/Mesa Turnip | RPCSX | ETK-tuned fork of a fork | UI [.apk](https://github.com/mercurious/rpcsx-ui-android/releases)<br> core [.so](https://github.com/mercurious/rpcsx/releases) | [UI](https://github.com/mercurious/rpcsx-ui-android/) [core](https://github.com/mercurious/rpcsx/)<br> | overlay fixes, GT bug fixes but road surface renders as checkerboard which needs fixing |
 | macOS | arm64 | Apple M1 Metal/MoltenVK | RPCS3 | ETK-tuned fork | [.app](https://github.com/mercurious/etk-rpcs3-gtk/releases/tag/gtk-edition-0.6.0-macos) | [repo](https://github.com/mercurious/etk-rpcs3-gtk) | none, just GT bug fixes |
 | ROCKNIX | arm64 (SM8250) | Adreno 650/Mesa Turnip | RPCS3 | ROCKNIX-GTK fork | [.img.gz](https://github.com/mercurious/etk/releases/tag/v0.7.0) | [repo](https://github.com/mercurious/etk-rpcs3-gtk) | **complete**🏁  |
 | Windows | x64 | AMD Radeon RDNA/2/native Vulkan | RPCS3 | ETK-tuned fork | [.exe](https://github.com/mercurious/etk-rpcs3-gtk/releases/tag/gtk-edition-0.6.0-windows) | [repo](https://github.com/mercurious/etk-rpcs3-gtk) | none, just GT bug fixes |
