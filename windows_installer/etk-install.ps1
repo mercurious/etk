@@ -264,9 +264,13 @@ else { Write-Warn "Sentry not confirmed active (reported '$active'). Check: ssh 
 # running RPCS3 already mapped.
 # ==========================================================
 Write-Step 6 $TOTAL "STEP 6.5: CUSTOM TURNIP DRIVER CATALOG..."
+# Keep these pins in lockstep with install.sh (CERTIFIED_BUILDS / CERT_SHA) — they
+# drift when a release rotates and the fetch then 404s down to stock-only (caught
+# in the field 2026-07-11: this script still pinned gtk_0.2 while the v0.7.0
+# release ships gtk_0.4 and the rig's etk.conf already selected 0.4).
 $certified = @(
-    @{ Name = "etk_turnip_rocknix_26.1.3_gtk_0.2.so"
-       Sha  = "245212454bb1809816f52fa7c04209db2ef63cf1b5ddc7a69533636a0a4b7d19" }
+    @{ Name = "etk_turnip_rocknix_26.1.3_gtk_0.4.so"
+       Sha  = "6b9c50bf993c10d32941177e7b15868714ef64da7a3bbf28022f8f2fb745045f" }
 )
 $driverBase = "https://github.com/mercurious/etk/releases/latest/download"
 $turnipKeep = @("stock")
@@ -340,8 +344,8 @@ else {
 # overwritten. RPCS3REMOTE body verbatim.
 # ==========================================================
 Write-Step 6 $TOTAL "STEP 6.55: RPCS3 GTK EDITION (default emulator)..."
-$certRpcs3    = "rpcs3-etk_gtk-edition-0.6.0_v0.0.41-19544-60c9705a_linux_aarch64.AppImage"
-$certRpcs3Sha = "1d0b490da981c3e05783fa621dcb4f5cdc7a5f48e380dafe8f111bbeb2ed80e8"
+$certRpcs3    = "rpcs3-etk_gtk-edition-0.7.0_v0.0.41-19544-60c9705a_linux_aarch64.AppImage"  # lockstep with install.sh CERT_RPCS3
+$certRpcs3Sha = "9fb5ee2e9fbecc3a66f295503cf558881a24d1b54f7777e93a9ab69eca8f7153"
 $rpcs3StageSrc = $null
 if ($Rpcs3AppImage -eq "stock") {
     Write-Note "RPCS3: stock ROCKNIX build selected (etk-env.ps1 opt-out)."
