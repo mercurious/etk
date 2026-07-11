@@ -81,6 +81,7 @@ The GTK fork was built from **ROCKNIX official release `20260701`**
 | Driver | MESA Turnip 26.1.3 **GTK** |
 
 ## Getting Started
+
 1. If you've already installed ROCKNIX, set the update channel to release/stable (`START` → `UPDATES & DOWNLOADS`), and update if necessary. Nightly builds may not be compatible.
 2. Clone this repo to your computer.
 ```sh
@@ -89,16 +90,17 @@ cd ~/etk
 chmod +x install.sh
 ```
 - (You can also download the code as a `.zip` and extract as `~/etk/`).
-3. Install the ETK onto your handheld rig
+3. Install the ETK onto your handheld rig on macOS, Linux, WLS:
 ```sh
 ./install.sh
 ```
-whenever you want to update, repair, or sync your rig,
+For Windows, use PowerShell:
 ```sh
-cd ~/etk
-./install.sh
+cd etk
+powershell -ExecutionPolicy Bypass -File .\windows_installer\etk-install.ps1
 ```
-3. Drop your PS3 firmware `.pup` into the approprite drop folder `/storage/roms/etk/firmware_drop/` on your device and use ETK Pitstop TOOLS to easily install it; a PKG file installed similary from `/storage/roms/etk/pkg_drop/`.
+*Repeat whenever you want to update, repair, or sync your rig.*<br><br>
+4. Drop your PS3 firmware `.pup` into the approprite drop folder `/storage/roms/etk/firmware_drop/` on your device and use ETK Pitstop TOOLS to easily install it; a PKG file installed similary from `/storage/roms/etk/pkg_drop/`.
 
 ## Removing ETK
 - Use the provided `uninstall.sh` to remove the ETK from your system.
