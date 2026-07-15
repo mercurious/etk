@@ -6,11 +6,11 @@ on the fly (the `pgrep -f` self-match, the Sentry SHM-reseed-on-IDLE, `input_d` 
 in-game-only) because they read on-demand instead of front-loading. Don't. Open every ETK
 session by reading, in order:
 1. **`README.md`** — the public on-ramp + current certified stack (start here, like any user would).
-2. **`AI_MANIFEST.md`** — the dev/AI **technical layer**: BusyBox/Rocknix laws, the Sentry state
+2. **`TRACK_MANUAL.md`** - the system manual and map with project handbook, your orientation
+3. **`AI_MANIFEST.md`** — the dev/AI **technical layer**: BusyBox/Rocknix laws, the Sentry state
    machine, the SHM map, RPCS3 paths, the two packaging models. This is the deep reference, **not
    sacred scripture** — some specific "laws" have proven unverified (e.g. the autostart/MangoHud
    race), so verify before building on a given one.
-3. **The README "ETK File Structure" section** — the file/daemon inventory (what each piece *is*).
 4. **`install.sh`** — the deploy/sync flow (how anything reaches the rig). Rig changes go through
    `install.sh`, never a one-off `scp` (a reboot/reinstall reverts hand-surgery).
 5. **The daemons** in `bin/` (`input_d.py`, `vault_d.sh`, `thermal_d.sh`, `mango_bridge.sh`,
