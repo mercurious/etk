@@ -16,7 +16,8 @@ House developed Gran Turismo-specific bug fixes and special tunings to the emula
 
 | OS | chipset | vulkan | emulator | fork | download | source | ETK Features |
 |---|---|---|---|---|---|---|---|
-| Android | arm64 | Adreno 650/Mesa Turnip | aPS3e | ETK-tuned fork | [.apk](https://github.com/mercurious/aps3e/releases/tag/v0.0.5) | [repo](https://github.com/mercurious/aps3e) | Shader Manager, Claude [Cockpit Skill](https://github.com/mercurious/etk/wiki/Claude-Cockpit-Skill) support |
+| Android | arm64 | Adreno 650/Mesa Turnip | aPS3e | ETK-tuned fork | [.apk](https://github.com/mercurious/aps3e/releases/) | [repo](https://github.com/mercurious/aps3e) | Shader Manager, Claude [Cockpit Skill](https://github.com/mercurious/etk/wiki/Claude-Cockpit-Skill) support |
+| Android | arm64 | Adreno 650/Mesa Turnip | RPCSX | ETK-tuned fork of a fork | UI [.apk](https://github.com/mercurious/rpcsx-ui-android/releases)<br> core [.so](https://github.com/mercurious/rpcsx/releases) | [UI](https://github.com/mercurious/rpcsx-ui-android/) [core](https://github.com/mercurious/rpcsx/)<br> | overlay fixes, GT bug fixes but road surface renders as checkerboard which needs fixing |
 | macOS | arm64 | Apple M1 Metal/MoltenVK | RPCS3 | ETK-tuned fork | [.app](https://github.com/mercurious/etk-rpcs3-gtk/releases/tag/gtk-edition-0.6.0-macos) | [repo](https://github.com/mercurious/etk-rpcs3-gtk) | none, just GT bug fixes |
 | ROCKNIX | arm64 (SM8250) | Adreno 650/Mesa Turnip | RPCS3 | ROCKNIX-GTK fork | [.img.gz](https://github.com/mercurious/etk/releases/tag/v0.7.0) | [repo](https://github.com/mercurious/etk-rpcs3-gtk) | **complete**🏁  |
 | Windows | x64 | AMD Radeon RDNA/2/native Vulkan | RPCS3 | ETK-tuned fork | [.exe](https://github.com/mercurious/etk-rpcs3-gtk/releases/tag/gtk-edition-0.6.0-windows) | [repo](https://github.com/mercurious/etk-rpcs3-gtk) | none, just GT bug fixes |
@@ -80,6 +81,7 @@ The GTK fork was built from **ROCKNIX official release `20260701`**
 | Driver | MESA Turnip 26.1.3 **GTK** |
 
 ## Getting Started
+
 1. If you've already installed ROCKNIX, set the update channel to release/stable (`START` → `UPDATES & DOWNLOADS`), and update if necessary. Nightly builds may not be compatible.
 2. Clone this repo to your computer.
 ```sh
@@ -88,16 +90,17 @@ cd ~/etk
 chmod +x install.sh
 ```
 - (You can also download the code as a `.zip` and extract as `~/etk/`).
-3. Install the ETK onto your handheld rig
+3. Install the ETK onto your handheld rig on macOS, Linux, WLS:
 ```sh
 ./install.sh
 ```
-whenever you want to update, repair, or sync your rig,
+For Windows, use PowerShell:
 ```sh
-cd ~/etk
-./install.sh
+cd etk
+powershell -ExecutionPolicy Bypass -File .\windows_installer\etk-install.ps1
 ```
-3. Drop your PS3 firmware `.pup` into the approprite drop folder `/storage/roms/etk/firmware_drop/` on your device and use ETK Pitstop TOOLS to easily install it; a PKG file installed similary from `/storage/roms/etk/pkg_drop/`.
+*Repeat whenever you want to update, repair, or sync your rig.*<br><br>
+4. Drop your PS3 firmware `.pup` into the approprite drop folder `/storage/roms/etk/firmware_drop/` on your device and use ETK Pitstop TOOLS to easily install it; a PKG file installed similary from `/storage/roms/etk/pkg_drop/`.
 
 ## Removing ETK
 - Use the provided `uninstall.sh` to remove the ETK from your system.
