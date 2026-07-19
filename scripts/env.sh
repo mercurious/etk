@@ -35,6 +35,12 @@ export ETK_DP_MIRROR="${ETK_DP_MIRROR:-1}"
 # HUD instrument set (mango_bridge.sh body): BASIC = TEMP|LOAD|RAM%|shaders;
 # GINSTR = TEMP|TURBO|SLIP|shaders (swap LOAD+RAM for live frame-pacing gauges).
 export ETK_HUD_MODE="${ETK_HUD_MODE:-BASIC}"
+# Golden-default config seeding (0.7.1, default-ON): Pitstop seeds
+# custom_configs/config_<ID>.yml from the ETK golden template for any
+# playable title that has none, so a new game's first launch never runs
+# RPCS3's hostile defaults (disc/ISO titles additionally get the
+# Strict Rendering Mode fix). Set 0 to disable (kill-switch).
+export ETK_GOLDEN_SEED="${ETK_GOLDEN_SEED:-1}"
 
 # --- [ SHM & STATE ] ---
 export SHM_DIR="/dev/shm/etk_shm"
@@ -105,6 +111,28 @@ resolve_game_id() {
             sfo=$(find "$rom" -name "PARAM.SFO" 2>/dev/null | head -n 1)
             [ -n "$sfo" ] && id=$(strings "$sfo" 2>/dev/null | grep -oE '[A-Z]{4}[0-9]{5}' | head -n 1)
         fi
+    fi
+    # Disc/ISO titles (the .pkg/.iso format axis — AI_MANIFEST): the live
+    # cmdline is a bare .iso path. Unless the filename happens to carry the
+    # serial, BOTH scans above come up empty — there is no on-filesystem
+    # PARAM.SFO to rip (it lives inside the image). RPCS3 registers every
+    # disc boot in games.yml as "SERIAL: path", so match the live ROM path
+    # back to its serial. Fixed-string grep (path may contain regex chars);
+    # BusyBox-safe.
+    if [ -z "$id" ]; then
+        rom=$(pgrep -f rpcs3 | xargs -I{} cat /proc/{}/cmdline 2>/dev/null | tr '\0' '\n' | grep -i '\.iso$' | head -n 1)
+        if [ -n "$rom" ] && [ -f /storage/.config/rpcs3/games.yml ]; then
+            id=$(grep -F "$rom" /storage/.config/rpcs3/games.yml 2>/dev/null | grep -oE '^[A-Z]{4}[0-9]{5}' | head -n 1)
+        fi
+    fi
+    # First-ever boot of a fresh ISO (games.yml row not committed yet):
+    # RPCS3 truncates its log per launch and prints "Serial: <ID>" in the
+    # boot header (System.cpp sys_log), so the head of the live log is this
+    # session's ground truth. Bounded read — never stream a race-long log.
+    # Only reached while a game is RUNNING (the Sentry's call sites), so a
+    # stale log can't resurrect a dead session's ID.
+    if [ -z "$id" ]; then
+        id=$(head -c 262144 "${RPCS3_LOG:-/storage/.cache/rpcs3/RPCS3.log}" 2>/dev/null | grep 'Serial:' | grep -oE '[A-Z]{4}[0-9]{5}' | head -n 1)
     fi
     echo "$id"
 }

@@ -120,6 +120,19 @@ HUD_HEADER_HOLD_S=15
 #          The G-INSTR tuning HUD; gauge thresholds are feel-tuned on-rig.
 ETK_HUD_MODE="BASIC"
 
+# --- Golden-default config seeding (0.7.1, ships ON) ---
+# When a game appears on the rig with no per-game RPCS3 config yet —
+# most commonly a disc .iso copied straight into roms/ps3, which never
+# passes through the PKG installer — Pitstop seeds
+# custom_configs/config_<ID>.yml from the ETK golden GT5P tune at its
+# next open, so no title ever plays on RPCS3's untuned defaults.
+# Disc/ISO titles additionally get "Strict Rendering Mode: true" (fixes
+# the diagonal rendering artifact seen on disc 1.00 builds, e.g. GT5P
+# BCUS98158). Existing configs are never touched. Every seed is logged
+# as a GOLDEN SEED row in the TELEMETRY config ledger.
+# 1 = on (default) · 0 = kill-switch (titles then start on RPCS3 defaults)
+ETK_GOLDEN_SEED=1
+
 # --- install.sh output mode ---
 # 0 = Pit Wall console TUI (recommended; dashboard with progress bars +
 #     2-line scrolling datalog, evokes commander.sh aesthetic)

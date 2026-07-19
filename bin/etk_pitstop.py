@@ -97,7 +97,7 @@ CONFIG_CHANGES_HEADER = "epoch\tgame_id\tfield_label\told_value\tnew_value\n"
 # User-facing versions in the title bar. Two now: APP_VERSION = the ETK
 # middleware; GTK_EDITION_VERSION = the kernel+emulator+driver stack it drives
 # (the "GTK Edition"). Title reads "// ETK PITSTOP vX // GTK Edition vY //".
-APP_VERSION = "0.7.0"
+APP_VERSION = "0.7.1"
 GTK_EDITION_VERSION = "0.7.0"
 
 # DRIVER tab (Turnip env-var dials). These are NOT RPCS3 config keys — they
@@ -195,6 +195,13 @@ FIRMWARE_DROP_DIR = os.environ.get(
     'FIRMWARE_DROP_DIR', f"{os.environ.get('ETK_ROOT', '/storage/games-internal/roms/etk')}/firmware_drop")
 ETK_TEMPLATE_CONFIG = os.environ.get(
     'ETK_TEMPLATE_CONFIG', f"{os.environ.get('ETK_ROOT', '/storage/games-internal/roms/etk')}/config/etk_template.yml")
+# Golden-default config seeding (0.7.1, default-ON; env.sh exports the
+# etk.conf kill-switch ETK_GOLDEN_SEED=0). When ON, any playable title
+# with no custom_configs/config_<ID>.yml is seeded from the golden
+# template at Pitstop startup — disc/ISO registrations additionally get
+# Strict Rendering Mode: true (the BCUS98158 diagonal-artifact fix; the
+# artifact is disc-1.00-specific, unseen on the Spec III PKG).
+GOLDEN_SEED_ENABLED = os.environ.get('ETK_GOLDEN_SEED', '1').strip() != '0'
 ROCKNIX_SYSTEM_CFG = os.environ.get(
     'ROCKNIX_SYSTEM_CFG', '/storage/.config/system/configs/system.cfg')
 SHM_DIR = os.environ.get('SHM_DIR', '/dev/shm/etk_shm')
@@ -2700,6 +2707,116 @@ def _deploy_template_config(title_id):
     except Exception as e:
         _log(f"template config deploy failed: {e}")
         return "failed"
+
+
+# --- golden-default config seeding (0.7.1) ------------------
+# A disc/ISO title never passes through the PKG installer, so nothing ever
+# deployed a per-game config for it: the first ISO on the rig (GT5P disc
+# BCUS98158) booted on RPCS3's hostile defaults, and TUNING could not build
+# a config from scratch (the section-aware injector refuses to append into
+# a file with no sections — by design). These seeders close that gap for
+# every title, whichever packaging model it arrived by.
+
+def _games_yml_serials():
+    """serial -> ROM path from RPCS3's games.yml (disc/ISO boot
+    registrations; installed-PKG titles live under dev_hdd0/game and are
+    not listed here). Empty dict on absence or any parse trouble."""
+    out = {}
+    try:
+        with open(RPCS3_GAMES_YML) as f:
+            for ln in f:
+                if ':' not in ln or ln.lstrip().startswith('#'):
+                    continue
+                tid, path = ln.split(':', 1)
+                tid, path = tid.strip(), path.strip().strip('"')
+                if re.fullmatch(r'[A-Z]{4}[0-9]{5}', tid):
+                    out[tid] = path
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        _log(f"golden seed: games.yml parse failed: {e}")
+    return out
+
+
+def _golden_seed_config(tid, disc=False):
+    """Seed custom_configs/config_<tid>.yml from the ETK golden template so
+    the title never runs on RPCS3 defaults. Disc/ISO titles additionally
+    get Strict Rendering Mode: true (disc 1.00 diagonal-artifact fix).
+    Never clobbers an existing config; fail-soft on every path (a seeding
+    failure must never take Pitstop down — the title just plays untuned,
+    exactly as before 0.7.1). Returns a short plain-language status."""
+    if not GOLDEN_SEED_ENABLED:
+        return "disabled"
+    dest = os.path.join(RPCS3_CUSTOM_CONFIGS, f"config_{tid}.yml")
+    if os.path.exists(dest):
+        return "kept existing"
+    try:
+        with open(ETK_TEMPLATE_CONFIG) as f:
+            lines = f.readlines()
+    except Exception as e:
+        _log(f"golden seed: template unreadable: {e}")
+        return "template missing"
+    if disc:
+        # Section-aware single-key overlay: only the Video-block line may
+        # flip (same gate the TUNING injector uses, so a same-named key in
+        # another section could never be touched).
+        current_section = None
+        for i, ln in enumerate(lines):
+            sec = _section_of(ln)
+            if sec is not None:
+                current_section = sec
+                continue
+            if current_section == "Video" and \
+                    ln.strip().startswith("Strict Rendering Mode:"):
+                indent = ln[:len(ln) - len(ln.lstrip())]
+                lines[i] = f"{indent}Strict Rendering Mode: true\n"
+                break
+    try:
+        os.makedirs(RPCS3_CUSTOM_CONFIGS, exist_ok=True)
+        tmp = dest + ".etk.tmp"
+        with open(tmp, 'w') as f:
+            f.writelines(lines)
+        os.replace(tmp, dest)
+    except Exception as e:
+        _log(f"golden seed: write failed for {tid}: {e}")
+        return "failed"
+    # Surface the seed in the CONFIG ledger so TELEMETRY shows it as a
+    # config event with honest provenance (best-effort; the seed stands
+    # even if the ledger append fails).
+    try:
+        os.makedirs(TELEMETRY_DIR, exist_ok=True)
+        if not os.path.exists(CONFIG_CHANGES_LEDGER):
+            ltmp = CONFIG_CHANGES_LEDGER + ".tmp"
+            with open(ltmp, 'w') as f:
+                f.write(CONFIG_CHANGES_HEADER)
+            os.replace(ltmp, CONFIG_CHANGES_LEDGER)
+        with open(CONFIG_CHANGES_LEDGER, 'a') as f:
+            f.write(f"{int(time.time())}\t{tid}\tGOLDEN SEED\trpcs3-defaults\t"
+                    f"{'golden+strict-render' if disc else 'golden'}\n")
+    except Exception as e:
+        _log(f"golden seed: ledger append failed: {e}")
+    _log(f"golden seed: {tid} <- template ({'disc' if disc else 'pkg'})")
+    return "seeded"
+
+
+def _golden_seed_sweep():
+    """Seed a golden config for every playable title that has none:
+    .psn launchers (installed PKGs) + games.yml serials (disc/ISO).
+    Runs once at startup, and only while the emulator is idle — RPCS3
+    rewrites configs on exit, so we never race a live session (skipped
+    sweep = seeded on the next Pitstop open; fail-soft). Returns the
+    list of seeded title IDs for the footer status line."""
+    if not GOLDEN_SEED_ENABLED or _rpcs3_running():
+        return []
+    seeded = []
+    discs = _games_yml_serials()
+    tids = {g["title_id"] for g in _list_psn_games()} | set(discs)
+    for tid in sorted(tids):
+        if not re.fullmatch(r'[A-Z]{4}[0-9]{5}', tid or ""):
+            continue
+        if _golden_seed_config(tid, disc=tid in discs) == "seeded":
+            seeded.append(tid)
+    return seeded
 
 
 # --- the blocking install / uninstall sequences -------------
@@ -6062,6 +6179,13 @@ def main(stdscr):
     curses.init_pair(PAIR_CONFIG, curses.COLOR_CYAN, curses.COLOR_BLACK)
     stdscr.timeout(50)
 
+    # GOLDEN SEED sweep (0.7.1) — BEFORE the schema load, so a title seeded
+    # right now (e.g. the freshly booted disc ISO that is our TARGET_ID)
+    # opens in TUNING with the golden values already on disk instead of an
+    # empty file the injector can't append into. Fail-soft: an empty sweep
+    # is silent; a disabled/racing sweep just defers to the next open.
+    seeded_ids = _golden_seed_sweep()
+
     # ETK_NO_TARGET: no PS3 title resolved — skip the schema/config load
     # entirely. TUNING/TELEMETRY render inert panels and TOOLS is the live
     # tab, so the matrix is never drawn, edited or saved; loading a fallback
@@ -6084,7 +6208,11 @@ def main(stdscr):
         # Default tab: TOOLS when no game resolved (the install front door,
         # dossier §3), otherwise TELEMETRY.
         "current_tab": CURRENT_TAB_TOOLS if ETK_NO_TARGET else CURRENT_TAB_TELEMETRY,
-        "status": "",
+        # Plain-language footer notice when the sweep just seeded configs —
+        # the operator sees WHICH titles picked up the golden tune (the
+        # detail lives in the TELEMETRY config-change rows).
+        "status": (f"GOLDEN TUNE seeded: {', '.join(seeded_ids)}"
+                   if seeded_ids else ""),
         "gamepad_status": gamepad_status,
         "telemetry_scroll": 0,
         # TELEMETRY row selection + sub-mode. telemetry_cursor is an absolute

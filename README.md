@@ -55,6 +55,7 @@ See [Getting Started](https://github.com/mercurious/etk/#getting-started) to ins
 | Crash Recovery | Safely exit from crash or freeze | `L1` + `R3` to safely recover to ES frontend |
 | ETK Screenshot | One-finger shutter screenshots with overlay | `L1` configurable in ETK Pitstop |
 | On Device Installations | One-tap, on-device firmware and game installs | Drop `.pup` in `etk/firmware_drop`, `.pkg` in `etk/pkg_drop`, open ETK Pitstop `TOOLS` tab |
+| Golden Tune Seeding | New games (including disc `.iso` copied into `roms/ps3/`) start on the ETK golden tune instead of raw RPCS3 defaults; disc titles get the strict-render artifact fix automatically | automatic on next Pitstop open; `ETK_GOLDEN_SEED=0` in `etk.conf` to disable |
 | Video Mirroring | Device screen on while USB-DisplayPort-HDMI out active | turn USB plug upside-down to solve video-out issue |
 | Flicker-free Road Surfaces | 5 year emulator old [bug](https://github.com/RPCS3/rpcs3/issues/11912) solved | perfectly rendered road surfaces |
 | Audio card boot fixed | Sound works reliably vs official release | sound just works now, finally; solving race stutter is a different problem |
