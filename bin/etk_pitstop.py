@@ -97,7 +97,7 @@ CONFIG_CHANGES_HEADER = "epoch\tgame_id\tfield_label\told_value\tnew_value\n"
 # User-facing versions in the title bar. Two now: APP_VERSION = the ETK
 # middleware; GTK_EDITION_VERSION = the kernel+emulator+driver stack it drives
 # (the "GTK Edition"). Title reads "// ETK PITSTOP vX // GTK Edition vY //".
-APP_VERSION = "0.7.1"
+APP_VERSION = "0.7.2"
 GTK_EDITION_VERSION = "0.7.0"
 
 # DRIVER tab (Turnip env-var dials). These are NOT RPCS3 config keys — they
@@ -202,6 +202,16 @@ ETK_TEMPLATE_CONFIG = os.environ.get(
 # Strict Rendering Mode: true (the BCUS98158 diagonal-artifact fix; the
 # artifact is disc-1.00-specific, unseen on the Spec III PKG).
 GOLDEN_SEED_ENABLED = os.environ.get('ETK_GOLDEN_SEED', '1').strip() != '0'
+# ISO onboarding (0.7.2, default-ON; env.sh exports the etk.conf
+# kill-switch ETK_ISO_ONBOARD=0). ES's ps3 system scans ONLY
+# ".ps3 .psn .m3u" (es_systems.cfg, verified on-rig 2026-07-19), so a
+# dropped .iso never appears until an .m3u launcher exists for it; and
+# ROCKNIX's get_setting escapes ()& but NOT [] when it builds its awk
+# regex from the ROM filename (001-functions, same rig read), so an
+# IRISMAN-style "[BLUS-30019]" name silently disables every per-game
+# setting including the MangoHud overlay. The startup sweep fixes both
+# and seeds the golden config from the filename serial.
+ISO_ONBOARD_ENABLED = os.environ.get('ETK_ISO_ONBOARD', '1').strip() != '0'
 ROCKNIX_SYSTEM_CFG = os.environ.get(
     'ROCKNIX_SYSTEM_CFG', '/storage/.config/system/configs/system.cfg')
 SHM_DIR = os.environ.get('SHM_DIR', '/dev/shm/etk_shm')
@@ -2817,6 +2827,117 @@ def _golden_seed_sweep():
         if _golden_seed_config(tid, disc=tid in discs) == "seeded":
             seeded.append(tid)
     return seeded
+
+
+# --- ISO onboarding (0.7.2) ---------------------------------
+# A dropped .iso is invisible to ES (ps3 extensions: .ps3 .psn .m3u) and,
+# if bracket-named, invisible to ROCKNIX per-game settings too. This sweep
+# is the .iso twin of the PKG installer's onboarding writers above
+# (_write_psn / _enable_mangohud / template config): rename, launcher,
+# overlay, golden seed — so "copy the ISO over" is the whole install.
+
+# IRISMAN-style serial tag in a filename: "(BCUS98158)" or "[BLUS-30019]".
+_ISO_ID_TAG_RE = re.compile(r'[\[\(]\s*([A-Z]{4})\s*-?\s*([0-9]{5})\s*[\]\)]')
+
+
+def _iso_serial_from_name(name):
+    """Serial from a filename's ID tag, dash-normalized ("[BLUS-30019]" ->
+    "BLUS30019"). None when the name carries no tag."""
+    m = _ISO_ID_TAG_RE.search(name)
+    return (m.group(1) + m.group(2)) if m else None
+
+
+def _write_m3u(m3u_path, iso_name):
+    """Write the ES launcher: one line, the bare .iso filename —
+    start_rpcs3.sh reads the first line and prefixes /roms/ps3/ itself.
+    Atomic tmp+replace; matches the proven hand-made BCUS98158 launcher."""
+    tmp = m3u_path + ".etk.tmp"
+    with open(tmp, 'w') as f:
+        f.write(iso_name + "\n")
+    os.replace(tmp, m3u_path)
+
+
+def _iso_onboard_sweep():
+    """Make every .iso in the ps3 roms dir a first-class ES game:
+      1. rename bracket ID tags to parenthesised, dash-stripped form
+         (get_setting regex-escapes ()& but not [] — bracketed names
+         silently lose ALL per-game settings; the serial stays visible to
+         disambiguate regional/format variants, operator-approved);
+      2. generate/refresh the <stem>.m3u launcher ES scans for;
+      3. enable the per-game MangoHud overlay key (keyed on the .m3u name,
+         which is what start_rpcs3.sh passes to get_setting);
+      4. golden-seed config_<serial>.yml (disc overlay) from the filename
+         serial — works before the title's first boot, no games.yml needed.
+    Idle-gated and fail-soft per title: one bad filename must never stop
+    the rest of the grid from onboarding. Returns plain-language notes."""
+    if not ISO_ONBOARD_ENABLED or _rpcs3_running():
+        return []
+    try:
+        entries = sorted(os.listdir(PS3_ROMS_DIR))
+    except Exception as e:
+        _log(f"iso onboard: roms dir unreadable: {e}")
+        return []
+    yml_by_base = {os.path.basename(p): s
+                   for s, p in _games_yml_serials().items()}
+    onboarded, renamed, seeded = [], 0, []
+    for entry in entries:
+        if entry.startswith('.') or not entry.lower().endswith('.iso'):
+            continue
+        iso_path = os.path.join(PS3_ROMS_DIR, entry)
+        if not os.path.isfile(iso_path):
+            continue
+        try:
+            iso = entry
+            # 1. bracket/dash tag normalization rename
+            m = _ISO_ID_TAG_RE.search(iso)
+            new = iso
+            if m:
+                new = iso[:m.start()] + f"({m.group(1)}{m.group(2)})" + iso[m.end():]
+            new = new.replace('[', '(').replace(']', ')')
+            if new != iso:
+                new_path = os.path.join(PS3_ROMS_DIR, new)
+                if os.path.exists(new_path):
+                    _log(f"iso onboard: rename target exists, keeping {iso}")
+                else:
+                    os.rename(iso_path, new_path)
+                    # Migrate a stale sidecar launcher so ES never lists a
+                    # dead .m3u pointing at the pre-rename filename.
+                    old_m3u = os.path.join(PS3_ROMS_DIR, iso[:-4] + ".m3u")
+                    if os.path.exists(old_m3u):
+                        os.replace(old_m3u,
+                                   os.path.join(PS3_ROMS_DIR, new[:-4] + ".m3u"))
+                    _log(f"iso onboard: renamed {iso!r} -> {new!r}")
+                    iso, iso_path = new, new_path
+                    renamed += 1
+            stem = iso[:-4]
+            # 2. .m3u launcher (create or repair a stale/mismatched one)
+            m3u_name = stem + ".m3u"
+            m3u_path = os.path.join(PS3_ROMS_DIR, m3u_name)
+            content = None
+            try:
+                with open(m3u_path) as f:
+                    content = f.read().strip()
+            except Exception:
+                pass
+            if content != iso:
+                _write_m3u(m3u_path, iso)
+                _log(f"iso onboard: launcher {m3u_name!r} -> {iso!r}")
+                onboarded.append(stem)
+            # 3. per-game MangoHud overlay (idempotent upsert, self-heals
+            # duplicates; keyed on the .m3u ES actually launches)
+            _enable_mangohud(m3u_name)
+            # 4. golden seed from the filename serial (disc overlay);
+            # games.yml basename lookup covers untagged names that have
+            # booted at least once.
+            serial = _iso_serial_from_name(iso) or yml_by_base.get(iso)
+            if serial and _golden_seed_config(serial, disc=True) == "seeded":
+                seeded.append(serial)
+        except Exception as e:
+            _log(f"iso onboard: {entry!r} failed: {e.__class__.__name__}: {e}")
+    if onboarded or renamed:
+        _log(f"iso onboard: {len(onboarded)} launcher(s), {renamed} rename(s), "
+             f"seeded {seeded or 'none'}")
+    return onboarded
 
 
 # --- the blocking install / uninstall sequences -------------
@@ -6179,11 +6300,15 @@ def main(stdscr):
     curses.init_pair(PAIR_CONFIG, curses.COLOR_CYAN, curses.COLOR_BLACK)
     stdscr.timeout(50)
 
-    # GOLDEN SEED sweep (0.7.1) — BEFORE the schema load, so a title seeded
-    # right now (e.g. the freshly booted disc ISO that is our TARGET_ID)
-    # opens in TUNING with the golden values already on disk instead of an
-    # empty file the injector can't append into. Fail-soft: an empty sweep
-    # is silent; a disabled/racing sweep just defers to the next open.
+    # ISO ONBOARD sweep (0.7.2) — FIRST, so a freshly dropped .iso gets its
+    # rename + .m3u + MangoHud key + filename-serial golden seed before the
+    # golden sweep and schema load run. Then the GOLDEN SEED sweep (0.7.1) —
+    # BEFORE the schema load, so a title seeded right now (e.g. the freshly
+    # booted disc ISO that is our TARGET_ID) opens in TUNING with the golden
+    # values already on disk instead of an empty file the injector can't
+    # append into. Fail-soft: empty sweeps are silent; a disabled/racing
+    # sweep just defers to the next open.
+    iso_ready = _iso_onboard_sweep()
     seeded_ids = _golden_seed_sweep()
 
     # ETK_NO_TARGET: no PS3 title resolved — skip the schema/config load
@@ -6208,11 +6333,15 @@ def main(stdscr):
         # Default tab: TOOLS when no game resolved (the install front door,
         # dossier §3), otherwise TELEMETRY.
         "current_tab": CURRENT_TAB_TOOLS if ETK_NO_TARGET else CURRENT_TAB_TELEMETRY,
-        # Plain-language footer notice when the sweep just seeded configs —
-        # the operator sees WHICH titles picked up the golden tune (the
-        # detail lives in the TELEMETRY config-change rows).
-        "status": (f"GOLDEN TUNE seeded: {', '.join(seeded_ids)}"
-                   if seeded_ids else ""),
+        # Plain-language footer notice when the sweeps just did work — the
+        # operator sees which discs became ES-ready (restart ES / reboot to
+        # list them) and which titles picked up the golden tune (detail
+        # lives in the TELEMETRY config-change rows and the app log).
+        "status": " | ".join(
+            ([f"ISO GAMES READY: {len(iso_ready)} (reboot to list in ES)"]
+             if iso_ready else []) +
+            ([f"GOLDEN TUNE seeded: {', '.join(seeded_ids)}"]
+             if seeded_ids else [])),
         "gamepad_status": gamepad_status,
         "telemetry_scroll": 0,
         # TELEMETRY row selection + sub-mode. telemetry_cursor is an absolute

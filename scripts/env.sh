@@ -41,6 +41,14 @@ export ETK_HUD_MODE="${ETK_HUD_MODE:-BASIC}"
 # RPCS3's hostile defaults (disc/ISO titles additionally get the
 # Strict Rendering Mode fix). Set 0 to disable (kill-switch).
 export ETK_GOLDEN_SEED="${ETK_GOLDEN_SEED:-1}"
+# ISO onboarding (0.7.2, default-ON): Pitstop makes a dropped .iso a
+# first-class ES game — renames [BRACKET-ID] tags to (PARENID) (ROCKNIX's
+# get_setting escapes ()& but NOT [], so bracketed names silently kill
+# per-game settings incl. the MangoHud overlay), generates the <name>.m3u
+# launcher ES actually scans (ps3 extensions are .ps3 .psn .m3u — bare
+# .iso never lists), enables the per-game MangoHud key, and golden-seeds
+# the config from the filename serial. Set 0 to disable (kill-switch).
+export ETK_ISO_ONBOARD="${ETK_ISO_ONBOARD:-1}"
 
 # --- [ SHM & STATE ] ---
 export SHM_DIR="/dev/shm/etk_shm"
@@ -113,16 +121,24 @@ resolve_game_id() {
         fi
     fi
     # Disc/ISO titles (the .pkg/.iso format axis — AI_MANIFEST): the live
-    # cmdline is a bare .iso path. Unless the filename happens to carry the
-    # serial, BOTH scans above come up empty — there is no on-filesystem
-    # PARAM.SFO to rip (it lives inside the image). RPCS3 registers every
-    # disc boot in games.yml as "SERIAL: path", so match the live ROM path
-    # back to its serial. Fixed-string grep (path may contain regex chars);
-    # BusyBox-safe.
+    # cmdline is a bare .iso path. Unless the filename carries the serial,
+    # BOTH scans above come up empty — there is no on-filesystem PARAM.SFO
+    # to rip (it lives inside the image). Two ISO lanes, filename first:
+    #  a) the IRISMAN-style ID tag in the name, dashed or not —
+    #     "(BCUS98158)" / "[BLUS-30019]" — is authoritative;
+    #  b) RPCS3's games.yml ("SERIAL: path") matched by BASENAME, not full
+    #     path: ES boots via the /roms/ps3 symlink so games.yml records
+    #     /roms/ps3/... while other contexts see /storage/roms/..., and a
+    #     rename desyncs the recorded path — the basename is the stable key.
+    # Fixed-string greps (names contain regex metachars); BusyBox-safe.
     if [ -z "$id" ]; then
         rom=$(pgrep -f rpcs3 | xargs -I{} cat /proc/{}/cmdline 2>/dev/null | tr '\0' '\n' | grep -i '\.iso$' | head -n 1)
-        if [ -n "$rom" ] && [ -f /storage/.config/rpcs3/games.yml ]; then
-            id=$(grep -F "$rom" /storage/.config/rpcs3/games.yml 2>/dev/null | grep -oE '^[A-Z]{4}[0-9]{5}' | head -n 1)
+        if [ -n "$rom" ]; then
+            rombase=$(basename "$rom")
+            id=$(echo "$rombase" | grep -oE '[A-Z]{4}-*[0-9]{5}' | head -n 1 | tr -d '-')
+            if [ -z "$id" ] && [ -f /storage/.config/rpcs3/games.yml ]; then
+                id=$(grep -F "$rombase" /storage/.config/rpcs3/games.yml 2>/dev/null | grep -oE '^[A-Z]{4}[0-9]{5}' | head -n 1)
+            fi
         fi
     fi
     # First-ever boot of a fresh ISO (games.yml row not committed yet):

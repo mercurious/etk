@@ -133,6 +133,24 @@ ETK_HUD_MODE="BASIC"
 # 1 = on (default) · 0 = kill-switch (titles then start on RPCS3 defaults)
 ETK_GOLDEN_SEED=1
 
+# --- ISO onboarding (0.7.2, ships ON) ---
+# Makes "copy the .iso into roms/ps3" the entire install. At every
+# Pitstop open (emulator idle), each .iso there is made a first-class
+# EmulationStation game:
+#   * [BRACKET-ID] filename tags become (PARENID) — ROCKNIX's per-game
+#     settings engine (get_setting) breaks on [ ] in a ROM name, which
+#     silently disables the MangoHud overlay and every per-game setting;
+#     the serial stays visible to tell regional/format variants apart.
+#   * a <name>.m3u launcher is generated — ES only lists .ps3/.psn/.m3u,
+#     so a bare .iso never appears in the carousel without one.
+#   * the per-game MangoHud overlay key is enabled (cold launch shows
+#     the ETK dashboard, same as PKG installs).
+#   * the golden config is seeded from the filename serial (see
+#     ETK_GOLDEN_SEED above), before the title's first boot.
+# Restart ES (or reboot) after dropping ISOs so the carousel rescans.
+# 1 = on (default) · 0 = kill-switch (ISOs are left exactly as dropped)
+ETK_ISO_ONBOARD=1
+
 # --- install.sh output mode ---
 # 0 = Pit Wall console TUI (recommended; dashboard with progress bars +
 #     2-line scrolling datalog, evokes commander.sh aesthetic)
