@@ -78,6 +78,17 @@ LOG_PATH = f"{ETK_ROOT}/log/etk_pitstop.log"
 # ID as text, so the directory is a static name<->ID map resolvable even
 # when Pitstop runs idle from the tools menu (no rpcs3 process).
 PS3_ROMS_DIR = "/storage/games-internal/roms/ps3"
+# RPCS3's own serial->path registry (rows committed on a title's first boot).
+RPCS3_GAMES_YML = "/storage/.config/rpcs3/games.yml"
+# IRISMAN-style serial tag in a filename: "(BCUS98158)" or "[BLUS-30019]".
+_ISO_ID_TAG_RE = re.compile(r'[\[\(]\s*([A-Z]{4})\s*-?\s*([0-9]{5})\s*[\]\)]')
+
+
+def _strip_serial_tag(stem):
+    """Display name from a ROM filename stem: drop the '(BCUS98158)' /
+    '[BLUS-30019]' serial tag and collapse the whitespace runs the removal
+    (or the dump name itself) leaves behind."""
+    return re.sub(r'\s+', ' ', _ISO_ID_TAG_RE.sub('', stem)).strip()
 
 # Telemetry path resolution. env.sh exports these; we fall back to derived
 # paths so a developer running pitstop in isolation (no shell-source) still
@@ -94,11 +105,10 @@ CAREER_DIR = os.environ.get('CAREER_DIR', f"{TELEMETRY_DIR}/career")
 PIT_NOTE_FILE = os.environ.get('PIT_NOTE_FILE', f"{TELEMETRY_DIR}/pit_note.txt")
 CONFIG_CHANGES_HEADER = "epoch\tgame_id\tfield_label\told_value\tnew_value\n"
 
-# User-facing versions in the title bar. Two now: APP_VERSION = the ETK
-# middleware; GTK_EDITION_VERSION = the kernel+emulator+driver stack it drives
-# (the "GTK Edition"). Title reads "// ETK PITSTOP vX // GTK Edition vY //".
+# The single user-facing version in the title bar ("// ETK PITSTOP vX //").
+# The GTK Edition stack version was dropped from the header for 0.7.1 —
+# the DRIVER tab names the actually-bound builds, which is the honest one.
 APP_VERSION = "0.7.2"
-GTK_EDITION_VERSION = "0.7.0"
 
 # DRIVER tab (Turnip env-var dials). These are NOT RPCS3 config keys — they
 # inject through the proven profile.d path (same mechanism as 098-etk-stage3),
@@ -198,9 +208,9 @@ ETK_TEMPLATE_CONFIG = os.environ.get(
 # Golden-default config seeding (0.7.1, default-ON; env.sh exports the
 # etk.conf kill-switch ETK_GOLDEN_SEED=0). When ON, any playable title
 # with no custom_configs/config_<ID>.yml is seeded from the golden
-# template at Pitstop startup — disc/ISO registrations additionally get
-# Strict Rendering Mode: true (the BCUS98158 diagonal-artifact fix; the
-# artifact is disc-1.00-specific, unseen on the Spec III PKG).
+# template at Pitstop startup. (The 0.7.1 disc-only Strict Rendering Mode
+# overlay was removed for 0.7.x — refuted as a false fix; both packaging
+# models now seed the plain template.)
 GOLDEN_SEED_ENABLED = os.environ.get('ETK_GOLDEN_SEED', '1').strip() != '0'
 # ISO onboarding (0.7.2, default-ON; env.sh exports the etk.conf
 # kill-switch ETK_ISO_ONBOARD=0). ES's ps3 system scans ONLY
@@ -479,15 +489,34 @@ def _find_section_range(lines, section):
 # === ID / NAME RESOLUTION ===
 
 def resolve_game_name(target_id):
-    """Map a title ID to its human display name via the .psn launchers.
-    Falls back to the ID itself so the header is never blank."""
+    """Map a title ID to its human display name: .psn launcher stem first
+    (installed PKGs), then ISO/m3u filename stems via their '(SERIAL)' tag
+    (disc titles have no .psn), then RPCS3's games.yml path for untagged
+    discs that have booted at least once. Falls back to the ID itself so
+    the header is never blank."""
+    iso_stem = None
     try:
-        for entry in os.listdir(PS3_ROMS_DIR):
-            if not entry.endswith(".psn"):
-                continue
-            with open(os.path.join(PS3_ROMS_DIR, entry), 'r') as f:
-                if f.read().strip() == target_id:
-                    return entry[:-4]
+        for entry in sorted(os.listdir(PS3_ROMS_DIR)):
+            if entry.endswith(".psn"):
+                with open(os.path.join(PS3_ROMS_DIR, entry), 'r') as f:
+                    if f.read().strip() == target_id:
+                        return entry[:-4]
+            elif entry.lower().endswith((".iso", ".m3u")) and iso_stem is None:
+                m = _ISO_ID_TAG_RE.search(entry)
+                if m and (m.group(1) + m.group(2)) == target_id:
+                    iso_stem = _strip_serial_tag(entry[:-4])
+    except Exception:
+        pass
+    if iso_stem:
+        return iso_stem
+    try:
+        with open(RPCS3_GAMES_YML) as f:
+            for ln in f:
+                if ln.startswith(target_id + ':'):
+                    base = os.path.basename(ln.split(':', 1)[1].strip().strip('"'))
+                    nm = _strip_serial_tag(os.path.splitext(base)[0])
+                    if nm:
+                        return nm
     except Exception:
         pass
     return target_id
@@ -853,11 +882,10 @@ def _refresh_baseline(matrix):
 # === CHROME (rendered around every tab) ===
 
 def _draw_title_bar(stdscr, w):
-    # Two-part identity: the ETK middleware version // the GTK Edition
-    # (kernel+emulator+driver) stack version. The loaded driver .so now lives on
-    # the DRIVER tab (driver_string()) — the header names the release, the
-    # DRIVER tab names the bound build.
-    title = f" // ETK PITSTOP v{APP_VERSION} // GTK Edition v{GTK_EDITION_VERSION} // "
+    # Single visible version: the ETK release. The bound driver/emulator
+    # builds live on the DRIVER tab (driver_string()); the stack version
+    # was dropped from the header for 0.7.1 (consolidate, simplify).
+    title = f" // ETK PITSTOP v{APP_VERSION} // "
     stdscr.attron(curses.color_pair(1))
     stdscr.addstr(0, 2, title[:max(0, w - 3)], curses.A_BOLD)
     stdscr.attroff(curses.color_pair(1))
@@ -1047,7 +1075,7 @@ def _draw_meta_line(stdscr, w, gamepad_status, lap_str):
     stdscr.addstr(3, 2, "-" * (w - 4), curses.A_DIM)
 
 
-def _draw_footer(stdscr, h, w, current_tab, status):
+def _draw_footer(stdscr, h, w, current_tab, status, tools_mode="menu"):
     """Footer hint, or the save status when one exists so a failed write
     is impossible to mistake for a clean save+exit."""
     stdscr.addstr(h - 3, 2, "-" * (w - 4), curses.A_DIM)
@@ -1064,8 +1092,12 @@ def _draw_footer(stdscr, h, w, current_tab, status):
             footer = "DPAD: Game/Col  B: Toggle/APPLY  A: Quit  L1/R1: Tabs"
         elif current_tab == CURRENT_TAB_DRIVER:
             footer = "DPAD UP/DN: Move  LT/RT: Change  B: Toggle/APPLY  A: Quit  L1/R1: Tabs"
-        else:
+        elif current_tab == CURRENT_TAB_TOOLS and tools_mode != "menu":
+            # One level in: A steps back, matching _tools_back's semantics.
             footer = "DPAD UP/DN: Move  B: Select  A: Back  L1/R1: Tabs"
+        else:
+            # Top-level TOOLS menu: A quits the app (what it actually does).
+            footer = "DPAD UP/DN: Move  B: Select  A: Quit  L1/R1: Tabs"
         stdscr.addstr(h - 2, 4, footer[:w - 6], curses.A_BOLD)
 
 
@@ -2750,8 +2782,10 @@ def _games_yml_serials():
 
 def _golden_seed_config(tid, disc=False):
     """Seed custom_configs/config_<tid>.yml from the ETK golden template so
-    the title never runs on RPCS3 defaults. Disc/ISO titles additionally
-    get Strict Rendering Mode: true (disc 1.00 diagonal-artifact fix).
+    the title never runs on RPCS3 defaults. The template IS the seed for
+    BOTH packaging models now — the 0.7.1 disc-only Strict Rendering Mode
+    overlay was removed for 0.7.x (a false fix: unvalidated, since refuted
+    by the operator; the `disc` arg is kept for log provenance only).
     Never clobbers an existing config; fail-soft on every path (a seeding
     failure must never take Pitstop down — the title just plays untuned,
     exactly as before 0.7.1). Returns a short plain-language status."""
@@ -2766,21 +2800,6 @@ def _golden_seed_config(tid, disc=False):
     except Exception as e:
         _log(f"golden seed: template unreadable: {e}")
         return "template missing"
-    if disc:
-        # Section-aware single-key overlay: only the Video-block line may
-        # flip (same gate the TUNING injector uses, so a same-named key in
-        # another section could never be touched).
-        current_section = None
-        for i, ln in enumerate(lines):
-            sec = _section_of(ln)
-            if sec is not None:
-                current_section = sec
-                continue
-            if current_section == "Video" and \
-                    ln.strip().startswith("Strict Rendering Mode:"):
-                indent = ln[:len(ln) - len(ln.lstrip())]
-                lines[i] = f"{indent}Strict Rendering Mode: true\n"
-                break
     try:
         os.makedirs(RPCS3_CUSTOM_CONFIGS, exist_ok=True)
         tmp = dest + ".etk.tmp"
@@ -2802,7 +2821,7 @@ def _golden_seed_config(tid, disc=False):
             os.replace(ltmp, CONFIG_CHANGES_LEDGER)
         with open(CONFIG_CHANGES_LEDGER, 'a') as f:
             f.write(f"{int(time.time())}\t{tid}\tGOLDEN SEED\trpcs3-defaults\t"
-                    f"{'golden+strict-render' if disc else 'golden'}\n")
+                    f"golden\n")
     except Exception as e:
         _log(f"golden seed: ledger append failed: {e}")
     _log(f"golden seed: {tid} <- template ({'disc' if disc else 'pkg'})")
@@ -2836,8 +2855,8 @@ def _golden_seed_sweep():
 # (_write_psn / _enable_mangohud / template config): rename, launcher,
 # overlay, golden seed — so "copy the ISO over" is the whole install.
 
-# IRISMAN-style serial tag in a filename: "(BCUS98158)" or "[BLUS-30019]".
-_ISO_ID_TAG_RE = re.compile(r'[\[\(]\s*([A-Z]{4})\s*-?\s*([0-9]{5})\s*[\]\)]')
+# (_ISO_ID_TAG_RE lives at the top of the file with PS3_ROMS_DIR — it is
+# needed at import time by resolve_game_name.)
 
 
 def _iso_serial_from_name(name):
@@ -2859,15 +2878,17 @@ def _write_m3u(m3u_path, iso_name):
 
 def _iso_onboard_sweep():
     """Make every .iso in the ps3 roms dir a first-class ES game:
-      1. rename bracket ID tags to parenthesised, dash-stripped form
-         (get_setting regex-escapes ()& but not [] — bracketed names
-         silently lose ALL per-game settings; the serial stays visible to
-         disambiguate regional/format variants, operator-approved);
+      1. normalize the filename for get_setting: bracket ID tags become
+         parenthesised, dash-stripped form (get_setting regex-escapes ()&
+         but not [] — bracketed names silently lose ALL per-game settings)
+         and whitespace runs collapse to single spaces (get_setting's
+         unquoted expansion eats consecutive spaces — the LBP case); the
+         serial stays visible to disambiguate variants, operator-approved;
       2. generate/refresh the <stem>.m3u launcher ES scans for;
       3. enable the per-game MangoHud overlay key (keyed on the .m3u name,
          which is what start_rpcs3.sh passes to get_setting);
-      4. golden-seed config_<serial>.yml (disc overlay) from the filename
-         serial — works before the title's first boot, no games.yml needed.
+      4. golden-seed config_<serial>.yml from the filename serial — works
+         before the title's first boot, no games.yml needed.
     Idle-gated and fail-soft per title: one bad filename must never stop
     the rest of the grid from onboarding. Returns plain-language notes."""
     if not ISO_ONBOARD_ENABLED or _rpcs3_running():
@@ -2894,6 +2915,13 @@ def _iso_onboard_sweep():
             if m:
                 new = iso[:m.start()] + f"({m.group(1)}{m.group(2)})" + iso[m.end():]
             new = new.replace('[', '(').replace(']', ')')
+            # Collapse whitespace runs: ROCKNIX get_setting expands the ROM
+            # name UNQUOTED (`echo ${3}`, 001-functions), so consecutive
+            # spaces collapse before the key match and every per-game
+            # setting — including the MangoHud overlay — silently misses.
+            # Live case: "LittleBigPlanet  (BCUS98148).iso" (root-caused
+            # 2026-07-22; upstream report queued).
+            new = re.sub(r'\s{2,}', ' ', new)
             if new != iso:
                 new_path = os.path.join(PS3_ROMS_DIR, new)
                 if os.path.exists(new_path):
@@ -2926,9 +2954,8 @@ def _iso_onboard_sweep():
             # 3. per-game MangoHud overlay (idempotent upsert, self-heals
             # duplicates; keyed on the .m3u ES actually launches)
             _enable_mangohud(m3u_name)
-            # 4. golden seed from the filename serial (disc overlay);
-            # games.yml basename lookup covers untagged names that have
-            # booted at least once.
+            # 4. golden seed from the filename serial; games.yml basename
+            # lookup covers untagged names that have booted at least once.
             serial = _iso_serial_from_name(iso) or yml_by_base.get(iso)
             if serial and _golden_seed_config(serial, disc=True) == "seeded":
                 seeded.append(serial)
@@ -3950,6 +3977,7 @@ def draw_tools(stdscr, state):
             pass
 
     if mode == "menu":
+        y += 1  # extra breathing line between the chrome rules and the title
         put(y, 2, "TOOLS", curses.A_BOLD); y += 1
         put(y, 2, "-" * (w - 4), curses.A_DIM); y += 1
         for i, label in enumerate(_TOOLS_MENU):
@@ -3962,14 +3990,21 @@ def draw_tools(stdscr, state):
                 curses.A_REVERSE if sel else curses.A_NORMAL)
             y += 2
         y += 1
-        put(y, 4, "Screenshot on L1: always / in-game / disabled "
-                  "(CONFIRM cycles)", curses.A_DIM); y += 2
-        put(y, 4, "Staging drop folder (place ONE .pkg + .rap):",
-            curses.A_DIM); y += 1
-        put(y, 6, PKG_STAGING_DIR, curses.A_DIM); y += 2
-        put(y, 4, "Firmware drop folder (place PS3UPDAT.PUP):",
-            curses.A_DIM); y += 1
-        put(y, 6, FIRMWARE_DROP_DIR, curses.A_DIM)
+        # On-select help: only the entries that need context show any
+        # (install / screenshot / firmware) — the old always-on block
+        # overflowed below the footer on the rig terminal.
+        cur = state.get("tools_cursor", 0)
+        if cur == _TOOLS_INSTALL_IDX:
+            put(y, 4, "Staging drop folder (place ONE .pkg + its .rap):",
+                curses.A_DIM); y += 1
+            put(y, 6, PKG_STAGING_DIR, curses.A_DIM)
+        elif cur == _TOOLS_SCREENSHOT_IDX:
+            put(y, 4, "Screenshot on L1: always / in-game / disabled "
+                      "(CONFIRM cycles)", curses.A_DIM)
+        elif cur == _TOOLS_FIRMWARE_IDX:
+            put(y, 4, "Firmware drop folder (place PS3UPDAT.PUP):",
+                curses.A_DIM); y += 1
+            put(y, 6, FIRMWARE_DROP_DIR, curses.A_DIM)
 
     elif mode == "install_confirm":
         pkg, rap, tid = state["tools_pkg"]
@@ -5497,7 +5532,6 @@ def _strip_ansi(s):
     return _ANSI_RE.sub('', s)
 
 
-RPCS3_GAMES_YML = "/storage/.config/rpcs3/games.yml"
 RPCS3_GAME_DIR = "/storage/roms/bios/rpcs3/dev_hdd0/game"
 
 
@@ -5559,9 +5593,8 @@ def _resolve_game_names():
                 base = os.path.basename(path)
                 nm = pretty.get(base)
                 if not nm:
-                    # "Gran Turismo 5 [BCUS98114].iso" -> "Gran Turismo 5"
-                    nm = re.sub(r'\s*\[[^\]]*\]', '',
-                                os.path.splitext(base)[0]).strip()
+                    # "Gran Turismo 5 (BCUS98114).iso" -> "Gran Turismo 5"
+                    nm = _strip_serial_tag(os.path.splitext(base)[0])
                 names[tid] = nm or tid
     except FileNotFoundError:
         pass
@@ -6244,7 +6277,8 @@ def _draw(stdscr, state):
         draw_power(stdscr, state)
     else:
         draw_tools(stdscr, state)
-    _draw_footer(stdscr, h, w, state["current_tab"], state["status"])
+    _draw_footer(stdscr, h, w, state["current_tab"], state["status"],
+                 state.get("tools_mode", "menu"))
     stdscr.refresh()
 
 
