@@ -3,8 +3,18 @@ The **Gran Turismo Kit** (GTK) is a specialty installation for your **Retroid Po
 
 <img src="https://raw.githubusercontent.com/mercurious/etk/main/docs/screenshots/etk_NPUA80075_20260526_132550.png" width="640"
      alt="GT5P Suzuka chase cam, blue Nissan Skyline GT-R approaching a sweeping corner, mini-map visible, position 12 of 12 lap 2 of 3." />
-- [Download latest release](https://github.com/mercurious/etk/releases)
-- [Quick Start](https://github.com/mercurious/etk/#quick-start)
+- To flash an SD card, [download latest card image](https://github.com/mercurious/etk/releases)
+- Or use install commmands to [Quick Start](https://github.com/mercurious/etk/#quick-start) an existing ROCKNIX install
+
+macOS / Linux / WSL:
+```sh
+curl -fsSL https://raw.githubusercontent.com/mercurious/etk/main/get-etk.sh | bash
+```
+Windows (any PowerShell):
+```powershell
+irm https://raw.githubusercontent.com/mercurious/etk/main/windows_installer/get-etk.ps1 | iex
+```
+
 - [ETK Wiki](https://github.com/mercurious/etk/wiki) for full documentation, guides, advanced features
 - [System Requirements](https://github.com/mercurious/etk/#etk-system-requirements)
 - [Device Support](https://github.com/mercurious/etk/#handheld-system-support)
