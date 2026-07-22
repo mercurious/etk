@@ -116,7 +116,13 @@ Integration invariants worth remembering: Pitstop and input_d share `PAD_HINTS`/
 
 **Live frontier (v0.7.1 — the perf-instruments pivot, 2026-07-09→):** crash-hunting is closed out (the net absorbs it); the campaign is **frame-time headroom in pack racing**, with fresh instruments: perfstat (col 31), bog profiler, GRID mode, pad-poll golden default. Current facts: the pack front is **CPU/SPU-oversubscription** (peak_load 9.6 on 8 cores; GPU 76% — the "rig is GPU-bound everywhere" era is over), the resolution lever is DEAD in pack racing, `perfect% = 0.0` on pack Suzuka is the honest baseline, and per-title/per-section profiling has replaced single-knob-for-all-GT. Ranked next steps (SessionHandoff_20260710_DynoAttribution): 1. install.sh run to land the pad-poll default → GT5P pad A/B (GRID off on GT5P first); 2. GRID-B as GT HD default — accumulate N≥3 on the Eiger min-fps 25→39 result; 3. **access-violation tax fork design** (10–12% of cycles in LOCKED GT HD sections; `VKGSRender::on_access_violation` — the highest-value KPI lever; design before code); 4. **ffs-v5** flip-status force-retire (converts the remaining ~50% RECOVERY on 00E59005 to SURVIVED; ps3probe flip-lens groundwork done); 5. lap-map Eiger with 15 s bog samples.
 
-**Medium-term (delivery arc):** rig-native installer (`curl | bash` on-rig + Pitstop self-update; feasibility live-confirmed; retires the PowerShell port and shrinks install.sh to a thin wrapper) → hostless image activation (two-phase `/flash` hook — boot 1 resizes, boot 2 activates) → "Grid Start" cardless Windows installer (fastboot; SD in-situ flash first, backup-first doctrine on any UFS lane). **Upstream lane:** #11912 psl1ght hardware test for kd-11 (operator posts all upstream comments); ROCKNIX audio-race patch not yet reported upstream; aPS3e PRs #122/#127 open; ROCKNIX EFI fix already landed via #2874.
+**Medium-term (delivery arc, re-scoped 2026-07-22 operator-directed):** the HOST one-liners
+shipped instead (macOS/Linux `curl get-etk.sh | bash` + Windows `irm get-etk.ps1 | iex`) — the
+PowerShell port is **NOT retiring**; it gets a second chance to win users through the
+one-liner (synced to install.sh v0.7.x). The ambitious installer projects — rig-native
+installer (`curl | bash` on-rig + Pitstop self-update, which would have enabled the PS
+retirement), full hostless image activation as the delivery default, and the "Grid Start"
+cardless Windows installer — remain **ON HOLD**. **Upstream lane:** #11912 psl1ght hardware test for kd-11 (operator posts all upstream comments); ROCKNIX audio-race patch not yet reported upstream; aPS3e PRs #122/#127 open; ROCKNIX EFI fix already landed via #2874.
 
 **Shelved (don't resurrect without an operator pivot):** "claudomatic" auto-tuning (AWD retrospective dial-laddering; cruise-control pad-movie autonomy — blocked on InputPlumber's pad grab; record side works, replay injection dead-ends).
 

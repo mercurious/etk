@@ -85,23 +85,17 @@ The GTK fork was built from **ROCKNIX official release `20260701`**
 ## Getting Started
 
 1. If you've already installed ROCKNIX, set the update channel to release/stable (`START` → `UPDATES & DOWNLOADS`), and update if necessary. Nightly builds may not be compatible.
-2. Clone this repo to your computer.
+2. Install the ETK onto your handheld rig with ONE line — no git, no manual download; it fetches the kit to `~/etk` and runs the installer (re-run the same line anytime to update, repair, or sync):
+
+macOS / Linux / WSL:
 ```sh
-git clone https://github.com/mercurious/etk
-cd ~/etk
-chmod +x install.sh
+curl -fsSL https://raw.githubusercontent.com/mercurious/etk/main/get-etk.sh | bash
 ```
-- (You can also download the code as a `.zip` and extract as `~/etk/`).
-3. Install the ETK onto your handheld rig on macOS, Linux, WLS:
-```sh
-./install.sh
-```
-For Windows, no clone needed — one line in any PowerShell fetches the kit to `~\etk` and runs the installer (re-run it anytime to update):
+Windows (any PowerShell):
 ```powershell
 irm https://raw.githubusercontent.com/mercurious/etk/main/windows_installer/get-etk.ps1 | iex
 ```
-(Or from a manual checkout: `powershell -ExecutionPolicy Bypass -File .\windows_installer\etk-install.ps1`)
-*Repeat whenever you want to update, repair, or sync your rig.*<br><br>
+3. Prefer a manual checkout? `git clone https://github.com/mercurious/etk` (or extract the `.zip` as `~/etk/`), then run `./install.sh` — or on Windows `powershell -ExecutionPolicy Bypass -File .\windows_installer\etk-install.ps1` — from the repo root.<br><br>
 4. Drop your PS3 firmware `.pup` into the approprite drop folder `/storage/roms/etk/firmware_drop/` on your device and use ETK Pitstop TOOLS to easily install it; a PKG file installed similary from `/storage/roms/etk/pkg_drop/`.
 
 ## Removing ETK
