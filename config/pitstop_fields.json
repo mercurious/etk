@@ -1,5 +1,15 @@
 [
   {
+    "label": "Pad Poll Interval (us)",
+    "section": "Input/Output",
+    "yaml_key": "  Pad handler sleep (microseconds)",
+    "type": "int",
+    "min": 1000,
+    "max": 16000,
+    "step": 1000,
+    "help": "How often the pad thread polls the controller (us; RPCS3 default 1000=1kHz). BOG-PROFILER FINDING 2026-07-10: at 1kHz the pad-connection re-check (SDL_HasEvents in update_connection) burns ~8%% of ALL cycles during GT5P pack racing -- pure waste. 4000 (250Hz) cuts that ~4x with imperceptible added latency (<3ms; GT frames are 16-33ms). Higher = less overhead, laggier feel; back off if inputs feel sticky."
+  },
+  {
     "label": "Resolution Scale",
     "section": "Video",
     "yaml_key": "  Resolution Scale",
@@ -15,6 +25,72 @@
     "help": "Internal render scale. Pick by STABILITY, not just sharpness: 66% has been the most crash-stable, and 50% is oddly worse, not better. 85/90 are the headroom rungs: 90 renders ~19% fewer pixels than 100 (the GT HD slush-to-locked conversion test), 85 ~28% fewer (GT5P dyno ladder)."
   },
   {
+    "label": "Default Resolution",
+    "section": "Video",
+    "yaml_key": "  Resolution",
+    "type": "enum",
+    "options": [
+      "1280x720",
+      "854x480",
+      "1024x576"
+      ],
+    "help": "PS3 OUTPUT resolution the game targets (not the render scale above). 1280x720 native is the ETK standard -- GT titles ship 720p modes and the KPI is judged at native. Lower outputs are a compatibility lever, not a speed dial; use Resolution Scale for performance."
+  },
+  {
+    "label": "Frame Limit",
+    "section": "Video",
+    "yaml_key": "  Frame limit",
+    "type": "enum",
+    "options": [
+      "Off",
+      "30",
+      "50",
+      "60",
+      "120",
+      "Display",
+      "Auto",
+      "PS3 Native",
+      "Infinite"
+    ],
+    "help": "Frame-delivery cap. Off lets the game run free (the historical ETK setting). Largely UNEXPLORED here: a cap can steady frametime and heat at the cost of top-end fps. If you test one, judge by frametime jitter and PERFECT%, not average fps."
+  },
+  {
+    "label": "Antialiasing",
+    "section": "Video",
+    "yaml_key": "  MSAA",
+    "type": "enum",
+    "options": [
+      "Auto",
+      "Disabled"
+    ],
+    "help": "Edge smoothing. Disabled is the safe SM8250 pick -- buys fps; Auto looks cleaner but loads the GPU harder."
+  },
+  {
+    "label": "VSync",
+    "section": "Video",
+    "yaml_key": "  VSync Mode",
+    "type": "enum",
+    "options": [
+      "Disabled",
+      "Adaptive",
+      "Full"
+    ],
+    "help": "Syncs frame presentation to the panel refresh. An UNEXPLORED dial with an early positive signal: the GT5P disc ISO runs Full and seems smoother (unvalidated, N small). Worth an A/B -- judge by frametime jitter/PERFECT%, and expect it to pace, not add, fps."
+  },
+  {
+    "label": "Video Renderer",
+    "section": "Video",
+    "yaml_key": "  Renderer",
+    "type": "enum",
+    "options": [
+      "Vulkan",
+      "OpenGL",
+      "Disable Video Output"
+    ],
+    "help": "Use Vulkan for Turnip driver support. OpenGL slower but more accurate."
+  },
+
+  {
     "label": "Audio Renderer Backend",
     "section": "Audio",
     "yaml_key": "  Renderer",
@@ -24,7 +100,7 @@
       "FAudio",
       "Null"
     ],
-    "help": "Audio output path. Cubeb (via PipeWire) is the only real ROCKNIX choice; FAudio only exists if the build ships it; Null = silence for tests. (ALSA was never an RPCS3 backend -- old option here wrote an invalid config.)"
+    "help": "Audio output path. Cubeb (via PipeWire) is the only real ROCKNIX choice; FAudio only exists if the build ships it; Null = silence for tests."
   },
   {
     "label": "Desired Buffer Duration",
@@ -34,14 +110,14 @@
     "min": 5,
     "max": 250,
     "step": 5,
-    "help": "Audio latency buffer (ms; RPCS3 default 34). Absorbs scheduling JITTER only -- when the game produces audio slower than real-time (GT under full speed), no buffer size can save it; that is Time Stretching's job."
+    "help": "Audio latency buffer (ms; RPCS3 default 34). Absorbs scheduling JITTER only -- when the game produces audio slower than real-time, no buffer size can save it; that is Time Stretching's job."
   },
   {
     "label": "Enable Time Stretching",
     "section": "Audio",
     "yaml_key": "  Enable Time Stretching",
     "type": "bool",
-    "help": "MASTER SWITCH -- the Threshold dial below is DEAD while this is OFF. Slows audio tempo (pitch-preserved, SoundTouch) when the buffer runs low, instead of leaving silent gaps. GT HD runs ON and sounds decent; GT5P has never had it ON."
+    "help": "MASTER SWITCH -- the Threshold dial below is DEAD while this is OFF. Slows audio tempo (pitch-preserved, SoundTouch) when the buffer runs low, instead of leaving silent gaps."
   },
   {
     "label": "Time Stretching Threshold",
@@ -78,7 +154,7 @@
     "min": 0,
     "max": 6,
     "step": 1,
-    "help": "SPU worker pool size. OPERATOR-VALIDATED 2026-07-10: 3 keeps the MENUS springy while racing performance holds (auto/other values make menu navigation sluggish). The audio-only SPURS ladder (guest-side) is a different dial -- don't conflate."
+    "help": "SPU worker pool size. OPERATOR-VALIDATED 2026-07-10: 3 keeps the MENUS springy while racing performance holds (auto/other values make menu navigation sluggish). The audio-only SPURS ladder (guest-side) is a different dial."
   },
   {
     "label": "Max SPURS Threads",
@@ -88,7 +164,7 @@
     "min": 1,
     "max": 6,
     "step": 1,
-    "help": "Caps how many SPURS workers RUN concurrently per group (GT schedules audio/physics as SPURS jobs). 6 = stock. Lowering to 5/4 trades throughput for less core contention -- the Phase-3 audio-ladder dial; judge each rung by the ledger aud= skip/sil counts, not by ear alone."
+    "help": "Caps how many SPURS workers RUN concurrently per group (GT schedules audio/physics as SPURS jobs). 6 = stock. Lowering to 5/4 trades throughput for less core contention."
   },
   {
     "label": "SPU Block Size",
@@ -100,7 +176,7 @@
       "Mega",
       "Giga"
     ],
-    "help": "SPU code-compilation granularity. OPERATOR-VALIDATED 2026-07-10: MEGA is REQUIRED for good GT5P performance on this rig -- Safe costs real framerate. Giga untested beyond spot checks; Mega is the certified setting."
+    "help": "SPU code-compilation granularity."
   },
   {
     "label": "SPU loop detection",
@@ -145,38 +221,11 @@
     "help": "Forces exact render-target handling instead of fast approximations -- can fix RTT/shadow glitches but a notable fps hit. A diagnostic/correctness lever; leave OFF unless chasing a visual bug."
   },
   {
-    "label": "Frame Limit",
-    "section": "Video",
-    "yaml_key": "  Frame limit",
-    "type": "enum",
-    "options": [
-      "Off",
-      "30",
-      "50",
-      "60",
-      "120",
-      "Auto",
-      "PS3 Native"
-    ],
-    "help": "Caps fps. GT runs under 30 here anyway, so 'Off' lets it run free; a cap mainly steadies frametime and heat, not crashes."
-  },
-  {
-    "label": "Antialiasing",
-    "section": "Video",
-    "yaml_key": "  MSAA",
-    "type": "enum",
-    "options": [
-      "Auto",
-      "Disabled"
-    ],
-    "help": "Edge smoothing. Disabled is the safe SM8250 pick -- buys fps; Auto looks cleaner but loads the GPU harder."
-  },
-  {
     "label": "Multithreaded RSX",
     "section": "Video",
     "yaml_key": "  Multithreaded RSX",
     "type": "bool",
-    "help": "Splits PS3-GPU emulation onto its own thread. ON is faster on the 8-core SM8250; turn OFF only to isolate a bug."
+    "help": "Splits PS3-GPU emulation onto its own thread. ON is faster on the 8-core SM8250; GT performance degrades ON."
   },
   {
     "label": "Accurate RSX Reservation Access",
@@ -196,7 +245,20 @@
       "Async Recompiler with Shader Interpreter",
       "Shader Interpreter only"
     ],
-    "help": "Async multi-threaded is the only sane SM8250 choice; the others stall or are debug-only. WARNING: changing this invalidates the shader vault."
+    "help": "Async multi-threaded is the only sane SM8250 choice; the others stall or are debug-only. WARNING: changing this may invalidate the shader vault."
+  },
+  {
+    "label": "Shader Precision",
+    "section": "Video",
+    "yaml_key": "  Shader Precision",
+    "type": "enum",
+    "options": [
+      "Low",
+      "High",
+      "Ultra",
+      "Auto"
+    ],
+    "help": "WARNING: changing this may invalidate the shader vault."
   },
   {
     "label": "Min Scalable Dimension (px)",
@@ -215,7 +277,7 @@
     "section": "Video",
     "yaml_key": "  Driver Wake-Up Delay",
     "type": "int",
-    "min": 1,
+    "min": 0,
     "max": 800,
     "step": 25,
     "help": "Pause (us) after submitting GPU work -- a coarse anti-fence-timeout knob. Higher can dodge some hangs at a frametime cost. Prefer the DRIVER-tab dials. Also shrinks recover_fifo's rapid-retry give-up window (RSXThread.cpp) -- pair with RSX FIFO Accuracy below."
@@ -240,6 +302,13 @@
     "help": "Loosens how often the RSX thread force-syncs occlusion-query (ZCULL) results. BOG-PROFILER FINDING 2026-07-10: the ZCULL query poll burns ~5%% of ALL cycles during pack racing (the same poll the boss campaign fought at wedges). ON = fewer forced polls, frees rsx-thread time; watch glare/lens-flare (GT uses queries for them). Full queries-OFF was rejected (choppy feel) -- this is the middle path."
   },
   {
+    "label": "Accurate ZCULL stats",
+    "section": "Video",
+    "yaml_key": "  Accurate ZCULL stats",
+    "type": "bool",
+    "help": "Precise (slower) accumulation of ZCULL query statistics. OFF pairs with Relaxed ZCULL Sync to cut query-poll pressure further (bog-profiler lane 2026-07-10). GT tolerates approximate stats; flip back ON if glare/flare misbehave."
+  },
+  {
     "label": "Disable ZCull Occlusion Queries",
     "section": "Video",
     "yaml_key": "  Disable ZCull Occlusion Queries",
@@ -251,7 +320,7 @@
     "section": "Video",
     "yaml_key": "    Asynchronous Texture Streaming",
     "type": "bool",
-    "help": "Uploads textures off the render thread -- reduces hitching on big tracks. Small corruption risk; usually worth it for GT."
+    "help": "Uploads textures off the render thread -- reduces hitching on big tracks. Small corruption risk."
   },
   {
     "label": "Force CPU Blit",
@@ -321,22 +390,5 @@
     "max": 1000,
     "step": 10,
     "help": "How often the Perf Overlay refreshes its numbers (RPCS3 default 350ms). Lower = twitchier read of a transient pack spike; higher = calmer average. Does not affect the frametime graph resolution."
-  },
-  {
-    "label": "Accurate ZCULL stats",
-    "section": "Video",
-    "yaml_key": "  Accurate ZCULL stats",
-    "type": "bool",
-    "help": "Precise (slower) accumulation of ZCULL query statistics. OFF pairs with Relaxed ZCULL Sync to cut query-poll pressure further (bog-profiler lane 2026-07-10). GT tolerates approximate stats; flip back ON if glare/flare misbehave."
-  },
-  {
-    "label": "Pad Poll Interval (us)",
-    "section": "Input/Output",
-    "yaml_key": "  Pad handler sleep (microseconds)",
-    "type": "int",
-    "min": 1000,
-    "max": 16000,
-    "step": 1000,
-    "help": "How often the pad thread polls the controller (us; RPCS3 default 1000=1kHz). BOG-PROFILER FINDING 2026-07-10: at 1kHz the pad-connection re-check (SDL_HasEvents in update_connection) burns ~8%% of ALL cycles during GT5P pack racing -- pure waste. 4000 (250Hz) cuts that ~4x with imperceptible added latency (<3ms; GT frames are 16-33ms). Higher = less overhead, laggier feel; back off if inputs feel sticky."
   }
 ]
