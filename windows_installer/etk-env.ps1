@@ -33,6 +33,7 @@ $IdFile = "/dev/shm/etk_shm/active_id.txt"   # resolved from env.sh 2026-05-28
 
 # PKG_STAGING_DIR in env.sh - the .pkg/.rap drop folder (under ETK_ROOT).
 $PkgStaging = "$EtkRoot/pkg_install_drop"    # resolved from env.sh 2026-05-28
+$FirmwareDrop = "$EtkRoot/firmware_drop"     # resolved from env.sh 2026-07-22 (PS3UPDAT.PUP drop)
 
 # TELEMETRY_DIR in env.sh - session/career ledgers (under ETK_ROOT).
 $TelemetryDir = "$EtkRoot/etk_telemetry"     # resolved from env.sh 2026-05-28

@@ -34,7 +34,15 @@ This Windows path is **no-vault**: it does not back your shaders up to the PC, a
 - **Audio watchdog (Step 6.57):** arms a boot unit that self-heals the SM8250 silent-boot audio race (~1 in 4 boots otherwise lose ALL sound until reboot).
 - **Operator config:** the installer now generates `etk.conf` on the rig from the `etk-env.ps1` values (build tier, HUD mode, DP mirror) — previously the rig silently ran baked-in defaults.
 - The uninstaller needed **no changes**: it already executes `uninstall.sh`'s STOP/HW/CLEAN blocks verbatim, and all the new teardown (Turnip/RPCS3/watchdog/POWER/blackbox units) lives inside those blocks.
-- Status: synced against `install.sh` v0.6.0; awaiting a fresh Windows-host smoke test (alpha-tester preview, as before).
+
+### v0.7.x sync (2026-07-22) — smoke-tested end-to-end on a real Windows box
+
+- **One-liner bootstrap** (`get-etk.ps1`, top of this README) — fetch + install with zero prerequisites beyond OpenSSH.
+- **Transport hardened from field failures:** every ssh/scp call is wall-clock-bounded with a closed-pipe stdin (kills the Win32-OpenSSH channel-close wedge), `.local` names are mDNS-resolved once per run and pinned by wire address (no per-call resolution stalls; zero-config `.local` UX preserved), and big transfers show progress instead of silently taking minutes.
+- **Live-session guard** (parity with `install.sh`): the installer refuses to deploy while a game is running on the rig — a mid-race deploy kills live telemetry.
+- **Audio watchdog is RETIRED, not armed:** the silent-boot race is fixed in the ROCKNIX-GTK kernel; Step 6.57 now tears the old watchdog unit down (the highlight above describing "arms a boot unit" is historical).
+- **SD game-tree rebind (Step 6.85) ported:** crash-card rigs (internal boot + `SDGAMES`-labelled card) get the label-based rebind service, effective on next cold boot.
+- **Not ported, by design — the kernel/grub lane (Step 6.4):** it is gated on a locally built `KERNEL_IMAGE` artifact that Windows hosts don't have. The GTK kernel (and the SD-boot grub entries) reach a rig via the flashable ROCKNIX-GTK card image instead — see the main README's Quick Start.
 
 Why no vault: the vault sync is the one piece that depends on rsync's `--ignore-existing` / `--update` / `--delete` semantics over tens of thousands of tiny shader files, which has no clean native-Windows equivalent. Dropping it is what keeps this port small and dependency-free. The Linux/Mac host (`install.sh`) remains the full-featured path.
 

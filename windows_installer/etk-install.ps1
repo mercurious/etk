@@ -10,11 +10,14 @@
 # SMB before reflashing - see WINDOWS_HOST_README.md.
 #
 # The Sentry, systemd units, rig-side step bodies (Turnip catalog, RPCS3
-# GTK Edition bind, audio watchdog, POWER applier, Panic Black Box,
-# DP-mirror), PKG drop README, and mako style are read verbatim from
-# install.sh at runtime (Get-Heredoc), so install.sh stays the single
-# source of truth for everything that runs on the rig. Synced to
-# install.sh as of v0.6.0 (2026-07-03).
+# GTK Edition bind, watchdog TEARDOWN, POWER applier, Panic Black Box,
+# DP-mirror, Stage III, SD rebind), PKG drop README, and mako style are
+# read verbatim from install.sh at runtime (Get-Heredoc), so install.sh
+# stays the single source of truth for everything that runs on the rig.
+# Synced to install.sh as of v0.7.x (2026-07-22). NOT ported by design:
+# STEP 6.4 (custom kernel + grub entries incl. the SD-boot pair) — it is
+# gated on a locally built KERNEL_IMAGE artifact that Windows hosts don't
+# have; the GTK kernel reaches a rig via the flashable card image instead.
 #
 # Run from the repo root:
 #   powershell -ExecutionPolicy Bypass -File .\etk-install.ps1
@@ -47,6 +50,16 @@ Resolve-RigHost
 Invoke-EtkPair
 Assert-RigConnection
 
+# LIVE-SESSION GUARD (install.sh parity, guard 49a0aa1): NEVER deploy over an
+# active race — Step 0 kills the telemetry daemons and Step 6 restarts the
+# Sentry mid-game; the running session's ledger baseline (and the driver's
+# race) are the casualties. The bracketed pgrep pattern defeats the
+# ssh-cmdline self-match.
+$liveCheck = Invoke-Rig 'pgrep -f "AppRun.wrappe[d]|rpcs3-s[a]" >/dev/null 2>&1 && echo ETK_LIVE || echo ETK_IDLE'
+if ("$liveCheck" -match "ETK_LIVE") {
+    throw "A game session is RUNNING on the rig - install refused. Deploying now would kill live telemetry and could cost the current race. Finish or exit the game, then re-run."
+}
+
 # ==========================================================
 # STEP 0: PROBE & QUIESCE  (install.sh Step 0)
 # Kill ETK workers before file ops. Resolve the rig game ID purely to
@@ -77,7 +90,7 @@ $dirs = @(
     $VaultDir, "$EtkRoot/bin", "$EtkRoot/scripts", "$EtkRoot/tools",
     "$EtkRoot/vault", "$EtkRoot/logs", "$EtkRoot/config", "$EtkRoot/screenshots",
     "$EtkRoot/pro-tuning",
-    $PkgStaging,
+    $PkgStaging, $FirmwareDrop,
     "/storage/.config/custom_scripts", "/storage/.config/system.d",
     "/storage/.config/modules", "/storage/.config/MangoHud",
     "/storage/turnip/drivers", "/storage/rpcs3", "/storage/etk-power",
@@ -92,6 +105,12 @@ Write-Ok "Directories provisioned."
 $pkgReadme = Get-Heredoc -Path $InstallSh -Marker "PKGREADME"
 Send-Text -Content $pkgReadme -RemotePath "$PkgStaging/README.txt"
 Write-Ok "PKG drop-folder README written."
+
+# Firmware drop-folder README (verbatim from install.sh FWREADME heredoc);
+# the folder feeds Pitstop TOOLS > Install PS3 Firmware (headless --installfw).
+$fwReadme = Get-Heredoc -Path $InstallSh -Marker "FWREADME"
+Send-Text -Content $fwReadme -RemotePath "$FirmwareDrop/README.txt"
+Write-Ok "Firmware drop-folder README written."
 
 # Screenshots-folder README (verbatim from install.sh SHOTREADME heredoc)
 $shotReadme = Get-Heredoc -Path $InstallSh -Marker "SHOTREADME"
@@ -415,13 +434,15 @@ if ($Rpcs3EnvFlags) {
     Invoke-Rig "rm -f /storage/.config/profile.d/096-etk-rpcs3-flags" | Out-Null
 }
 
-# --- STEP 6.57: AUDIO WATCHDOG  (install.sh Step 6.57) ------------------
-# SM8250 sound card intermittently never probes at boot (~1 in 4 boots =
-# a fully SILENT boot). The watchdog script (deployed in Step 3) detects
-# and re-probes; this arms its boot oneshot unit. AUDIOWDREMOTE verbatim.
+# --- STEP 6.57: RETIRE the audio watchdog  (install.sh Step 6.57) -------
+# The SM8250 silent-boot probe race is fixed at the ROOT in the ROCKNIX-GTK
+# kernel (q6afe vote retry, 2026-07-06), so the userspace watchdog is
+# RETIRED. AUDIOWDREMOTE now contains the TEARDOWN body (same marker name,
+# content auto-synced) — it removes the unit/script from rigs that still
+# carry them from an earlier install; a no-op once gone.
 $wdBody = Get-Heredoc -Path $InstallSh -Marker "AUDIOWDREMOTE"
 Invoke-RigBash -Script $wdBody | Out-Null
-Write-Ok "Audio watchdog armed (etk-audio-watchdog.service, boot oneshot)."
+Write-Ok "Audio watchdog retired (silent-boot race fixed in the GTK kernel)."
 
 # --- STEP 6.6: POWER PROFILE APPLIER  (install.sh Step 6.6) -------------
 # Boot oneshot re-applying the Pitstop POWER tab's gov/clock profile
@@ -466,6 +487,21 @@ $cpat = (Invoke-Rig "cat /proc/sys/kernel/core_pattern").Trim()
 # SD-backed $ETK_ROOT/cores and falls back to legacy /storage/cores.
 if ($cpat -match '^/storage/(games-internal/roms/etk/)?cores/') { Write-Ok "Stage III harness armed (core_pattern -> $($cpat -replace '/%.*$',''))." }
 else { Write-Warn "Stage III harness not confirmed (core_pattern '$cpat') - crash forensics degraded, install continues." }
+
+# --- STEP 6.85: SD GAME-TREE REBIND  (install.sh Step 6.85) -------------
+# Crash-card storage model: internal-boot rig, games on an SD labelled
+# SDGAMES. RBND (label-based v3 script, exits 0 fast with no card — no UI
+# stall) + RBSVC (unit) pulled verbatim from install.sh. Deliberately NOT
+# run at install time (it bind-mounts over live game paths); it takes
+# effect on the next cold boot. No-op on single-card rigs.
+Write-Step 7 $TOTAL "STEP 6.85: SD GAME-TREE REBIND (crash-card storage model)..."
+$rbnd  = Get-Heredoc -Path $InstallSh -Marker "RBND"
+$rbsvc = Get-Heredoc -Path $InstallSh -Marker "RBSVC"
+Send-Text -Content $rbnd  -RemotePath "/storage/.config/custom_scripts/etk-sd-rebind.sh" -Executable
+Send-Text -Content $rbsvc -RemotePath "/storage/.config/system.d/etk-sd-rebind.service"
+$rbOut = Invoke-Rig "systemctl daemon-reload; systemctl enable etk-sd-rebind.service >/dev/null 2>&1; systemctl reset-failed etk-sd-rebind.service >/dev/null 2>&1; [ -x /storage/.config/custom_scripts/etk-sd-rebind.sh ] && systemctl is-enabled etk-sd-rebind.service >/dev/null 2>&1 && echo REBIND_OK || echo REBIND_FAIL"
+if ("$rbOut" -match "REBIND_OK") { Write-Ok "SD rebind deployed (label=SDGAMES; effective next cold boot)." }
+else { Write-Warn "SD rebind service did not verify - crash-card rigs unaffected until fixed; install continues." }
 
 # ==========================================================
 # STEP 8: PADDOCK LINK  (install.sh Step 8 — Private Paddock, 0.3.0)
