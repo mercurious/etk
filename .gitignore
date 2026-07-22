@@ -57,10 +57,22 @@ _archive/
 # the dangling references are design provenance, not missing files.
 dossiers/
 
+# 5c. Host-side forensic capture sets (GPU-wedge redumps, devcoredumps,
+# frozen-frame grabs) and pulled bog-profiler sample sets — runtime data,
+# same precedent as vault/ and state/. Analyzed locally, never committed.
+manual_forensics/
+bog_samples/
+
+# 5d. Local video captures (session recordings, hundreds of MB) — never
+# committed; docs/screenshots/ (small PNGs) remains tracked.
+docs/video/
+
 # 6. Operator config — generated locally by install.sh's first-run
 # wizard. Tracks the rig SSH target, build tier, HUD preferences, etc.
 # The canonical template is `etk.conf.example` (committed).
 etk.conf
+# Hand-made backups of the operator config (e.g. etk.conf.bak-pre-perfstat)
+etk.conf.bak*
 
 # 7. Claude Code machine-local settings — personal, not shared. The `.claude/`
 # dir stays at the project root (Claude Code requires it there); only the
