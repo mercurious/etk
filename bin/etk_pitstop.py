@@ -2299,7 +2299,7 @@ def handle_telemetry_pad(state, etype, code, val):
 # is a one-line edit here with no hardcoded literals in the dispatch below.
 _TOOLS_MENU = ["Manage Shaders", "Install a staged PS3 Package",
                "Uninstall a Game", "Trigger Calibration", "Screenshot on L1",
-               "Install PS3 Firmware"]
+               "Install PS3 Firmware", "Check for ETK Updates"]
 _TOOLS_SHADERS_IDX = 0      # Manage Shaders sub-screen entry
 _TOOLS_INSTALL_IDX = 1      # staged-PKG installer
 _TOOLS_UNINSTALL_IDX = 2    # game uninstaller
@@ -2307,6 +2307,7 @@ _TOOLS_TRIGCAL_IDX = 3      # L2/R2 trigger deadzone calibration (H7)
 # In-place toggle item (label gets ": <mode>" appended at draw).
 _TOOLS_SCREENSHOT_IDX = 4
 _TOOLS_FIRMWARE_IDX = 5     # headless PS3 firmware (PS3UPDAT.PUP) installer
+_TOOLS_UPDATE_IDX = 6       # hostless self-update (middleware layer)
 
 
 def _read_screenshot_mode():
@@ -2965,6 +2966,203 @@ def _iso_onboard_sweep():
         _log(f"iso onboard: {len(onboarded)} launcher(s), {renamed} rename(s), "
              f"seeded {seeded or 'none'}")
     return onboarded
+
+
+# === TOOLS: HOSTLESS SELF-UPDATE (middleware layer) ===
+# "Check for ETK Updates": compare APP_VERSION against the latest GitHub
+# release tag, and on request update the MIDDLEWARE layer in place — the
+# exact file set install.sh STEPs 3/5 deploy (bin/, scripts/, the tools/
+# push-list, the config deploy-set, the pro-tuning injector, the live
+# MangoHud.conf, the Tools-menu launcher master). The deep stack (Sentry
+# heredoc, profile.d, systemd units, kernel/Turnip/RPCS3 binds) stays
+# with install.sh / the card image — the result screen says so.
+# On-rig GitHub TLS is field-proven (PADDOCK). Default-ON with the
+# ETK_SELF_UPDATE=0 kill-switch (env.sh). All paths fail-soft.
+ETK_SELF_UPDATE_ENABLED = os.environ.get('ETK_SELF_UPDATE', '1').strip() != '0'
+_UPDATE_REPO = "mercurious/etk"
+
+
+def _semver_tuple(s):
+    """'v0.7.2' -> (0, 7, 2); None when unparseable (never raise)."""
+    try:
+        return tuple(int(p) for p in
+                     s.strip().lstrip('vV').split('-')[0].split('.')[:3])
+    except (ValueError, AttributeError):
+        return None
+
+
+def _self_update_check():
+    """Worker (curses-free): -> ("newer", info) | ("result", (ok, lines))."""
+    if not ETK_SELF_UPDATE_ENABLED:
+        return ("result", (False, [
+            "Self-update is disabled (ETK_SELF_UPDATE=0 in etk.conf)."]))
+    if _rpcs3_running():
+        return ("result", (False, [
+            "A game session is running - update refused.",
+            "Exit the game first, then check again."]))
+    import urllib.request
+    req = urllib.request.Request(
+        f"https://api.github.com/repos/{_UPDATE_REPO}/releases/latest",
+        headers={"User-Agent": "etk-pitstop",
+                 "Accept": "application/vnd.github+json"})
+    try:
+        with urllib.request.urlopen(req, timeout=12) as r:
+            rel = json.load(r)
+    except Exception as e:
+        _log(f"self-update: check failed: {e}")
+        return ("result", (False, [
+            "Could not reach GitHub (offline? rate-limited?).",
+            f"  {e.__class__.__name__}",
+            "Check WiFi and try again."]))
+    tag = (rel.get("tag_name") or "").strip()
+    remote, local = _semver_tuple(tag), _semver_tuple(APP_VERSION)
+    if not tag or remote is None or local is None:
+        return ("result", (False, [
+            f"Could not compare versions "
+            f"(installed v{APP_VERSION}, latest {tag or 'unknown'})."]))
+    if remote <= local:
+        return ("result", (True, [
+            "ETK is up to date.", "",
+            f"  installed : v{APP_VERSION}",
+            f"  latest    : {tag}"]))
+    return ("newer", {"tag": tag, "name": rel.get("name") or tag})
+
+
+def _self_update_apply(info):
+    """Worker (curses-free): download the release tarball and sync the
+    middleware file set into $ETK_ROOT. Returns (ok, lines)."""
+    tag = info["tag"]
+    base = os.environ.get('ETK_ROOT', '/storage/games-internal/roms/etk')
+    tmp = os.path.join(base, ".update_tmp")
+    import urllib.request
+    import tarfile
+    try:
+        shutil.rmtree(tmp, ignore_errors=True)
+        os.makedirs(tmp, exist_ok=True)
+        url = (f"https://github.com/{_UPDATE_REPO}/archive/refs/tags/"
+               f"{tag}.tar.gz")
+        tarpath = os.path.join(tmp, "etk.tar.gz")
+        req = urllib.request.Request(url, headers={"User-Agent": "etk-pitstop"})
+        with urllib.request.urlopen(req, timeout=120) as r, \
+                open(tarpath, 'wb') as f:
+            shutil.copyfileobj(r, f)
+        with tarfile.open(tarpath) as tf:
+            for m in tf.getmembers():
+                if m.name.startswith('/') or '..' in m.name.split('/'):
+                    raise RuntimeError(f"suspicious archive member: {m.name}")
+            tf.extractall(tmp)
+        roots = [d for d in os.listdir(tmp)
+                 if d.startswith("etk-") and os.path.isdir(os.path.join(tmp, d))]
+        if not roots:
+            raise RuntimeError("archive layout: no etk-* root dir")
+        src = os.path.join(tmp, roots[0])
+        if not os.path.isfile(os.path.join(src, "bin", "etk_pitstop.py")):
+            raise RuntimeError("archive layout: bin/etk_pitstop.py missing")
+        synced = []
+
+        def _copy_tree(rel):
+            s, d = os.path.join(src, rel), os.path.join(base, rel)
+            if not os.path.isdir(s):
+                return
+            os.makedirs(d, exist_ok=True)
+            n = 0
+            for name in sorted(os.listdir(s)):
+                sp = os.path.join(s, name)
+                if not os.path.isfile(sp):
+                    continue
+                dp = os.path.join(d, name)
+                shutil.copy2(sp, dp)
+                if name.endswith(('.sh', '.py')) or os.access(sp, os.X_OK):
+                    os.chmod(dp, 0o755)
+                n += 1
+            synced.append(f"{rel}/ ({n})")
+
+        _copy_tree("bin")
+        _copy_tree("scripts")
+        # tools/ push-list parity with install.sh STEP 3 (never wholesale).
+        os.makedirs(os.path.join(base, "tools"), exist_ok=True)
+        for rel in ("tools/etk_drift.py", "tools/vault_sweep.sh",
+                    "tools/rocknix-bin/wl-mirror"):
+            sp = os.path.join(src, rel)
+            if os.path.isfile(sp):
+                dp = os.path.join(base, "tools", os.path.basename(rel))
+                shutil.copy2(sp, dp)
+                os.chmod(dp, 0o755)
+                synced.append("tools/" + os.path.basename(rel))
+        # config deploy-set parity with install.sh STEP 5 (never the
+        # config_<ID>.yml reference mirrors, never the operator's etk.conf).
+        cfg_set = ("pitstop_fields.json", "power_profiles.json",
+                   "crash_signatures.json", "etk_template.yml",
+                   "MangoHud.conf", "MangoHud.default.conf",
+                   "etk_pitstop.sh", "etk_pitstop.svg",
+                   "paddock_repos.json.example")
+        os.makedirs(os.path.join(base, "config"), exist_ok=True)
+        n = 0
+        for name in cfg_set:
+            sp = os.path.join(src, "config", name)
+            if os.path.isfile(sp):
+                dp = os.path.join(base, "config", name)
+                shutil.copy2(sp, dp)
+                if name.endswith('.sh'):
+                    os.chmod(dp, 0o755)
+                n += 1
+        synced.append(f"config deploy-set ({n})")
+        sp = os.path.join(src, "pro-tuning", "install-protune.sh")
+        if os.path.isfile(sp):
+            os.makedirs(os.path.join(base, "pro-tuning"), exist_ok=True)
+            dp = os.path.join(base, "pro-tuning", "install-protune.sh")
+            shutil.copy2(sp, dp)
+            os.chmod(dp, 0o755)
+        # Live overlay conf + Tools-menu launcher (Sentry tripwire would
+        # re-inject the launcher anyway; doing it now avoids one boot lag).
+        for s_rel, d_abs in (
+                (os.path.join(src, "config", "MangoHud.conf"),
+                 "/storage/.config/MangoHud/MangoHud.conf"),
+                (os.path.join(base, "config", "etk_pitstop.sh"),
+                 "/storage/.config/modules/etk_pitstop.sh")):
+            try:
+                if os.path.isfile(s_rel):
+                    os.makedirs(os.path.dirname(d_abs), exist_ok=True)
+                    shutil.copy2(s_rel, d_abs)
+                    if d_abs.endswith('.sh'):
+                        os.chmod(d_abs, 0o755)
+            except Exception as e:
+                _log(f"self-update: {d_abs} refresh failed: {e}")
+        # Cycle the watchdogged daemons: the Sentry respawns them from the
+        # updated files within a tick or two.
+        os.system("pkill -f mango_bridge.sh 2>/dev/null; "
+                  "pkill -f input_d.py 2>/dev/null")
+        # Provenance: CONFIG ledger row (golden-seed idiom) + marker file.
+        try:
+            os.makedirs(TELEMETRY_DIR, exist_ok=True)
+            if not os.path.exists(CONFIG_CHANGES_LEDGER):
+                ltmp = CONFIG_CHANGES_LEDGER + ".tmp"
+                with open(ltmp, 'w') as f:
+                    f.write(CONFIG_CHANGES_HEADER)
+                os.replace(ltmp, CONFIG_CHANGES_LEDGER)
+            with open(CONFIG_CHANGES_LEDGER, 'a') as f:
+                f.write(f"{int(time.time())}\tSYSTEM\tSELF-UPDATE\t"
+                        f"v{APP_VERSION}\t{tag}\n")
+            with open(os.path.join(base, ".last_self_update"), 'w') as f:
+                f.write(f"{int(time.time())} v{APP_VERSION} -> {tag}\n")
+        except Exception as e:
+            _log(f"self-update: provenance write failed: {e}")
+        _log(f"self-update: v{APP_VERSION} -> {tag} OK ({', '.join(synced)})")
+        return (True, [
+            f"Updated to {tag} (middleware layer).", "",
+            "Synced: " + ", ".join(synced), "",
+            "Stack components (emulator / driver / kernel / Sentry)",
+            "update via install.sh or a new card image.", "",
+            "Restart Pitstop to load the new version."])
+    except Exception as e:
+        _log(f"self-update: apply failed: {e.__class__.__name__}: {e}")
+        return (False, [
+            f"Update failed: {e.__class__.__name__}: {e}", "",
+            "Nothing outside the temp area is touched until the download",
+            "verifies; if the failure was mid-copy, re-run the update",
+            "(or install.sh from the host) to repair."])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 # --- the blocking install / uninstall sequences -------------
@@ -4010,6 +4208,11 @@ def draw_tools(stdscr, state):
             put(ty, 4, "Firmware drop folder (place PS3UPDAT.PUP):",
                 curses.A_DIM)
             put(ty + 1, 6, FIRMWARE_DROP_DIR, curses.A_DIM)
+        elif cur == _TOOLS_UPDATE_IDX:
+            put(ty, 4, "Checks GitHub releases; updates the ETK middleware",
+                curses.A_DIM)
+            put(ty + 1, 4, "in place - no computer needed (hostless update).",
+                curses.A_DIM)
 
     elif mode == "install_confirm":
         pkg, rap, tid = state["tools_pkg"]
@@ -4082,6 +4285,39 @@ def draw_tools(stdscr, state):
         put(y, 4, "Keeps your save data and ETK shader vault."); y += 2
         put(y, 4, "B: Delete     A: Cancel",
             curses.color_pair(1) | curses.A_BOLD)
+
+    elif mode == "update_confirm":
+        info = state.get("tools_update") or {}
+        put(y, 2, "ETK UPDATE AVAILABLE", curses.A_BOLD); y += 1
+        put(y, 2, "-" * (w - 4), curses.A_DIM); y += 2
+        put(y, 4, f"Installed : v{APP_VERSION}"); y += 1
+        put(y, 4, f"Latest    : {info.get('tag', '?')}  "
+                  f"({info.get('name', '')})"); y += 2
+        put(y, 4, "Updates the ETK middleware in place (daemons, scripts,",
+            curses.A_DIM); y += 1
+        put(y, 4, "Pitstop, schemas). Emulator / driver / kernel update via",
+            curses.A_DIM); y += 1
+        put(y, 4, "install.sh or a new card image. Your etk.conf, vault,",
+            curses.A_DIM); y += 1
+        put(y, 4, "telemetry and game configs are not touched.",
+            curses.A_DIM); y += 2
+        put(y, 4, "B: Update now     A: Cancel",
+            curses.color_pair(1) | curses.A_BOLD)
+
+    elif mode == "update_done":
+        ok, lines = state.get("tools_result") or (False, ["(no result)"])
+        put(y, 2, "UPDATED", curses.A_BOLD | curses.color_pair(PAIR_CLEAN))
+        y += 1
+        put(y, 2, "-" * (w - 4), curses.A_DIM); y += 2
+        for ln in lines:
+            if y >= h - 4:
+                break
+            put(y, 4, ln)
+            y += 1
+        if y < h - 4:
+            y += 1
+            put(y, 4, "B: Restart Pitstop now     A: Later",
+                curses.color_pair(1) | curses.A_BOLD)
 
     elif mode == "shaders":
         model = state.get("shaders_model")
@@ -4552,6 +4788,8 @@ def _tools_select(state):
             else:
                 state["tools_fw"] = (pups[0], _installed_fw_version())
                 state["tools_mode"] = "firmware_confirm"
+        elif state.get("tools_cursor", 0) == _TOOLS_UPDATE_IDX:    # Self-update
+            state["tools_action"] = ("update_check",)
         else:                                        # Screenshot-on-L1 toggle
             state["status"] = f"Screenshot on L1: {_cycle_screenshot_mode()}"
 
@@ -4562,6 +4800,19 @@ def _tools_select(state):
     elif mode == "firmware_confirm":
         pup, _ver = state["tools_fw"]
         state["tools_action"] = ("firmware", pup)
+
+    elif mode == "update_confirm":
+        state["tools_action"] = ("update_apply", state.get("tools_update") or {})
+
+    elif mode == "update_done":
+        # B on the post-update screen = restart Pitstop into the new code.
+        # execv never returns; the foot terminal wrapper is preserved.
+        try:
+            curses.endwin()
+        except Exception:
+            pass
+        os.execv(sys.executable,
+                 [sys.executable, os.path.abspath(__file__)] + sys.argv[1:])
 
     elif mode == "uninstall_list":
         if state.get("tools_games"):
@@ -6515,6 +6766,7 @@ def main(stdscr):
         if action:
             notifier = _Notifier()
             kind = action[0]
+            skip_result = False
             if kind == "install":
                 _draw_tools_busy(stdscr, "install")
                 ok, lines = _run_install(action[1], action[2], notifier)
@@ -6536,10 +6788,32 @@ def main(stdscr):
                     _run_shader_op, action[1], action[2], action[3], notifier)
                 ok, lines = res if res else (False, ["shader op failed — see log"])
                 state["shaders_model"] = None     # force rescan on re-entry
+            elif kind == "update_check":
+                res = _run_with_spinner(
+                    stdscr, "Checking GitHub for ETK updates…",
+                    _self_update_check, indeterminate=True)
+                if res and res[0] == "newer":
+                    state["tools_update"] = res[1]
+                    state["tools_mode"] = "update_confirm"
+                    skip_result = True
+                    ok, lines = True, []
+                else:
+                    ok, lines = (res[1] if res else
+                                 (False, ["update check failed — see log"]))
+            elif kind == "update_apply":
+                res = _run_with_spinner(
+                    stdscr, "Downloading + applying ETK update…",
+                    _self_update_apply, action[1], indeterminate=True)
+                ok, lines = res if res else (False, ["update failed — see log"])
+                if ok:
+                    state["tools_result"] = (ok, lines)
+                    state["tools_mode"] = "update_done"
+                    skip_result = True
             else:
                 ok, lines = (False, [f"unknown action: {kind}"])
-            state["tools_result"] = (ok, lines)
-            state["tools_mode"] = "result"
+            if not skip_result:
+                state["tools_result"] = (ok, lines)
+                state["tools_mode"] = "result"
             # Drain input buffered during the (multi-second) blocking op so
             # a button pressed mid-install doesn't skip past the result.
             if fd is not None:

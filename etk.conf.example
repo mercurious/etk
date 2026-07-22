@@ -120,6 +120,12 @@ HUD_HEADER_HOLD_S=15
 # BASIC  = the simple set: LOAD + RAM gauges (harvest / early-stage).
 ETK_HUD_MODE="GINSTR"
 
+# --- Hostless self-update (Pitstop TOOLS > Check for ETK Updates) ---
+# Updates the ETK middleware layer in place from the latest GitHub release —
+# no computer needed. Stack components (emulator/driver/kernel) still come
+# from install.sh or the card image. Set to 0 to hide the capability.
+ETK_SELF_UPDATE="1"
+
 # --- Golden-default config seeding (0.7.1, ships ON) ---
 # When a game appears on the rig with no per-game RPCS3 config yet —
 # most commonly a disc .iso copied straight into roms/ps3, which never

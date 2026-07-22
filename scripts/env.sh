@@ -36,6 +36,9 @@ export ETK_DP_MIRROR="${ETK_DP_MIRROR:-1}"
 # TEMP|JTTR|SLIP|shaders live frame-pacing gauges; BASIC = the simple set,
 # TEMP|LOAD|RAM%|shaders.
 export ETK_HUD_MODE="${ETK_HUD_MODE:-GINSTR}"
+# Hostless self-update (Pitstop TOOLS > Check for ETK Updates): updates the
+# middleware layer in place from GitHub releases. Default-ON; =0 disables.
+export ETK_SELF_UPDATE="${ETK_SELF_UPDATE:-1}"
 # Golden-default config seeding (0.7.1, default-ON): Pitstop seeds
 # custom_configs/config_<ID>.yml from the ETK golden template for any
 # playable title that has none, so a new game's first launch never runs
