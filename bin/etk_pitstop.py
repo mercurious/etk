@@ -3980,6 +3980,9 @@ def draw_tools(stdscr, state):
         y += 1  # extra breathing line between the chrome rules and the title
         put(y, 2, "TOOLS", curses.A_BOLD); y += 1
         put(y, 2, "-" * (w - 4), curses.A_DIM); y += 1
+        # Single-spaced items (the uninstall-list idiom): the rig's foot
+        # terminal is only ~22 rows, and double spacing pushed everything
+        # below into the footer.
         for i, label in enumerate(_TOOLS_MENU):
             if i == _TOOLS_SCREENSHOT_IDX:
                 label = f"{label}: {_read_screenshot_mode()}"
@@ -3988,23 +3991,25 @@ def draw_tools(stdscr, state):
                 curses.color_pair(1) if sel else curses.A_NORMAL)
             put(y, 6, f"{i + 1}. {label}",
                 curses.A_REVERSE if sel else curses.A_NORMAL)
-            y += 2
-        y += 1
-        # On-select help: only the entries that need context show any
-        # (install / screenshot / firmware) — the old always-on block
-        # overflowed below the footer on the rig terminal.
+            y += 1
+        # On-select help for the entries that need context (install /
+        # screenshot / firmware), ANCHORED to the footer from below
+        # (h-6/h-5, one blank row above the h-3 rule) — never flowed
+        # downward, so it cannot spill beneath the button-label footer
+        # whatever the terminal height.
         cur = state.get("tools_cursor", 0)
+        ty = max(y + 1, h - 6)
         if cur == _TOOLS_INSTALL_IDX:
-            put(y, 4, "Staging drop folder (place ONE .pkg + its .rap):",
-                curses.A_DIM); y += 1
-            put(y, 6, PKG_STAGING_DIR, curses.A_DIM)
+            put(ty, 4, "Staging drop folder (place ONE .pkg + its .rap):",
+                curses.A_DIM)
+            put(ty + 1, 6, PKG_STAGING_DIR, curses.A_DIM)
         elif cur == _TOOLS_SCREENSHOT_IDX:
-            put(y, 4, "Screenshot on L1: always / in-game / disabled "
-                      "(CONFIRM cycles)", curses.A_DIM)
+            put(ty + 1, 4, "Screenshot on L1: always / in-game / disabled "
+                           "(CONFIRM cycles)", curses.A_DIM)
         elif cur == _TOOLS_FIRMWARE_IDX:
-            put(y, 4, "Firmware drop folder (place PS3UPDAT.PUP):",
-                curses.A_DIM); y += 1
-            put(y, 6, FIRMWARE_DROP_DIR, curses.A_DIM)
+            put(ty, 4, "Firmware drop folder (place PS3UPDAT.PUP):",
+                curses.A_DIM)
+            put(ty + 1, 6, FIRMWARE_DROP_DIR, curses.A_DIM)
 
     elif mode == "install_confirm":
         pkg, rap, tid = state["tools_pkg"]
