@@ -84,9 +84,15 @@ fi
 # fps_end: the perfstat SHM line at window close (needs Perf Overlay High) —
 # self-labels the sample bog-vs-perfect for lap mapping without the timeline
 # join. The perf_logs timeline remains the full-context second witness.
+# session_start: the Sentry's ignition epoch — the sample's ledger row is the
+# one where (epoch − duration_s) == session_start. The ledger epoch is stamped
+# by the postmortem at session END; bucketing samples into [row_epoch,
+# next_row) windows joins them one session late (the 2026-07-22 false
+# "identity misfire": four PKG-control samples misread as mid-ISO fallbacks).
 {
     echo "epoch=$EP"
     echo "duration_s=$DUR"
+    echo "session_start=$(cat "$SHM/session_start.txt" 2>/dev/null)"
     echo "game=$(cat "$SHM/active_id.txt" 2>/dev/null)"
     echo "tune=$(cat "$TDIR/active_tune.txt" 2>/dev/null)"
     echo "pwr=$(sed -n 's/^# pwr=//p' /storage/etk-power/profile 2>/dev/null | head -1)"
