@@ -14,6 +14,13 @@
 # instead of hanging a mid-step transfer forever.
 # accept-new: first contact with a session-pinned IP must not stall on a
 # hidden fingerprint prompt inside a piped call; a CHANGED key still refuses.
+# NOTE: these options bound a DEAD link only. A live-but-never-closing
+# channel slips past all of them (field-caught 2026-07-22, attempt 4:
+# remote mkdir long finished, TCP ESTABLISHED on both ends, ssh.exe parked
+# at 0 CPU forever — Win32-OpenSSH sitting in a console-stdin read after
+# the remote command exited). That class is closed by Invoke-Bounded:
+# every non-interactive ssh/scp gets a closed-pipe stdin (never the
+# console) and a hard wall-clock bound with kill-and-throw.
 $script:SshBase = @("-o","ConnectTimeout=10",
                     "-o","ServerAliveInterval=5","-o","ServerAliveCountMax=3",
                     "-o","StrictHostKeyChecking=accept-new")
@@ -22,6 +29,90 @@ $script:SshBase = @("-o","ConnectTimeout=10",
 $script:ScpBase = @() + $script:SshBase
 if ($EtkScpLegacy -eq "1") { $script:ScpBase += "-O" }
 if ($EtkVerbose   -eq "1") { $script:ScpBase += "-v" } else { $script:ScpBase += "-q" }
+
+# --- quote an argv into a Win32 command line (MSVCRT rules) ---
+function ConvertTo-NativeArgString {
+    param([string[]]$Items)
+    (($Items | ForEach-Object {
+        if ($_ -ne '' -and $_ -notmatch '[\s"]') { $_ }
+        else {
+            $s = $_ -replace '(\\*)"', '$1$1\"'   # escape ", doubling backslashes before it
+            $s = $s -replace '(\\+)$', '$1$1'     # double any trailing backslashes
+            '"' + $s + '"'
+        }
+    }) -join ' ')
+}
+
+# --- run ssh/scp with a HARD wall-clock bound (the wedge-proof core) ---
+# Every non-interactive transport call goes through here so ANY unknown
+# hang mode becomes a loud, actionable failure instead of a frozen step:
+#   * stdin is a closed pipe (immediate EOF) - ssh.exe never touches the
+#     console input handle, the channel-close wedge trigger;
+#   * stdout/stderr are drained via async readers (no pipe deadlock);
+#     stderr is echoed only on failure (or with $EtkVerbose = "1");
+#   * TimeoutSec is a kill-and-throw ceiling, not a hint;
+#   * exit 255 (ssh/scp TRANSPORT failure - a remote command's own exit
+#     is 0..254) optionally retries once, for the rig-WiFi-nap case;
+#   * -Console inherits the console instead (used for big scp pushes so
+#     scp's own progress meter shows) - still bounded, still killed late.
+# Sets $LASTEXITCODE like a direct call; returns stdout as line array.
+function Invoke-Bounded {
+    param(
+        [Parameter(Mandatory)][string]$Exe,
+        [Parameter(Mandatory)][string[]]$Arguments,
+        [int]$TimeoutSec = 60,
+        [int]$ConnectRetries = 0,
+        [string]$What = "",
+        [switch]$Console,
+        [switch]$Quiet
+    )
+    $argStr = ConvertTo-NativeArgString -Items $Arguments
+    if (-not $What) { $What = "$Exe call" }
+    for ($attempt = 0; ; $attempt++) {
+        $stdout = ""; $stderr = ""
+        if ($Console) {
+            $p = Start-Process -FilePath $Exe -ArgumentList $argStr -NoNewWindow -PassThru
+            if (-not $p.WaitForExit($TimeoutSec * 1000)) {
+                try { $p.Kill() } catch {}
+                throw "$What did not finish within ${TimeoutSec}s - killed (wedged link or rig offline). Re-run the installer; it is idempotent."
+            }
+            $global:LASTEXITCODE = $p.ExitCode
+        } else {
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName               = $Exe
+            $psi.Arguments              = $argStr
+            $psi.UseShellExecute        = $false
+            $psi.CreateNoWindow         = $true
+            $psi.RedirectStandardInput  = $true
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError  = $true
+            $p = [System.Diagnostics.Process]::Start($psi)
+            $p.StandardInput.Close()
+            $oTask = $p.StandardOutput.ReadToEndAsync()
+            $eTask = $p.StandardError.ReadToEndAsync()
+            if (-not $p.WaitForExit($TimeoutSec * 1000)) {
+                try { $p.Kill() } catch {}
+                [void][System.Threading.Tasks.Task]::WaitAll(@($oTask, $eTask), 5000)
+                throw "$What did not finish within ${TimeoutSec}s - killed (wedged link or rig offline). Re-run the installer; it is idempotent."
+            }
+            [void][System.Threading.Tasks.Task]::WaitAll(@($oTask, $eTask), 10000)
+            $stdout = $oTask.Result; $stderr = $eTask.Result
+            $global:LASTEXITCODE = $p.ExitCode
+        }
+        if ($global:LASTEXITCODE -eq 255 -and $attempt -lt $ConnectRetries) {
+            Write-Warn "${What}: connection failed (exit 255) - retrying in 3 s (rig WiFi nap?)..."
+            Start-Sleep -Seconds 3
+            continue
+        }
+        if ($stderr -and -not $Quiet -and ($global:LASTEXITCODE -ne 0 -or $EtkVerbose -eq "1")) {
+            ($stderr -split "`r?`n") | Where-Object { $_.Trim() } | ForEach-Object { Write-Note $_.TrimEnd() }
+        }
+        if ("$stdout" -ne "") {
+            return ($stdout.TrimEnd("`r", "`n") -split "`r?`n")
+        }
+        return
+    }
+}
 
 # --- coloured console output ---
 function Write-Step($n, $total, $msg) { Write-Host ">>> [$n/$total] $msg" -ForegroundColor Cyan }
@@ -78,7 +169,8 @@ function Resolve-RigHost {
 # --- confirm the rig is reachable over SSH before doing anything ---
 function Assert-RigConnection {
     Write-Note "Checking SSH connectivity to $RigSsh ..."
-    $reply = & ssh -o ConnectTimeout=8 @SshBase $RigSsh "echo ETK_OK" 2>$null
+    $reply = Invoke-Bounded -Exe "ssh" -Arguments (@("-o","ConnectTimeout=8") + $script:SshBase + @($RigSsh, "echo ETK_OK")) `
+                            -TimeoutSec 30 -ConnectRetries 1 -Quiet -What "connectivity check"
     if ($LASTEXITCODE -ne 0 -or "$reply" -notmatch "ETK_OK") {
         throw "Cannot reach the rig at '$RigSsh'. Check the device is on, on the same network, RigSsh in etk-env.ps1 is correct, and your SSH key/password works (try: ssh $RigSsh)."
     }
@@ -87,7 +179,10 @@ function Assert-RigConnection {
 
 # --- run a remote command, return its stdout (caller may check $LASTEXITCODE) ---
 function Invoke-Rig {
-    param([Parameter(Mandatory)][string]$Command)
+    param(
+        [Parameter(Mandatory)][string]$Command,
+        [int]$TimeoutSec = 60
+    )
     # .ps1 files are CRLF (enforced by .gitattributes: *.ps1 eol=crlf), so any
     # MULTI-LINE command literal (e.g. a here-string for/sed loop) carries \r.
     # Sent verbatim, the rig's sh chokes ("syntax error near `do\r'") and a
@@ -95,7 +190,9 @@ function Invoke-Rig {
     # Strip CR so multi-line remote commands run; single-line commands are
     # unaffected. (Send-Text/Invoke-RigBash already LF-normalise via temp file.)
     $Command = $Command -replace "`r", ""
-    return (& ssh @SshBase $RigSsh $Command)
+    $label = "ssh [" + $(if ($Command.Length -gt 40) { $Command.Substring(0, 40) + "..." } else { $Command }) + "]"
+    return (Invoke-Bounded -Exe "ssh" -Arguments ($script:SshBase + @($RigSsh, $Command)) `
+                           -TimeoutSec $TimeoutSec -ConnectRetries 1 -What $label)
 }
 
 # --- normalise text to LF + UTF8-no-BOM in a local temp file; return its path ---
@@ -116,12 +213,13 @@ function Send-Text {
     )
     $tmp = New-LfTempFile -Content $Content
     try {
-        & scp @ScpBase $tmp "$($RigSsh):$RemotePath"
+        Invoke-Bounded -Exe "scp" -Arguments ($script:ScpBase + @($tmp, "$($RigSsh):$RemotePath")) `
+                       -TimeoutSec 120 -ConnectRetries 1 -What "scp -> $RemotePath" | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "scp to '$RemotePath' failed (exit $LASTEXITCODE)." }
     } finally {
         Remove-Item $tmp -Force -ErrorAction SilentlyContinue
     }
-    if ($Executable) { & ssh @SshBase $RigSsh "chmod +x '$RemotePath'" | Out-Null }
+    if ($Executable) { Invoke-Rig "chmod +x '$RemotePath'" | Out-Null }
 }
 
 # --- push a real local file to a remote path ---
@@ -136,11 +234,17 @@ function Send-File {
     # field-hit 2026-07-22). Small files stay quiet.
     $opts = $ScpBase
     $mb = (Get-Item -LiteralPath $LocalPath).Length / 1MB
+    # Hard bound scaled to size (~0.5 MB/s WiFi worst case), floor 120 s.
+    $bound = [int][Math]::Max(120, $mb * 20)
+    $console = $false
     if ($mb -gt 8) {
         $opts = @($ScpBase | Where-Object { $_ -ne "-q" })
         Write-Note ("Transferring {0:N1} MB to the rig (scp progress below)..." -f $mb)
+        $console = $true   # inherit the console so scp's own meter shows
     }
-    & scp @opts $LocalPath "$($RigSsh):$RemotePath"
+    Invoke-Bounded -Exe "scp" -Arguments (@($opts) + @($LocalPath, "$($RigSsh):$RemotePath")) `
+                   -TimeoutSec $bound -ConnectRetries 1 -Console:$console `
+                   -What ("scp " + (Split-Path $LocalPath -Leaf)) | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "scp '$LocalPath' -> '$RemotePath' failed (exit $LASTEXITCODE)." }
 }
 
@@ -154,8 +258,9 @@ function Push-Dir {
     )
     if (-not (Test-Path -LiteralPath $LocalDir)) { throw "Local directory not found: $LocalDir" }
     $leaf = Split-Path $LocalDir -Leaf
-    if ($Mirror) { & ssh @SshBase $RigSsh "rm -rf '$RemoteParent/$leaf'" | Out-Null }
-    & scp @ScpBase -r $LocalDir "$($RigSsh):$RemoteParent/"
+    if ($Mirror) { Invoke-Rig "rm -rf '$RemoteParent/$leaf'" | Out-Null }
+    Invoke-Bounded -Exe "scp" -Arguments ($script:ScpBase + @("-r", $LocalDir, "$($RigSsh):$RemoteParent/")) `
+                   -TimeoutSec 600 -ConnectRetries 1 -What "scp -r $leaf" | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "scp -r '$LocalDir' failed (exit $LASTEXITCODE)." }
 }
 
@@ -165,21 +270,26 @@ function Push-Dir {
 function Invoke-RigBash {
     param(
         [Parameter(Mandatory)][string]$Script,
-        [hashtable]$EnvVars
+        [hashtable]$EnvVars,
+        [int]$TimeoutSec = 300
     )
     $tmp = New-LfTempFile -Content $Script
     $remote = "/tmp/etk_$([guid]::NewGuid().ToString('N')).sh"
     try {
-        & scp @ScpBase $tmp "$($RigSsh):$remote"
+        Invoke-Bounded -Exe "scp" -Arguments ($script:ScpBase + @($tmp, "$($RigSsh):$remote")) `
+                       -TimeoutSec 120 -ConnectRetries 1 -What "scp remote block" | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Could not stage remote script (scp exit $LASTEXITCODE)." }
     } finally {
         Remove-Item $tmp -Force -ErrorAction SilentlyContinue
     }
     $prefix = ""
     if ($EnvVars) { foreach ($k in $EnvVars.Keys) { $prefix += ("{0}='{1}' " -f $k, $EnvVars[$k]) } }
-    $out = & ssh @SshBase $RigSsh ("{0}bash {1}" -f $prefix, $remote)
+    # No connect-retry on the run itself: a transport drop mid-body is
+    # ambiguous; the installer as a whole is idempotent and re-runnable.
+    $out = Invoke-Bounded -Exe "ssh" -Arguments ($script:SshBase + @($RigSsh, ("{0}bash {1}" -f $prefix, $remote))) `
+                          -TimeoutSec $TimeoutSec -What "remote block"
     $rc = $LASTEXITCODE
-    & ssh @SshBase $RigSsh "rm -f $remote" | Out-Null
+    Invoke-Rig "rm -f $remote" | Out-Null
     if ($rc -ne 0) { Write-Warn "Remote block exited with code $rc." }
     return $out
 }
@@ -306,7 +416,8 @@ function Invoke-EtkPair {
     # STEP 1: test-first (the bare-target path the installer actually uses).
     # @SshBase after @probe: first-obtained-value wins in OpenSSH, so the
     # probe keeps its tighter timeouts while inheriting the pinned HostName.
-    $r = & ssh @probe @SshBase $Target "echo ETK_OK" 2>$null
+    $r = Invoke-Bounded -Exe "ssh" -Arguments (@($probe) + $script:SshBase + @($Target, "echo ETK_OK")) `
+                        -TimeoutSec 30 -Quiet -What "pairing probe"
     if ($LASTEXITCODE -eq 0 -and "$r" -match "ETK_OK") {
         Write-Ok "Already reachable passwordlessly - nothing to do."
         return
@@ -325,7 +436,8 @@ function Invoke-EtkPair {
 
     # STEP 3: key already accepted (so STEP 1 only failed because the bare
     # target wasn't routed yet)? Then skip the password, just fix the config.
-    $o = & ssh @probe @SshBase -o IdentitiesOnly=yes -i $keyFile $Target "echo ETK_OK" 2>$null
+    $o = Invoke-Bounded -Exe "ssh" -Arguments (@($probe) + $script:SshBase + @("-o","IdentitiesOnly=yes","-i",$keyFile,$Target,"echo ETK_OK")) `
+                        -TimeoutSec 30 -Quiet -What "key probe"
     if ($LASTEXITCODE -eq 0 -and "$o" -match "ETK_OK") {
         Write-Ok "Dedicated key already accepted by rig - no password needed."
     } else {
@@ -340,6 +452,8 @@ function Invoke-EtkPair {
         $b64      = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($full))
         Write-Host "    >>> Pairing - you will be asked for the rig password ONCE" -ForegroundColor Yellow
         Write-Host "        (Rocknix default is 'rocknix' unless you changed it)." -ForegroundColor Yellow
+        # Deliberately DIRECT (console stdin/tty): the user types the rig
+        # password here - the ONE transport call that must not be bounded.
         $pairOut = & ssh @SshBase $Target "echo $b64 | base64 -d | bash"
         if ($LASTEXITCODE -ne 0 -or "$pairOut" -notmatch "ETK_PAIR_OK") {
             if ($pairOut) { Write-Note "rig said: $pairOut" }
@@ -352,13 +466,15 @@ function Invoke-EtkPair {
     Write-EtkSshConfigBlock -CfgFile $cfgFile -Marker $marker -RigHost $rigHost -RigUser $rigUser
 
     # STEP 5: verify the real path — bare target, passwordless.
-    $v = & ssh @probe @SshBase $Target "echo ETK_OK" 2>$null
+    $v = Invoke-Bounded -Exe "ssh" -Arguments (@($probe) + $script:SshBase + @($Target, "echo ETK_OK")) `
+                        -TimeoutSec 30 -Quiet -What "pairing verify"
     if ($LASTEXITCODE -eq 0 -and "$v" -match "ETK_OK") {
         Write-Ok "Verified: 'ssh $Target' is passwordless. Pairing complete."
         return
     }
     # Diagnose precisely (§G.7).
-    $o2 = & ssh @probe @SshBase -o IdentitiesOnly=yes -i $keyFile $Target "echo ETK_OK" 2>$null
+    $o2 = Invoke-Bounded -Exe "ssh" -Arguments (@($probe) + $script:SshBase + @("-o","IdentitiesOnly=yes","-i",$keyFile,$Target,"echo ETK_OK")) `
+                         -TimeoutSec 30 -Quiet -What "key re-probe"
     if ($LASTEXITCODE -eq 0 -and "$o2" -match "ETK_OK") {
         Write-Warn "The key works, but the bare target isn't routed to it. Check the ETK block in $cfgFile."
     } else {

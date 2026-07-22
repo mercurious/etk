@@ -116,6 +116,7 @@ After install, **reboot the device** so EmulationStation reads the Tools gamelis
 - **`scp` fails with an sftp / "subsystem request failed" error** → set `$EtkScpLegacy = "1"` in `etk-env.ps1` (forces the legacy SCP wire protocol with `-O`).
 - **Scripts won't start on the rig / `\r` errors** → confirm `.gitattributes` is committed and re-clone, or just re-run the installer (it strips CRLF on the rig).
 - **"Cannot reach the rig"** → verify the device is on, on the same network, and `$RigSsh` is correct; test plain `ssh <RigSsh>` first.
+- **"... did not finish within NNs - killed"** → a transport call hit its hard time limit. Usually the rig's WiFi napped mid-step (a known ROCKNIX quirk) or the link wedged; the installer is idempotent — just re-run it. (Every ssh/scp the installer spawns is wall-clock-bounded precisely so a wedge can never freeze a step silently again — field-caught 2026-07-22: Win32-OpenSSH's ssh.exe can sit forever holding the console after the remote command already finished.)
 - **Execution policy blocks the script** → the `-ExecutionPolicy Bypass` flag above avoids changing your system policy.
 
 ### Fallback: manual SSH handshake
