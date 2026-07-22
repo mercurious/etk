@@ -261,7 +261,7 @@ while true; do
     case "$STAGE" in
         1) FINAL_STRING="${ETK_BUILD_TYPE}|${TARGET_ID}|SHDRS ${VAULT_STR}" ;;
         2) if [ "$HUD_MODE" = "GINSTR" ]; then
-               FINAL_STRING="${T_STAT}|JITTER${JIT}|SLIP${SLIP}|ANTI-LOCK${ALOCK_SEG}|"
+               FINAL_STRING="${T_STAT}|JTTR${JIT}|SLIP${SLIP}|ANTI-LOCK${ALOCK_SEG}|"
            else
                FINAL_STRING="TEMP ${T_STAT}|LOAD ${LOAD_RAW}${L_STAT}|RAM ${RAM_VAL}%${R_STAT}|ANTI-LOCK ${ALOCK_SEG}|"
            fi ;;
