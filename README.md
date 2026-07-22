@@ -96,11 +96,11 @@ chmod +x install.sh
 ```sh
 ./install.sh
 ```
-For Windows, use PowerShell:
-```sh
-cd etk
-powershell -ExecutionPolicy Bypass -File .\windows_installer\etk-install.ps1
+For Windows, no clone needed — one line in any PowerShell fetches the kit to `~\etk` and runs the installer (re-run it anytime to update):
+```powershell
+irm https://raw.githubusercontent.com/mercurious/etk/main/windows_installer/get-etk.ps1 | iex
 ```
+(Or from a manual checkout: `powershell -ExecutionPolicy Bypass -File .\windows_installer\etk-install.ps1`)
 *Repeat whenever you want to update, repair, or sync your rig.*<br><br>
 4. Drop your PS3 firmware `.pup` into the approprite drop folder `/storage/roms/etk/firmware_drop/` on your device and use ETK Pitstop TOOLS to easily install it; a PKG file installed similary from `/storage/roms/etk/pkg_drop/`.
 

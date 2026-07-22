@@ -6,7 +6,13 @@ A bare-bones Windows port of `install.sh` / `uninstall.sh` so a Windows PC can a
 
 ## TL;DR
 
-Stock Rocknix handhelds answer at `SM8250.local` with the default `rocknix` password, so there's usually **nothing to configure** — just run it:
+Stock Rocknix handhelds answer at `SM8250.local` with the default `rocknix` password, so there's usually **nothing to configure** — no git, no manual download, just paste this into any PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/mercurious/etk/main/windows_installer/get-etk.ps1 | iex
+```
+
+That fetches the kit to `~\etk` (updating it in place on re-runs) and hands off to the installer below. Already have a checkout? Run the installer directly from the repo root:
 
 ```powershell
 # Install (the first run asks for the rig password ONCE, then never again):
