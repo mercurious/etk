@@ -71,7 +71,19 @@ function Invoke-Bounded {
     for ($attempt = 0; ; $attempt++) {
         $stdout = ""; $stderr = ""
         if ($Console) {
-            $p = Start-Process -FilePath $Exe -ArgumentList $argStr -NoNewWindow -PassThru
+            # NOT Start-Process: its -PassThru object can't read ExitCode
+            # unless the handle was touched pre-exit (field-hit 2026-07-22,
+            # "failed (exit )" on a transfer that had succeeded). A .NET
+            # Process always owns the handle. stdout/stderr stay inherited
+            # (scp's meter renders); stdin is still a closed pipe - the
+            # wedge trigger stays eliminated even on the console path.
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName              = $Exe
+            $psi.Arguments             = $argStr
+            $psi.UseShellExecute       = $false
+            $psi.RedirectStandardInput = $true
+            $p = [System.Diagnostics.Process]::Start($psi)
+            $p.StandardInput.Close()
             if (-not $p.WaitForExit($TimeoutSec * 1000)) {
                 try { $p.Kill() } catch {}
                 throw "$What did not finish within ${TimeoutSec}s - killed (wedged link or rig offline). Re-run the installer; it is idempotent."
