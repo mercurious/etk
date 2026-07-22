@@ -45,6 +45,8 @@ if ($zap -eq "1") {
 Write-Host ""
 
 Assert-Tooling
+# Resolve-once-pin: same mDNS-stall guard as the installer.
+Resolve-RigHost
 # Establish passwordless SSH first (test-first + idempotent); without it the
 # remote teardown below would prompt for the rig password repeatedly. Mirrors
 # the installer's pairing gate.

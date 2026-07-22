@@ -39,6 +39,9 @@ Write-Host "==========================================================" -Foregro
 Write-Host ""
 
 Assert-Tooling
+# Resolve the .local rig name ONCE and pin the session to its IP — every
+# later ssh/scp then skips Windows mDNS (whose mid-run stalls froze installs).
+Resolve-RigHost
 # Establish passwordless SSH first (test-first + idempotent; <=1 password on a
 # fresh rig, zero thereafter). Without this every ssh/scp below would prompt.
 Invoke-EtkPair

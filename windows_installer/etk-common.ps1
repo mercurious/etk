@@ -12,8 +12,11 @@
 # step 0 with the connection test having passed moments earlier).
 # ServerAlive*: an ESTABLISHED session that goes quiet dies in ~15 s
 # instead of hanging a mid-step transfer forever.
+# accept-new: first contact with a session-pinned IP must not stall on a
+# hidden fingerprint prompt inside a piped call; a CHANGED key still refuses.
 $script:SshBase = @("-o","ConnectTimeout=10",
-                    "-o","ServerAliveInterval=5","-o","ServerAliveCountMax=3")
+                    "-o","ServerAliveInterval=5","-o","ServerAliveCountMax=3",
+                    "-o","StrictHostKeyChecking=accept-new")
 
 # --- scp argument base, derived from env toggles ---
 $script:ScpBase = @() + $script:SshBase
@@ -36,10 +39,46 @@ function Assert-Tooling {
     }
 }
 
+# --- resolve a .local rig name ONCE, pin the session's wire address ---
+# Windows mDNS can work beautifully — when it works. Every ssh/scp call
+# opens a fresh connection and would re-resolve the .local name each time;
+# one stall mid-install freezes a step (field-hit twice, 2026-07-22).
+# So: consult mDNS exactly once per run (with retries, so a momentary
+# blip doesn't force IP-pinning on the user), then pin the TRANSPORT via
+# `-o HostName=<ip>` on the shared option bases. The .local name stays the
+# ssh-visible identity — config-block matching (Host SM8250.local ...),
+# known_hosts keying, and pairing all keep working across DHCP drift.
+# Zero configuration kept. Fail-soft: if it never resolves, continue with
+# the name and let the per-call ConnectTimeout surface problems loudly.
+function Resolve-RigHost {
+    $rigHost = ($RigSsh -split '@', 2)[-1]
+    if ($rigHost -notmatch '\.local$') { return }   # literal IP/DNS name: nothing to do
+    for ($i = 1; $i -le 3; $i++) {
+        try {
+            # Async + bounded wait: the resolver itself is what stalls on a
+            # bad mDNS day, so each attempt gets 5 s, not the system default.
+            $task = [System.Net.Dns]::GetHostAddressesAsync($rigHost)
+            if (-not $task.Wait(5000)) { throw "resolve timeout" }
+            $v4 = $task.Result |
+                  Where-Object { $_.AddressFamily -eq 'InterNetwork' } |
+                  Select-Object -First 1
+            if ($v4) {
+                $ip = $v4.IPAddressToString
+                $script:SshBase += @("-o","HostName=$ip")
+                $script:ScpBase += @("-o","HostName=$ip")
+                Write-Note "Resolved $rigHost -> $ip (wire address pinned for this session)"
+                return
+            }
+        } catch { }
+        Start-Sleep -Seconds 2
+    }
+    Write-Warn "$rigHost did not resolve after 3 tries - continuing with the name; if a step fails to connect, check the rig's WiFi (or set an IP in etk-env.ps1 as a last resort)."
+}
+
 # --- confirm the rig is reachable over SSH before doing anything ---
 function Assert-RigConnection {
     Write-Note "Checking SSH connectivity to $RigSsh ..."
-    $reply = & ssh -o ConnectTimeout=8 $RigSsh "echo ETK_OK" 2>$null
+    $reply = & ssh -o ConnectTimeout=8 @SshBase $RigSsh "echo ETK_OK" 2>$null
     if ($LASTEXITCODE -ne 0 -or "$reply" -notmatch "ETK_OK") {
         throw "Cannot reach the rig at '$RigSsh'. Check the device is on, on the same network, RigSsh in etk-env.ps1 is correct, and your SSH key/password works (try: ssh $RigSsh)."
     }
@@ -256,7 +295,9 @@ function Invoke-EtkPair {
     Write-Host ">>> ETK SSH pairing - target: $Target" -ForegroundColor Cyan
 
     # STEP 1: test-first (the bare-target path the installer actually uses).
-    $r = & ssh @probe $Target "echo ETK_OK" 2>$null
+    # @SshBase after @probe: first-obtained-value wins in OpenSSH, so the
+    # probe keeps its tighter timeouts while inheriting the pinned HostName.
+    $r = & ssh @probe @SshBase $Target "echo ETK_OK" 2>$null
     if ($LASTEXITCODE -eq 0 -and "$r" -match "ETK_OK") {
         Write-Ok "Already reachable passwordlessly - nothing to do."
         return
@@ -275,7 +316,7 @@ function Invoke-EtkPair {
 
     # STEP 3: key already accepted (so STEP 1 only failed because the bare
     # target wasn't routed yet)? Then skip the password, just fix the config.
-    $o = & ssh @probe -o IdentitiesOnly=yes -i $keyFile $Target "echo ETK_OK" 2>$null
+    $o = & ssh @probe @SshBase -o IdentitiesOnly=yes -i $keyFile $Target "echo ETK_OK" 2>$null
     if ($LASTEXITCODE -eq 0 -and "$o" -match "ETK_OK") {
         Write-Ok "Dedicated key already accepted by rig - no password needed."
     } else {
@@ -290,7 +331,7 @@ function Invoke-EtkPair {
         $b64      = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($full))
         Write-Host "    >>> Pairing - you will be asked for the rig password ONCE" -ForegroundColor Yellow
         Write-Host "        (Rocknix default is 'rocknix' unless you changed it)." -ForegroundColor Yellow
-        $pairOut = & ssh -o StrictHostKeyChecking=accept-new $Target "echo $b64 | base64 -d | bash"
+        $pairOut = & ssh @SshBase $Target "echo $b64 | base64 -d | bash"
         if ($LASTEXITCODE -ne 0 -or "$pairOut" -notmatch "ETK_PAIR_OK") {
             if ($pairOut) { Write-Note "rig said: $pairOut" }
             throw "Key install did not complete (wrong password, or no SSH route to $Target)."
@@ -302,13 +343,13 @@ function Invoke-EtkPair {
     Write-EtkSshConfigBlock -CfgFile $cfgFile -Marker $marker -RigHost $rigHost -RigUser $rigUser
 
     # STEP 5: verify the real path — bare target, passwordless.
-    $v = & ssh @probe $Target "echo ETK_OK" 2>$null
+    $v = & ssh @probe @SshBase $Target "echo ETK_OK" 2>$null
     if ($LASTEXITCODE -eq 0 -and "$v" -match "ETK_OK") {
         Write-Ok "Verified: 'ssh $Target' is passwordless. Pairing complete."
         return
     }
     # Diagnose precisely (§G.7).
-    $o2 = & ssh @probe -o IdentitiesOnly=yes -i $keyFile $Target "echo ETK_OK" 2>$null
+    $o2 = & ssh @probe @SshBase -o IdentitiesOnly=yes -i $keyFile $Target "echo ETK_OK" 2>$null
     if ($LASTEXITCODE -eq 0 -and "$o2" -match "ETK_OK") {
         Write-Warn "The key works, but the bare target isn't routed to it. Check the ETK block in $cfgFile."
     } else {
