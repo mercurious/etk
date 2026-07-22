@@ -55,7 +55,7 @@ Core:
   PPU Vector NaN Handling: true
   Performance Report Threshold: 500
   Precise SPU Verification: false
-  Preferred SPU Threads: 3
+  Preferred SPU Threads: 0
   RSX FIFO Fetch Accuracy: Atomic
   SPU Block Size: Safe
   SPU Cache: true
@@ -194,17 +194,17 @@ Video:
   Disable Vulkan Memory Allocator: false
   Disable ZCull Occlusion Queries: false
   Driver Recovery Timeout: 1000000
-  Driver Wake-Up Delay: 50
+  Driver Wake-Up Delay: 1
   Enable Frame Skip: false
   FidelityFX CAS Sharpening Intensity: 50
   Force CPU Blit: false
   Force Hardware MSAA Resolve: false
   Force High Precision Z buffer: false
-  Frame limit: PS3 Native
+  Frame limit: Auto
   Framebuffer Aliasing Heuristic Bias: Auto
   Handle RSX Memory Tiling: false
   Log shader programs: false
-  MSAA: Disabled
+  MSAA: Auto
   Minimum Scalable Dimension: 512
   Multithreaded RSX: false
   Output Scaling Mode: Bilinear
@@ -246,7 +246,7 @@ Video:
     Allow custom background: true
     Blur effect strength: 0
     Darkening effect strength: 30
-  Shader Mode: Async Recompiler with Shader Interpreter
+  Shader Mode: Async Recompiler (multi-threaded)
   Shader Precision: Low
   Stretch To Display Area: false
   Strict Rendering Mode: false

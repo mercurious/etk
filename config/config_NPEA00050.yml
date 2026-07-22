@@ -17,7 +17,7 @@ Core:
   Disable SPU GETLLAR Spin Optimization: false
   SPU Debug: false
   MFC Debug: false
-  Preferred SPU Threads: 3
+  Preferred SPU Threads: 0
   SPU delay penalty: 3
   SPU loop detection: false
   Max SPURS Threads: 6
@@ -27,7 +27,7 @@ Core:
   Accurate Cache Line Stores: false
   Accurate RSX reservation access: false
   PPU Reservation Priority Over SPUs: false
-  RSX FIFO Fetch Accuracy: "Ordered & Atomic"
+  RSX FIFO Fetch Accuracy: Atomic
   SPU Verification: true
   SPU Cache: true
   SPU Profiler: false
@@ -106,7 +106,7 @@ Video:
   Use full RGB output range: true
   Strict Texture Flushing: false
   Multithreaded RSX: false
-  Relaxed ZCULL Sync: true
+  Relaxed ZCULL Sync: false
   Force Hardware MSAA Resolve: false
   3D Display Enabled: false
   3D Display Mode: Disabled
@@ -147,10 +147,10 @@ Video:
     Framerate datapoints: 50
     Frametime datapoints: 170
     Detail level: High
-    Framerate graph detail level: All
-    Frametime graph detail level: All
+    Framerate graph detail level: Show min and max
+    Frametime graph detail level: Minimal
     Metrics update interval (ms): 350
-    Font size (px): 10
+    Font size (px): 12
     Position: Top Right
     Font: n023055ms.ttf
     Horizontal Margin (%): 0

@@ -57,7 +57,7 @@ Core:
   Precise SPU Verification: false
   Preferred SPU Threads: 3
   RSX FIFO Fetch Accuracy: Atomic
-  SPU Block Size: Safe
+  SPU Block Size: Mega
   SPU Cache: true
   SPU Debug: false
   SPU Decoder: Recompiler (LLVM)
@@ -72,7 +72,7 @@ Core:
   SPU Wake-Up Delay Thread Mask: 63
   SPU XFloat Accuracy: Approximate
   SPU delay penalty: 3
-  SPU loop detection: false
+  SPU loop detection: true
   Save LLVM logs: false
   Set DAZ and FTZ: false
   Sleep Timers Accuracy: As Host
@@ -192,7 +192,7 @@ Video:
   Disable Vertex Cache: false
   Disable Video Output: false
   Disable Vulkan Memory Allocator: false
-  Disable ZCull Occlusion Queries: false
+  Disable ZCull Occlusion Queries: true
   Driver Recovery Timeout: 1000000
   Driver Wake-Up Delay: 50
   Enable Frame Skip: false
@@ -246,7 +246,7 @@ Video:
     Allow custom background: true
     Blur effect strength: 0
     Darkening effect strength: 30
-  Shader Mode: Async Recompiler with Shader Interpreter
+  Shader Mode: Async Recompiler (multi-threaded)
   Shader Precision: Low
   Stretch To Display Area: false
   Strict Rendering Mode: false

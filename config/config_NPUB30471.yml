@@ -5,7 +5,7 @@ Audio:
   Audio Formats: 0
   Audio Provider: CellAudio
   Convert to 16 bit: false
-  Desired Audio Buffer Duration: 34
+  Desired Audio Buffer Duration: 250
   Disable Sampling Skip: false
   Dump to file: false
   Enable Buffering: true
@@ -72,7 +72,7 @@ Core:
   SPU Wake-Up Delay Thread Mask: 63
   SPU XFloat Accuracy: Approximate
   SPU delay penalty: 3
-  SPU loop detection: false
+  SPU loop detection: true
   Save LLVM logs: false
   Set DAZ and FTZ: false
   Sleep Timers Accuracy: As Host
@@ -192,7 +192,7 @@ Video:
   Disable Vertex Cache: false
   Disable Video Output: false
   Disable Vulkan Memory Allocator: false
-  Disable ZCull Occlusion Queries: false
+  Disable ZCull Occlusion Queries: true
   Driver Recovery Timeout: 1000000
   Driver Wake-Up Delay: 50
   Enable Frame Skip: false
@@ -234,7 +234,7 @@ Video:
   Read Color Buffers: false
   Read Depth Buffer: false
   Record With Overlays: true
-  Relaxed ZCULL Sync: false
+  Relaxed ZCULL Sync: true
   Renderdoc Compatibility Mode: false
   Renderer: Vulkan
   Resolution: 720x480
@@ -246,7 +246,7 @@ Video:
     Allow custom background: true
     Blur effect strength: 0
     Darkening effect strength: 30
-  Shader Mode: Async Recompiler with Shader Interpreter
+  Shader Mode: Async Recompiler (multi-threaded)
   Shader Precision: Low
   Stretch To Display Area: false
   Strict Rendering Mode: false
@@ -260,7 +260,7 @@ Video:
   Vulkan:
     Adapter: Turnip Adreno (TM) 650
     Asynchronous Queue Scheduler: Safe
-    Asynchronous Texture Streaming: false
+    Asynchronous Texture Streaming: true
     Exclusive Fullscreen Mode: Automatic
     Force primitive restart flag: false
     Use Re-BAR for GPU uploads: true

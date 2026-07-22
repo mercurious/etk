@@ -27,7 +27,7 @@ Core:
   Accurate Cache Line Stores: false
   Accurate RSX reservation access: false
   PPU Reservation Priority Over SPUs: false
-  RSX FIFO Fetch Accuracy: "Ordered & Atomic"
+  RSX FIFO Fetch Accuracy: Atomic
   SPU Verification: true
   SPU Cache: true
   SPU Profiler: false
@@ -63,7 +63,6 @@ Core:
   Performance Report Threshold: 500
   Enable Performance Report: false
   Assume External Debugger: false
-  RSX FIFO Accuracy: Fast
 VFS:
   Enable /host_root/: false
   Initialize Directories: true
@@ -74,12 +73,12 @@ Video:
   Renderer: Vulkan
   Resolution: 1280x720
   Aspect ratio: 16:9
-  Frame limit: PS3 Native
+  Frame limit: Display
   Second Frame Limit: 0
   MSAA: Disabled
   Shader Mode: Async Recompiler (multi-threaded)
   Shader Precision: Low
-  VSync Mode: Disabled
+  VSync Mode: Full
   Write Color Buffers: false
   Write Depth Buffer: false
   Read Color Buffers: false
@@ -115,7 +114,7 @@ Video:
   Accurate ZCULL stats: false
   Consecutive Frames To Draw: 1
   Consecutive Frames To Skip: 1
-  Resolution Scale: 100
+  Resolution Scale: 90
   Anisotropic Filter Override: 0
   Texture LOD Bias Addend: 0
   Minimum Scalable Dimension: 512
@@ -151,13 +150,13 @@ Video:
     Frametime graph detail level: All
     Metrics update interval (ms): 350
     Font size (px): 10
-    Position: Top Right
+    Position: Bottom Left
     Font: n023055ms.ttf
     Horizontal Margin (%): 0
     Vertical Margin (%): 0
     Center Horizontally: false
     Center Vertically: false
-    Opacity (%): 70
+    Opacity (%): 5
     Body Color (hex): "#FFE138FF"
     Body Background (hex): "#002339FF"
     Title Color (hex): "#F26C24FF"
@@ -180,14 +179,14 @@ Audio:
   Convert to 16 bit: false
   Audio Format: Stereo
   Audio Formats: 0
-  Audio Channel Layout: Automatic
-  Audio Device: "@@@default@@@"
+  Audio Channel Layout: Stereo
+  Audio Device: alsa_output._sys_devices_platform_sound_sound_card0.HiFi__Speaker__sink
   Master Volume: 100
   Enable Buffering: true
-  Desired Audio Buffer Duration: 250
+  Desired Audio Buffer Duration: 100
   Enable Time Stretching: true
   Disable Sampling Skip: false
-  Time Stretching Threshold: 100
+  Time Stretching Threshold: 75
   Microphone Type: "Null"
   Microphone Devices: "@@@@@@@@@@@@"
   Music Handler: Qt
@@ -226,8 +225,8 @@ System:
   Date Format: ddmmyyyy
   Time Format: clock24
   Console time offset (s): 0
-  System Name: RPCS3-958
-  Console PSID: 0x730A344806DDD47D10D3C0A44601EAFC
+  System Name: RPCS3-388
+  Console PSID: 0x401C98AF781F971613DC198E66AF6760
   HDD Model Name: ""
   HDD Serial Number: ""
   Process ARGV:
@@ -255,7 +254,7 @@ Miscellaneous:
   Automatically start games after boot: true
   Exit RPCS3 when process finishes: false
   Pause emulation on RPCS3 focus loss: false
-  Start games in fullscreen mode: true
+  Start games in fullscreen mode: false
   Prevent display sleep while running games: true
   Show trophy popups: true
   Show RPCN popups: true
