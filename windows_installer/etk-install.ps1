@@ -462,7 +462,9 @@ Send-Text -Content $core  -RemotePath "/storage/.config/custom_scripts/02-etk-co
 Send-Text -Content $s3svc -RemotePath "/storage/.config/system.d/etk-stage3.service"
 Invoke-Rig "systemctl daemon-reload; systemctl enable etk-stage3.service 2>/dev/null; systemctl restart etk-stage3.service" | Out-Null
 $cpat = (Invoke-Rig "cat /proc/sys/kernel/core_pattern").Trim()
-if ($cpat -like "/storage/cores/*") { Write-Ok "Stage III harness armed (core_pattern -> /storage/cores)." }
+# Same acceptance as install.sh's STAGE3_OK check: the CORE body prefers the
+# SD-backed $ETK_ROOT/cores and falls back to legacy /storage/cores.
+if ($cpat -match '^/storage/(games-internal/roms/etk/)?cores/') { Write-Ok "Stage III harness armed (core_pattern -> $($cpat -replace '/%.*$',''))." }
 else { Write-Warn "Stage III harness not confirmed (core_pattern '$cpat') - crash forensics degraded, install continues." }
 
 # ==========================================================
