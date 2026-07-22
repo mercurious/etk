@@ -51,7 +51,7 @@ It’s easy to try out the kit with a spare SD card and USB card reader, revert 
 1. Download the ROCKNIX-GTK SD Card image from [releases](https://github.com/mercurious/etk/releases) and then use a tool like [Balena Etcher](https://etcher.balena.io/#download-etcher) to flash a blank card with ROCKNIX-GTK.
 1. Insert your new flashed card and hold down `Volume-Up` before the Retroid Pocket logo and release as soon as you see the sideways U-Boot logo. The GRUB menu automatically boots into ROCKNIX-GTK. (In GRUB, you can use `Volume` and `Power` buttons to boot into the standard ROCKNIX kernel.) (**Recommended:** By holding `Volume-down` at boot, you can also set the rig to [auto-boot in Rocknix](https://github.com/mercurious/etk/wiki/Using-ROCKNIX-Guide#to-always-boot-into-rocknix-as-the-default-os) instead of Android so you don't have to play race the logos every boot. You can switch back and forth between Android and ROCKNIX very easily once you get the hang of the boot interface.)
 1. Add your WiFi in network settings and enable SSH, etc. once in the ROCKNIX EmulationStation frontend.
-1. Add the PS3 firmware and a game PKG to the provided etk drop folders over SMB or SFTP: `/storage/roms/etk/firmware_drop`, `/storage/roms/etk/pkg_drop`
+1. Add the PS3 firmware and a game PKG to the provided etk drop folders, or transfer an ISO to `roms/ps3` over SMB or SFTP: `/storage/roms/etk/firmware_drop`, `/storage/roms/etk/pkg_drop`
 1. Use the [ETK Pitstop app TOOLS](https://github.com/mercurious/etk/wiki/ETK-Pitstop-App#how-to-install-ps3-games-with-the-etk) to install your staged firmware and PKG files and games will automatically appear in the ES carousel and much more.
 1. **Ready to play**…but: Beware of shader storms early on, obvious by the shader spinner overlay in the lower-left hand corner. These are one-time compiles that get stashed into your ETK shader vault. **TIPS:** Let camera pans run fully before races, visit the dealership, and let the demo replay run to pre-harvest shaders for the track. Don't expect playable performance until your shader vault is fairly saturared. You'll keep adding to it as you progress in the game. Your ETK dashboard overlay shows you new shaders as you vault them during play, showing you an attempt was productive, even if you crashed.
 ### Already have ROCKNIX installed?
@@ -119,8 +119,8 @@ irm https://raw.githubusercontent.com/mercurious/etk/main/windows_installer/get-
 - Use the provided `uninstall.sh` to remove the ETK from your system.
 
 ## Android-only Support
-No ETK or GTK features, just a house tuned Android aPS3e fork. Offers stable but low-framerates vs. ROCKNIX+GTK rig.
-- Use [aPS3e ETK-tuned](https://github.com/mercurious/aps3e/releases) or [RPCSX ETK-tuned](https://github.com/mercurious/rpcsx-ui-android/releases) for Android which backports fixes for GT related bugs in RPCS3.
+No ETK or GTK features, just a house tuned Android fork. Offers stable but low-framerates vs. ROCKNIX+GTK rig.
+- Use [aPS3e ETK-tuned](https://github.com/mercurious/aps3e/releases) for more ETK features or [RPCSX ETK-tuned](https://github.com/mercurious/rpcsx-ui-android/releases) for a more recent core. Both Android forks backport fixes for GT related bugs in RPCS3.
 - Use the latest [ETK MESA Turnip drivers](https://github.com/mercurious/aps3e/releases/tag/etk-turnip-26.1.3) for Android during the aPS3e setup wizard or configuration.
 - Use an ETK config tuning from [Tested Games](https://github.com/mercurious/etk/wiki/Tested-Games).
 - Try the ETK [Claude Code Cockpit skill](https://github.com/mercurious/etk/wiki/Claude-Cockpit-Skill) for real-time pit-engineering advice, crash forensics, tuning suggestions, track photography analysis and more. Works over USB with any Android device and USB & `ssh` on ROCKNIX.
