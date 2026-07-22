@@ -1,5 +1,5 @@
 # The Emulation Tuning Kit - GTK Edition
-The **Gran Turismo Kit** (GTK) is a specialty installation for your **Retroid Pocket Flip2 SM8250** (or [sibling device](https://github.com/mercurious/etk/#handheld-system-support)) built on patched forks of [ROCKNIX](https://github.com/mercurious/rocknix-gtk) (OS/kernel), [RCPS3](https://github.com/mercurious/etk-rpcs3-gtk) (PS3 emulator) and [MESA Turnip](https://github.com/mercurious/etk-turnip-gtk) (Adreno Vulkan video driver) integrated with a custom middleware (the **ETK**), and all of it is **specifically tuned** for the **Gran Turismo series only**. GT HD Concept, GT 5 Prologue Spec II and Spec III are supported. GT5 and GT6 support remains *pending*. Other game support is *incidental* at best. The GTK installs easy. Either flash an SD Card and boot into ROCKNIX or run an installer script from your Mac or PC if you already have it.
+The **Gran Turismo Kit** (GTK) is a specialty installation for your **Retroid Pocket Flip2 SM8250** (or [sibling device](https://github.com/mercurious/etk/#handheld-system-support)) built on patched forks of [ROCKNIX](https://github.com/mercurious/rocknix-gtk) (OS/kernel), [RCPS3](https://github.com/mercurious/etk-rpcs3-gtk) (PS3 emulator) and [MESA Turnip](https://github.com/mercurious/etk-turnip-gtk) (Adreno Vulkan video driver) integrated with a custom middleware (the **ETK**), and all of it is **specifically tuned** for the **Gran Turismo series only**. GT HD Concept, GT 5 Prologue Spec II and Spec III, and GT6 are supported. GT5 remains *pending*. Other game support is *incidental* at best. The GTK installs easy. Either flash an SD Card and boot into ROCKNIX or run an installer script from your Mac or PC if you already have it.
 
 <img src="https://raw.githubusercontent.com/mercurious/etk/main/docs/screenshots/etk_NPUA80075_20260526_132550.png" width="640"
      alt="GT5P Suzuka chase cam, blue Nissan Skyline GT-R approaching a sweeping corner, mini-map visible, position 12 of 12 lap 2 of 3." />
@@ -48,8 +48,8 @@ Every claim above is scored against the ETK telemetry ledger (1,400+ instrumente
 ## Quick Start
 ### Don’t have ROCKNIX?
 It’s easy to try out the kit with a spare SD card and USB card reader, revert back to Android, or standard ROCKNIX anytime.
-1. Download the ROCKNIX-GTK SD Card image from [releases](https://github.com/mercurious/etk/releases) and then use a tool like Balena Etcher to flash a blank card with ROCKNIX-GTK. Safe to ignore Balena validation error.
-1. Insert your new flashed card and hold down `Volume-Up` before the Retroid Pocket logo and release as soon as you see the sideways U-Boot logo. The GRUB menu automatically boots into ROCKNIX-GTK. (In GRUB, you can use `Volume` and `Power` buttons to boot into the standard ROCKNIX kernel.) (By holding Volume-down at boot, you can also set the rig to [auto-boot in Rocknix](https://github.com/mercurious/etk/wiki/Using-ROCKNIX-Guide#to-always-boot-into-rocknix-as-the-default-os) instead of Android so you don't have to play race the logos every boot.)
+1. Download the ROCKNIX-GTK SD Card image from [releases](https://github.com/mercurious/etk/releases) and then use a tool like [Balena Etcher](https://etcher.balena.io/#download-etcher) to flash a blank card with ROCKNIX-GTK.
+1. Insert your new flashed card and hold down `Volume-Up` before the Retroid Pocket logo and release as soon as you see the sideways U-Boot logo. The GRUB menu automatically boots into ROCKNIX-GTK. (In GRUB, you can use `Volume` and `Power` buttons to boot into the standard ROCKNIX kernel.) (**Recommended:** By holding `Volume-down` at boot, you can also set the rig to [auto-boot in Rocknix](https://github.com/mercurious/etk/wiki/Using-ROCKNIX-Guide#to-always-boot-into-rocknix-as-the-default-os) instead of Android so you don't have to play race the logos every boot. You can switch back and forth between Android and ROCKNIX very easily once you get the hang of the boot interface.)
 1. Add your WiFi in network settings and enable SSH, etc. once in the ROCKNIX EmulationStation frontend.
 1. Add the PS3 firmware and a game PKG to the provided etk drop folders over SMB or SFTP: `/storage/roms/etk/firmware_drop`, `/storage/roms/etk/pkg_drop`
 1. Use the [ETK Pitstop app TOOLS](https://github.com/mercurious/etk/wiki/ETK-Pitstop-App#how-to-install-ps3-games-with-the-etk) to install your staged firmware and PKG files and games will automatically appear in the ES carousel and much more.
@@ -73,9 +73,9 @@ See [Getting Started](https://github.com/mercurious/etk/#getting-started) to ins
 | ETK Screenshot | One-finger shutter screenshots with overlay | `L1` configurable in ETK Pitstop |
 | On Device Installations | One-tap, on-device firmware and game installs | Drop `.pup` in `etk/firmware_drop`, `.pkg` in `etk/pkg_drop`, open ETK Pitstop `TOOLS` tab |
 | Golden Tune Seeding | New games (including disc `.iso` copied into `roms/ps3/`) start on the ETK golden tune instead of raw RPCS3 defaults | automatic on next Pitstop open; `ETK_GOLDEN_SEED=0` in `etk.conf` to disable |
-| ISO Onboarding | Copy a disc `.iso` into `roms/ps3/` and it becomes a real ES game: launcher generated, bracketed dump names repaired (they break ROCKNIX per-game settings), ETK overlay enabled, golden tune seeded — then reboot to see it in the carousel | automatic on next Pitstop open; `ETK_ISO_ONBOARD=0` in `etk.conf` to disable |
+| ISO Onboarding | Copy a disc `.iso` into `roms/ps3/` and it becomes a real ES game: launcher generated, ETK overlay enabled and tuned | automatic on next Pitstop open; `ETK_ISO_ONBOARD=0` in `etk.conf` to disable |
 | Video Mirroring | Device screen on while USB-DisplayPort-HDMI out active | turn USB plug upside-down to solve video-out issue |
-| Flicker-free Road Surfaces | 5 year emulator old [bug](https://github.com/RPCS3/rpcs3/issues/11912) solved | perfectly rendered road surfaces |
+| Flicker-free Road Surfaces | 5 year emulator old [bug](https://github.com/RPCS3/rpcs3/issues/11912) solved with non-upstreamable patch | perfectly rendered road surfaces |
 | Audio card boot fixed | Sound works reliably vs official release | sound just works now, finally; solving race stutter is a different problem |
 
 
@@ -120,7 +120,7 @@ irm https://raw.githubusercontent.com/mercurious/etk/main/windows_installer/get-
 
 ## Android-only Support
 No ETK or GTK features, just a house tuned Android aPS3e fork. Offers stable but low-framerates vs. ROCKNIX+GTK rig.
-- Use [aPS3e ETK-tuned](https://github.com/mercurious/aps3e/releases) for Android (until main release is updated with cache fix) which backports fixes for GT related bugs in RPCS3.
+- Use [aPS3e ETK-tuned](https://github.com/mercurious/aps3e/releases) or [RPCSX ETK-tuned](https://github.com/mercurious/rpcsx-ui-android/releases) for Android which backports fixes for GT related bugs in RPCS3.
 - Use the latest [ETK MESA Turnip drivers](https://github.com/mercurious/aps3e/releases/tag/etk-turnip-26.1.3) for Android during the aPS3e setup wizard or configuration.
 - Use an ETK config tuning from [Tested Games](https://github.com/mercurious/etk/wiki/Tested-Games).
 - Try the ETK [Claude Code Cockpit skill](https://github.com/mercurious/etk/wiki/Claude-Cockpit-Skill) for real-time pit-engineering advice, crash forensics, tuning suggestions, track photography analysis and more. Works over USB with any Android device and USB & `ssh` on ROCKNIX.
