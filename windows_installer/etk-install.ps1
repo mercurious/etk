@@ -360,7 +360,13 @@ if ($Rpcs3AppImage -eq "stock") {
     if (-not (Test-Path -LiteralPath $emuLocal)) {
         Write-Note "Fetching RPCS3 GTK Edition from the latest ETK release (~78MB, one-time)..."
         try {
-            Invoke-WebRequest -Uri "$driverBase/$certRpcs3" -OutFile $emuLocal -UseBasicParsing
+            # PS 5.1's IWR progress rendering throttles large downloads
+            # brutally (and shows nothing useful under iex) — silence it
+            # for speed and print an explicit done-line instead.
+            $pp = $ProgressPreference; $ProgressPreference = 'SilentlyContinue'
+            try { Invoke-WebRequest -Uri "$driverBase/$certRpcs3" -OutFile $emuLocal -UseBasicParsing }
+            finally { $ProgressPreference = $pp }
+            Write-Note ("Downloaded {0:N1} MB." -f ((Get-Item $emuLocal).Length / 1MB))
         } catch {
             Remove-Item $emuLocal -Force -ErrorAction SilentlyContinue
             Write-Warn "Could not fetch the GTK Edition (offline or asset missing) - stock RPCS3 stays active."

@@ -131,7 +131,16 @@ function Send-File {
         [Parameter(Mandatory)][string]$RemotePath
     )
     if (-not (Test-Path -LiteralPath $LocalPath)) { throw "Local file not found: $LocalPath" }
-    & scp @ScpBase $LocalPath "$($RigSsh):$RemotePath"
+    # Big files over rig WiFi take minutes: drop the -q so scp's own
+    # progress meter shows (a silent 78 MB AppImage push reads as a hang —
+    # field-hit 2026-07-22). Small files stay quiet.
+    $opts = $ScpBase
+    $mb = (Get-Item -LiteralPath $LocalPath).Length / 1MB
+    if ($mb -gt 8) {
+        $opts = @($ScpBase | Where-Object { $_ -ne "-q" })
+        Write-Note ("Transferring {0:N1} MB to the rig (scp progress below)..." -f $mb)
+    }
+    & scp @opts $LocalPath "$($RigSsh):$RemotePath"
     if ($LASTEXITCODE -ne 0) { throw "scp '$LocalPath' -> '$RemotePath' failed (exit $LASTEXITCODE)." }
 }
 
