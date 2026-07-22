@@ -5,8 +5,18 @@
 # Everything here is host-side plumbing. No rig logic lives in this file.
 # ==========================================================
 
+# --- shared ssh/scp transport options ---
+# ConnectTimeout: a fresh TCP connect must succeed in 10 s or fail loudly —
+# without it, an SM8250.local mDNS stall or a rig WiFi nap (the known iwd
+# churn) hangs a step indefinitely (field-hit 2026-07-22: install froze at
+# step 0 with the connection test having passed moments earlier).
+# ServerAlive*: an ESTABLISHED session that goes quiet dies in ~15 s
+# instead of hanging a mid-step transfer forever.
+$script:SshBase = @("-o","ConnectTimeout=10",
+                    "-o","ServerAliveInterval=5","-o","ServerAliveCountMax=3")
+
 # --- scp argument base, derived from env toggles ---
-$script:ScpBase = @()
+$script:ScpBase = @() + $script:SshBase
 if ($EtkScpLegacy -eq "1") { $script:ScpBase += "-O" }
 if ($EtkVerbose   -eq "1") { $script:ScpBase += "-v" } else { $script:ScpBase += "-q" }
 
@@ -46,7 +56,7 @@ function Invoke-Rig {
     # Strip CR so multi-line remote commands run; single-line commands are
     # unaffected. (Send-Text/Invoke-RigBash already LF-normalise via temp file.)
     $Command = $Command -replace "`r", ""
-    return (& ssh $RigSsh $Command)
+    return (& ssh @SshBase $RigSsh $Command)
 }
 
 # --- normalise text to LF + UTF8-no-BOM in a local temp file; return its path ---
@@ -72,7 +82,7 @@ function Send-Text {
     } finally {
         Remove-Item $tmp -Force -ErrorAction SilentlyContinue
     }
-    if ($Executable) { & ssh $RigSsh "chmod +x '$RemotePath'" | Out-Null }
+    if ($Executable) { & ssh @SshBase $RigSsh "chmod +x '$RemotePath'" | Out-Null }
 }
 
 # --- push a real local file to a remote path ---
@@ -96,7 +106,7 @@ function Push-Dir {
     )
     if (-not (Test-Path -LiteralPath $LocalDir)) { throw "Local directory not found: $LocalDir" }
     $leaf = Split-Path $LocalDir -Leaf
-    if ($Mirror) { & ssh $RigSsh "rm -rf '$RemoteParent/$leaf'" | Out-Null }
+    if ($Mirror) { & ssh @SshBase $RigSsh "rm -rf '$RemoteParent/$leaf'" | Out-Null }
     & scp @ScpBase -r $LocalDir "$($RigSsh):$RemoteParent/"
     if ($LASTEXITCODE -ne 0) { throw "scp -r '$LocalDir' failed (exit $LASTEXITCODE)." }
 }
@@ -119,9 +129,9 @@ function Invoke-RigBash {
     }
     $prefix = ""
     if ($EnvVars) { foreach ($k in $EnvVars.Keys) { $prefix += ("{0}='{1}' " -f $k, $EnvVars[$k]) } }
-    $out = & ssh $RigSsh ("{0}bash {1}" -f $prefix, $remote)
+    $out = & ssh @SshBase $RigSsh ("{0}bash {1}" -f $prefix, $remote)
     $rc = $LASTEXITCODE
-    & ssh $RigSsh "rm -f $remote" | Out-Null
+    & ssh @SshBase $RigSsh "rm -f $remote" | Out-Null
     if ($rc -ne 0) { Write-Warn "Remote block exited with code $rc." }
     return $out
 }
