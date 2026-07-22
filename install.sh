@@ -1350,20 +1350,32 @@ rm -f /storage/rocknix-gtk.KERNEL.staging
 # fallback entry boots it with the verbose forensic console.
 [ -f /flash/KERNEL.etk-stock ] || cp /flash/KERNEL /flash/KERNEL.etk-stock
 K_STOCK_CMDLINE="boot=LABEL=ROCKNIX disk=LABEL=STORAGE grub_portable rootwait console=tty0 loglevel=7 panic=30"
+# SD-card boot cmdlines — LOCKSTEP with os-install/build/build_gtk_image_v2.sh
+# (the card's own grub entries): unique labels ROCKNIX-GTK/GTKSTOR locate the
+# GTK card unambiguously next to the UFS install (the split-brain cure).
+# keepalive is baked unconditionally: these lines only ever boot the GTK card
+# kernel, which always wants it.
+K_SD_CMDLINE="boot=LABEL=ROCKNIX-GTK disk=LABEL=GTKSTOR grub_portable rootwait console=tty0 quiet loglevel=3 panic=30 msm.context_keepalive=1"
+K_SD_CMDLINE_VERBOSE="boot=LABEL=ROCKNIX-GTK disk=LABEL=GTKSTOR grub_portable rootwait console=tty0 loglevel=7 panic=30 msm.context_keepalive=1"
 TS=$(date +%Y%m%d_%H%M%S)
 for CFG in /flash/EFI/BOOT/grub.cfg /flash/boot/grub/grub.cfg; do
     [ -f "$CFG" ] || continue
     cp "$CFG" "$CFG.etkbak-$TS"
-    # Strip any prior etk-managed blocks (primary + verbose + fallback), then
-    # trailing blanks. Matcher broadened to 'etk-gtk' so the verbose entry
-    # (etk-gtk-verbose) is refreshed/removed too.
+    # Strip any prior etk-managed blocks (primary + verbose + fallback +
+    # sdcard entries, their comment line, and the `set fallback=` global),
+    # then trailing blanks.
     awk '
-        (index($0,"etk-gtk") || index($0,"etk-fallback")) && /menuentry/ {inblk=1; next}
+        (index($0,"etk-gtk") || index($0,"etk-fallback") || index($0,"etk-sdcard")) && /menuentry/ {inblk=1; next}
         inblk && /^}/ {inblk=0; next}
-        !inblk {print}
+        inblk {next}
+        /^# etk-sdcard/ {next}
+        /^set fallback=/ {next}
+        {print}
     ' "$CFG" | awk 'NF{last=NR} {ln[NR]=$0} END{for(i=1;i<=last;i++)print ln[i]}' > "$CFG.stripped"
-    # Build the three managed entries: primary (QUIET, the default boot),
-    # verbose twin, then the stock-kernel fallback.
+    # Build the managed entries: primary (QUIET, the default boot), verbose
+    # twin, the stock-kernel fallback, then the SD-card dual-mode pair
+    # (spike-validated 2026-07-22, v5 protocol; slim grub has NO echo and NO
+    # configfile — only search/linux/devicetree/if/savedefault/save_env).
     {
         printf "menuentry 'ROCKNIX-GTK for Flip 2' \$menuentry_id_option 'etk-gtk-test' {\n"
         [ "$K_MODE" = "default" ] && printf '        savedefault\n'
@@ -1381,6 +1393,38 @@ for CFG in /flash/EFI/BOOT/grub.cfg /flash/boot/grub/grub.cfg; do
         printf '        search --set -f /KERNEL.etk-stock\n'
         printf '        linux /KERNEL.etk-stock %s\n' "$K_STOCK_CMDLINE"
         printf '        devicetree %s\n' "$FLIP2_DTB"
+        printf '}\n'
+        # SD-card dual-mode pair. The if-gate is LOAD-BEARING: a failed grub
+        # command does not abort a menuentry, and /KERNEL.gtktest exists on
+        # the UFS ESP too — ungated, a card-out boot loads the UFS kernel
+        # with the card cmdline and hangs at kernel level (spike v3 lesson).
+        # savedefault only in the card branch + the else-branch save_env heal
+        # give: pick sticks while the card is in; card-out costs ONE detour
+        # boot that restores the internal default (spike v5, operator-passed).
+        printf '# etk-sdcard entries (managed): SD boot, pick-persistent, self-healing\n'
+        printf "set fallback='etk-gtk-test'\n"
+        printf "menuentry 'ROCKNIX-GTK from SD card' \$menuentry_id_option 'etk-sdcard' {\n"
+        printf '        if search --set=root --label ROCKNIX-GTK --no-floppy; then\n'
+        printf '                savedefault\n'
+        printf '                linux /KERNEL.gtktest %s\n' "$K_SD_CMDLINE"
+        printf '                devicetree %s\n' "$FLIP2_DTB"
+        printf '        else\n'
+        printf "                set saved_entry='etk-gtk-test'\n"
+        printf '                save_env saved_entry\n'
+        printf '                search --set=root --label ROCKNIX --no-floppy\n'
+        printf '                linux /KERNEL.gtktest %s\n' "$K_CMDLINE_QUIET"
+        printf '                devicetree %s\n' "$FLIP2_DTB"
+        printf '        fi\n'
+        printf '}\n'
+        printf "menuentry 'ROCKNIX-GTK from SD card (verbose)' \$menuentry_id_option 'etk-sdcard-verbose' {\n"
+        printf '        if search --set=root --label ROCKNIX-GTK --no-floppy; then\n'
+        printf '                linux /KERNEL.gtktest %s\n' "$K_SD_CMDLINE_VERBOSE"
+        printf '                devicetree %s\n' "$FLIP2_DTB"
+        printf '        else\n'
+        printf '                search --set=root --label ROCKNIX --no-floppy\n'
+        printf '                linux /KERNEL.gtktest %s\n' "$K_CMDLINE"
+        printf '                devicetree %s\n' "$FLIP2_DTB"
+        printf '        fi\n'
         printf '}\n'
     } > "$CFG.etkblock"
     # Insert the ETK block BEFORE the first existing menuentry so ROCKNIX-GTK

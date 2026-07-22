@@ -274,13 +274,16 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
         for CFG in /flash/EFI/BOOT/grub.cfg /flash/boot/grub/grub.cfg; do
             [ -f "$CFG" ] || continue
             awk '
-                (index($0,"etk-gtk") || index($0,"etk-fallback")) && /menuentry/ {inblk=1; next}
+                (index($0,"etk-gtk") || index($0,"etk-fallback") || index($0,"etk-sdcard")) && /menuentry/ {inblk=1; next}
                 inblk && /^}/ {inblk=0; next}
-                !inblk {print}
+                inblk {next}
+                /^# etk-sdcard/ {next}
+                /^set fallback=/ {next}
+                {print}
             ' "$CFG" > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"
         done
         for GE in /flash/EFI/BOOT/grubenv /flash/boot/grub/grubenv; do
-            if grep -q 'saved_entry=etk-gtk-test' "$GE" 2>/dev/null; then
+            if grep -qE 'saved_entry=(etk-gtk-test|etk-sdcard)' "$GE" 2>/dev/null; then
                 printf '# GRUB Environment Block\nsaved_entry=rpflip2\n' > "$GE.tmp"
                 N=$(wc -c < "$GE.tmp")
                 dd if=/dev/zero bs=1 count=$((1024 - N)) 2>/dev/null | tr '\0' '#' >> "$GE.tmp"
