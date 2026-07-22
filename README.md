@@ -19,7 +19,7 @@ House developed Gran Turismo-specific bug fixes and special tunings to the emula
 | Android | arm64 | Adreno 650/Mesa Turnip | aPS3e | ETK-tuned fork | [.apk](https://github.com/mercurious/aps3e/releases/) | [repo](https://github.com/mercurious/aps3e) | Shader Manager, Claude [Cockpit Skill](https://github.com/mercurious/etk/wiki/Claude-Cockpit-Skill) support |
 | Android | arm64 | Adreno 650/Mesa Turnip | RPCSX | ETK-tuned fork of a fork | UI [.apk](https://github.com/mercurious/rpcsx-ui-android/releases)<br> core [.so](https://github.com/mercurious/rpcsx/releases) | [UI](https://github.com/mercurious/rpcsx-ui-android/) [core](https://github.com/mercurious/rpcsx/)<br> | overlay fixes, GT bug fixes but road surface renders as checkerboard which needs fixing |
 | macOS | arm64 | Apple M1 Metal/MoltenVK | RPCS3 | ETK-tuned fork | [.app](https://github.com/mercurious/etk-rpcs3-gtk/releases/tag/gtk-edition-0.6.0-macos) | [repo](https://github.com/mercurious/etk-rpcs3-gtk) | none, just GT bug fixes |
-| ROCKNIX | arm64 (SM8250) | Adreno 650/Mesa Turnip | RPCS3 | ROCKNIX-GTK fork | [.img.gz](https://github.com/mercurious/etk/releases/tag/v0.7.0) | [repo](https://github.com/mercurious/etk-rpcs3-gtk) | **complete**🏁  |
+| ROCKNIX | arm64 (SM8250) | Adreno 650/Mesa Turnip | RPCS3 | ROCKNIX-GTK fork | [.img.gz](https://github.com/mercurious/etk/releases/latest) | [repo](https://github.com/mercurious/etk-rpcs3-gtk) | **complete**🏁  |
 | Windows | x64 | AMD Radeon RDNA/2/native Vulkan | RPCS3 | ETK-tuned fork | [.exe](https://github.com/mercurious/etk-rpcs3-gtk/releases/tag/gtk-edition-0.6.0-windows) | [repo](https://github.com/mercurious/etk-rpcs3-gtk) | none, just GT bug fixes |
   
 
@@ -29,6 +29,21 @@ House developed Gran Turismo-specific bug fixes and special tunings to the emula
 2. **CRASH PREVENTION:** By forking and patching the entire stack on the device, we were able to cross-integrate the OS to the emulator with the video driver as a single “chassis” and wire it to the native MangoHUD overlay so you can see in real-time an alert when you’ve just been rescued from a GPU wedge crash `|·«!»·|`. The same GTK ANTI-LOCK gauge keeps a live counter `|·×03·|` for the current boot so you know when it’s time to refresh the rig with a reboot. This “anti-lock” system emulates how Android provides a similar level of stability, enabling the Adreno Kernel Graphics Support Layer (KGSL) but running on the bare metal of linux opens up tremendous performance headroom by comparison.
 3. **BUGS FIXED:** Owning the chassis allowed us to fix the stubborn “road flicker” [bug](https://github.com/RPCS3/rpcs3/issues/11912) that affects GT5P on all platforms, solved a glitchy audio card boot sequence in ROCKNIX, and more.
 4. **FEATURES ADDED:** We’ve added new core capabilities to the device such as video mirroring, easy firmware & package install, advanced shader management, on-device tuning down to the overclock and Turnip dials, advanced trigger calibration for the top-end, and an advanced telemetry UI/UX to inform your tuning choices.
+
+## Dyno-Proven
+Every claim above is scored against the ETK telemetry ledger (1,400+ instrumented sessions on the reference rig) — not vibes.
+
+<img src="https://raw.githubusercontent.com/mercurious/etk/main/docs/charts/anti-lock.png" width="720" alt="Stacked weekly bars of Adreno GPU wedges: before v0.7.0 every wedge required a human recovery button press; after anti-lock went default-on, 69% are absorbed automatically and total wedges fall week over week." />
+
+*The GTK Anti-Lock flagship: before v0.7.0, every GPU wedge ended with a human pressing the panic chord. Since: 69% absorbed automatically — and total wedges are falling as the next-generation nets land.*
+
+<img src="https://raw.githubusercontent.com/mercurious/etk/main/docs/charts/session-survival.png" width="720" alt="Median racing-session duration per 5-day bucket rising from about 3 minutes to over 11 minutes across the release timeline, with the 90th-percentile ceiling rising from 7 to 22 minutes." />
+
+*Sessions keep getting longer: median race session up ~3× across the campaign, ceiling up ~3× with it.*
+
+<img src="https://raw.githubusercontent.com/mercurious/etk/main/docs/charts/kers.png" width="720" alt="Two equal bars comparing stock ROCKNIX and ROCKNIX-GTK on the same hardware: stock burns 38% of CPU cycles as hatched waste; GTK shows the same span as four colored segments recovered by the four KERS units." />
+
+*GTK KERS (Kinetic Emulation Recovery System): the in-race profiler found ≈38% of all CPU cycles burning in spins, polls and fault storms — four named thieves, four shipped fixes, same hardware.*
 
 ## Quick Start
 ### Don’t have ROCKNIX?
@@ -47,6 +62,8 @@ See [Getting Started](https://github.com/mercurious/etk/#getting-started) to ins
 |---|---|---|
 | GTK Anti-Lock | Automatic live recovery of GPU wedge crashes | overlay gauge `·«!»·` `·×03·` |
 | GTK Turnip Traction Control | Automatic "limited-slip-differential" holds the Adrendo GPU down | overlay gauge `++···` `=====` |
+| GTK KERS | **K**inetic **E**mulation **R**ecovery **S**ystem — recovers CPU cycles lost to spins, polls and fault storms (≈38% measured) and puts them back into frames | dyno-proven: in-race profiler + telemetry ledger |
+| ETK Self-Update | Update the kit from the couch — no computer needed | ETK Pitstop `TOOLS` → Check for ETK Updates |
 | G-INSTR Telemetry | Animated jitter gauge in HUD | overlay gauge `··2»»` |
 | VAULT + PADDOCK | Advanced shader protection and management | overlay gauge `2+ 34.5k 167MB` |
 | Thermal Guard | Automatically protect silicon from overheats | overlay gauge `89°HOT»»»`  |
@@ -79,7 +96,7 @@ The GTK fork was built from **ROCKNIX official release `20260701`**
 |---|---|
 | Host System | macOS or Linux native, Windows support via img flash, WLS, [PowerShell Port](https://github.com/mercurious/etk/tree/main/windows_installer) |
 | OS | ROCKNIX-GTK |
-| Emulator | RPCS3 **GTK Edition** |
+| Emulator | RPCS3 **GTK Edition** v0.7.5 |
 | Driver | MESA Turnip 26.1.3 **GTK** |
 
 ## Getting Started

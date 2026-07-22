@@ -366,8 +366,8 @@ else {
 # overwritten. RPCS3REMOTE body verbatim.
 # ==========================================================
 Write-Step 6 $TOTAL "STEP 6.55: RPCS3 GTK EDITION (default emulator)..."
-$certRpcs3    = "rpcs3-etk_gtk-edition-0.7.0_v0.0.41-19544-60c9705a_linux_aarch64.AppImage"  # lockstep with install.sh CERT_RPCS3
-$certRpcs3Sha = "9fb5ee2e9fbecc3a66f295503cf558881a24d1b54f7777e93a9ab69eca8f7153"
+$certRpcs3    = "rpcs3-etk_gtk-edition-0.7.5_v0.0.41-19544-60c9705a_linux_aarch64.AppImage"  # lockstep with install.sh CERT_RPCS3
+$certRpcs3Sha = "c464771932da20064f0942fc61f22df9d6e67bc52893f319d5d02cde1eaae02d"
 $rpcs3StageSrc = $null
 if ($Rpcs3AppImage -eq "stock") {
     Write-Note "RPCS3: stock ROCKNIX build selected (etk-env.ps1 opt-out)."

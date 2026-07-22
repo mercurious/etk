@@ -106,9 +106,10 @@ PIT_NOTE_FILE = os.environ.get('PIT_NOTE_FILE', f"{TELEMETRY_DIR}/pit_note.txt")
 CONFIG_CHANGES_HEADER = "epoch\tgame_id\tfield_label\told_value\tnew_value\n"
 
 # The single user-facing version in the title bar ("// ETK PITSTOP vX //").
-# The GTK Edition stack version was dropped from the header for 0.7.1 —
-# the DRIVER tab names the actually-bound builds, which is the honest one.
-APP_VERSION = "0.7.2"
+# ALIGNED TO THE RELEASE TAG at every cut (load-bearing since 0.8.0: the
+# TOOLS self-update compares this against the latest GitHub release tag).
+# The DRIVER tab names the actually-bound stack builds.
+APP_VERSION = "0.8.0"
 
 # DRIVER tab (Turnip env-var dials). These are NOT RPCS3 config keys — they
 # inject through the proven profile.d path (same mechanism as 098-etk-stage3),
