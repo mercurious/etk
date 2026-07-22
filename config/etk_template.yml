@@ -57,7 +57,7 @@ Core:
   Precise SPU Verification: false
   Preferred SPU Threads: 3
   RSX FIFO Fetch Accuracy: Atomic
-  SPU Block Size: Mega
+  SPU Block Size: Safe
   SPU Cache: true
   SPU Debug: false
   SPU Decoder: Recompiler (LLVM)
@@ -237,7 +237,7 @@ Video:
   Relaxed ZCULL Sync: false
   Renderdoc Compatibility Mode: false
   Renderer: Vulkan
-  Resolution: 720x480
+  Resolution: 1280x720
   Resolution Scale: 100
   Screen size in inches: 24
   Second Frame Limit: 0

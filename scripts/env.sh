@@ -32,9 +32,10 @@ export VAULT_SYNC="${VAULT_SYNC:-full}"
 # (game native on handheld, small GPU/FPS cost); 0 = record-only (game native on
 # the external/capture output, NO wl-mirror = no FPS cost, handheld idle).
 export ETK_DP_MIRROR="${ETK_DP_MIRROR:-1}"
-# HUD instrument set (mango_bridge.sh body): BASIC = TEMP|LOAD|RAM%|shaders;
-# GINSTR = TEMP|TURBO|SLIP|shaders (swap LOAD+RAM for live frame-pacing gauges).
-export ETK_HUD_MODE="${ETK_HUD_MODE:-BASIC}"
+# HUD instrument set (mango_bridge.sh body): GINSTR (default since 0.7.x) =
+# TEMP|JTTR|SLIP|shaders live frame-pacing gauges; BASIC = the simple set,
+# TEMP|LOAD|RAM%|shaders.
+export ETK_HUD_MODE="${ETK_HUD_MODE:-GINSTR}"
 # Golden-default config seeding (0.7.1, default-ON): Pitstop seeds
 # custom_configs/config_<ID>.yml from the ETK golden template for any
 # playable title that has none, so a new game's first launch never runs
