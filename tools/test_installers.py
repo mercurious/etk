@@ -37,6 +37,7 @@ spec.loader.exec_module(pit)
 
 # Always wrap the PRISTINE Popen — wrapping a wrapper nests and mangles argv.
 REAL_POPEN = subprocess.Popen
+REAL_SDL_NAMES = pit._sdl_gamepad_names
 FAILS = []
 
 
@@ -453,6 +454,136 @@ def run(mode, tmp, **kw):
     ok, lines = pit._run_install(pkg, raps, n)
     return ok, lines, cfg, bios, etk, pkg, raps
 
+
+print("\n[9] pad binding repair (ROCKNIX ships a device that does not exist)")
+# The stock ROCKNIX pad config, verbatim head from /usr/config/rpcs3/
+# input_configs/global/Default.yml on the rig (2026-07-24). "InputPlumber
+# GameController 1" is the OLD Xbox-style virtual pad; InputPlumber now targets
+# a DualSense, so RPCS3 matches nothing and falls back to NullPadHandler
+# (pad_thread.cpp:206) — pad completely dead in game.
+STOCK_PAD = """Player 1 Input:
+  Handler: SDL
+  Device: InputPlumber GameController 1
+  Config:
+    Left Stick Left: LS X-
+    Cross: South
+    Left Trigger Threshold: 25
+    Right Trigger Threshold: 25
+    Left Stick Deadzone: 8000
+Player 2 Input:
+  Handler: Null
+  Device: Null
+  Config:
+    Left Stick Left: ""
+"""
+
+
+def pad_rig(tmp, text=STOCK_PAD, names=("DualSense Wireless Controller 1",),
+            running=False):
+    cfgp = os.path.join(tmp, "Default.yml")
+    open(cfgp, "w").write(text)
+    pit.RPCS3_PAD_CONFIG = cfgp
+    pit._sdl_gamepad_names = lambda: list(names)
+    pit._rpcs3_running = lambda: running
+    return cfgp
+
+
+tmp = tempfile.mkdtemp()
+try:
+    cfgp = pad_rig(tmp)
+    check("reads the stale device",
+          pit._pad_player1(["Handler", "Device"]),
+          {"Handler": "SDL", "Device": "InputPlumber GameController 1"})
+
+    note = pit._ensure_pad_binding()
+    body = open(cfgp).read()
+    check("repair reported", any("DualSense Wireless Controller 1" in l for l in note), True)
+    check("Device rewritten",
+          pit._pad_player1(["Device"])["Device"], "DualSense Wireless Controller 1")
+    check("indentation preserved",
+          "  Device: DualSense Wireless Controller 1\n" in body, True)
+    # The rest of the file is the operator's: trigger cal, deadzones, buttons.
+    check("trigger calibration untouched", "Left Trigger Threshold: 25" in body, True)
+    check("button map untouched", "Cross: South" in body, True)
+    check("deadzone untouched", "Left Stick Deadzone: 8000" in body, True)
+    check("Player 2 block untouched",
+          "Player 2 Input:\n  Handler: Null\n  Device: Null\n" in body, True)
+    check("only ONE Device line changed", body.count("Device:"), 2)
+
+    # Idempotent: a correct config is left completely alone.
+    before = open(cfgp).read()
+    check("second run is silent", pit._ensure_pad_binding(), [])
+    check("second run byte-identical", open(cfgp).read(), before)
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+
+print("\n[9b] pad binding: refuses to guess")
+tmp = tempfile.mkdtemp()
+try:
+    # No pad attached / SDL unavailable -> we have no better name, so do nothing.
+    cfgp = pad_rig(tmp, names=())
+    check("no SDL names -> no change", pit._ensure_pad_binding(), [])
+    check("config untouched",
+          pit._pad_player1(["Device"])["Device"], "InputPlumber GameController 1")
+
+    # RPCS3 running -> it rewrites this file on exit, so a write now vanishes.
+    cfgp = pad_rig(tmp, running=True)
+    check("RPCS3 running -> no change", pit._ensure_pad_binding(), [])
+    check("config untouched while running",
+          pit._pad_player1(["Device"])["Device"], "InputPlumber GameController 1")
+
+    # A non-SDL handler uses a different naming scheme; leave the operator's.
+    cfgp = pad_rig(tmp, text=STOCK_PAD.replace("Handler: SDL", "Handler: Evdev", 1),
+                   running=False)
+    check("non-SDL handler left alone", pit._ensure_pad_binding(), [])
+
+    # Already correct, but with a SECOND identical pad attached.
+    cfgp = pad_rig(tmp, text=STOCK_PAD.replace(
+        "InputPlumber GameController 1", "DualSense Wireless Controller 2", 1),
+        names=("DualSense Wireless Controller 1", "DualSense Wireless Controller 2"))
+    check("player on pad 2 of 2 left alone", pit._ensure_pad_binding(), [])
+
+    # No pad config at all (fresh rig before RPCS3 ever ran).
+    pit.RPCS3_PAD_CONFIG = os.path.join(tmp, "nope.yml")
+    check("missing config -> silent", pit._ensure_pad_binding(), [])
+
+    # Kill-switch (ETK_PAD_BIND=0) must leave a broken config exactly as-is.
+    cfgp = pad_rig(tmp)
+    pit.PAD_BIND_ENABLED = False
+    try:
+        check("kill-switch -> no repair", pit._ensure_pad_binding(), [])
+        check("kill-switch -> config untouched",
+              pit._pad_player1(["Device"])["Device"], "InputPlumber GameController 1")
+    finally:
+        pit.PAD_BIND_ENABLED = True
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+
+print("\n[9c] SDL name -> RPCS3 device string (the ' <N>' counter)")
+def fake_probe(stdout, rc=0):
+    """Drive the REAL _sdl_gamepad_names with a canned SDL probe result."""
+    class R:
+        returncode = rc
+    R.stdout = stdout
+    R.stderr = ""
+    pit.subprocess.run = lambda *a, **k: R
+    return REAL_SDL_NAMES
+
+
+saved_run = pit.subprocess.run
+try:
+    f = fake_probe("DualSense Wireless Controller\n")
+    check("single pad -> ' 1'", f(), ["DualSense Wireless Controller 1"])
+    f = fake_probe("DualSense Wireless Controller\nDualSense Wireless Controller\n")
+    check("two identical pads -> ' 1', ' 2'", f(),
+          ["DualSense Wireless Controller 1", "DualSense Wireless Controller 2"])
+    f = fake_probe("Xbox 360 Controller\nDualSense Wireless Controller\n")
+    check("mixed pads keep order + own counters", f(),
+          ["Xbox 360 Controller 1", "DualSense Wireless Controller 1"])
+    f = fake_probe("", rc=2)
+    check("probe failure -> empty (never guesses)", f(), [])
+finally:
+    pit.subprocess.run = saved_run
 
 print("\n[E2E-1] happy path on a FRESH rig (links absent, rpcs3 exits 143)")
 tmp = tempfile.mkdtemp()

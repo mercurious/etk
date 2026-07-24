@@ -108,7 +108,7 @@ CONFIG_CHANGES_HEADER = "epoch\tgame_id\tfield_label\told_value\tnew_value\n"
 # ALIGNED TO THE RELEASE TAG at every cut (load-bearing since 0.8.0: the
 # TOOLS self-update compares this against the latest GitHub release tag).
 # The DRIVER tab names the actually-bound stack builds.
-APP_VERSION = "0.8.1"
+APP_VERSION = "0.8.2"
 
 # DRIVER tab (Turnip env-var dials). These are NOT RPCS3 config keys — they
 # inject through the proven profile.d path (same mechanism as 098-etk-stage3),
@@ -202,6 +202,13 @@ RPCS3_CFG_GAME_DIR = os.environ.get(
 RPCS3_CFG_EXDATA_DIR = os.environ.get(
     'RPCS3_CFG_EXDATA_DIR',
     '/storage/.config/rpcs3/dev_hdd0/home/00000001/exdata')
+# RPCS3's pad config. NOT one of the four folders start_rpcs3.sh symlinks, so
+# it stays in the config dir. Read+written by the TRIGGER CALIBRATION screen
+# and by the pad-binding repair (see _ensure_pad_binding) — both edit single
+# lines in place, never rewrite the file, so they cannot clobber each other.
+RPCS3_PAD_CONFIG = os.environ.get(
+    'RPCS3_PAD_CONFIG',
+    '/storage/.config/rpcs3/input_configs/global/Default.yml')
 PKG_STAGING_DIR = os.environ.get(
     'PKG_STAGING_DIR', f"{os.environ.get('ETK_ROOT', '/storage/games-internal/roms/etk')}/pkg_install_drop")
 # Firmware drop folder — the user places the official Sony PS3UPDAT.PUP here.
@@ -228,6 +235,11 @@ GOLDEN_SEED_ENABLED = os.environ.get('ETK_GOLDEN_SEED', '1').strip() != '0'
 # setting including the MangoHud overlay. The startup sweep fixes both
 # and seeds the golden config from the filename serial.
 ISO_ONBOARD_ENABLED = os.environ.get('ETK_ISO_ONBOARD', '1').strip() != '0'
+# Controller binding repair (0.8.2, default-ON; env.sh exports the etk.conf
+# kill-switch ETK_PAD_BIND=0). ROCKNIX's stock RPCS3 pad config names a
+# virtual device InputPlumber no longer presents, which leaves RPCS3 on
+# NullPadHandler — a dead controller with no on-screen clue.
+PAD_BIND_ENABLED = os.environ.get('ETK_PAD_BIND', '1').strip() != '0'
 ROCKNIX_SYSTEM_CFG = os.environ.get(
     'ROCKNIX_SYSTEM_CFG', '/storage/.config/system/configs/system.cfg')
 SHM_DIR = os.environ.get('SHM_DIR', '/dev/shm/etk_shm')
@@ -3281,6 +3293,183 @@ def _ensure_rpcs3_storage_links(notify=None):
     return warn
 
 
+# --- RPCS3 pad binding (device-name drift repair) -----------
+# ROCKNIX ships RPCS3 a stock pad config naming `InputPlumber GameController 1`
+# — the Xbox-style virtual pad InputPlumber used to expose. It now targets a
+# DualSense instead (uhid 054C:0CE6), so on a Flip 2 that name matches NOTHING.
+# RPCS3 does not shrug this off: pad_thread.cpp:206 fails the bind and falls
+# back to NullPadHandler, i.e. the controller is completely dead in game, and
+# the only clue is one line in RPCS3.log. Reported from the field 2026-07-24.
+#
+# The name RPCS3 wants is "<SDL_GetGamepadName()> <N>" (sdl_pad_handler.cpp:412,
+# N = 1-based count of same-named devices). Rather than hard-code a string —
+# hard-coding a device name is what broke this in the first place — ask the
+# rig's own SDL at run time and write back whatever it reports.
+_SDL_NAME_PROBE = r'''
+import ctypes, os, sys
+os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+sdl = None
+for cand in ("libSDL3.so.0", "/usr/lib/libSDL3.so.0", "/usr/lib/libSDL3.so"):
+    try:
+        sdl = ctypes.CDLL(cand); break
+    except OSError:
+        pass
+if sdl is None:
+    sys.exit(2)
+sdl.SDL_Init.restype = ctypes.c_bool
+sdl.SDL_GetGamepads.restype = ctypes.POINTER(ctypes.c_uint32)
+sdl.SDL_GetGamepads.argtypes = [ctypes.POINTER(ctypes.c_int)]
+sdl.SDL_OpenGamepad.restype = ctypes.c_void_p
+sdl.SDL_OpenGamepad.argtypes = [ctypes.c_uint32]
+sdl.SDL_GetGamepadName.restype = ctypes.c_char_p
+sdl.SDL_GetGamepadName.argtypes = [ctypes.c_void_p]
+if not sdl.SDL_Init(0x2000):          # SDL_INIT_GAMEPAD
+    sys.exit(3)
+n = ctypes.c_int(0)
+ids = sdl.SDL_GetGamepads(ctypes.byref(n))
+for i in range(n.value):
+    gp = sdl.SDL_OpenGamepad(ids[i])
+    nm = sdl.SDL_GetGamepadName(gp) if gp else None
+    if nm:
+        sys.stdout.write(nm.decode("utf-8", "replace") + "\n")
+'''
+
+
+def _sdl_gamepad_names():
+    """Device names RPCS3's SDL pad handler will enumerate, in order — i.e.
+    ["DualSense Wireless Controller 1", ...]. [] if SDL can't tell us.
+
+    Runs in a SUBPROCESS on purpose. SDL's DS5 driver opens /dev/hidraw and
+    writes feature reports to put the controller into full report mode; doing
+    that inside Pitstop would disturb the pad the operator is holding (Pitstop
+    reads the same device over raw evdev). A child process hands every bit of
+    that state back to the kernel when it exits."""
+    try:
+        r = subprocess.run([sys.executable, "-c", _SDL_NAME_PROBE],
+                           capture_output=True, text=True, timeout=20)
+    except Exception as e:
+        _log(f"sdl gamepad probe failed: {e}")
+        return []
+    if r.returncode != 0:
+        _log(f"sdl gamepad probe rc={r.returncode}: {(r.stderr or '')[:120]}")
+        return []
+    seen = {}
+    out = []
+    for raw in r.stdout.splitlines():
+        nm = raw.strip()
+        if not nm:
+            continue
+        seen[nm] = seen.get(nm, 0) + 1          # RPCS3's same-name counter
+        out.append(f"{nm} {seen[nm]}")
+    return out
+
+
+def _pad_player1(keys):
+    """Values of `keys` from Player 1's block in RPCS3_PAD_CONFIG.
+    Player 1 is the FIRST top-level section; scanning stops at the next
+    column-0 header so the Null pads 2-7 are never read (the trigger-cal
+    screen's FIX 5 section gate, same idiom)."""
+    got = {k: None for k in keys}
+    try:
+        with open(RPCS3_PAD_CONFIG) as f:
+            lines = f.readlines()
+    except OSError:
+        return got
+    in_p1 = False
+    for ln in lines:
+        if ln and ln[0] not in " \t" and ln.rstrip().endswith(":"):
+            if in_p1:
+                break
+            in_p1 = True
+            continue
+        if not in_p1:
+            continue
+        s = ln.strip()
+        for k in keys:
+            if s.startswith(k + ":"):
+                got[k] = s.split(":", 1)[1].strip().strip('"')
+    return got
+
+
+def _pad_write_device(name):
+    """Rewrite ONLY Player 1's `Device:` line, preserving its indentation and
+    every other line in the file — the operator's trigger calibration, dead
+    zones and button map all live here. Atomic tmp+replace (H2), verified by
+    read-back. Returns True on success."""
+    try:
+        with open(RPCS3_PAD_CONFIG) as f:
+            lines = f.readlines()
+    except OSError as e:
+        _log(f"pad config read failed: {e}")
+        return False
+    out, in_p1, done = [], False, False
+    for ln in lines:
+        if ln and ln[0] not in " \t" and ln.rstrip().endswith(":"):
+            if in_p1:
+                in_p1 = False       # past Player 1; copy the rest verbatim
+            elif not done:
+                in_p1 = True
+            out.append(ln)
+            continue
+        if in_p1 and not done and ln.strip().startswith("Device:"):
+            indent = ln[:len(ln) - len(ln.lstrip())]
+            out.append(f"{indent}Device: {name}\n")
+            done = True
+            continue
+        out.append(ln)
+    if not done:
+        _log("pad config: no Device: line in the Player 1 block")
+        return False
+    try:
+        tmp = RPCS3_PAD_CONFIG + ".etk.tmp"
+        with open(tmp, "w") as f:
+            f.writelines(out)
+        os.replace(tmp, RPCS3_PAD_CONFIG)
+    except Exception as e:
+        _log(f"pad config write failed: {e}")
+        return False
+    return _pad_player1(["Device"]).get("Device") == name
+
+
+def _ensure_pad_binding(notify=None):
+    """Point RPCS3's Player 1 at a controller that actually exists.
+
+    Returns a list of report lines (empty = nothing to say). Fail-soft
+    throughout: this must never block an install, and it never touches a
+    config whose device is already valid."""
+    if not PAD_BIND_ENABLED:
+        return []
+    cur = _pad_player1(["Handler", "Device"])
+    handler, device = cur.get("Handler"), cur.get("Device")
+    if not handler:
+        return []                                  # no pad config yet
+    if str(handler).strip().upper() != "SDL":
+        # Only the SDL handler uses the "<SDL name> <N>" scheme. An operator
+        # who has deliberately moved to Evdev/DualSense owns their binding.
+        return []
+    if _rpcs3_running():
+        return []                                  # RPCS3 rewrites this on exit
+    names = _sdl_gamepad_names()
+    if not names:
+        # Can't see the pad (none attached, or no SDL). Say nothing unless the
+        # config is also obviously stale — we have no better name to offer.
+        return []
+    if device in names:
+        return []                                  # already correct
+    target = names[0]
+    ok = _pad_write_device(target)
+    _log(f"pad binding: {device!r} -> {target!r} ok={ok}")
+    if not ok:
+        return ["controller: could NOT update the RPCS3 pad config",
+                f"  it still points at {device or '(unset)'}"]
+    if notify is not None:
+        notify.post("Controller configured",
+                    f"RPCS3 is now set up for your {target.rsplit(' ', 1)[0]}.",
+                    timeout=12000)
+    return [f"controller : {target}",
+            f"  was      : {device or '(unset)'}  (no such device)"]
+
+
 def _rpcs3_resolved(path, fallback):
     """Resolve one of RPCS3's config-dir paths to where it ACTUALLY lands
     (following the ROCKNIX symlink). Falls back to the games-tree constant if
@@ -3737,6 +3926,11 @@ def _run_install_fw(pup_path, notify, _progress=None):
     # has never launched one, firmware installed here lands in the config tree
     # and the first launch `rm -rf`s it (see the pre-flight's header).
     link_warn = _ensure_rpcs3_storage_links(notify)
+    # Firmware install is the "set this rig up for PS3" moment, so it is also
+    # where the controller gets bound. ROCKNIX's stock RPCS3 pad config names a
+    # virtual device that no longer exists, which leaves RPCS3 on NullPadHandler
+    # and the pad dead in game with no on-screen clue (field report 2026-07-24).
+    pad_note = _ensure_pad_binding(notify)
     # Then SELF-PROVISION RPCS3's dev_flash. RPCS3 resolves dev_flash through its
     # config dir (/storage/.config/rpcs3/dev_flash -> the games tree) and statfs's
     # it for free space BEFORE creating it — so on a freshly-flashed card, where
@@ -3805,6 +3999,8 @@ def _run_install_fw(pup_path, notify, _progress=None):
                      f"  source : {name}  (kept in firmware_drop/)"]
             if prev_ver and prev_ver != ver:
                 lines.append(f"  note   : replaced firmware {prev_ver}")
+            if pad_note:
+                lines += ["", "Also set up:"] + [f"  {ln}" for ln in pad_note]
             if link_warn:
                 lines += ["", "NOTE - RPCS3 storage layout:"] + \
                          [f"  {ln}" for ln in link_warn]
@@ -4547,7 +4743,6 @@ def draw_tools(stdscr, state):
 # is guarded by _rpcs3_running() at WRITE time (RPCS3 rewrites its config on
 # exit — a save made while it runs silently vanishes; AI_MANIFEST law).
 
-RPCS3_PAD_CONFIG = "/storage/.config/rpcs3/input_configs/global/Default.yml"
 _TRIGCAL_ROWS = ("l2", "l2top", "r2", "r2top", "auto", "save")  # cursor order
 _TRIGCAL_MARGIN = 13   # AUTO = live rest + margin (12+13=25 = the 06-16 fix)
 # Top-end calibration (H7b): a trigger that physically saturates below 255
@@ -6785,6 +6980,13 @@ def main(stdscr):
     # sweep just defers to the next open.
     iso_ready = _iso_onboard_sweep()
     seeded_ids = _golden_seed_sweep()
+    # PAD BINDING sweep. Firmware install is where this is *reported* (it is the
+    # rig-setup moment), but firmware installs exactly once, and the device name
+    # can drift again underneath it — a ROCKNIX update that re-targets
+    # InputPlumber is precisely how the shipped config went stale. Re-checking
+    # every open makes it self-healing instead of a one-shot. Same discipline as
+    # the sweeps above: idle-gated, silent when correct, never fatal.
+    _ensure_pad_binding()
 
     # ETK_NO_TARGET: no PS3 title resolved — skip the schema/config load
     # entirely. TUNING/TELEMETRY render inert panels and TOOLS is the live

@@ -157,6 +157,20 @@ ETK_GOLDEN_SEED=1
 # 1 = on (default) · 0 = kill-switch (ISOs are left exactly as dropped)
 ETK_ISO_ONBOARD=1
 
+# --- Controller binding repair (0.8.2, ships ON) ---
+# Makes the gamepad work in RPCS3 without you touching a pad-config screen.
+# ROCKNIX ships RPCS3 a stock pad config pointing at a controller called
+# "InputPlumber GameController 1" — the Xbox-style virtual pad InputPlumber
+# used to present. It now presents a DualSense instead, so that name matches
+# nothing on a Flip 2, and RPCS3 quietly falls back to its "no controller"
+# handler: buttons do nothing in game, with no error anywhere on screen.
+# At firmware install and at every Pitstop open (emulator idle), ETK asks
+# the rig's own SDL what your pad is actually called and corrects ONLY the
+# device line. Your button map, dead zones and trigger calibration are never
+# touched, and a config that is already right is left byte-for-byte alone.
+# 1 = on (default) · 0 = kill-switch (you manage RPCS3's pad config yourself)
+ETK_PAD_BIND=1
+
 # --- install.sh output mode ---
 # 0 = Pit Wall console TUI (recommended; dashboard with progress bars +
 #     2-line scrolling datalog, evokes commander.sh aesthetic)

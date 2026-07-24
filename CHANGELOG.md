@@ -4,6 +4,9 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ## [Unreleased]
 
+### Added
+- **The controller now just works in RPCS3 — no pad-config screen, no remapping.** ROCKNIX ships RPCS3 a pad config pointing at a controller called "InputPlumber GameController 1", which is the Xbox-style virtual pad the OS used to present. It presents a DualSense now, so on a Flip 2 that name matches nothing and RPCS3 quietly falls back to its "no controller" handler: buttons do nothing in game, and there is no error anywhere on screen to explain it. ETK now asks the rig's own SDL what your pad is really called and corrects the device line — at PS3 firmware install, and again at every Pitstop open so it repairs itself if a future OS update renames the pad again. Your button map, dead zones and trigger calibration are never touched, and a config that is already correct is left byte-for-byte alone. `ETK_PAD_BIND=0` in `etk.conf` to manage the pad config yourself.
+
 ### Fixed
 - **0.8.1 follow-up: installing the same package twice reported a false failure.** RPCS3 starts a fresh log each launch by rewriting the file in place, and re-installing the *same* game produces a byte-for-byte identical log — which 0.8.1 mistook for "RPCS3 wrote nothing" and read as a failure. Freshness is now judged by time, not size. Caught on the rig the first time 0.8.1 ran a repeat install.
 - **0.8.1 follow-up: rescuing an already-stranded game now actually moves it.** The games card is a separate mount point, so the quick move the migration relied on is refused by the system even though both paths are on the same card; it now falls back to a real copy, staged so an interrupted move can never leave a half-written game behind. Every migration on the first 0.8.1 run failed this way and silently moved nothing.
