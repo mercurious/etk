@@ -26,6 +26,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 PITSTOP = os.environ.get("ETK_PITSTOP_PY",
@@ -114,31 +115,48 @@ check("foreign bare failure rejected",
       [m.group('path') for m in pit._PKG_FAILED_RE.finditer(
           "Failed to install /storage/other.pkg.") if m.group('path') == PKG], [])
 
-print("\n[4] log slice: rotation / no-write / append")
+print("\n[4] log freshness (RPCS3 rewrites RPCS3.log IN PLACE every launch)")
 tmp = tempfile.mkdtemp()
 try:
     log = os.path.join(tmp, "RPCS3.log")
     pit.RPCS3_LOG = log
+    STALE = ("PREVIOUS RUN\nSuccessfully installed old.pkg "
+             "(title_id=X, title=Y, version=1).\n")
     with open(log, "w") as f:
-        f.write("PREVIOUS RUN\nSuccessfully installed old.pkg (title_id=X, title=Y, version=1).\n")
+        f.write(STALE)
+    os.utime(log, (time.time() - 600, time.time() - 600))   # last run, 10 min ago
+
+    # (a) RPCS3 never ran -> nothing is ours, so the stale success is invisible.
+    check("untouched log -> empty slice", pit._rpcs3_log_since(time.time()), "")
+
+    # (b) THE 0.8.1 REGRESSION. RPCS3 gzips the old log and rewrites the
+    # original IN PLACE: same inode, and re-running the SAME package yields a
+    # BYTE-IDENTICAL log. The shipped (size, inode) guard read "size unchanged"
+    # as "RPCS3 wrote nothing" and threw away a real success.
     mark = pit._rpcs3_log_mark()
+    ino_before = os.stat(log).st_ino
+    fresh = ("THIS RUN\nSuccessfully installed new.pkg "
+             "(title_id=Z, title=W, version=2).\n")
+    assert len(fresh) != len(STALE), "make the sizes differ for the shaping below"
+    # Pad so the new log is EXACTLY the same size as the old one, in place.
+    fresh = fresh.rstrip("\n") + " " * (len(STALE) - len(fresh)) + "\n"
+    with open(log, "r+") as f:          # r+ = rewrite in place, inode preserved
+        f.write(fresh)
+        f.truncate()
+    check("rewrite kept the inode (matches RPCS3)", os.stat(log).st_ino, ino_before)
+    check("identical-SIZE rewrite is still read",
+          os.stat(log).st_size, len(STALE))
+    got = pit._rpcs3_log_since(mark)
+    check("same-size in-place rewrite -> content returned", got.strip(), fresh.strip())
+    check("and it is THIS run's line, not the stale one",
+          "new.pkg" in got and "old.pkg" not in got, True)
 
-    # (a) no write at all -> empty, so a stale success can't be re-read
-    check("unchanged log -> empty slice", pit._rpcs3_log_since(mark), "")
-
-    # (b) rotated (new inode, smaller) -> whole file is ours
+    # (c) a genuinely new file (should RPCS3 ever recreate rather than rewrite)
+    mark = pit._rpcs3_log_mark()
     os.remove(log)
     with open(log, "w") as f:
-        f.write("FRESH\n")
-    check("rotated log -> whole file", pit._rpcs3_log_since(mark), "FRESH\n")
-
-    # (c) appended in place -> only the new tail
-    with open(log, "w") as f:
-        f.write("PREVIOUS RUN\nSuccessfully installed old.pkg (title_id=X, title=Y, version=1).\n")
-    mark = pit._rpcs3_log_mark()
-    with open(log, "a") as f:
-        f.write("NEW TAIL\n")
-    check("appended log -> tail only", pit._rpcs3_log_since(mark), "NEW TAIL\n")
+        f.write("RECREATED\n")
+    check("recreated log -> whole file", pit._rpcs3_log_since(mark), "RECREATED\n")
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
@@ -208,6 +226,90 @@ try:
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
+print("\n[6b] link pre-flight under EXDEV (the games-card bind mount)")
+# ROCKNIX bind-mounts the games card at /storage/roms, so rename(2) fails with
+# EXDEV even though st_dev matches on both sides. Live failure, 2026-07-24:
+# every migration logged "[Errno 18] Invalid cross-device link" and nothing
+# moved. Simulate by making os.rename refuse across the two trees.
+tmp = tempfile.mkdtemp()
+try:
+    cfg = os.path.join(tmp, ".config", "rpcs3")
+    bios = os.path.join(tmp, "roms", "bios", "rpcs3")
+    pit.RPCS3_CFG_DIR, pit.RPCS3_BIOS_DIR = cfg, bios
+    os.makedirs(os.path.join(cfg, "dev_hdd0", "game", "NPEA90002", "USRDIR"))
+    open(os.path.join(cfg, "dev_hdd0", "game", "NPEA90002", "USRDIR",
+                      "EBOOT.BIN"), "w").write("game bytes")
+    os.makedirs(os.path.join(bios, "dev_hdd0", "game"))
+
+    real_rename = os.rename
+
+    def exdev_rename(a, b):
+        # Refuse only when crossing between the two trees, like the bind mount.
+        if (str(a).startswith(cfg) and str(b).startswith(bios)):
+            raise OSError(18, "Invalid cross-device link", str(a), None, str(b))
+        return real_rename(a, b)
+
+    os.rename = exdev_rename
+    try:
+        warn = pit._ensure_rpcs3_storage_links()
+    finally:
+        os.rename = real_rename
+
+    check("EXDEV: migration still succeeds", warn, [])
+    check("EXDEV: game copied into the games tree",
+          open(os.path.join(bios, "dev_hdd0", "game", "NPEA90002",
+                            "USRDIR", "EBOOT.BIN")).read(), "game bytes")
+    check("EXDEV: config side is now a symlink",
+          os.path.islink(os.path.join(cfg, "dev_hdd0")), True)
+    check("EXDEV: no .etk-part staging left behind",
+          [p for p in os.listdir(os.path.join(bios, "dev_hdd0", "game"))
+           if p.endswith(".etk-part")], [])
+finally:
+    os.rename = real_rename if 'real_rename' in dir() else os.rename
+    shutil.rmtree(tmp, ignore_errors=True)
+
+print("\n[6c] a copy that dies mid-way leaves NO partial-looking real tree")
+tmp = tempfile.mkdtemp()
+try:
+    cfg = os.path.join(tmp, ".config", "rpcs3")
+    bios = os.path.join(tmp, "roms", "bios", "rpcs3")
+    pit.RPCS3_CFG_DIR, pit.RPCS3_BIOS_DIR = cfg, bios
+    os.makedirs(os.path.join(cfg, "dev_hdd0", "game", "NPEA90002"))
+    open(os.path.join(cfg, "dev_hdd0", "game", "NPEA90002", "EBOOT.BIN"),
+         "w").write("game bytes")
+    os.makedirs(os.path.join(bios, "dev_hdd0", "game"))
+
+    real_rename, real_move = os.rename, pit.shutil.move
+
+    def exdev_rename(a, b):
+        if str(a).startswith(cfg) and str(b).startswith(bios):
+            raise OSError(18, "Invalid cross-device link")
+        return real_rename(a, b)
+
+    def dying_move(a, b):
+        os.makedirs(b, exist_ok=True)          # start writing...
+        raise OSError(28, "No space left on device")
+
+    os.rename, pit.shutil.move = exdev_rename, dying_move
+    try:
+        warn = pit._ensure_rpcs3_storage_links()
+    finally:
+        os.rename, pit.shutil.move = real_rename, real_move
+
+    check("failed copy is reported", any("dev_hdd0" in w for w in warn), True)
+    check("source data untouched",
+          open(os.path.join(cfg, "dev_hdd0", "game", "NPEA90002",
+                            "EBOOT.BIN")).read(), "game bytes")
+    check("NOT linked over a failed migration",
+          os.path.islink(os.path.join(cfg, "dev_hdd0")), False)
+    check("no half-written NPEA90002 in the games tree",
+          os.path.exists(os.path.join(bios, "dev_hdd0", "game", "NPEA90002")), False)
+    check("no .etk-part left behind",
+          [p for p in os.listdir(os.path.join(bios, "dev_hdd0", "game"))
+           if p.endswith(".etk-part")], [])
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+
 print("\n[7] link pre-flight: no config dir -> do nothing (don't suppress ROCKNIX seeding)")
 tmp = tempfile.mkdtemp()
 try:
@@ -244,11 +346,15 @@ game = os.environ["FAKE_GAMEDIR"]      # where RPCS3 resolves dev_hdd0/game
 pkg  = sys.argv[sys.argv.index("--installpkg") + 1]
 
 # RPCS3 rotates its log on every launch (RPCS3.log -> RPCS3.log.gz).
+# RPCS3 gzips the old log then REWRITES RPCS3.log IN PLACE (same inode,
+# util/logs.cpp:476). Modelling that faithfully matters: an earlier fake
+# did os.remove + create, handing the code a fresh inode and hiding the
+# 0.8.1 same-size regression that then bit on the rig.
 if os.path.exists(log):
     with open(log, "rb") as f, gzip.open(log + ".gz", "wb") as g:
         g.write(f.read())
-    os.remove(log)
-out = open(log, "w")
+out = open(log, "r+" if os.path.exists(log) else "w")
+out.truncate(0); out.seek(0)
 out.write("RPCS3 v0.0.41 Alpha | GTK Edition v0.7.5\nCurrent Time: now\n")
 out.write("·! 0:00:00.11 GUI: About to install packages:\n%s\n" % pkg)
 
@@ -436,8 +542,8 @@ log  = os.environ["FAKE_LOG"]
 df   = os.environ["FAKE_DEVFLASH"]
 if os.path.exists(log):
     with open(log,"rb") as f, gzip.open(log+".gz","wb") as g: g.write(f.read())
-    os.remove(log)
-out = open(log,"w"); out.write("RPCS3 v0.0.41\n")
+out = open(log, "r+" if os.path.exists(log) else "w")
+out.truncate(0); out.seek(0); out.write("RPCS3 v0.0.41\n")
 if mode == "success":
     d = os.path.join(df,"vsh","etc"); os.makedirs(d, exist_ok=True)
     open(os.path.join(d,"version.txt"),"w").write("release:04.9300:\nbuild:1,2:x\n")
@@ -485,6 +591,42 @@ def build_fw_rig(tmp):
     os.environ["FAKE_DEVFLASH"] = os.path.join(bios, "dev_flash")
     return cfg, bios, pup
 
+
+print("\n[E2E-5] REPEAT install of the SAME package (the 0.8.1 field failure)")
+# This is the case that actually bit: installing the same .pkg twice writes a
+# BYTE-IDENTICAL RPCS3.log the second time, rewritten in place over the first.
+# 0.8.1 marked (size, inode) before launch and read "size unchanged" as "RPCS3
+# wrote nothing", so run 2 of a perfectly good install reported failure. No
+# single-run case can catch this — it needs two runs against one log file.
+tmp = tempfile.mkdtemp()
+try:
+    cfg, bios, etk = build_pkg_rig(tmp)
+    os.environ["FAKE_MODE"] = "success"
+    os.environ["FAKE_LOG"] = pit.RPCS3_LOG
+    os.environ["FAKE_GAMEDIR"] = pit.RPCS3_CFG_GAME_DIR
+
+    pkg1, raps1 = stage_pkg(etk)
+    ok1, _ = pit._run_install(pkg1, raps1, FakeNotifier())
+    size1 = os.path.getsize(pit.RPCS3_LOG)
+    ino1 = os.stat(pit.RPCS3_LOG).st_ino
+    check("run 1 succeeds", ok1, True)
+
+    # Re-stage the identical package and install it again, as the operator did.
+    for f in os.listdir(pit.PS3_ROMS_DIR):
+        os.remove(os.path.join(pit.PS3_ROMS_DIR, f))
+    pkg2, raps2 = stage_pkg(etk)
+    ok2, lines2 = pit._run_install(pkg2, raps2, FakeNotifier())
+    size2 = os.path.getsize(pit.RPCS3_LOG)
+    ino2 = os.stat(pit.RPCS3_LOG).st_ino
+
+    check("run 2 wrote a same-SIZE log (the trap)", size2, size1)
+    check("run 2 reused the inode (the trap)", ino2, ino1)
+    check("run 2 ALSO succeeds", ok2, True)
+    check("run 2 wrote the launcher",
+          os.listdir(pit.PS3_ROMS_DIR), ["GRAN TURISMO HD Concept.psn"])
+    check("run 2 drained staging", os.listdir(os.path.join(etk, "pkg_install_drop")), [])
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
 
 print("\n[FW-1] success on a fresh rig")
 tmp = tempfile.mkdtemp()

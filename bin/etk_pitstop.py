@@ -3165,12 +3165,38 @@ RPCS3_CFG_DIR = os.environ.get('RPCS3_CFG_DIR', '/storage/.config/rpcs3')
 RPCS3_BIOS_DIR = os.environ.get('RPCS3_BIOS_DIR', '/storage/roms/bios/rpcs3')
 
 
+def _move_entry(s, d):
+    """Move `s` to `d` (which must not exist), all-or-nothing.
+
+    os.rename is instant when it works, but it does NOT work here: ROCKNIX
+    bind-mounts the games card at /storage/roms, and rename(2) returns EXDEV
+    across a MOUNT boundary even when both sides are the same filesystem —
+    which they are (st_dev 45826 both, so the storage-coherence check rightly
+    passes). Live proof, 2026-07-24: every migration failed with "[Errno 18]
+    Invalid cross-device link". So fall back to a real copy — staged under a
+    temp name and renamed into place, since that final rename IS within one
+    mount and therefore atomic. A copy that dies half-way leaves a .etk-part
+    directory, never a partial-looking real one."""
+    try:
+        os.rename(s, d)
+        return
+    except OSError:
+        pass
+    part = d + ".etk-part"
+    shutil.rmtree(part, ignore_errors=True)
+    try:
+        shutil.move(s, part)          # copy across the mount boundary
+        os.rename(part, d)            # atomic: same mount
+    except Exception:
+        shutil.rmtree(part, ignore_errors=True)
+        raise
+
+
 def _merge_move(src, dst):
     """Move every entry of dir `src` into dir `dst`, recursing where both
     sides have a directory of the same name. NEVER overwrites: an entry that
     already exists on the destination side is left in `src` untouched.
-    Returns the number of entries that could NOT be moved (0 = src drained).
-    os.rename is atomic and instant here — both trees are on /storage."""
+    Returns the number of entries that could NOT be moved (0 = src drained)."""
     conflicts = 0
     try:
         entries = os.listdir(src)
@@ -3183,7 +3209,7 @@ def _merge_move(src, dst):
         d = os.path.join(dst, name)
         try:
             if not os.path.exists(d):
-                os.rename(s, d)
+                _move_entry(s, d)
             elif os.path.isdir(s) and os.path.isdir(d) and \
                     not os.path.islink(s) and not os.path.islink(d):
                 conflicts += _merge_move(s, d)
@@ -3203,12 +3229,18 @@ def _merge_move(src, dst):
     return conflicts
 
 
-def _ensure_rpcs3_storage_links():
+def _ensure_rpcs3_storage_links(notify=None):
     """Make RPCS3's config dir resolve to the games tree, the way
     start_rpcs3.sh will. Returns a list of warning lines (empty = all good).
     Fail-soft by contract: a problem here is reported, never fatal — the
-    install still runs, it just may land somewhere we then warn about."""
+    install still runs, it just may land somewhere we then warn about.
+
+    Rescuing an already-stranded tree means copying it across the games-card
+    mount boundary (see _move_entry), so a rig with a game already installed
+    the wrong side of the link moves real gigabytes here. Pass `notify` so
+    that reads as work rather than as a hang."""
     warn = []
+    announced = False
     # Only act if ROCKNIX has already seeded the config dir. Creating it
     # ourselves would make start_rpcs3.sh's `if [ ! -d ... ]` skip its
     # `cp -r /usr/config/rpcs3`, leaving the rig with no stock config.yml.
@@ -3230,6 +3262,12 @@ def _ensure_rpcs3_storage_links():
                 continue
             # A real directory: rescue its contents into the games tree, then
             # replace it with the link. This is the stranded-install repair.
+            if notify is not None and not announced:
+                announced = True
+                notify.post("Tidying RPCS3 storage",
+                            "Moving already-installed data onto your games "
+                            "card.\nThis runs once and can take a few "
+                            "minutes for a big game.", timeout=20000)
             left = _merge_move(src, dst)
             if left:
                 warn.append(f"{folder}: {left} item(s) exist in both trees -")
@@ -3257,33 +3295,31 @@ def _rpcs3_resolved(path, fallback):
 
 
 # --- RPCS3 log capture (shared by both installers) ----------
-# RPCS3 ROTATES RPCS3.log on every launch (RPCS3.log -> RPCS3.log.gz, proven
-# on-rig 2026-07-24), so a pre-launch byte offset is usually meaningless. Take
-# an identity snapshot instead: a changed inode or a shrunk file means the log
-# is THIS run's and we read it whole; only a grown same-inode file gets seeked.
-# The third case matters most — an unchanged log means RPCS3 wrote nothing, and
-# reading it anyway would match a PREVIOUS run's success line as if it were
-# ours.
+# RPCS3 starts a FRESH RPCS3.log on every launch: it gzips the previous one to
+# RPCS3.log.gz, then rewrites the original IN PLACE — same inode, no append
+# (util/logs.cpp:476, `m_fout2.open(name + ".gz", fs::rewrite)`). So the live
+# log is always exactly one run's worth, and the only question is whether that
+# run is OURS. That is a question about TIME, so answer it with mtime.
+#
+# Do NOT try to locate a byte offset into the log. 0.8.1 shipped a version that
+# marked (size, inode) before launch and read an unchanged size as "RPCS3 wrote
+# nothing" — but re-running the SAME package writes a byte-IDENTICAL log, so
+# the guard fired on a completely successful install and reported failure
+# (live, 2026-07-24: two runs of the same 722 MB package both produced exactly
+# 9608 bytes, and the second was declared "RPCS3 exited without confirming").
 
 def _rpcs3_log_mark():
-    try:
-        st = os.stat(RPCS3_LOG)
-        return (st.st_size, st.st_ino)
-    except Exception:
-        return (0, 0)
+    """Wall-clock stamp, taken immediately BEFORE launching RPCS3."""
+    return time.time()
 
 
 def _rpcs3_log_since(mark, limit=262144):
-    """Text RPCS3 logged since `mark`. Empty string if it logged nothing."""
-    base, ino = mark
+    """This run's RPCS3 log, or "" if RPCS3 never wrote one."""
     try:
-        st = os.stat(RPCS3_LOG)
+        # 2 s of slack for coarse filesystem timestamp granularity.
+        if os.stat(RPCS3_LOG).st_mtime < mark - 2:
+            return ""
         with open(RPCS3_LOG, 'r', errors='ignore') as f:
-            if st.st_ino != ino or st.st_size < base:
-                return f.read()[-limit:]          # rotated -> all of it is ours
-            if st.st_size == base:
-                return ""                         # nothing written this run
-            f.seek(base)
             return f.read()[-limit:]
     except Exception:
         return ""
@@ -3350,7 +3386,7 @@ def _run_install(pkg_path, rap_path, notify):
     incoherent = _storage_incoherent_msg()
     if incoherent:
         return False, incoherent
-    link_warn = _ensure_rpcs3_storage_links()
+    link_warn = _ensure_rpcs3_storage_links(notify)
     game_real = _rpcs3_resolved(RPCS3_CFG_GAME_DIR, RPCS3_GAME_DIR)
     try:
         os.makedirs(game_real, exist_ok=True)
@@ -3700,7 +3736,7 @@ def _run_install_fw(pup_path, notify, _progress=None):
     # start_rpcs3.sh's job and it only runs at GAME LAUNCH, so on a rig that
     # has never launched one, firmware installed here lands in the config tree
     # and the first launch `rm -rf`s it (see the pre-flight's header).
-    link_warn = _ensure_rpcs3_storage_links()
+    link_warn = _ensure_rpcs3_storage_links(notify)
     # Then SELF-PROVISION RPCS3's dev_flash. RPCS3 resolves dev_flash through its
     # config dir (/storage/.config/rpcs3/dev_flash -> the games tree) and statfs's
     # it for free space BEFORE creating it — so on a freshly-flashed card, where
