@@ -55,7 +55,6 @@ import subprocess
 import threading
 import shutil
 import glob
-import fcntl
 import re
 import shutil
 import hashlib
@@ -109,7 +108,7 @@ CONFIG_CHANGES_HEADER = "epoch\tgame_id\tfield_label\told_value\tnew_value\n"
 # ALIGNED TO THE RELEASE TAG at every cut (load-bearing since 0.8.0: the
 # TOOLS self-update compares this against the latest GitHub release tag).
 # The DRIVER tab names the actually-bound stack builds.
-APP_VERSION = "0.8.0"
+APP_VERSION = "0.8.1"
 
 # DRIVER tab (Turnip env-var dials). These are NOT RPCS3 config keys — they
 # inject through the proven profile.d path (same mechanism as 098-etk-stage3),
@@ -197,6 +196,12 @@ RPCS3_FW_VERSION_FILE = os.environ.get(
 # installer would extract where it isn't watching and read as a silent failure.
 RPCS3_CFG_GAME_DIR = os.environ.get(
     'RPCS3_CFG_GAME_DIR', '/storage/.config/rpcs3/dev_hdd0/game')
+# Same idea for the licence folder: RPCS3 writes .rap/.edat to
+# get_hdd0_dir()/home/<usr>/exdata, resolved through the SAME config dir, so
+# the ETK-side games-tree constant is only correct once the link exists.
+RPCS3_CFG_EXDATA_DIR = os.environ.get(
+    'RPCS3_CFG_EXDATA_DIR',
+    '/storage/.config/rpcs3/dev_hdd0/home/00000001/exdata')
 PKG_STAGING_DIR = os.environ.get(
     'PKG_STAGING_DIR', f"{os.environ.get('ETK_ROOT', '/storage/games-internal/roms/etk')}/pkg_install_drop")
 # Firmware drop folder — the user places the official Sony PS3UPDAT.PUP here.
@@ -2284,15 +2289,29 @@ def handle_telemetry_pad(state, etype, code, val):
 # ============================================================
 # === TOOLS TAB — PS3 PACKAGE INSTALLER / UNINSTALLER ===
 # ============================================================
-# Proven on-device in spike/ (see project memory + dossier).
-# RPCS3 has no headless install: --installpkg always pops a GUI
-# confirm dialog. The installer launches RPCS3 attached to the
-# live sway session, polls for the "PKG Installation" window,
-# focuses it and injects Enter via /dev/uinput to confirm — no
-# screen coordinates needed (Enter triggers the default button).
-# Uninstall is a pure filesystem rm. Progress is surfaced through
-# mako notifications (dbus-send). RPCS3 owns the screen during an
-# install; this curses UI is only visible before and after.
+# HEADLESS since 0.8.1 — brought to parity with the firmware installer.
+# The old model ("RPCS3 has no headless install") was FALSE: reading the
+# fork source, rpcs3.cpp:1211 routes BOTH --installfw and --installpkg
+# through the non-GUI branch when the app is a headless_application, and
+# `return 0`s straight after. Every prompt downstream is mw-gated
+# (main_window.cpp:941 boot confirm, :1003 pkg_install_dialog, :1073
+# progress dialog, :1322 error boxes), so with mw == nullptr RPCS3 builds
+# the package list itself, extracts, logs a machine-readable verdict per
+# package, and exits. So: no window poll, no /dev/uinput Enter tap, no
+# sway focus juggling, no screen handoff — Pitstop keeps its own spinner
+# up throughout, exactly like the .pup path.
+#
+# The verdict comes from RPCS3's OWN log, never from watching the
+# filesystem. The old dir-diff + size-stable heuristic is what produced
+# the 2026-07-24 field false-failure: GT HD Concept finished extracting
+# at 0:00:42 and installed correctly, but RPCS3's GUI branch does not
+# self-exit, and the extraction had landed in a tree Pitstop wasn't
+# watching — so the installer polled an empty directory for its full
+# 600 s cap and then reported "Install did not complete". No .psn was
+# written and the game stayed invisible in ES.
+#
+# Uninstall is a pure filesystem rm. Progress is surfaced through mako
+# notifications (dbus-send).
 # ============================================================
 
 # Manage Shaders leads the list now that stability work has made vault hygiene
@@ -2422,60 +2441,9 @@ def _preview_crash_frame(state, shot):
         state["_preview_proc"] = None
 
 
-# --- /dev/uinput virtual keyboard (confirms the install dialog) ---
-
-def _uinput_ioc(direction, nr, size):
-    return (direction << 30) | (size << 16) | (ord('U') << 8) | nr
-
-_UI_SET_EVBIT = _uinput_ioc(1, 100, 4)
-_UI_SET_KEYBIT = _uinput_ioc(1, 101, 4)
-_UI_DEV_SETUP = _uinput_ioc(1, 3, 92)
-_UI_DEV_CREATE = _uinput_ioc(0, 1, 0)
-_UI_DEV_DESTROY = _uinput_ioc(0, 2, 0)
-_KEY_ENTER = 28
-
-
-def _uinput_open_keyboard():
-    """Create a /dev/uinput virtual keyboard that can emit KEY_ENTER.
-    Returns the fd, or None if uinput is unavailable. UI_SET_EVBIT /
-    UI_SET_KEYBIT take the bit number as a plain integer arg."""
-    try:
-        fd = os.open('/dev/uinput', os.O_WRONLY | os.O_NONBLOCK)
-        fcntl.ioctl(fd, _UI_SET_EVBIT, EV_KEY)
-        fcntl.ioctl(fd, _UI_SET_EVBIT, 0)          # EV_SYN
-        fcntl.ioctl(fd, _UI_SET_KEYBIT, _KEY_ENTER)
-        setup = (struct.pack('HHHH', 0x03, 0x1234, 0x5678, 1)
-                 + b'ETK Virtual Keyboard'.ljust(80, b'\0')
-                 + struct.pack('I', 0))
-        fcntl.ioctl(fd, _UI_DEV_SETUP, setup)
-        fcntl.ioctl(fd, _UI_DEV_CREATE)
-        return fd
-    except Exception as e:
-        _log(f"uinput keyboard create failed: {e}")
-        return None
-
-
-def _uinput_tap_enter(fd):
-    """Emit one KEY_ENTER press+release on the virtual keyboard."""
-    def emit(t, c, v):
-        os.write(fd, struct.pack('llHHi', 0, 0, t, c, v))
-    try:
-        emit(EV_KEY, _KEY_ENTER, 1); emit(0, 0, 0)   # 0,0,0 = SYN_REPORT
-        time.sleep(0.06)
-        emit(EV_KEY, _KEY_ENTER, 0); emit(0, 0, 0)
-    except Exception as e:
-        _log(f"uinput tap failed: {e}")
-
-
-def _uinput_close(fd):
-    try:
-        fcntl.ioctl(fd, _UI_DEV_DESTROY)
-        os.close(fd)
-    except Exception:
-        pass
-
-
 # --- sway window helpers ------------------------------------
+# Retained for the crash-frame preview (swayimg). The installers no
+# longer touch sway at all — see the section header.
 
 def _swaymsg(args, env):
     try:
@@ -2487,33 +2455,13 @@ def _swaymsg(args, env):
         return ""
 
 
-def _find_install_dialog(env):
-    """Walk the sway tree for RPCS3's 'PKG Installation' dialog window.
-    Returns its con_id, or None if not yet mapped."""
-    try:
-        tree = json.loads(_swaymsg(["-t", "get_tree"], env))
-    except Exception:
-        return None
-    found = [None]
-
-    def walk(n):
-        nm = (n.get("name") or "").lower()
-        if found[0] is None and "pkg" in nm and "install" in nm:
-            found[0] = n.get("id")
-        for key in ("nodes", "floating_nodes"):
-            for child in n.get(key, []):
-                walk(child)
-
-    walk(tree)
-    return found[0]
-
-
 def _restore_pitstop_window(env):
-    """Re-assert the Pitstop (foot) window as fullscreen. Launching RPCS3 OR
-    the swayimg crash-frame preview knocks foot out of fullscreen in sway's
-    tree, which would otherwise leave the curses UI tiled and clipped
-    off-screen on return. The next main-loop _draw picks up the restored size
-    via getmaxyx()."""
+    """Re-assert the Pitstop (foot) window as fullscreen. The swayimg
+    crash-frame preview knocks foot out of fullscreen in sway's tree, which
+    would otherwise leave the curses UI tiled and clipped off-screen on
+    return. The next main-loop _draw picks up the restored size via
+    getmaxyx(). (The installers are headless now and map no window, so they
+    no longer need this — it is the preview path's fix.)"""
     try:
         _swaymsg(['[app_id="foot"]', 'fullscreen', 'enable'], env)
         time.sleep(0.3)
@@ -2527,7 +2475,7 @@ _PREVIEW_APPID = "etk-crash-preview"
 def _fullscreen_preview(env):
     """Once the swayimg preview window maps, fullscreen it so it covers the
     foot terminal cleanly (no tiling split DURING the preview). Brief blocking
-    poll mirroring _find_install_dialog; breaks as soon as the window appears."""
+    poll; breaks as soon as the window appears."""
     for _ in range(12):
         try:
             tree = json.loads(_swaymsg(["-t", "get_tree"], env))
@@ -3191,26 +3139,219 @@ def _storage_incoherent_msg():
             "tree is the only one mounted, then retry."]
 
 
+# --- RPCS3 config-dir link pre-flight (fresh-rig data-loss guard) ---
+# ROCKNIX's /usr/bin/start_rpcs3.sh is what makes RPCS3's config dir point at
+# the games tree, and it only runs at GAME LAUNCH:
+#
+#   FOLDER_LINKS=("dev_flash" "dev_hdd0" "dev_hdd1" "custom_configs")
+#   rm -rf  /storage/.config/rpcs3/$F
+#   ln -sf  /storage/roms/bios/rpcs3/$F  /storage/.config/rpcs3/$F
+#
+# Both installers invoke RPCS3_BIN DIRECTLY, so on a rig where no game has
+# been launched yet those links do not exist. RPCS3 then creates its VFS tree
+# as real directories under /storage/.config/rpcs3/ (VFS: Initialize
+# Directories) and installs there — and the first game launch `rm -rf`s the
+# lot. Observed live 2026-07-24 on a fresh rig: firmware 4.93 (193 MB) and
+# GT HD Concept (706 MB) both stranded in the config tree, one launch away
+# from deletion, while Pitstop watched the empty bios tree and called the
+# install a failure.
+#
+# So: make the links exist BEFORE launching RPCS3, and rescue anything already
+# stranded. Unlike start_rpcs3.sh we never `rm -rf` real content — we migrate
+# it into the games tree first, and if anything cannot be migrated safely we
+# leave the directory alone and report rather than risk a byte.
+_RPCS3_LINK_FOLDERS = ("dev_flash", "dev_hdd0", "dev_hdd1", "custom_configs")
+RPCS3_CFG_DIR = os.environ.get('RPCS3_CFG_DIR', '/storage/.config/rpcs3')
+RPCS3_BIOS_DIR = os.environ.get('RPCS3_BIOS_DIR', '/storage/roms/bios/rpcs3')
+
+
+def _merge_move(src, dst):
+    """Move every entry of dir `src` into dir `dst`, recursing where both
+    sides have a directory of the same name. NEVER overwrites: an entry that
+    already exists on the destination side is left in `src` untouched.
+    Returns the number of entries that could NOT be moved (0 = src drained).
+    os.rename is atomic and instant here — both trees are on /storage."""
+    conflicts = 0
+    try:
+        entries = os.listdir(src)
+    except Exception as e:
+        _log(f"merge_move listdir {src}: {e}")
+        return 1
+    os.makedirs(dst, exist_ok=True)
+    for name in entries:
+        s = os.path.join(src, name)
+        d = os.path.join(dst, name)
+        try:
+            if not os.path.exists(d):
+                os.rename(s, d)
+            elif os.path.isdir(s) and os.path.isdir(d) and \
+                    not os.path.islink(s) and not os.path.islink(d):
+                conflicts += _merge_move(s, d)
+                # Drained subdirectory -> drop the now-empty shell.
+                try:
+                    os.rmdir(s)
+                except OSError:
+                    pass
+            else:
+                # Same name on both sides and not two mergeable dirs. The
+                # games tree is authoritative (it is what RPCS3 will read
+                # once linked); keep both copies rather than pick a winner.
+                conflicts += 1
+        except Exception as e:
+            _log(f"merge_move {s} -> {d}: {e}")
+            conflicts += 1
+    return conflicts
+
+
+def _ensure_rpcs3_storage_links():
+    """Make RPCS3's config dir resolve to the games tree, the way
+    start_rpcs3.sh will. Returns a list of warning lines (empty = all good).
+    Fail-soft by contract: a problem here is reported, never fatal — the
+    install still runs, it just may land somewhere we then warn about."""
+    warn = []
+    # Only act if ROCKNIX has already seeded the config dir. Creating it
+    # ourselves would make start_rpcs3.sh's `if [ ! -d ... ]` skip its
+    # `cp -r /usr/config/rpcs3`, leaving the rig with no stock config.yml.
+    if not os.path.isdir(RPCS3_CFG_DIR):
+        return warn
+    for folder in _RPCS3_LINK_FOLDERS:
+        src = os.path.join(RPCS3_CFG_DIR, folder)     # what RPCS3 opens
+        dst = os.path.join(RPCS3_BIOS_DIR, folder)    # the games tree
+        try:
+            if os.path.islink(src):
+                os.makedirs(dst, exist_ok=True)       # link target must exist
+                continue
+            if not os.path.exists(src):
+                os.makedirs(dst, exist_ok=True)
+                os.symlink(dst, src)
+                continue
+            if not os.path.isdir(src):
+                warn.append(f"{src} is a file, not a folder - left alone")
+                continue
+            # A real directory: rescue its contents into the games tree, then
+            # replace it with the link. This is the stranded-install repair.
+            left = _merge_move(src, dst)
+            if left:
+                warn.append(f"{folder}: {left} item(s) exist in both trees -")
+                warn.append(f"  left in {src}")
+                continue
+            os.rmdir(src)          # only ever removes a now-EMPTY directory
+            os.symlink(dst, src)
+        except Exception as e:
+            _log(f"rpcs3 link preflight {folder}: {e}")
+            warn.append(f"{folder}: could not link ({e.__class__.__name__})")
+    return warn
+
+
+def _rpcs3_resolved(path, fallback):
+    """Resolve one of RPCS3's config-dir paths to where it ACTUALLY lands
+    (following the ROCKNIX symlink). Falls back to the games-tree constant if
+    RPCS3 has no config dir at all. Works on paths that don't exist yet —
+    realpath resolves as far as it can."""
+    try:
+        if os.path.isdir(RPCS3_CFG_DIR):
+            return os.path.realpath(path)
+    except Exception:
+        pass
+    return fallback
+
+
+# --- RPCS3 log capture (shared by both installers) ----------
+# RPCS3 ROTATES RPCS3.log on every launch (RPCS3.log -> RPCS3.log.gz, proven
+# on-rig 2026-07-24), so a pre-launch byte offset is usually meaningless. Take
+# an identity snapshot instead: a changed inode or a shrunk file means the log
+# is THIS run's and we read it whole; only a grown same-inode file gets seeked.
+# The third case matters most — an unchanged log means RPCS3 wrote nothing, and
+# reading it anyway would match a PREVIOUS run's success line as if it were
+# ours.
+
+def _rpcs3_log_mark():
+    try:
+        st = os.stat(RPCS3_LOG)
+        return (st.st_size, st.st_ino)
+    except Exception:
+        return (0, 0)
+
+
+def _rpcs3_log_since(mark, limit=262144):
+    """Text RPCS3 logged since `mark`. Empty string if it logged nothing."""
+    base, ino = mark
+    try:
+        st = os.stat(RPCS3_LOG)
+        with open(RPCS3_LOG, 'r', errors='ignore') as f:
+            if st.st_ino != ino or st.st_size < base:
+                return f.read()[-limit:]          # rotated -> all of it is ours
+            if st.st_size == base:
+                return ""                         # nothing written this run
+            f.seek(base)
+            return f.read()[-limit:]
+    except Exception:
+        return ""
+
+
+# RPCS3's per-package verdict lines (main_window.cpp:1201/1208/1213/1219 and
+# :1041/:1320/:1349). The tuple form is authoritative — it carries the title
+# id, human title and version straight out of the package's own PARAM.SFO, so
+# nothing has to be inferred from the filesystem afterwards.
+_PKG_VERDICT_RE = re.compile(
+    r'(?P<verb>Successfully installed|Failed to install|Partially installed'
+    r'|Aborted installation of)\s+(?P<path>.+?)\s+'
+    r'\(title_id=(?P<tid>[^,]*),\s*title=(?P<title>.*?),\s*'
+    r'version=(?P<ver>[^)]*)\)\.')
+# Bare (no-tuple) forms. "Cannot install <path>." is specifically the
+# app_version error: an update PKG whose base-game version doesn't match what
+# is installed. In GUI mode that becomes a QMessageBox spelling out expected
+# vs found; headless only gets the path, so we supply the explanation.
+_PKG_VERSION_ERR_RE = re.compile(r'Cannot install (?!invalid package)(?P<path>.+?)\.\s*$',
+                                 re.MULTILINE)
+_PKG_INVALID_RE = re.compile(r"Cannot install invalid package: '(?P<path>[^']*)'")
+# The bare failure: when extraction itself fails, main_window.cpp:1349 logs
+# only this (the per-package tuple forms are written on the SUCCESS branch).
+# All three are matched on exact path equality, so the tuple lines — which this
+# pattern could otherwise swallow whole — never come back with a matching path.
+_PKG_FAILED_RE = re.compile(r'Failed to install (?P<path>.+?)\.\s*$', re.MULTILINE)
+
+
+def _pkg_install_timeout(pkg_path):
+    """Wall-clock budget for one extraction, scaled to package size. The old
+    fixed 600 s cap was smaller than a big title needs (GT5 is 19.4 GB) while
+    still being a 10-minute stall on a small one. Measured on the reference
+    rig: ~20 MB/s; budget a pessimistic 3 MB/s plus 300 s of startup slack."""
+    try:
+        mb = os.path.getsize(pkg_path) / (1024.0 * 1024.0)
+    except Exception:
+        mb = 0
+    return int(min(7200, max(900, 300 + mb / 3.0)))
+
+
 def _run_install(pkg_path, rap_path, notify):
-    """Blocking install of one staged .pkg. Returns (ok, [result lines]).
-    RPCS3 owns the screen for the duration; progress goes to mako."""
-    env = _tools_env()
-    title_id = _pkg_title_id(pkg_path) or "????"
+    """Blocking HEADLESS install of one staged .pkg — the .pup path's twin.
+
+    `rpcs3 --headless --installpkg <pkg>` extracts with no window and no
+    prompts, then self-exits (rpcs3.cpp:1218-1223). Process exit is therefore
+    the completion signal and RPCS3's own log line is the verdict; Pitstop
+    keeps its spinner up throughout. Returns (ok, [result lines]). Runs on the
+    spinner worker thread, so it MUST NOT touch curses.
+
+    `rap_path` accepts a single path, None, or a list (every staged licence is
+    copied — they are keyed by content id, so an extra one is harmless and a
+    missing one is not)."""
+    raps = ([rap_path] if isinstance(rap_path, str)
+            else list(rap_path or []))
 
     if _rpcs3_running():
         return False, ["RPCS3 is already running.",
                        "Close the game first, then retry."]
 
-    # Pre-flight (same guard as the firmware installer): refuse a split-brain,
-    # then SELF-PROVISION RPCS3's game dir. On a freshly-flashed card the
-    # bios/rpcs3 tree is absent, so create dev_hdd0/game at the path RPCS3
-    # actually resolves (its config-dir symlink -> the games tree) before
-    # launching. On a coherent boot /storage/roms IS the games-internal tree, so
-    # the completion watcher below sees the new folder.
+    # Pre-flight, in order: refuse a split-brain; make RPCS3's config dir
+    # resolve to the games tree (or the install lands somewhere the first game
+    # launch deletes); then provision the game dir at the path RPCS3 actually
+    # opens, since a freshly-flashed card has no bios/rpcs3 tree at all.
     incoherent = _storage_incoherent_msg()
     if incoherent:
         return False, incoherent
-    game_real = os.path.realpath(RPCS3_CFG_GAME_DIR)
+    link_warn = _ensure_rpcs3_storage_links()
+    game_real = _rpcs3_resolved(RPCS3_CFG_GAME_DIR, RPCS3_GAME_DIR)
     try:
         os.makedirs(game_real, exist_ok=True)
     except Exception as e:
@@ -3229,129 +3370,128 @@ def _run_install(pkg_path, rap_path, notify):
     except Exception as e:
         _log(f"install lock write failed: {e}")
 
+    name = os.path.basename(pkg_path)
+    header_id = _pkg_title_id(pkg_path)          # PKG-header ID, as a fallback
+    mark = _rpcs3_log_mark()
+
+    def out_lines(lines):
+        """Attach any storage-layout warning to a result. Reported on FAILURE
+        as well as success — a stranded tree is exactly what a reader needs to
+        know when an install has just gone wrong."""
+        if not link_warn:
+            return lines
+        return lines + ["", "NOTE - RPCS3 storage layout:"] + \
+            [f"  {ln}" for ln in link_warn]
+
     proc = None
-    kfd = None
     try:
         notify.post("Installing PS3 package",
-                    f"Preparing {os.path.basename(pkg_path)}\n"
-                    "RPCS3 will open on screen - do not touch the controller.")
-        before = set(os.listdir(RPCS3_GAME_DIR)) if os.path.isdir(RPCS3_GAME_DIR) else set()
-
+                    f"Installing {name[:40]} in the background.\n"
+                    "You can watch the Pitstop screen - nothing will open.")
         proc = subprocess.Popen(
-            [RPCS3_BIN, "--installpkg", pkg_path], env=env,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            [RPCS3_BIN, "--headless", "--installpkg", pkg_path],
+            env=_tools_env(),
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             start_new_session=True)
+        budget = _pkg_install_timeout(pkg_path)
+        try:
+            out = proc.communicate(timeout=budget)[0]
+            out = (out or b"").decode('utf-8', 'ignore')
+        except subprocess.TimeoutExpired:
+            _kill_rpcs3()
+            return False, out_lines(
+                [f"Install timed out after {budget // 60} minutes.",
+                 "RPCS3 may be wedged - reboot and retry.",
+                 "Staged files were kept."])
 
-        # Wait for the install-dialog WINDOW to map in sway (RPCS3 parses
-        # the PKG header before the window is mappable, so poll the tree).
-        dlg = None
-        t0 = time.time()
-        while time.time() - t0 < 90:
-            time.sleep(1)
-            dlg = _find_install_dialog(env)
-            if dlg is not None:
-                break
-        if dlg is None:
-            return False, ["RPCS3 did not show the install dialog.",
-                           "The package may be unreadable.",
-                           "Staged files were kept."]
+        # VERDICT FROM THE LOG, never from the filesystem. Note we do NOT
+        # trust the exit code: the headless path returns 0 from main() but
+        # then trips an ensure() in ~manual_typemap during static teardown and
+        # dies on a signal (rc 143 observed on-rig 2026-07-24) AFTER a fully
+        # successful install. The .pup path can lean on rc==0; this one can't.
+        blob = out + "\n" + _rpcs3_log_since(mark)
+        ours = [m for m in _PKG_VERDICT_RE.finditer(blob)
+                if m.group('path') == pkg_path]
+        good = [m for m in ours if m.group('verb') == 'Successfully installed']
 
-        notify.post("Installing PS3 package", "Confirming install dialog...")
-        _swaymsg(["[con_id=%d]" % dlg, "focus"], env)
-        time.sleep(0.6)
-        kfd = _uinput_open_keyboard()
-        if kfd is None:
-            return False, ["Could not create the virtual keyboard",
-                           "needed to confirm the install dialog."]
-        time.sleep(1.8)             # let sway register the new keyboard
-        confirmed = False
-        for _attempt in range(4):
-            _swaymsg(["[con_id=%d]" % dlg, "focus"], env)
-            time.sleep(0.3)
-            _uinput_tap_enter(kfd)
-            time.sleep(3)
-            if _find_install_dialog(env) is None:
-                confirmed = True
-                break
-        if not confirmed:
-            return False, ["Could not confirm the install dialog.",
-                           "Staged files were kept."]
+        if not good:
+            def mine(rx):
+                return any(m.group('path') == pkg_path for m in rx.finditer(blob))
 
-        notify.post("Installing PS3 package",
-                    "Extracting package files - please wait...")
-        new_id = None
-        t1 = time.time()
-        proc_dead_since = None
-        last_size = -1
-        stable_since = None
-        done = False
-        # COMPLETION FIX (do NOT stop the instant EBOOT.BIN appears): RPCS3
-        # keeps extracting the rest of the package after EBOOT.BIN lands, so
-        # killing it then truncates the install — zero-byte / missing late
-        # files — and the race resolves differently per card speed (the bug
-        # that broke installs on the fast A2 card but not A1/UFS). Wait for a
-        # REAL finish: RPCS3 self-exits on a successful install; as a fallback
-        # (in case it doesn't), the game-folder size going stable for 20s means
-        # extraction has drained. Only then kill.
-        while time.time() - t1 < 600:
-            time.sleep(3)
-            try:
-                fresh = [d for d in (set(os.listdir(RPCS3_GAME_DIR)) - before)
-                         if "lock" not in d.lower()]
-            except Exception:
-                fresh = []
-            if fresh and new_id is None:
-                new_id = fresh[0]
+            if mine(_PKG_VERSION_ERR_RE):
+                notify.post("Install failed",
+                            "This update needs a different game version.",
+                            timeout=12000)
+                return False, out_lines([
+                    "This package could NOT be installed.",
+                    "",
+                    "It is an UPDATE, and it does not match the version of",
+                    "the game you have installed (or the base game is not",
+                    "installed at all).",
+                    "",
+                    "Install the base game first, or get the update that",
+                    "matches it. Staged files were kept."])
+            if mine(_PKG_INVALID_RE):
+                notify.post("Install failed", "Package unreadable.", timeout=12000)
+                return False, out_lines([
+                    "RPCS3 could not read this package.",
+                    "",
+                    "The .pkg is corrupt or incomplete - re-copy it",
+                    "to the drop folder and try again.",
+                    "Staged files were kept."])
+            if mine(_PKG_FAILED_RE):
+                notify.post("Install failed", "Extraction failed.", timeout=12000)
+                return False, out_lines([
+                    "RPCS3 could not finish unpacking this package.",
+                    "",
+                    "Usually the .pkg copied over incompletely, or the card",
+                    "is full or failing. Check free space, re-copy the file",
+                    "and try again. Staged files were kept."])
+            bad = ours[0].group('verb').lower() if ours else None
+            reason = (f"RPCS3 reported: {bad}" if bad
+                      else "RPCS3 exited without confirming the install.")
+            _log(f"pkg install failed rc={proc.returncode}: {reason}")
+            notify.post("Install failed", reason, timeout=12000)
+            return False, out_lines(["Install did NOT complete.",
+                                     f"  {reason}",
+                                     "",
+                                     "Staged files were kept so you can retry."])
 
-            if proc.poll() is not None:
-                # RPCS3 exited. With a game folder present, the install is done.
-                if new_id:
-                    done = True
-                    break
-                # exited without producing a folder -> failed install; give the
-                # fs a short settle window, then stop (don't hang for 600s).
-                if proc_dead_since is None:
-                    proc_dead_since = time.time()
-                elif time.time() - proc_dead_since > 15:
-                    break
-                continue
-
-            # RPCS3 still running: fallback completion = the install folder has
-            # stopped growing for 20s (extraction drained).
-            if new_id:
-                sz = _dir_size(os.path.join(RPCS3_GAME_DIR, new_id))
-                if sz >= 0 and sz == last_size:
-                    if stable_since is None:
-                        stable_since = time.time()
-                    elif time.time() - stable_since > 20:
-                        done = True
-                        break
-                else:
-                    stable_since = None
-                    last_size = sz
+        v = good[0]
+        new_id = (v.group('tid').strip() or header_id or "").strip()
+        human = v.group('title').strip()
+        version = v.group('ver').strip()
         if not new_id:
-            return False, ["Install did not complete - no game folder",
-                           "appeared. Staged files were kept so you",
-                           "can retry."]
-        if not done:
-            _log("install: 600s cap reached without a clean completion "
-                 "signal; install may be partial")
-
-        _kill_rpcs3()    # ensure RPCS3 is gone (it should have self-exited)
-
-        human = _sfo_title(os.path.join(RPCS3_GAME_DIR, new_id)) or new_id
+            # Log said success but named no title id — nothing downstream
+            # (.psn, config, vault) can be keyed. Report honestly.
+            return False, out_lines([
+                "The package installed, but RPCS3 did not report",
+                "a title ID for it, so the game launcher could not",
+                "be created. Staged files were kept."])
+        game_dir = os.path.join(game_real, new_id)
+        if not human:
+            human = _sfo_title(game_dir) or ""
+        human = human or new_id
+        if not os.path.isdir(game_dir):
+            return False, out_lines([
+                f"RPCS3 reported {human} installed, but its game",
+                f"folder is missing:  {new_id}",
+                "",
+                "Staged files were kept so you can retry."])
 
         rap_done = "none staged"
-        if rap_path:
-            try:
-                os.makedirs(RPCS3_EXDATA_DIR, exist_ok=True)
-                shutil.copyfile(
-                    rap_path,
-                    os.path.join(RPCS3_EXDATA_DIR, os.path.basename(rap_path)))
-                rap_done = "copied to exdata"
-            except Exception as e:
-                _log(f"rap copy failed: {e}")
-                rap_done = "COPY FAILED"
+        if raps:
+            exdata = _rpcs3_resolved(RPCS3_CFG_EXDATA_DIR, RPCS3_EXDATA_DIR)
+            copied = 0
+            for r in raps:
+                try:
+                    os.makedirs(exdata, exist_ok=True)
+                    shutil.copyfile(r, os.path.join(exdata, os.path.basename(r)))
+                    copied += 1
+                except Exception as e:
+                    _log(f"rap copy failed for {r}: {e}")
+            rap_done = (f"{copied} copied to exdata" if copied
+                        else "COPY FAILED")
 
         psn_name = _write_psn(new_id, human)
         mh_ok = _enable_mangohud(psn_name)
@@ -3363,7 +3503,7 @@ def _run_install(pkg_path, rap_path, notify):
         # for the next game: the common workflow is dropping the .pkg over
         # SMB from a Mac Finder, which litters the folder with '._' files
         # (Rocknix even ships a "Remove ._ Files" Tools utility for this).
-        cleanup = [f for f in (pkg_path, rap_path) if f]
+        cleanup = [pkg_path] + raps
         try:
             for entry in os.listdir(PKG_STAGING_DIR):
                 if entry.startswith('.'):
@@ -3380,28 +3520,23 @@ def _run_install(pkg_path, rap_path, notify):
                     f"{human} installed.\n"
                     "Press START > Game Settings > Update Gamelists "
                     "to add it to your library.", timeout=15000)
-        return True, [
+        return True, out_lines([
             f"INSTALLED:  {human}",
-            f"  title id   : {new_id}",
+            f"  title id   : {new_id}" + (f"  (v{version})" if version else ""),
             f"  licence    : {rap_done}",
             f"  launcher   : {psn_name}",
             f"  mangohud   : {'enabled' if mh_ok else 'FAILED - enable manually'}",
             f"  etk config : {cfg_status}",
-            "",
-            "Press START > Game Settings > Update Gamelists",
-            "on the handheld to see it in your library.",
-        ]
+        ]) + ["",
+              "Press START > Game Settings > Update Gamelists",
+              "on the handheld to see it in your library."]
     except Exception as e:
         _log(f"install flow error: {e}\n{traceback.format_exc()}")
-        return False, ["Install error:",
-                       f"  {e.__class__.__name__}: {str(e)[:48]}"]
+        return False, out_lines(["Install error:",
+                                 f"  {e.__class__.__name__}: {str(e)[:48]}"])
     finally:
-        if kfd is not None:
-            _uinput_close(kfd)
-        _kill_rpcs3()
-        # RPCS3 knocked the Pitstop (foot) window out of fullscreen in
-        # sway; re-assert it so the curses UI is not left tiled/clipped.
-        _restore_pitstop_window(env)
+        if proc is not None and proc.poll() is None:
+            _kill_rpcs3()
         try:
             os.remove(ETK_INSTALL_LOCK)
         except Exception:
@@ -3427,18 +3562,25 @@ def _run_uninstall(game, notify):
     if _rpcs3_running():
         return False, ["RPCS3 is running - close the game first."]
 
-    dir_targets = [
-        os.path.join(RPCS3_GAME_DIR, tid),
+    # Cover BOTH the games tree and whatever RPCS3's config dir resolves to.
+    # Once the ROCKNIX link exists these are the same path (dedup below), but a
+    # rig that installed before the link was made has the game in the config
+    # tree — uninstall must still find it there. See _ensure_rpcs3_storage_links.
+    game_dirs = {RPCS3_GAME_DIR, _rpcs3_resolved(RPCS3_CFG_GAME_DIR, RPCS3_GAME_DIR)}
+    exdata_dirs = {RPCS3_EXDATA_DIR,
+                   _rpcs3_resolved(RPCS3_CFG_EXDATA_DIR, RPCS3_EXDATA_DIR)}
+    dir_targets = [os.path.join(g, tid) for g in sorted(game_dirs)] + [
         os.path.join(RPCS3_RUNTIME_CACHE, tid),
         os.path.join(RPCS3_HDD1_CACHE, f"{tid}_{tid}"),
     ]
     file_targets = [game["psn"]]
-    try:
-        for entry in os.listdir(RPCS3_EXDATA_DIR):
-            if tid in entry and entry.lower().endswith('.rap'):
-                file_targets.append(os.path.join(RPCS3_EXDATA_DIR, entry))
-    except Exception:
-        pass
+    for ex in sorted(exdata_dirs):
+        try:
+            for entry in os.listdir(ex):
+                if tid in entry and entry.lower().endswith('.rap'):
+                    file_targets.append(os.path.join(ex, entry))
+        except Exception:
+            pass
 
     freed = sum(_dir_size(d) for d in dir_targets if os.path.isdir(d))
     removed = 0
@@ -3474,18 +3616,22 @@ def _run_uninstall(game, notify):
 
 
 # === TOOLS TAB — PS3 FIRMWARE INSTALLER (headless) ===
-# Unlike the PKG installer (which drives RPCS3's GUI install dialog with a
-# /dev/uinput Enter tap because --installpkg pops a confirm window), firmware
-# installs through RPCS3's NATIVE headless CLI: `rpcs3 --headless --installfw`.
-# In headless mode RPCS3 builds a non-GUI application, so main_window::InstallPup
-# is called with a null main window and EVERY prompt is skipped (the confirm,
-# the "old firmware" and "already installed / overwrite" questions, the progress
-# dialog and the error popups are all gated on `mw != nullptr`). It installs to
-# dev_flash, logs "Successfully installed PS3 firmware version X" and self-exits
-# (return 0) — so no window polling and no uinput are needed here. The .pup is
-# KEPT (firmware is a one-time, reusable, system-wide asset). (--no-gui is a
+# Firmware installs through RPCS3's NATIVE headless CLI:
+# `rpcs3 --headless --installfw`. In headless mode RPCS3 builds a non-GUI
+# application, so main_window::InstallPup is called with a null main window and
+# EVERY prompt is skipped (the confirm, the "old firmware" and "already
+# installed / overwrite" questions, the progress dialog and the error popups
+# are all gated on `mw != nullptr`). It installs to dev_flash, logs
+# "Successfully installed PS3 firmware version X" and self-exits (return 0) —
+# so no window polling and no uinput are needed here. The .pup is KEPT
+# (firmware is a one-time, reusable, system-wide asset). (--no-gui is a
 # DIFFERENT flag that RPCS3 explicitly refuses for installs; it must be
 # --headless.)
+#
+# This was the model; as of 0.8.1 the PKG installer above works the same way.
+# The one behavioural difference is the exit code: --installfw exits 0 cleanly,
+# while --installpkg trips a teardown ensure() and dies on a signal AFTER a
+# successful install — so only this path may use rc==0 as corroboration.
 
 def _scan_firmware():
     """Return sorted absolute paths of .pup files in the firmware drop folder.
@@ -3550,6 +3696,11 @@ def _run_install_fw(pup_path, notify, _progress=None):
     incoherent = _storage_incoherent_msg()
     if incoherent:
         return False, incoherent
+    # Then make RPCS3's config dir resolve to the games tree. That link is
+    # start_rpcs3.sh's job and it only runs at GAME LAUNCH, so on a rig that
+    # has never launched one, firmware installed here lands in the config tree
+    # and the first launch `rm -rf`s it (see the pre-flight's header).
+    link_warn = _ensure_rpcs3_storage_links()
     # Then SELF-PROVISION RPCS3's dev_flash. RPCS3 resolves dev_flash through its
     # config dir (/storage/.config/rpcs3/dev_flash -> the games tree) and statfs's
     # it for free space BEFORE creating it — so on a freshly-flashed card, where
@@ -3557,7 +3708,7 @@ def _run_install_fw(pup_path, notify, _progress=None):
     # "Couldn't retrieve available disk space". Create the tree ourselves at
     # EXACTLY the path RPCS3 resolves (realpath follows the symlink) so firmware
     # lands where RPCS3 reads it. Fail only if the storage root is read-only/full.
-    df_real = os.path.realpath(RPCS3_DEV_FLASH)
+    df_real = _rpcs3_resolved(RPCS3_DEV_FLASH, RPCS3_DEV_FLASH)
     try:
         os.makedirs(df_real, exist_ok=True)
     except Exception as e:
@@ -3577,12 +3728,9 @@ def _run_install_fw(pup_path, notify, _progress=None):
 
     name = os.path.basename(pup_path)
     prev_ver = _installed_fw_version()
-    # Note the log size up front so we read only THIS run's tail afterwards
-    # (robust whether or not RPCS3 rotates RPCS3.log on launch).
-    try:
-        log_base = os.path.getsize(RPCS3_LOG)
-    except Exception:
-        log_base = 0
+    # Snapshot the log identity up front so we read only THIS run's output
+    # (RPCS3 rotates RPCS3.log on launch — see _rpcs3_log_mark).
+    mark = _rpcs3_log_mark()
 
     proc = None
     try:
@@ -3603,20 +3751,7 @@ def _run_install_fw(pup_path, notify, _progress=None):
                            "RPCS3 may be wedged - reboot and retry.",
                            f"The {name} file was kept."]
 
-        # Read only this run's slice of RPCS3.log (from the pre-launch offset;
-        # if the file shrank, RPCS3 rotated it -> read the whole current file).
-        log_tail = ""
-        try:
-            with open(RPCS3_LOG, 'r', errors='ignore') as f:
-                try:
-                    if os.fstat(f.fileno()).st_size >= log_base:
-                        f.seek(log_base)
-                except Exception:
-                    pass
-                log_tail = f.read()[-262144:]
-        except Exception:
-            pass
-        blob = out + "\n" + log_tail
+        blob = out + "\n" + _rpcs3_log_since(mark)
 
         new_ver = _installed_fw_version()
         ok_m = re.search(
@@ -3634,6 +3769,9 @@ def _run_install_fw(pup_path, notify, _progress=None):
                      f"  source : {name}  (kept in firmware_drop/)"]
             if prev_ver and prev_ver != ver:
                 lines.append(f"  note   : replaced firmware {prev_ver}")
+            if link_warn:
+                lines += ["", "NOTE - RPCS3 storage layout:"] + \
+                         [f"  {ln}" for ln in link_warn]
             lines += ["",
                       "Firmware is system-wide - you only install it once.",
                       "Commercial PS3 games can now boot in RPCS3."]
@@ -4139,17 +4277,15 @@ def _run_with_spinner(stdscr, msg, work, *args, draw=_tools_busy_msg,
 
 
 def _draw_tools_busy(stdscr, kind):
-    """Paint a 'working' frame before a blocking TOOLS op. RPCS3 covers
-    this during an install; mako carries the live progress."""
+    """Paint a 'working' frame before a blocking TOOLS op. (Both installers
+    are headless now and run under _run_with_spinner instead — this is the
+    uninstall path's frame.)"""
     try:
         stdscr.erase()
         h, w = stdscr.getmaxyx()
         _draw_title_bar(stdscr, w)
         _draw_tab_strip(stdscr, CURRENT_TAB_TOOLS, w)
-        if kind == "install":
-            msg = "Installing - RPCS3 will open. Do not touch the controller."
-        else:
-            msg = "Uninstalling - please wait..."
+        msg = "Uninstalling - please wait..."
         stdscr.addstr(h // 2, max(2, (w - len(msg)) // 2), msg[:w - 4],
                       curses.A_BOLD)
         hint = "Watch the on-screen notifications for progress."
@@ -4216,17 +4352,27 @@ def draw_tools(stdscr, state):
                 curses.A_DIM)
 
     elif mode == "install_confirm":
-        pkg, rap, tid = state["tools_pkg"]
+        pkg, raps, tid = state["tools_pkg"]
+        try:
+            mb = os.path.getsize(pkg) // (1024 * 1024)
+        except Exception:
+            mb = 0
         put(y, 2, "INSTALL - CONFIRM", curses.A_BOLD); y += 1
         put(y, 2, "-" * (w - 4), curses.A_DIM); y += 2
-        put(y, 4, f"Package : {os.path.basename(pkg)}"); y += 1
+        put(y, 4, f"Package : {os.path.basename(pkg)[:w - 16]}"); y += 1
+        put(y, 4, f"Size    : {mb} MB"); y += 1
         put(y, 4, f"Title ID: {tid}"); y += 1
-        rap_txt = os.path.basename(rap) if rap else "none staged"
+        rap_txt = (", ".join(os.path.basename(r) for r in raps)[:w - 16]
+                   if raps else "none staged")
         put(y, 4, f"Licence : {rap_txt}"); y += 2
-        put(y, 4, "RPCS3 will open on screen for about a minute.",
+        put(y, 4, "RPCS3 installs it headless, in the background.",
             curses.A_BOLD); y += 1
-        put(y, 4, "Do NOT touch the controller while it installs.",
-            curses.A_BOLD); y += 2
+        put(y, 4, "Nothing opens on screen. Big games take a while.",
+            curses.A_BOLD); y += 1
+        put(y, 4, "The .pkg is removed from the drop folder when it",
+            curses.A_DIM); y += 1
+        put(y, 4, "succeeds, and kept if it fails so you can retry.",
+            curses.A_DIM); y += 2
         put(y, 4, "B: Install     A: Cancel",
             curses.color_pair(1) | curses.A_BOLD)
 
@@ -4750,8 +4896,10 @@ def _tools_select(state):
                 state["tools_mode"] = "result"
             else:
                 pkg = pkgs[0]
-                rap = raps[0] if raps else None
-                state["tools_pkg"] = (pkg, rap, _pkg_title_id(pkg) or "unknown")
+                # Every staged licence goes with it: RAPs are keyed by content
+                # id, so an extra one is inert and a missing one is not.
+                state["tools_pkg"] = (pkg, raps,
+                                      _pkg_title_id(pkg) or "unknown")
                 state["tools_mode"] = "install_confirm"
         elif state.get("tools_cursor", 0) == _TOOLS_UNINSTALL_IDX:      # Uninstall
             state["tools_games"] = _list_psn_games()
@@ -4795,8 +4943,8 @@ def _tools_select(state):
             state["status"] = f"Screenshot on L1: {_cycle_screenshot_mode()}"
 
     elif mode == "install_confirm":
-        pkg, rap, _tid = state["tools_pkg"]
-        state["tools_action"] = ("install", pkg, rap)
+        pkg, raps, _tid = state["tools_pkg"]
+        state["tools_action"] = ("install", pkg, raps)
 
     elif mode == "firmware_confirm":
         pup, _ver = state["tools_fw"]
@@ -6388,7 +6536,7 @@ def _run_paddock_pkg_install(row, ent, notifier):
                 rap_path = tmp_rap
             else:
                 lines.append(f"rap download failed (curl {rrc}) — pkg only")
-        notifier.post("PADDOCK", f"{name}: installing PKG (RPCS3 opens)…")
+        notifier.post("PADDOCK", f"{name}: installing PKG (headless)…")
         ok, ilines = _run_install(tmp_pkg, rap_path, notifier)
         head = [f"{'INSTALLED' if ok else 'FAILED'}: {name}", ""]
         return ok, head + lines + [""] + (ilines or [])[-10:]
@@ -6769,8 +6917,15 @@ def main(stdscr):
             kind = action[0]
             skip_result = False
             if kind == "install":
-                _draw_tools_busy(stdscr, "install")
-                ok, lines = _run_install(action[1], action[2], notifier)
+                # Headless since 0.8.1, same shape as firmware below: RPCS3
+                # never takes the screen, so Pitstop keeps its own spinner up
+                # on the main thread while _run_install blocks on the worker.
+                res = _run_with_spinner(
+                    stdscr, "Installing PS3 package — please wait…",
+                    _run_install, action[1], action[2], notifier,
+                    indeterminate=True)
+                ok, lines = res if res else (
+                    False, ["package install failed — see log"])
             elif kind == "firmware":
                 # Headless install: RPCS3 runs in the background (no screen
                 # handoff), so we keep the Pitstop spinner alive on the main
@@ -6863,13 +7018,13 @@ def main(stdscr):
                 pass
 
         # PADDOCK: queued known_repo install — download the operator-supplied
-        # pkg/rap, verify, hand to the headless installer (RPCS3 opens, like a
-        # TOOLS install). Pure-data invariant: ETK runs the installer, the
-        # bytes are the operator's own.
+        # pkg/rap, verify, hand to the same headless installer the TOOLS tab
+        # uses (nothing opens on screen). Pure-data invariant: ETK runs the
+        # installer, the bytes are the operator's own.
         pkg_act = state.pop("paddock_pkg_action", None)
         if pkg_act:
             prow2, pent = pkg_act
-            _paddock_busy(stdscr, f"Getting {prow2['name']}: downloading, then RPCS3 opens — watch notifications")
+            _paddock_busy(stdscr, f"Getting {prow2['name']}: downloading, then installing — watch notifications")
             ok, lines = _run_paddock_pkg_install(prow2, pent, _Notifier())
             state["paddock_result"] = (ok, lines)
             state["paddock_mode"] = "result"

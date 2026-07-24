@@ -359,6 +359,44 @@ ssh $RIG_SSH "mkdir -p \
     $RPCS3_HOME_DIR \
     $PS3_LAUNCHER_DIR \
     $TELEMETRY_DIR"
+tui_step_progress 0 70
+
+# --- STEP 1b: RPCS3 config-dir links (fresh-rig data-loss guard) ---
+# ROCKNIX's start_rpcs3.sh points RPCS3's config dir at the games tree:
+#   rm -rf /storage/.config/rpcs3/$F ; ln -sf /storage/roms/bios/rpcs3/$F ...
+# for dev_flash/dev_hdd0/dev_hdd1/custom_configs — but it ONLY runs at GAME
+# LAUNCH. Pitstop's firmware + PKG installers invoke RPCS3 directly, so on a
+# rig that has never launched a game the links don't exist yet: RPCS3 creates
+# its VFS tree as REAL directories under /storage/.config/rpcs3/ and installs
+# there, and the first game launch rm -rf's the lot. Observed live 2026-07-24
+# on a fresh rig (firmware 4.93 + a 706 MB game, both one launch from deletion).
+# Making the links here means a fresh rig is correct before Pitstop is ever
+# opened. Conservative by design: we never move or delete user data — a
+# non-empty real directory is reported and left for Pitstop's installer
+# pre-flight (_ensure_rpcs3_storage_links), which migrates it safely.
+tui_log "Linking RPCS3 config dirs to the games tree"
+RPCS3_LINK_REPORT=$(ssh $RIG_SSH "sh -s" <<'RPCS3LINKS'
+CFG=/storage/.config/rpcs3
+BIOS=/storage/roms/bios/rpcs3
+# Absent config dir = ROCKNIX has not seeded it. Creating it here would make
+# start_rpcs3.sh's `if [ ! -d "$CFG" ]` skip its cp of the stock config.yml.
+[ -d "$CFG" ] || { echo "SKIP no rpcs3 config dir yet"; exit 0; }
+for F in dev_flash dev_hdd0 dev_hdd1 custom_configs; do
+    S="$CFG/$F"; T="$BIOS/$F"
+    mkdir -p "$T"
+    if [ -L "$S" ]; then continue; fi
+    if [ ! -e "$S" ]; then ln -sf "$T" "$S"; echo "LINKED $F"; continue; fi
+    if [ ! -d "$S" ]; then echo "WARN $F is a file, not a folder"; continue; fi
+    # Real directory: safe to replace only when it holds nothing.
+    if rmdir "$S" 2>/dev/null; then ln -sf "$T" "$S"; echo "LINKED $F"
+    else echo "HOLD $F has data in $S"; fi
+done
+RPCS3LINKS
+)
+for LINE in $(echo "$RPCS3_LINK_REPORT" | grep '^HOLD' | awk '{print $2}'); do
+    tui_log "  NOTE: /storage/.config/rpcs3/$LINE holds data - Pitstop's"
+    tui_log "        installer will migrate it into the games tree on next use"
+done
 tui_step_progress 0 80
 
 # Document the PKG install drop folder so a user browsing the SD card

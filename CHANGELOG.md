@@ -4,7 +4,14 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ## [Unreleased]
 
+### Fixed
+- **The PS3 game installer no longer reports a false failure on a successful install.** It now installs headlessly — `rpcs3 --headless --installpkg` — exactly like the firmware installer, so nothing opens on screen, RPCS3 exits by itself when it's done, and the result comes from RPCS3's own report rather than from Pitstop guessing by watching folders. Previously the installer drove RPCS3's on-screen dialog, tapped Enter through a virtual keyboard, and then decided the install was finished by watching a directory stop growing. Field failure that closed this out (2026-07-24): GT HD Concept finished installing in 42 seconds and installed correctly, but RPCS3's windowed mode never exits on its own — so Pitstop watched an empty folder for its full 10-minute limit and declared "Install did not complete". No launcher was written and the game never appeared in the library. Failures are also explained properly now: an update package that doesn't match your installed game says so, instead of reporting a generic timeout.
+- **A game or firmware installed before your first game launch is no longer deleted by that launch.** ROCKNIX points RPCS3's storage at your games card from its game-launch script, so on a brand-new rig — flash the card, drop a `.pup` and a `.pkg`, install both from Pitstop — RPCS3 had nowhere correct to put them and wrote into a temporary folder that the first game launch wipes. Both installers (and `install.sh`) now set that storage up before running RPCS3, and safely move anything already stranded into your games card. Found live on a fresh rig with PS3 firmware 4.93 and a 706 MB game sitting one launch away from deletion.
+- **Uninstall finds games installed either way** — it now clears both storage locations, so a game installed before this fix is still fully removable.
+
 ### Changed
+- **Installing a package keeps you in Pitstop.** The screen no longer hands over to RPCS3; you get the same spinner the firmware install shows, and the confirm screen reports the package size up front. The time limit now scales with package size instead of a flat 10 minutes, so a large title (GT5 is 19.4 GB) has room to finish on slow media.
+- All staged `.rap` licence files are installed with the package, not just the first one found.
 - **Kernel artifact renamed to a version-only scheme** (AI_MANIFEST law #8): the GTK kernel that shipped in v0.7.0 as `KERNEL.rocknix-gtk-20260706-audiofix0` is renamed `KERNEL.rocknix-gtk-20260706-0.2` for the next build (same bits; sha256 `7207dbce…` unchanged). The **published v0.7.0 asset is left as-is** — renaming it would break the `install.sh` kernel deploy and the release download links — so this only affects the next release's build inputs.
 
 ### Added
