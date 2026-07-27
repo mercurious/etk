@@ -43,6 +43,70 @@ dir_fingerprint() {
         | sha256sum | cut -d' ' -f1 )
 }
 
+# save_dirs_for <GAME_ID> [SAVES_DIR] [ALIAS_FILE]
+# Print the savedata directories belonging to a game, one per line.
+#
+# The obvious rule — "the folder is named after the game ID" — is only a
+# convention, and the folder name is chosen by the GAME, not by the disc.
+# GT6 breaks it: the US disc BCUS98296 writes BCJS37016-GAME6 / -BKUP6, the
+# JAPANESE title id, and nothing inside the save points back at BCUS98296
+# (its PARAM.SFO only echoes its own folder name). So a bare `$SAVES/$ID*`
+# glob matched nothing, PUSH bundled an empty savedata/, and PULL faithfully
+# restored nothing — silently, because push only ever reported shader counts.
+# Found live 2026-07-27; every other tested title happened to follow the
+# convention, which is why GT6 alone failed.
+#
+# Unknowable from the filesystem, so it is a lookup: config/save_aliases.tsv
+# maps a game ID to extra folder prefixes, and the operator can add a line
+# when PUSH reports a game as having no saves.
+save_dirs_for() {
+    _gid="$1"
+    _sv="${2:-$SAVES}"
+    _al="${3:-${ETK_ROOT:-/storage/roms/etk}/config/save_aliases.tsv}"
+    _prefixes="$_gid"
+    if [ -f "$_al" ]; then
+        _extra=$(awk -v id="$_gid" '
+            /^[[:space:]]*#/ { next }
+            $1 == id { print $2 }' "$_al" 2>/dev/null | tr ',' ' ')
+        [ -n "$_extra" ] && _prefixes="$_prefixes $_extra"
+    fi
+    for _p in $_prefixes; do
+        for _d in "$_sv/$_p"*; do
+            [ -d "$_d" ] || continue
+            case "$_d" in *.protune.bak.*|*.paddock.bak.*) continue;; esac
+            echo "$_d"
+        done
+    done
+}
+
+# unclaimed_save_dirs [SAVES_DIR] [ALIAS_FILE]
+# Save folders whose name starts with no game ID we know about and that no
+# alias claims. Printed when a push finds no saves, so the operator can see
+# the candidate and map it in one line instead of guessing.
+unclaimed_save_dirs() {
+    _sv="${1:-$SAVES}"
+    _al="${2:-${ETK_ROOT:-/storage/roms/etk}/config/save_aliases.tsv}"
+    [ -d "$_sv" ] || return 0
+    for _d in "$_sv"/*; do
+        [ -d "$_d" ] || continue
+        case "$_d" in *.protune.bak.*|*.paddock.bak.*) continue;; esac
+        _bn=$(basename "$_d")
+        _claimed=0
+        # Claimed if some game with a local vault (or an alias entry) prefixes it.
+        for _g in "$VAULT_BASE"/*; do
+            [ -d "$_g" ] || continue
+            case "$_bn" in "$(basename "$_g")"*) _claimed=1; break;; esac
+        done
+        if [ "$_claimed" = "0" ] && [ -f "$_al" ]; then
+            for _p in $(awk '/^[[:space:]]*#/ {next} {print $2}' "$_al" 2>/dev/null | tr ',' ' '); do
+                [ -n "$_p" ] || continue
+                case "$_bn" in "$_p"*) _claimed=1; break;; esac
+            done
+        fi
+        [ "$_claimed" = "0" ] && echo "$_bn"
+    done
+}
+
 # merge_shaders <src> <dst>
 # Content-addressed merge, plain overwrite. See the long note in cmd_pull for
 # why NEITHER `cp -rn` NOR `tar -xkf` may be used here. Prints report lines;
@@ -190,11 +254,25 @@ cmd_push() {
     B="$WORK/stage"; mkdir -p "$B/shaders" "$B/savedata"
     cp -a "$VAULT_BASE/$GAME_ID/shaders/." "$B/shaders/" 2>/dev/null
     [ -f "$CFG_DIR/config_${GAME_ID}.yml" ] && cp "$CFG_DIR/config_${GAME_ID}.yml" "$B/"
-    for d in "$SAVES/${GAME_ID}"*; do
-        # Never bank a backup dir left behind by a restore (either installer's).
-        case "$d" in *.protune.bak.*|*.paddock.bak.*) continue;; esac
-        [ -d "$d" ] && cp -a "$d" "$B/savedata/"
+    SV_DIRS=0
+    for d in $(save_dirs_for "$GAME_ID"); do
+        cp -a "$d" "$B/savedata/" && SV_DIRS=$((SV_DIRS + 1))
     done
+    # A push that banks no save is nearly always the alias problem above, not a
+    # game you never played. Say so loudly and name the candidates — silence
+    # here is what made the GT6 round-trip look like it worked.
+    if [ "$SV_DIRS" -eq 0 ]; then
+        echo "WARNING: no savedata found for $GAME_ID — this bundle will carry NO save."
+        UNCLAIMED=$(unclaimed_save_dirs)
+        if [ -n "$UNCLAIMED" ]; then
+            echo "         These save folders belong to no known game:"
+            echo "$UNCLAIMED" | sed 's/^/           /'
+            echo "         If one is $GAME_ID's, add its prefix to"
+            echo "           ${ETK_ROOT:-/storage/roms/etk}/config/save_aliases.tsv"
+            echo "         e.g.   $GAME_ID<TAB>$(echo "$UNCLAIMED" | head -1 | sed 's/-[^-]*$//')"
+            echo "         then push again."
+        fi
+    fi
     SH_COUNT=$(find "$B/shaders" -type f | wc -l)
     cat > "$B/manifest.json" <<MANIFEST
 { "private_paddock": 1, "game_id": "$GAME_ID", "chipset": "$CHIPSET",
@@ -230,7 +308,7 @@ MANIFEST
             --data-binary "@$WORK/names.new" \
             "https://uploads.github.com/repos/$REPO/releases/$REL/assets?name=paddock_names.json" >/dev/null 2>&1 || true
     fi
-    echo "PUSHED $GAME_ID: $SH_COUNT shaders, $((SIZE/1024)) KB -> $REPO @ $TAG"
+    echo "PUSHED $GAME_ID: $SH_COUNT shaders, $SV_DIRS save dir(s), $((SIZE/1024)) KB -> $REPO @ $TAG"
 }
 
 cmd_pull() {

@@ -763,6 +763,10 @@ tui_rsync 4 0 12 "Deploying Pitstop engine (etk_pitstop.py)" --exclude='.DS_Stor
 tui_rsync 4 12 24 "Deploying field schema (pitstop_fields.json)" --exclude='.DS_Store' ./config/pitstop_fields.json    $RIG_SSH:$ETK_ROOT/config/
 tui_rsync 4 24 30 "Deploying POWER schema (power_profiles.json)" --exclude='.DS_Store' ./config/power_profiles.json   $RIG_SSH:$ETK_ROOT/config/
 tui_rsync 4 30 36 "Deploying crash signatures" --exclude='.DS_Store' ./config/crash_signatures.json  $RIG_SSH:$ETK_ROOT/config/
+# Save-folder aliases (paddock_sync.sh). Never clobber the operator's edits —
+# this file is theirs to extend when a game stores saves under a foreign name.
+ssh $RIG_SSH "[ -f '$ETK_ROOT/config/save_aliases.tsv' ]" 2>/dev/null \
+    || tui_rsync 4 30 36 "Deploying save-folder aliases" --exclude='.DS_Store' ./config/save_aliases.tsv $RIG_SSH:$ETK_ROOT/config/
 # HUD punchbox masters (bin/hud_apply.sh reads these): the pristine ETK DDU
 # conf + the minimal "default" preset, both to $ETK_ROOT/config/.
 tui_rsync 4 36 37 "Deploying HUD punchbox master" --exclude='.DS_Store' ./config/MangoHud.conf $RIG_SSH:$ETK_ROOT/config/

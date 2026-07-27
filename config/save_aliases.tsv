@@ -1,0 +1,33 @@
+# ETK — SAVE-DIRECTORY ALIASES
+# =============================================================================
+# Which savedata folders belong to which game.
+#
+# Normally a PS3 game stores its saves in folders named after its own game ID
+# (NPEA90002-GAME-, BCUS98114-GAME, ...), and ETK finds them without help.
+# But the folder name is chosen by the GAME, not by the disc, and some games
+# use a name that has nothing to do with the disc you own. Nothing in the save
+# folder points back at the disc, so ETK cannot work these out on its own.
+#
+# When your Paddock PUSH reports "no savedata found" for a game you know has a
+# save, add a line here and push again.
+#
+# FORMAT   <GAME_ID><TAB><FOLDER PREFIX>[,<FOLDER PREFIX>...]
+# Lines starting with # are ignored. A prefix matches any folder starting with
+# it, so one entry covers a game's main save, its backup, its replays, etc.
+#
+# To find the right prefix: run the PUSH and read the list of unclaimed save
+# folders it prints, or look in
+#   /storage/roms/bios/rpcs3/dev_hdd0/home/00000001/savedata/
+# and match by date — the folder that changed when you last played is the one.
+# =============================================================================
+
+# Gran Turismo 6 — the US disc (BCUS98296) stores its saves under the Japanese
+# title ID. Verified on-rig 2026-07-27: the card held BCJS37016-GAME6 and
+# BCJS37016-BKUP6 and no BCUS98296 folder at all, so PUSH bundled nothing and
+# PULL had nothing to restore.
+BCUS98296	BCJS37016
+
+# The EU disc is BCES01893. It is very likely the same Japanese save prefix,
+# but that has NOT been verified on hardware here — uncomment if it matches
+# what you see in your savedata folder.
+#BCES01893	BCJS37016

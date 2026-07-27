@@ -268,6 +268,92 @@ try:
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
+print("\n[4] save-dir resolution — the GT6 case (saves under a FOREIGN prefix)")
+# Verbatim from the rig 2026-07-27. GT6's US disc is BCUS98296 but it writes
+# BCJS37016-* (the Japanese title id); every other title here follows the
+# convention, which is why GT6 alone silently pushed an empty savedata/.
+RIG_SAVES = ["BCJS37016-BKUP6", "BCJS37016-GAME6", "BCUS98114-GAME",
+             "BCUS98158-GAME-", "NPEA00050-GAME-", "NPEA00050-RPLY2-F001",
+             "NPEA90002-GAME-", "NPEA90002-GAME-.paddock.bak.20260727-103450",
+             "NPEA90002-REPLAY-001"]
+ALIAS = "# comment line\nBCUS98296\tBCJS37016\n"
+
+tmp = tempfile.mkdtemp()
+try:
+    sv = os.path.join(tmp, "savedata")
+    for d in RIG_SAVES:
+        mkfiles(sv, [f"{d}/PARAM.SFO"], d)
+    al = os.path.join(tmp, "save_aliases.tsv")
+    open(al, "w").write(ALIAS)
+
+    def dirs(gid, alias=al):
+        rc, out = call("save_dirs_for", gid, sv, alias)
+        return sorted(os.path.basename(x) for x in out.splitlines() if x)
+
+    check("GT6 resolves via the alias",
+          dirs("BCUS98296"), ["BCJS37016-BKUP6", "BCJS37016-GAME6"])
+    check("conventional titles still resolve directly",
+          dirs("BCUS98114"), ["BCUS98114-GAME"])
+    check("prefix match covers replays",
+          dirs("NPEA00050"), ["NPEA00050-GAME-", "NPEA00050-RPLY2-F001"])
+    check("backup dirs are never banked",
+          dirs("NPEA90002"), ["NPEA90002-GAME-", "NPEA90002-REPLAY-001"])
+    check("a game with no save resolves empty", dirs("NPUA80075"), [])
+    # Without the alias file GT6 finds nothing — this IS the shipped bug.
+    check("no alias file -> GT6 finds nothing (the original failure)",
+          dirs("BCUS98296", os.path.join(tmp, "absent.tsv")), [])
+    check("alias file absent is not fatal for normal titles",
+          dirs("BCUS98114", os.path.join(tmp, "absent.tsv")), ["BCUS98114-GAME"])
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+
+print("\n[4b] unclaimed save folders are surfaced so the operator can map them")
+tmp = tempfile.mkdtemp()
+try:
+    sv = os.path.join(tmp, "savedata")
+    vb = os.path.join(tmp, "vault")
+    for d in RIG_SAVES:
+        mkfiles(sv, [f"{d}/PARAM.SFO"], d)
+    # Vault holds the games this rig knows about — GT6 among them.
+    for g in ("BCUS98296", "BCUS98114", "BCUS98158", "NPEA00050", "NPEA90002"):
+        os.makedirs(os.path.join(vb, g, "shaders"), exist_ok=True)
+
+    r = subprocess.run(
+        ["bash", "-c",
+         f'PADDOCK_LIB=1 . "{ENGINE}"\nVAULT_BASE="{vb}"\n'
+         f'unclaimed_save_dirs "{sv}" "{os.path.join(tmp, "none.tsv")}"'],
+        capture_output=True, text=True)
+    got = sorted(x for x in r.stdout.split() if x)
+    check("GT6's foreign folders show up as unclaimed",
+          got, ["BCJS37016-BKUP6", "BCJS37016-GAME6"])
+
+    # With the alias in place they are claimed, so nothing is reported.
+    al = os.path.join(tmp, "save_aliases.tsv")
+    open(al, "w").write(ALIAS)
+    r = subprocess.run(
+        ["bash", "-c",
+         f'PADDOCK_LIB=1 . "{ENGINE}"\nVAULT_BASE="{vb}"\n'
+         f'unclaimed_save_dirs "{sv}" "{al}"'],
+        capture_output=True, text=True)
+    check("once aliased, nothing is unclaimed", r.stdout.strip(), "")
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+
+print("\n[4c] the shipped alias file actually carries the GT6 mapping")
+alias_path = os.path.join(HERE, os.pardir, "config", "save_aliases.tsv")
+check("config/save_aliases.tsv exists", os.path.isfile(alias_path), True)
+tmp = tempfile.mkdtemp()
+try:
+    sv = os.path.join(tmp, "savedata")
+    for d in RIG_SAVES:
+        mkfiles(sv, [f"{d}/PARAM.SFO"], d)
+    rc, out = call("save_dirs_for", "BCUS98296", sv, os.path.abspath(alias_path))
+    check("GT6 resolves using the SHIPPED file",
+          sorted(os.path.basename(x) for x in out.splitlines() if x),
+          ["BCJS37016-BKUP6", "BCJS37016-GAME6"])
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+
 print("\n[3] dir_fingerprint")
 tmp = tempfile.mkdtemp()
 try:
