@@ -124,13 +124,23 @@ fi
 if [ "$VAULT_OK" -eq 1 ] && [ -d "$TMP/bundle/shaders" ]; then
   MESA_CACHE=/storage/.cache/mesa_shader_cache
   mkdir -p "$MESA_CACHE"
-  # No-clobber merge via tar -k (keep existing): same hash name == same bytes.
-  # NOT `cp -rn src/. dest/` — on BusyBox that form is a SILENT NO-OP (rc=0,
-  # zero files copied), which also defeated the old `||` fallback here.
-  # Discovered live 2026-06-12 during paddock_sync.sh validation.
-  (cd "$TMP/bundle/shaders" && tar -cf - .) | (cd "$MESA_CACHE" && tar -xkf -) 2>/dev/null
+  # Content-addressed merge by plain overwrite. Two BusyBox traps have bitten
+  # this one line: `cp -rn src/. dest/` is a SILENT NO-OP (rc=0, zero files —
+  # 2026-06-12), and `tar -xkf` does NOT skip-and-continue, it ABORTS at the
+  # FIRST existing file (2026-07-27: a 7,201-file bundle stopped after 40 when
+  # the target held one collision). Overwrite is safe here for the same reason
+  # -k looked safe: these names are Mesa cache keys and the homologation gate
+  # has already matched the driver, so a colliding name holds identical bytes.
+  B_BEFORE=$(find "$MESA_CACHE" -type f 2>/dev/null | wc -l | tr -d ' ')
   N_NEW=$(find "$TMP/bundle/shaders" -type f | wc -l | tr -d ' ')
-  say "    ${G}shaders merged -> $MESA_CACHE ($N_NEW files)${N}"
+  (cd "$TMP/bundle/shaders" && tar -cf - .) | (cd "$MESA_CACHE" && tar -xf -) 2>"$TMP/shaders.err"
+  B_AFTER=$(find "$MESA_CACHE" -type f 2>/dev/null | wc -l | tr -d ' ')
+  [ -s "$TMP/shaders.err" ] && say "${Y}    shader merge reported: $(head -1 "$TMP/shaders.err")${N}"
+  if [ "$B_AFTER" -lt "$N_NEW" ]; then
+    say "${Y}    WARNING: merge INCOMPLETE — bundle $N_NEW, cache $B_AFTER${N}"
+  else
+    say "    ${G}shaders merged -> $MESA_CACHE ($N_NEW in bundle, +$((B_AFTER - B_BEFORE)) new)${N}"
+  fi
 elif [ "$VAULT_OK" -eq 0 ]; then
   say "${Y}    shaders skipped (homologation gate)${N}"
 fi

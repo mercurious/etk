@@ -200,6 +200,7 @@ rule out your own patch's effect by confirming the patched events are actually i
 * **FIND:** BusyBox `find` is extremely limited. Avoid complex `-exec` or `-regex`. Use `find | wc -l` for counts.
 * **STAT:** Do not use `stat --format`. Use `readlink` for symlink resolution.
 * **PROC:** Since RPCS3 runs in an encapsulated AppImage/Dwarfs mount, always use `/proc/$PID/cmdline` and `/proc/$PID/environ` for discovery.
+* **NO-CLOBBER MERGE — BOTH OBVIOUS IDIOMS ARE TRAPS:** `cp -rn src/. dst/` is a **silent no-op** (rc=0, zero files copied — 2026-06-12), and `tar -xkf` does NOT skip-and-continue: BusyBox **ABORTS the whole extraction at the FIRST existing file** (`tar: can't open '...': File exists`). Proven on-rig 2026-07-27 — a 7,201-file bundle merged into a target holding ONE colliding file extracted 40 entries and stopped; with `2>/dev/null` masking it, the caller reported success. For a CONTENT-ADDRESSED merge (same name == same bytes) use plain `tar -xf` (overwrite) and **verify the resulting count against the source**. If you genuinely must preserve differing targets, compare and move them aside yourself.
 * **AWK:** Use `awk` for floating-point math; BusyBox `sh` cannot handle decimals and `bc` may not be present in all builds.
 
 

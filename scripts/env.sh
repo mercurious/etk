@@ -53,7 +53,7 @@ export ETK_GOLDEN_SEED="${ETK_GOLDEN_SEED:-1}"
 # .iso never lists), enables the per-game MangoHud key, and golden-seeds
 # the config from the filename serial. Set 0 to disable (kill-switch).
 export ETK_ISO_ONBOARD="${ETK_ISO_ONBOARD:-1}"
-# Controller binding repair (0.8.2, default-ON): ROCKNIX's stock RPCS3 pad
+# Controller binding repair (0.8.1, default-ON): ROCKNIX's stock RPCS3 pad
 # config names "InputPlumber GameController 1" — the Xbox-style virtual pad
 # InputPlumber used to expose. It now targets a DualSense, so that name
 # matches nothing, RPCS3 falls back to NullPadHandler and the controller is

@@ -108,7 +108,7 @@ CONFIG_CHANGES_HEADER = "epoch\tgame_id\tfield_label\told_value\tnew_value\n"
 # ALIGNED TO THE RELEASE TAG at every cut (load-bearing since 0.8.0: the
 # TOOLS self-update compares this against the latest GitHub release tag).
 # The DRIVER tab names the actually-bound stack builds.
-APP_VERSION = "0.8.2"
+APP_VERSION = "0.8.1"
 
 # DRIVER tab (Turnip env-var dials). These are NOT RPCS3 config keys — they
 # inject through the proven profile.d path (same mechanism as 098-etk-stage3),
@@ -235,7 +235,7 @@ GOLDEN_SEED_ENABLED = os.environ.get('ETK_GOLDEN_SEED', '1').strip() != '0'
 # setting including the MangoHud overlay. The startup sweep fixes both
 # and seeds the golden config from the filename serial.
 ISO_ONBOARD_ENABLED = os.environ.get('ETK_ISO_ONBOARD', '1').strip() != '0'
-# Controller binding repair (0.8.2, default-ON; env.sh exports the etk.conf
+# Controller binding repair (0.8.1, default-ON; env.sh exports the etk.conf
 # kill-switch ETK_PAD_BIND=0). ROCKNIX's stock RPCS3 pad config names a
 # virtual device InputPlumber no longer presents, which leaves RPCS3 on
 # NullPadHandler — a dead controller with no on-screen clue.

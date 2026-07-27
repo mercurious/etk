@@ -157,7 +157,7 @@ ETK_GOLDEN_SEED=1
 # 1 = on (default) · 0 = kill-switch (ISOs are left exactly as dropped)
 ETK_ISO_ONBOARD=1
 
-# --- Controller binding repair (0.8.2, ships ON) ---
+# --- Controller binding repair (0.8.1, ships ON) ---
 # Makes the gamepad work in RPCS3 without you touching a pad-config screen.
 # ROCKNIX ships RPCS3 a stock pad config pointing at a controller called
 # "InputPlumber GameController 1" — the Xbox-style virtual pad InputPlumber
