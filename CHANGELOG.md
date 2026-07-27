@@ -4,30 +4,51 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-07-27 — maintenance
+
+A bug-fix release. Everything here was found by running v0.8.0 on real
+hardware and every fix was verified on the rig before shipping. No stack
+change: RPCS3 **GTK Edition v0.7.5**, Mesa Turnip **26.1.3 gtk_0.4**, kernel
+**rocknix-gtk-20260706-0.2** and base **ROCKNIX official 20260701** are all
+byte-identical to v0.8.0. **Update if** you install PS3 games on-device, use
+the Private Paddock, or set up a rig from a freshly flashed card.
+
 ### Fixed
 - **Paddock PUSH now finds saves for games that store them under a different name (GT6).** A game's save folder is named by the game, not by the disc you own — and Gran Turismo 6's US disc (BCUS98296) writes its saves as `BCJS37016-*`, the Japanese title ID. ETK only looked for folders named after the game, so GT6 pushed a bundle with no save in it and the pull had nothing to restore. Every other tested title happens to use its own ID, which is why only GT6 failed. There is nothing inside a save that points back at the disc, so this is now a lookup: `config/save_aliases.tsv` ships with GT6 mapped, and you can add a line for any other game that does this. A push that finds no save now says so plainly and lists the unclaimed save folders with the exact line to add — instead of reporting success.
-
 - **Paddock PULL now actually restores your shaders.** A pull into a game that already had *any* shaders — which is every game you have launched even once — stopped after the first few and reported success. On the rig a 7,201-shader Gran Turismo HD Concept bundle delivered 67. Cause: the merge used a "keep existing files" flag that on this OS does not skip existing files at all, it **aborts the whole copy at the first one**, and the error was being discarded. The merge now completes, and it checks the result against what the bundle carried instead of reporting whatever happens to be in the vault. The same flaw was in the Pro Tuning installer and is fixed there too.
 - **Paddock PULL now actually restores your save.** The restore refused to touch a save that already existed locally. Launching a game even once — which you must do to check the controller — makes RPCS3 write an empty save, and that empty save then blocked your real one from ever landing. On the rig the ten replay saves restored fine while the career save, the only one that mattered, was silently skipped. PULL now restores your save as you asked it to, and anything it replaces is kept alongside as `.paddock.bak.<timestamp>` rather than deleted. An identical save is left untouched.
 - **A pull that goes wrong now says so.** The summary previously reported the vault total, which looked healthy even when almost nothing had been restored. It now reports what arrived — shaders added versus shaders in the bundle, config, and saves restored/replaced/already-current — and warns explicitly if the shader count comes up short.
-
-### Added
-- **The controller now just works in RPCS3 — no pad-config screen, no remapping.** ROCKNIX ships RPCS3 a pad config pointing at a controller called "InputPlumber GameController 1", which is the Xbox-style virtual pad the OS used to present. It presents a DualSense now, so on a Flip 2 that name matches nothing and RPCS3 quietly falls back to its "no controller" handler: buttons do nothing in game, and there is no error anywhere on screen to explain it. ETK now asks the rig's own SDL what your pad is really called and corrects the device line — at PS3 firmware install, and again at every Pitstop open so it repairs itself if a future OS update renames the pad again. Your button map, dead zones and trigger calibration are never touched, and a config that is already correct is left byte-for-byte alone. `ETK_PAD_BIND=0` in `etk.conf` to manage the pad config yourself.
-
-### Fixed
-- **0.8.1 follow-up: installing the same package twice reported a false failure.** RPCS3 starts a fresh log each launch by rewriting the file in place, and re-installing the *same* game produces a byte-for-byte identical log — which 0.8.1 mistook for "RPCS3 wrote nothing" and read as a failure. Freshness is now judged by time, not size. Caught on the rig the first time 0.8.1 ran a repeat install.
-- **0.8.1 follow-up: rescuing an already-stranded game now actually moves it.** The games card is a separate mount point, so the quick move the migration relied on is refused by the system even though both paths are on the same card; it now falls back to a real copy, staged so an interrupted move can never leave a half-written game behind. Every migration on the first 0.8.1 run failed this way and silently moved nothing.
 - **The PS3 game installer no longer reports a false failure on a successful install.** It now installs headlessly — `rpcs3 --headless --installpkg` — exactly like the firmware installer, so nothing opens on screen, RPCS3 exits by itself when it's done, and the result comes from RPCS3's own report rather than from Pitstop guessing by watching folders. Previously the installer drove RPCS3's on-screen dialog, tapped Enter through a virtual keyboard, and then decided the install was finished by watching a directory stop growing. Field failure that closed this out (2026-07-24): GT HD Concept finished installing in 42 seconds and installed correctly, but RPCS3's windowed mode never exits on its own — so Pitstop watched an empty folder for its full 10-minute limit and declared "Install did not complete". No launcher was written and the game never appeared in the library. Failures are also explained properly now: an update package that doesn't match your installed game says so, instead of reporting a generic timeout.
 - **A game or firmware installed before your first game launch is no longer deleted by that launch.** ROCKNIX points RPCS3's storage at your games card from its game-launch script, so on a brand-new rig — flash the card, drop a `.pup` and a `.pkg`, install both from Pitstop — RPCS3 had nowhere correct to put them and wrote into a temporary folder that the first game launch wipes. Both installers (and `install.sh`) now set that storage up before running RPCS3, and safely move anything already stranded into your games card. Found live on a fresh rig with PS3 firmware 4.93 and a 706 MB game sitting one launch away from deletion.
 - **Uninstall finds games installed either way** — it now clears both storage locations, so a game installed before this fix is still fully removable.
 
+### Added
+- **The controller now just works in RPCS3 — no pad-config screen, no remapping.** ROCKNIX ships RPCS3 a pad config pointing at a controller called "InputPlumber GameController 1", which is the Xbox-style virtual pad the OS used to present. It presents a DualSense now, so on a Flip 2 that name matches nothing and RPCS3 quietly falls back to its "no controller" handler: buttons do nothing in game, and there is no error anywhere on screen to explain it. ETK now asks the rig's own SDL what your pad is really called and corrects the device line — at PS3 firmware install, and again at every Pitstop open so it repairs itself if a future OS update renames the pad again. Your button map, dead zones and trigger calibration are never touched, and a config that is already correct is left byte-for-byte alone. `ETK_PAD_BIND=0` in `etk.conf` to manage the pad config yourself.
+
 ### Changed
 - **Installing a package keeps you in Pitstop.** The screen no longer hands over to RPCS3; you get the same spinner the firmware install shows, and the confirm screen reports the package size up front. The time limit now scales with package size instead of a flat 10 minutes, so a large title (GT5 is 19.4 GB) has room to finish on slow media.
 - All staged `.rap` licence files are installed with the package, not just the first one found.
-- **Kernel artifact renamed to a version-only scheme** (AI_MANIFEST law #8): the GTK kernel that shipped in v0.7.0 as `KERNEL.rocknix-gtk-20260706-audiofix0` is renamed `KERNEL.rocknix-gtk-20260706-0.2` for the next build (same bits; sha256 `7207dbce…` unchanged). The **published v0.7.0 asset is left as-is** — renaming it would break the `install.sh` kernel deploy and the release download links — so this only affects the next release's build inputs.
+
+## [0.8.0] - 2026-07-22 — "the productization release"
+
+The release where the kit became a product: disc ISOs first-class, the whole
+stack installable with one line on any computer (or none), and updates from
+the couch. Full notes: `dossiers/release_v0.8.0/`.
 
 ### Added
-- **`tools/release_sanity.sh`** — a release gate that enforces version-only artifact filenames (law #8): a strict `KERNEL.rocknix-gtk-<date>-<n.n>` pattern plus a feature-word denylist over the shipping config (`etk.conf`, the image-builder default, `drivers/`, `install.sh` CERTs), so feature-name cruft like `-audiofix0` can't ship again.
+- **Disc ISO support, end to end** — drop an `.iso` into `roms/ps3/` and it becomes a real EmulationStation game: launcher generated, IRISMAN-style `[TAG]` names repaired to `(SERIAL)` form (brackets silently break every per-game ROCKNIX setting), overlay enabled, golden tune seeded. `ETK_ISO_ONBOARD=0` to disable.
+- **Golden Tune Seeding** — any playable title with no per-game config starts on the ETK tune instead of RPCS3's defaults. `ETK_GOLDEN_SEED=0` to disable.
+- **One-line install on every platform** — `curl … get-etk.sh | bash` (macOS/Linux/WSL) and `irm … get-etk.ps1 | iex` (Windows); the Windows host port revived and synced to the current `install.sh`.
+- **Hostless self-update** — Pitstop TOOLS → *Check for ETK Updates* updates the middleware from GitHub releases with no computer involved.
+- **Flashable card image, hostless lane** — two boots from flash to a fully live GTK rig.
+- **GTK KERS (Kinetic Emulation Recovery System)** — the CPU-cycle recovery units, plus the in-race performance workbench: bog profiler, GRID big.LITTLE affinity rungs, perfstat channel, Pad Poll Interval dial.
+- **SD-card boot entries in the GRUB menu**, managed and self-healing.
+- **`tools/release_sanity.sh`** — a release gate enforcing version-only artifact filenames (law #8): a strict `KERNEL.rocknix-gtk-<date>-<n.n>` pattern plus a feature-word denylist over the shipping config, so cruft like `-audiofix0` can't ship again.
+
+### Changed
+- **RPCS3 GTK Edition v0.7.1 → v0.7.5** — anti-lock stage 4 (ffs-v5 flip-status force-retire), avwiden-v1 and semapark-v2 KERS units.
+- **G-INSTR is the default HUD**; the Strict Rendering Mode disc overlay was removed after being refuted as a false fix.
+- **Kernel artifact renamed to a version-only scheme** (law #8): the v0.7.0 kernel `KERNEL.rocknix-gtk-20260706-audiofix0` became `KERNEL.rocknix-gtk-20260706-0.2` (same bits; sha256 `7207dbce…` unchanged). The published v0.7.0 asset was left as-is so its download links keep working.
 
 ## [0.7.0] - 2026-07-07 — "GTK Edition"
 
