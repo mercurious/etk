@@ -888,6 +888,15 @@ mkdir -p /storage/.config/modules/
 cp -f "$ETK_ROOT/config/etk_pitstop.sh" /storage/.config/modules/etk_pitstop.sh
 chmod +x /storage/.config/modules/etk_pitstop.sh
 
+# --- DROP FOLDERS (every boot, any install path) ---
+# These were created ONLY by install.sh STEP 1, so a rig built from the
+# flashable card image — which never runs install.sh — came up without them.
+# The documented flow is "copy your .pup/.pkg in over SMB, THEN open Pitstop",
+# so the folders have to exist before the user goes looking. Found on a 0.8.1
+# card; 0.8.0 shipped the same gap. Idempotent, and it self-heals a card
+# flashed before this landed.
+mkdir -p "$PKG_STAGING_DIR" "$FIRMWARE_DROP_DIR" 2>/dev/null
+
 # --- REBOOT SURVIVAL: Seed SHM on boot before first loop tick ---
 mkdir -p "$SHM_DIR"
 echo "0"    > "$SHM_DIR/vault_count"

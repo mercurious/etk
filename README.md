@@ -61,7 +61,7 @@ It’s easy to try out the kit with a spare SD card and USB card reader, revert 
 1. Download the ROCKNIX-GTK SD Card image from [releases](https://github.com/mercurious/etk/releases) and then use a tool like [Balena Etcher](https://etcher.balena.io/#download-etcher) to flash a blank card with ROCKNIX-GTK.
 1. Insert your new flashed card and hold down `Volume-Up` before the Retroid Pocket logo and release as soon as you see the sideways U-Boot logo. The GRUB menu automatically boots into ROCKNIX-GTK. (In GRUB, you can use `Volume` and `Power` buttons to boot into the standard ROCKNIX kernel.) (**Recommended:** By holding `Volume-down` at boot, you can also set the rig to [auto-boot in Rocknix](https://github.com/mercurious/etk/wiki/Using-ROCKNIX-Guide#to-always-boot-into-rocknix-as-the-default-os) instead of Android so you don't have to play race the logos every boot. You can switch back and forth between Android and ROCKNIX very easily once you get the hang of the boot interface.)
 1. Add your WiFi in network settings and enable SSH, etc. once in the ROCKNIX EmulationStation frontend.
-1. Add the PS3 firmware and a game PKG to the provided etk drop folders, or transfer an ISO to `roms/ps3` over SMB or SFTP: `/storage/roms/etk/firmware_drop`, `/storage/roms/etk/pkg_drop`
+1. Add the PS3 firmware and a game PKG to the provided etk drop folders, or transfer an ISO to `roms/ps3` over SMB or SFTP: `/storage/roms/etk/firmware_drop`, `/storage/roms/etk/pkg_install_drop`
 1. Use the [ETK Pitstop app TOOLS](https://github.com/mercurious/etk/wiki/ETK-Pitstop-App#how-to-install-ps3-games-with-the-etk) to install your staged firmware and PKG files and games will automatically appear in the ES carousel and much more.
 1. **Ready to play**…but: Beware of shader storms early on, obvious by the shader spinner overlay in the lower-left hand corner. These are one-time compiles that get stashed into your ETK shader vault. **TIPS:** Let camera pans run fully before races, visit the dealership, and let the demo replay run to pre-harvest shaders for the track. Don't expect playable performance until your shader vault is fairly saturared. You'll keep adding to it as you progress in the game. Your ETK dashboard overlay shows you new shaders as you vault them during play, showing you an attempt was productive, even if you crashed.
 ### Already have ROCKNIX installed?
@@ -81,7 +81,7 @@ See [Getting Started](https://github.com/mercurious/etk/#getting-started) to ins
 | DDU Overlay | Native MangoHUD customized with ETK gauges | `R1` + `L3` to toggle between top, bottom, default, off |
 | Crash Recovery | Safely exit from crash or freeze | `L1` + `R3` to safely recover to ES frontend |
 | ETK Screenshot | One-finger shutter screenshots with overlay | `L1` configurable in ETK Pitstop |
-| On Device Installations | One-tap, on-device firmware and game installs | Drop `.pup` in `etk/firmware_drop`, `.pkg` in `etk/pkg_drop`, open ETK Pitstop `TOOLS` tab |
+| On Device Installations | One-tap, on-device firmware and game installs | Drop `.pup` in `etk/firmware_drop`, `.pkg` in `etk/pkg_install_drop`, open ETK Pitstop `TOOLS` tab |
 | Golden Tune Seeding | New games (including disc `.iso` copied into `roms/ps3/`) start on the ETK golden tune instead of raw RPCS3 defaults | automatic on next Pitstop open; `ETK_GOLDEN_SEED=0` in `etk.conf` to disable |
 | ISO Onboarding | Copy a disc `.iso` into `roms/ps3/` and it becomes a real ES game: launcher generated, ETK overlay enabled and tuned | automatic on next Pitstop open; `ETK_ISO_ONBOARD=0` in `etk.conf` to disable |
 | Video Mirroring | Device screen on while USB-DisplayPort-HDMI out active | turn USB plug upside-down to solve video-out issue |
@@ -123,7 +123,7 @@ Windows (any PowerShell):
 irm https://raw.githubusercontent.com/mercurious/etk/main/windows_installer/get-etk.ps1 | iex
 ```
 3. Prefer a manual checkout? `git clone https://github.com/mercurious/etk` (or extract the `.zip` as `~/etk/`), then run `./install.sh` — or on Windows `powershell -ExecutionPolicy Bypass -File .\windows_installer\etk-install.ps1` — from the repo root.<br><br>
-4. Drop your PS3 firmware `.pup` into the approprite drop folder `/storage/roms/etk/firmware_drop/` on your device and use ETK Pitstop TOOLS to easily install it; a PKG file installed similary from `/storage/roms/etk/pkg_drop/`.
+4. Drop your PS3 firmware `.pup` into the approprite drop folder `/storage/roms/etk/firmware_drop/` on your device and use ETK Pitstop TOOLS to easily install it; a PKG file installed similary from `/storage/roms/etk/pkg_install_drop/`.
 
 ## Removing ETK
 - Use the provided `uninstall.sh` to remove the ETK from your system.
