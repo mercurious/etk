@@ -31,24 +31,44 @@ the Private Paddock, or set up a rig from a freshly flashed card.
 
 ## [0.8.0] - 2026-07-22 — "the productization release"
 
-The release where the kit became a product: disc ISOs first-class, the whole
-stack installable with one line on any computer (or none), and updates from
-the couch. Full notes: `dossiers/release_v0.8.0/`.
+Everything since v0.7.0. Certified stack: RPCS3 **GTK Edition v0.7.5** · Mesa Turnip **26.1.3 gtk_0.4** · kernel **rocknix-gtk-20260706-0.2** · base **ROCKNIX official 20260701**.
 
 ### Added
-- **Disc ISO support, end to end** — drop an `.iso` into `roms/ps3/` and it becomes a real EmulationStation game: launcher generated, IRISMAN-style `[TAG]` names repaired to `(SERIAL)` form (brackets silently break every per-game ROCKNIX setting), overlay enabled, golden tune seeded. `ETK_ISO_ONBOARD=0` to disable.
-- **Golden Tune Seeding** — any playable title with no per-game config starts on the ETK tune instead of RPCS3's defaults. `ETK_GOLDEN_SEED=0` to disable.
-- **One-line install on every platform** — `curl … get-etk.sh | bash` (macOS/Linux/WSL) and `irm … get-etk.ps1 | iex` (Windows); the Windows host port revived and synced to the current `install.sh`.
-- **Hostless self-update** — Pitstop TOOLS → *Check for ETK Updates* updates the middleware from GitHub releases with no computer involved.
-- **Flashable card image, hostless lane** — two boots from flash to a fully live GTK rig.
-- **GTK KERS (Kinetic Emulation Recovery System)** — the CPU-cycle recovery units, plus the in-race performance workbench: bog profiler, GRID big.LITTLE affinity rungs, perfstat channel, Pad Poll Interval dial.
-- **SD-card boot entries in the GRUB menu**, managed and self-healing.
+- **ISO onboarding** — copy a disc `.iso` into `roms/ps3/` and it becomes a real ES game: launcher generated, IRISMAN-style `[TAG]` names repaired to `(SERIAL)` form (brackets silently break ALL per-game ROCKNIX settings), whitespace runs collapsed, overlay enabled, config seeded. Automatic on next Pitstop open; `ETK_ISO_ONBOARD=0` kill-switch.
+- **Golden Tune Seeding** — any playable title with no per-game config (disc or PKG) starts on the ETK golden tune instead of raw RPCS3 defaults; seeds are ledgered. `ETK_GOLDEN_SEED=0` kill-switch.
+- **Disc identity resolution** — running-ISO titles resolve their game ID (games.yml path match + live-log serial) instead of falling back to a wrong PKG ID; ISO titles display real names throughout Pitstop (filename-stem resolution, no PSN dependency).
+- **One-line install, every platform** — macOS/Linux/WSL `curl -fsSL …/get-etk.sh | bash`, Windows `irm …/get-etk.ps1 | iex`. Both fetch the kit without git, update in place on re-run, and hand off to the installer.
+- **Hostless self-update** — Pitstop TOOLS → *Check for ETK Updates* checks GitHub releases and updates the ETK middleware in place, on device, with no computer. Idle-gated, fail-soft, ledgered; `ETK_SELF_UPDATE=0` kill-switch.
+- **Flashable card image (hostless lane)** — two boots from flash to a fully live GTK stack: boot 1 auto-resizes to the whole card, boot 2 activates ETK with no host machine involved. Unique `ROCKNIX-GTK`/`GTKSTOR` labels make the card safe beside an internal ROCKNIX install.
+- **SD-card boot entries in the GRUB menu** (install.sh-managed, self-healing dual-mode) — pick *ROCKNIX-GTK from SD card* once and the card boots while inserted; pull it and one detour boot restores the internal default. Never touches the default UFS entry.
+- **GTK KERS — Kinetic Emulation Recovery System.** The in-race profiler measured **≈38% of all CPU cycles** burning in spins, polls and fault storms, recovered by four shipped units, each in the layer that owns it: **semapark** (GTK Edition 0.7.3), **avwiden readahead** (0.7.4), the **pad-poll golden default** and the **Relaxed-ZCULL pairing** (ETK v0.7.0 dials).
+- **perfstat channel** — the fork reports its own PPU/SPU/RSX split, frametime, access-violation and flip-retire counters to telemetry, independent of MangoHud (ledger `perf` column).
+- **Bog profiler** — chord `R1+DPAD-Down` mid-race takes a 30 s flame-graph perf sample of the live emulator, symbolized at capture and self-labeled with live fps. (RSX frame capture moved to `R1+DPAD-Up`.)
+- **GRID mode** — big.LITTLE thread-affinity rungs (off/A/B/C) in the POWER tab, engagement marks persisted to telemetry.
+- **Pad Poll Interval dial** + golden default 1000→4000 µs — the bog profiler found the 1 kHz pad re-check burning ~8% of ALL cycles in pack racing.
+- **TUNING gains a Video section** (Default Resolution, Frame Limit, MSAA, VSync, Renderer, Shader Precision) plus an Accurate ZCULL stats field and refreshed pit-engineer help throughout.
 - **`tools/release_sanity.sh`** — a release gate enforcing version-only artifact filenames (law #8): a strict `KERNEL.rocknix-gtk-<date>-<n.n>` pattern plus a feature-word denylist over the shipping config, so cruft like `-audiofix0` can't ship again.
+- **`TRACK_MANUAL.md`** — the system manual and map (mission, machinery, forensic method, live frontier), now the session-start orientation document.
 
 ### Changed
-- **RPCS3 GTK Edition v0.7.1 → v0.7.5** — anti-lock stage 4 (ffs-v5 flip-status force-retire), avwiden-v1 and semapark-v2 KERS units.
-- **G-INSTR is the default HUD**; the Strict Rendering Mode disc overlay was removed after being refuted as a false fix.
+- **RPCS3 GTK Edition v0.7.1 → v0.7.5** — anti-lock stage 4 (**ffs-v5** flip-status force-retire, converting the dominant remaining post-rescue freeze class into survived races), **avwiden-v1** and **semapark-v2** KERS units, crash overlay text unified to mixed-case "GTK Crash Recovery", and self-ID (`--version` / log header / about) reading *GTK Edition v0.7.5*.
+- **G-INSTR is the default HUD** (live frame-pacing gauges); BASIC remains the simple option. Gauge label `JITTER` → `JTTR`.
+- **Golden template defaults** — output resolution 720×480 → **1280×720** (native target) and SPU Block Size → **Safe**, a defaults-first stance for unknown titles. GT titles keep their tuned configs.
+- **Strict Rendering Mode disc overlay removed** — refuted as a false fix; discs now seed the same clean template as PKGs.
+- **Windows host port revived and synced to the current install.sh** (was 0.6.0): transport hardened from live field failures — wall-clock-bounded ssh/scp with closed-pipe stdin (kills the Win32-OpenSSH channel-close wedge), resolve-`.local`-once with wire-address pinning (kills mDNS stalls while keeping zero-config), visible progress on big transfers — plus a live-session guard, SD rebind and firmware drop folder.
+- **Pitstop UX** — header simplified to a single version (`// ETK PITSTOP vX //`); TOOLS tab redesigned with a single-spaced menu, on-select help anchored above the footer, and honest footer labels (`A: Quit` at top level, `A: Back` inside).
+- **Ledger semantics documented** — `epoch` is the session END, bog samples carry a `session_start` join key.
 - **Kernel artifact renamed to a version-only scheme** (law #8): the v0.7.0 kernel `KERNEL.rocknix-gtk-20260706-audiofix0` became `KERNEL.rocknix-gtk-20260706-0.2` (same bits; sha256 `7207dbce…` unchanged). The published v0.7.0 asset was left as-is so its download links keep working.
+- README: one-liners lead Getting Started; feature table refreshed.
+
+### Fixed
+- **LittleBigPlanet (and any double-spaced ROM name)** — MangoHud overlay and all per-game settings now work; filenames are whitespace-normalized at onboarding, working around a ROCKNIX `get_setting` unquoted-expansion bug (upstream report queued alongside the known `[]`-escaping flaw).
+- **Windows installer** — four field-diagnosed stall classes eliminated (see the transport work above).
+- **Ledger/bog analysis** — session-join semantics hardened (epoch = session END).
+- `install.sh` law #7 (HARNESS vs TOOLING) codified; misc doc/manifest corrections.
+
+### Known behaviour
+- **ISO vs PKG frametime** — characterized with a same-game A/B (GT5P Spec II disc vs PSN): the ISO frametime sawtooth is access-violation/SPU-led invalidation churn, ~5× spike density vs PKG. Documented as known behaviour with the fix ladder banked.
 
 ## [0.7.0] - 2026-07-07 — "GTK Edition"
 
