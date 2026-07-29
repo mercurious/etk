@@ -320,6 +320,20 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
     rm -f "/storage/.config/modules/ETK PITSTOP.sh"
     echo "    Removed: pitstop launcher from modules"
 
+    # Chiaki Tools-menu entry + stream log. The pairing secrets in
+    # /storage/.config/chiaki/ are PRESERVED (re-pairing needs the console
+    # PIN flow again) unless --zap-vault, which removes everything precious.
+    rm -f "/storage/.config/modules/etk_chiaki.sh"
+    rm -f "/storage/.config/modules/etk_chiaki.svg"
+    rm -f /storage/etk_chiaki.log
+    echo "    Removed: chiaki launcher from modules"
+    if [ "$ZAP_VAULT" = "1" ]; then
+        rm -rf /storage/.config/chiaki
+        echo "    Removed: chiaki pairing config (ZAP)"
+    else
+        echo "    Preserved: /storage/.config/chiaki (console pairing)"
+    fi
+
     # ETK MangoHud overlay
     rm -f /storage/.config/MangoHud/MangoHud.conf
     echo "    Removed: MangoHud overlay config"

@@ -35,6 +35,14 @@ ETK_BUILD_TYPE="FULL"
 #   off    — no host shader sync at all. Leanest; rely entirely on Private Paddock.
 VAULT_SYNC="full"
 
+# --- Chiaki Remote Play (PS4/PS5 streaming) ---
+# 1 — deploy the chiaki client to the rig and register "Chiaki Remote Play"
+#     in the ES Tools menu (the GT7 streaming lane). Pair once from this
+#     computer (console PIN + PSN account id); pairing secrets live on the
+#     rig at /storage/.config/chiaki/ and are never synced or published.
+# 0 — skip deploy, Tools entry and tripwire entirely.
+ETK_CHIAKI="1"
+
 # --- Custom Turnip driver catalog (Stage IV — optional) ---
 # Every Mesa Turnip .so (ROCKNIX glibc/msm build) you drop in this repo's
 # drivers/ folder is staged into the on-rig CATALOG (/storage/turnip/drivers/).

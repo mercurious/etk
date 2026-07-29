@@ -61,6 +61,13 @@ export ETK_ISO_ONBOARD="${ETK_ISO_ONBOARD:-1}"
 # the attached pad is really called and repairs only the Device: line.
 # Set 0 to disable (kill-switch).
 export ETK_PAD_BIND="${ETK_PAD_BIND:-1}"
+# Chiaki Remote Play (0.8.x, default-ON): deploys the ETK chiaki fork's SDL2
+# client to $ETK_ROOT/tools/chiaki and registers "Chiaki Remote Play" in the
+# ES Tools menu (launcher + icon + gamelist entry, tripwire-protected). The
+# GT7 streaming lane. Pairing state lives in /storage/.config/chiaki/ and is
+# NEVER deployed, synced or published (secrets, etk.conf precedent). Set 0 to
+# disable (kill-switch: skips deploy, Tools entry and tripwire).
+export ETK_CHIAKI="${ETK_CHIAKI:-1}"
 
 # --- [ SHM & STATE ] ---
 export SHM_DIR="/dev/shm/etk_shm"
@@ -390,3 +397,11 @@ export ETK_INSTALL_LOCK="$SHM_DIR/etk_install_lock"
 export MODULES_DIR="/storage/.config/modules"
 export MODULES_GAMELIST="$MODULES_DIR/gamelist.xml"
 export ETK_PITSTOP_SVG="$ETK_ROOT/config/etk_pitstop.svg"
+
+# --- [ CHIAKI REMOTE PLAY ] ---
+# Binary built by tools/rocknix-bin/build_chiaki.sh (ETK chiaki fork, SDL2
+# frontend), pushed by install.sh to tools/. The conf dir holds the console
+# pairing secrets (rp_regist_key/rp_key) — on-rig only, never synced.
+export ETK_CHIAKI_BIN="$ETK_ROOT/tools/chiaki"
+export ETK_CHIAKI_CONF_DIR="/storage/.config/chiaki"
+export ETK_CHIAKI_SVG="$ETK_ROOT/config/etk_chiaki.svg"

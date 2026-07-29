@@ -663,6 +663,14 @@ tui_rsync 2 52 56 "Pushing tools/vault_sweep.sh (Manage Shaders engine)" --exclu
 # Same "tools/ is rm -rf'd on uninstall" reasoning as the two tools above —
 # it must be pushed here, not one-off scp'd. Rebuild via tools/rocknix-bin/build_wl_mirror.sh.
 tui_rsync 2 56 58 "Pushing tools/wl-mirror (DP capture-mirror binary)" --exclude='.DS_Store' ./tools/rocknix-bin/wl-mirror $RIG_SSH:$ETK_ROOT/tools/wl-mirror
+
+# chiaki: aarch64/glibc PS4/PS5 Remote Play client (SDL2 frontend built from
+# the ETK chiaki fork; rebuild via tools/rocknix-bin/build_chiaki.sh, which
+# also verifies the NEEDED sonames against the rig). Same "tools/ is rm -rf'd
+# on uninstall" push-list reasoning as wl-mirror. Gated on ETK_CHIAKI (etk.conf).
+if [ "${ETK_CHIAKI:-1}" = "1" ]; then
+    tui_rsync 2 58 59 "Pushing tools/chiaki (Remote Play client)" --exclude='.DS_Store' ./tools/rocknix-bin/chiaki $RIG_SSH:$ETK_ROOT/tools/chiaki
+fi
 tui_rsync 2 58 70 "Pushing MangoHud.conf" --exclude='.DS_Store' ./config/MangoHud.conf $RIG_SSH:/storage/.config/MangoHud/MangoHud.conf
 # Operator config: the Sentry's env.sh source on the rig reads this file
 # for ETK_BUILD_TYPE, DEFAULT_MODE, HUD_HEADER_HOLD_S. Without this push
@@ -673,7 +681,7 @@ tui_rsync 2 58 70 "Pushing MangoHud.conf" --exclude='.DS_Store' ./config/MangoHu
 # silently skip such "same-size" edits when mtimes happen to match.
 tui_rsync_checksum 2 70 90 "Pushing etk.conf (operator config)" --exclude='.DS_Store' ./etk.conf $RIG_SSH:$ETK_ROOT/etk.conf
 tui_log "chmod +x daemons and scripts"
-ssh $RIG_SSH "chmod +x $ETK_ROOT/bin/* $ETK_ROOT/scripts/* $ETK_ROOT/tools/etk_drift.py $ETK_ROOT/tools/vault_sweep.sh $ETK_ROOT/tools/wl-mirror"
+ssh $RIG_SSH "chmod +x $ETK_ROOT/bin/* $ETK_ROOT/scripts/* $ETK_ROOT/tools/etk_drift.py $ETK_ROOT/tools/vault_sweep.sh $ETK_ROOT/tools/wl-mirror; [ -f $ETK_ROOT/tools/chiaki ] && chmod +x $ETK_ROOT/tools/chiaki || true"
 tui_step_done 2
 
 # ==========================================================
@@ -777,6 +785,15 @@ tui_rsync 4 36 48 "Deploying RPCS3 template (etk_template.yml)" --exclude='.DS_S
 # SVG icon master for the polished Tools-menu app entry (dossier addendum R1).
 tui_rsync 4 48 54 "Deploying Tools-menu SVG icon" --exclude='.DS_Store' ./config/etk_pitstop.svg        $RIG_SSH:$ETK_ROOT/config/
 
+# Chiaki Tools-menu masters (launcher + icon; the modules injector mirrors
+# them into boot-volatile /storage/.config/modules every boot). CRLF-strip
+# and chmod for the same Windows-checkout reason as the pitstop launcher.
+if [ "${ETK_CHIAKI:-1}" = "1" ]; then
+    tui_rsync 4 54 55 "Deploying Chiaki Tools-menu icon" --exclude='.DS_Store' ./config/etk_chiaki.svg $RIG_SSH:$ETK_ROOT/config/
+    tui_rsync 4 55 56 "Deploying Chiaki launcher master" --exclude='.DS_Store' ./config/etk_chiaki.sh $RIG_SSH:$ETK_ROOT/config/
+    ssh $RIG_SSH "sed -i 's/\r$//' $ETK_ROOT/config/etk_chiaki.sh && chmod +x $ETK_ROOT/config/etk_chiaki.sh"
+fi
+
 # PADDOCK rig-side code. The PADDOCK tab (Private Paddock, 0.3.0) shells out to
 # bin/paddock_sync.sh — the push/pull sync engine — which ships in the bulk
 # ./bin/ rsync above. install-protune.sh (deployed below) is the known_repo
@@ -825,12 +842,20 @@ fi
 # land immediately. /storage/.config/modules is boot-volatile, so the
 # Sentry re-asserts all three every boot — this is just the first pass.
 tui_log "Registering ETK Pitstop in the Tools menu"
-ssh $RIG_SSH "python3 $ETK_ROOT/bin/etk_modules_inject.py" >/dev/null 2>&1
+ssh $RIG_SSH "ETK_CHIAKI=${ETK_CHIAKI:-1} python3 $ETK_ROOT/bin/etk_modules_inject.py" >/dev/null 2>&1
 GAMELIST_CHECK=$(ssh $RIG_SSH "grep -c '>ETK Pitstop<' /storage/.config/modules/gamelist.xml 2>/dev/null || echo 0")
 if [ "${GAMELIST_CHECK:-0}" -ge 1 ] 2>/dev/null; then
     say "${G}[OK] ETK Pitstop registered as a Tools-menu app${N}"
 else
     say "${Y}[WARN] Tools-menu entry not confirmed — Sentry will re-inject it${N}"
+fi
+if [ "${ETK_CHIAKI:-1}" = "1" ]; then
+    CHIAKI_CHECK=$(ssh $RIG_SSH "grep -c '>Chiaki Remote Play<' /storage/.config/modules/gamelist.xml 2>/dev/null || echo 0")
+    if [ "${CHIAKI_CHECK:-0}" -ge 1 ] 2>/dev/null; then
+        say "${G}[OK] Chiaki Remote Play registered as a Tools-menu app${N}"
+    else
+        say "${Y}[WARN] Chiaki Tools-menu entry not confirmed — Sentry will re-inject it${N}"
+    fi
 fi
 tui_step_done 4
 # ==========================================================
@@ -1112,11 +1137,20 @@ while true; do
     # Tools-menu presence -- launcher .sh, .svg icon, and the enriched
     # <game> entry -- whenever any of the three is missing. The injector is
     # idempotent and touches only the ETK entry; other tools are untouched.
+    CHIAKI_STALE=0
+    if [ "${ETK_CHIAKI:-1}" = "1" ]; then
+        if [ ! -f "/storage/.config/modules/etk_chiaki.sh" ] \
+           || [ ! -f "/storage/.config/modules/etk_chiaki.svg" ] \
+           || ! grep -q '>Chiaki Remote Play<' "$MODULES_GAMELIST" 2>/dev/null; then
+            CHIAKI_STALE=1
+        fi
+    fi
     if [ ! -f "/storage/.config/modules/etk_pitstop.sh" ] \
        || [ ! -f "/storage/.config/modules/etk_pitstop.svg" ] \
        || [ ! -f "$MODULES_GAMELIST" ] \
-       || ! grep -q '>ETK Pitstop<' "$MODULES_GAMELIST" 2>/dev/null; then
-        echo "[$(date '+%H:%M:%S.%N')] modules wiped/stale -- re-injecting ETK Pitstop" >> "$TRIPWIRE_LOG"
+       || ! grep -q '>ETK Pitstop<' "$MODULES_GAMELIST" 2>/dev/null \
+       || [ "$CHIAKI_STALE" = "1" ]; then
+        echo "[$(date '+%H:%M:%S.%N')] modules wiped/stale -- re-injecting ETK Tools entries" >> "$TRIPWIRE_LOG"
         python3 "$ETK_ROOT/bin/etk_modules_inject.py" >> "$TRIPWIRE_LOG" 2>&1
     fi
 

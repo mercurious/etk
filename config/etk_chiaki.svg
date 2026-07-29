@@ -1,0 +1,44 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="t d">
+  <title id="t">Chiaki Remote Play</title>
+  <desc id="d">A gamepad silhouette receiving a wireless stream, radio arcs rising from the top edge.</desc>
+
+  <rect x="0" y="0" width="512" height="512" rx="96" fill="#0d1b2a"/>
+
+  <!-- radio arcs: the stream coming in -->
+  <g stroke="#4cc9f0" stroke-width="22" stroke-linecap="round" fill="none">
+    <path d="M 220 132 a 52 52 0 0 1 72 0" />
+    <path d="M 188 100 a 96 96 0 0 1 136 0" />
+    <path d="M 156 68 a 140 140 0 0 1 200 0" />
+  </g>
+  <circle cx="256" cy="160" r="16" fill="#4cc9f0"/>
+
+  <!-- gamepad body -->
+  <path d="M 130 250
+           C 96 250 72 282 66 330
+           C 61 372 68 412 96 418
+           C 122 424 140 400 152 380
+           C 160 366 170 360 186 360
+           L 326 360
+           C 342 360 352 366 360 380
+           C 372 400 390 424 416 418
+           C 444 412 451 372 446 330
+           C 440 282 416 250 382 250
+           Z"
+        fill="#e0e1dd" stroke="#778da9" stroke-width="10"/>
+
+  <!-- dpad -->
+  <g fill="#0d1b2a">
+    <rect x="140" y="288" width="22" height="58" rx="6"/>
+    <rect x="122" y="306" width="58" height="22" rx="6"/>
+  </g>
+
+  <!-- face buttons: PlayStation glyph colors -->
+  <circle cx="366" cy="288" r="12" fill="#2a9d8f"/>
+  <circle cx="394" cy="316" r="12" fill="#e63946"/>
+  <circle cx="338" cy="316" r="12" fill="#f4a0c0"/>
+  <circle cx="366" cy="344" r="12" fill="#457b9d"/>
+
+  <!-- sticks -->
+  <circle cx="216" cy="336" r="18" fill="#778da9"/>
+  <circle cx="296" cy="336" r="18" fill="#778da9"/>
+</svg>

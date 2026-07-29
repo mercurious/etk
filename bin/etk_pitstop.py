@@ -3043,7 +3043,8 @@ def _self_update_apply(info):
         # tools/ push-list parity with install.sh STEP 3 (never wholesale).
         os.makedirs(os.path.join(base, "tools"), exist_ok=True)
         for rel in ("tools/etk_drift.py", "tools/vault_sweep.sh",
-                    "tools/rocknix-bin/wl-mirror"):
+                    "tools/rocknix-bin/wl-mirror",
+                    "tools/rocknix-bin/chiaki"):
             sp = os.path.join(src, rel)
             if os.path.isfile(sp):
                 dp = os.path.join(base, "tools", os.path.basename(rel))
@@ -3056,6 +3057,7 @@ def _self_update_apply(info):
                    "crash_signatures.json", "etk_template.yml",
                    "MangoHud.conf", "MangoHud.default.conf",
                    "etk_pitstop.sh", "etk_pitstop.svg",
+                   "etk_chiaki.sh", "etk_chiaki.svg",
                    "paddock_repos.json.example")
         os.makedirs(os.path.join(base, "config"), exist_ok=True)
         n = 0
