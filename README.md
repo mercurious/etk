@@ -125,6 +125,68 @@ irm https://raw.githubusercontent.com/mercurious/etk/main/windows_installer/get-
 3. Prefer a manual checkout? `git clone https://github.com/mercurious/etk` (or extract the `.zip` as `~/etk/`), then run `./install.sh` — or on Windows `powershell -ExecutionPolicy Bypass -File .\windows_installer\etk-install.ps1` — from the repo root.<br><br>
 4. Drop your PS3 firmware `.pup` into the approprite drop folder `/storage/roms/etk/firmware_drop/` on your device and use ETK Pitstop TOOLS to easily install it; a PKG file installed similary from `/storage/roms/etk/pkg_install_drop/`.
 
+## Kit Map (File Layout)
+
+A fresh map of the garage. Entries marked *(local)* are operator-side lanes,
+gitignored by design — they dangle in a public clone and that's intentional.
+
+```
+etk/
+├── install.sh                  # THE deploy engine: 8-step TUI install/repair/sync to the rig
+├── uninstall.sh                # mirror-image teardown (authoritative list of every artifact)
+├── get-etk.sh                  # curl-to-bash bootstrap (fetches kit to ~/etk, runs installer)
+├── etk.conf.example            # operator config template -> etk.conf (gitignored, yours)
+├── README.md · TRACK_MANUAL.md · AI_MANIFEST.md · CHANGELOG.md · CLAUDE.md · LICENSE
+│                               # on-ramp, system manual, deep technical laws, history, AI guide
+├── bin/                        # rig-side daemons & apps (pushed wholesale to $ETK_ROOT/bin)
+│   ├── etk_pitstop.py          #   the Pitstop: curses cockpit (tuning/telemetry/tools/paddock/driver)
+│   ├── etk_chiaki_menu.py      #   Chiaki Remote Play menu: console chooser + gamepad pairing wizard
+│   ├── etk_chiaki_notify.sh    #   mako toast helper (replace-in-place notifications)
+│   ├── etk_modules_inject.py   #   ES Tools-menu registrar (Pitstop + Chiaki; tripwire-driven)
+│   ├── input_d.py              #   gamepad chord daemon (screenshots, punchbox, recovery, RSX/bog)
+│   ├── thermal_d.sh · vault_d.sh · mango_bridge.sh · dpmirror_d.sh · blackbox_d.py
+│   │                           #   thermal guard · shader vault · HUD feed · DP mirror · panic recorder
+│   ├── session_postmortem.sh · bog_profile.sh · hud_apply.sh · grid_apply.sh
+│   │                           #   telemetry ledger · perf sampler · HUD/power state appliers
+│   └── paddock_sync.sh · recovery.sh · screenshot.sh · gamepad_probe.py
+├── scripts/                    # rig+host shared plumbing
+│   ├── env.sh                  #   LAW #2: the ONLY definer of env/paths — everything sources it
+│   ├── profiles/SM8250.sh      #   per-SoC values (thermal zones, CPU policies, fonts)
+│   ├── etk_pair.sh             #   idempotent SSH pairing wizard
+│   ├── commander.sh · probe.sh · etk_probe.sh · arm_blackbox.sh · career_aggregate.sh
+│   └── turnip/                 #   GPU forensics (rd_inspect/rd_repair for cffdump captures)
+├── tools/                      # host-side probes, gates & rig-native binaries
+│   ├── rocknix-bin/            #   Tier-P builds: build_chiaki.sh, build_wl_mirror.sh + the
+│   │                           #   committed aarch64 binaries with .commit/.ldd provenance
+│   ├── etk_dyno.py · etk_drift.py · vault_doctor.sh · vault_sweep.sh
+│   │                           #   dyno analytics · OS-drift detector · shader-vault surgeons
+│   ├── release_sanity.sh · test_installers.py · test_paddock.py
+│   │                           #   the release gates (run at every cut)
+│   └── tui.sh                  #   shared install/uninstall TUI engine
+├── config/                     # rig-deployed configuration masters
+│   ├── etk_pitstop.sh/.svg · etk_chiaki.sh/.svg
+│   │                           #   Tools-menu launchers + icons (mirrored into boot-volatile modules/)
+│   ├── config_<GAMEID>.yml     #   per-game RPCS3 reference tunes (the golden lab notebook)
+│   ├── etk_template.yml        #   golden default seeded for newly installed games
+│   ├── MangoHud.conf/.default  #   HUD punchbox masters
+│   └── pitstop_fields.json · power_profiles.json · crash_signatures.json · paddock_repos.json.example
+├── pro-tuning/                 # Private Paddock lanes: export.sh (host) · install-protune.sh (rig)
+├── drivers/                    # Turnip .so catalog (binaries local; README documents the family)
+├── windows_installer/          # PowerShell install lane (get-etk.ps1 / etk-install.ps1)
+├── docs/                       # guides, dyno charts, screenshots, hero art
+├── .claude/skills/cockpit/     # live-rig instrument skill (spotter, padmovie, lap extraction)
+├── dossiers/                   # (local) 150+ private design dossiers — the engineering record
+├── os-install/                 # (local) Tier-I image lane: build_gtk_image_v2.sh + seeds
+├── emulators/ · vault/         # (local) fetched AppImages · harvested shader vault
+└── log/                        # sample probe output
+```
+
+The companion repos: [chiaki-rocknix](https://github.com/mercurious/chiaki-rocknix)
+(Remote Play client), [etk-rpcs3-gtk](https://github.com/mercurious/etk-rpcs3-gtk),
+[etk-turnip-gtk](https://github.com/mercurious/etk-turnip-gtk) and
+[rocknix-gtk](https://github.com/mercurious/rocknix-gtk) — the tuned forks the
+kit deploys.
+
 ## Removing ETK
 - Use the provided `uninstall.sh` to remove the ETK from your system.
 
