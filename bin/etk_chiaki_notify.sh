@@ -30,10 +30,13 @@ case "$ID" in
     ''|*[!0-9]*) ID=0 ;;
 esac
 
+# The MESSAGE rides in the SUMMARY slot: mako renders the summary in the
+# large title font (the only reliably legible text on the 1080p panel at
+# handheld distance); the body field stays empty by design.
 REPLY=$(dbus-send --session --print-reply --dest=org.freedesktop.Notifications \
     /org/freedesktop/Notifications org.freedesktop.Notifications.Notify \
     "string:Chiaki" "uint32:$ID" string: \
-    "string:Remote Play" "string:$MSG" \
+    "string:$MSG" "string:" \
     array:string: dict:string:variant: int32:6000 2>/dev/null)
 
 NEW=$(echo "$REPLY" | grep uint32 | head -n 1 | awk '{print $2}')

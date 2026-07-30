@@ -1,11 +1,14 @@
 #!/bin/sh
 # ==========================================================
-# ETK CHIAKI LAUNCHER (BUSYBOX COMPLIANT)
+# ETK CHIAKI LAUNCHER (BUSYBOX COMPLIANT, TOAST-DRIVEN)
 # Location: /storage/.config/modules/etk_chiaki.sh
 # ==========================================================
-# ES spawns Tools entries inside a foot terminal (foot %ROM%), so this
-# script's stdout is visible on the panel. It launches the chiaki SDL
-# window and does the sway fullscreen dance from the OUTSIDE:
+# ES spawns Tools entries inside a foot terminal (foot %ROM%). The rig is
+# gamepad-only, so this launcher NEVER prompts for keyboard input and
+# prints nothing on the happy path — all user-facing feedback goes through
+# mako toasts (bin/etk_chiaki_notify.sh), which are actually legible on
+# the panel. The tiny terminal is only surfaced for the one-time pairing
+# instructions, re-exec'd at a readable font size (Pitstop scale pattern).
 #
 # SWAY DOCTRINE (AI_MANIFEST): sway is a tiling compositor — the chiaki
 # window would TILE next to this foot window. Do NOT pass the app's own
@@ -30,33 +33,54 @@ BIN="${ETK_CHIAKI_BIN:-$ETK_ROOT/tools/chiaki}"
 CONF_DIR="${ETK_CHIAKI_CONF_DIR:-/storage/.config/chiaki}"
 CONF="$CONF_DIR/chiaki.conf"
 LOG="/storage/etk_chiaki.log"
+NOTIFY="${ETK_CHIAKI_NOTIFY:-$ETK_ROOT/bin/etk_chiaki_notify.sh}"
 
-if [ ! -x "$BIN" ]; then
-    echo "chiaki binary missing at $BIN"
-    echo "Re-run install.sh from your computer, then try again."
-    echo "Press Enter to exit."
-    read _dummy
-    exit 1
-fi
-
-# 3. First-run gate: streaming needs a one-time pairing with the console.
+# 3. First-run gate: pairing instructions are the ONE case where the
+#    terminal earns its keep — re-exec in a big font so it's readable,
+#    show the steps, then time out back to ES (no keyboard prompts).
 if [ ! -f "$CONF" ]; then
-    echo "Chiaki is not paired with your PlayStation yet."
+    if [ "$ETK_SCALED" != "1" ]; then
+        export ETK_SCALED=1
+        exec /usr/bin/foot -F -o font="monospace:size=22" "$0" "$@"
+    fi
+    clear
     echo ""
-    echo "One-time setup, from your computer:"
-    echo "  1. On the console: Settings > System > Remote Play > Link Device"
+    echo "  CHIAKI IS NOT PAIRED WITH YOUR PLAYSTATION YET"
+    echo ""
+    echo "  One-time setup, from your computer:"
+    echo ""
+    echo "  1. Console: Settings > System > Remote Play > Pair Device"
     echo "  2. ssh root@SM8250.local"
     echo "  3. $BIN regist \\"
     echo "       --host <console-ip> --pin <8-digit-pin> \\"
-    echo "       --account-id <your-psn-account-id-b64>"
+    echo "       --account-id <psn-account-id-b64>"
     echo ""
-    echo "(Account id: scripts/psn-account-id.py in the chiaki repo.)"
-    echo "Press Enter to exit."
-    read _dummy
+    echo "  (Account id: scripts/psn-account-id.py in the chiaki repo)"
+    echo ""
+    echo "  Returning to EmulationStation in 30 seconds..."
+    sleep 30
     exit 0
 fi
 
-# 4. Fullscreen dance: helper polls for the chiaki window, then fullscreens
+if [ ! -x "$BIN" ]; then
+    "$NOTIFY" "Chiaki Missing - rerun install.sh" 2>/dev/null
+    sleep 3
+    exit 1
+fi
+
+# 4. Stream-active sentinel: input_d stands down the chords chiaki owns
+#    in-stream (R1+L3 / L1+R3). trap so a launcher death can't leave it
+#    behind; SHM is boot-volatile so a hard crash self-clears anyway.
+LOCK="${ETK_CHIAKI_LOCK:-/dev/shm/etk_shm/chiaki_active}"
+mkdir -p "$(dirname "$LOCK")"
+touch "$LOCK"
+trap 'rm -f "$LOCK"' EXIT INT TERM
+
+# 5. mako toast hook: the binary invokes this with a message whenever the
+#    stream state changes (connect, toggles, console sleep/busy).
+export CHIAKI_NOTIFY_CMD="$NOTIFY"
+
+# 6. Fullscreen dance: helper polls for the chiaki window, then fullscreens
 #    it over this foot window. Bounded poll — never spins forever.
 (
     i=0
@@ -70,38 +94,14 @@ fi
     done
 ) &
 
-# 5. Stream. Log goes to /storage (tail it over ssh when debugging). No
-#    pipeline here: the binary's exit status gates the on-error hold below,
-#    and BusyBox ash has no PIPESTATUS.
-#
-#    The SHM sentinel tells input_d to stand down the chords chiaki owns
-#    in-stream (R1+L3 / L1+R3). trap so a launcher death can't leave it
-#    behind; SHM is boot-volatile so a hard crash self-clears anyway.
-LOCK="${ETK_CHIAKI_LOCK:-/dev/shm/etk_shm/chiaki_active}"
-mkdir -p "$(dirname "$LOCK")"
-touch "$LOCK"
-trap 'rm -f "$LOCK"' EXIT INT TERM
-
-# mako toast hook: the binary invokes this with a message whenever the
-# stream state changes (toggle reconnects, connected, console-busy).
-export CHIAKI_NOTIFY_CMD="${ETK_CHIAKI_NOTIFY:-$ETK_ROOT/bin/etk_chiaki_notify.sh}"
-echo "Starting Remote Play..."
-echo "  quit:              hold Select+Start (or the Home button)"
-echo "  toggle resolution: hold R1+L3   (1080p <-> 720p)"
-echo "  toggle codec:      hold L1+R3   (h265 <-> h264)"
+# 7. Stream. All output to the log only (tail it over ssh when debugging);
+#    quit reasons reach the user as toasts from the binary itself. No
+#    terminal prompts on ANY path — ES takes the screen back on exit.
 "$BIN" stream --config "$CONF" > "$LOG" 2>&1
 RC=$?
-rm -f "$LOCK"
 
-# 6. On failure, keep this foot window open so the reason (e.g. "Remote Play
-#    on Console is already in use") is readable instead of flashing past.
-if [ "$RC" -ne 0 ]; then
-    echo ""
-    echo "Remote Play ended with an error:"
-    tail -n 8 "$LOG"
-    echo ""
-    echo "Full log: $LOG   Press Enter to exit."
-    read _dummy
-fi
+# Brief grace so an error toast (fired by the binary) outlives the foot
+# window teardown and is seen over ES rather than lost with the session.
+[ "$RC" -ne 0 ] && sleep 2
 
 exit 0

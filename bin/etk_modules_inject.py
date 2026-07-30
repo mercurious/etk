@@ -62,7 +62,7 @@ PITSTOP_BLOCK = """    <game>
 CHIAKI_BLOCK = """    <game>
         <path>./etk_chiaki.sh</path>
         <name>Chiaki Remote Play</name>
-        <desc>Stream your PlayStation 4 or PlayStation 5 to the handheld over WiFi (PS4/PS5 Remote Play). Pair once with the console PIN, then launch here to play. GT7 on the go: the streaming lane of the ETK garage.</desc>
+        <desc>Stream your PlayStation 4 or PlayStation 5 to the handheld over WiFi (PS4/PS5 Remote Play). Pair once with the console PIN, then launch here to play. Controls: tap Home = PS button; hold Home or Select+Start = quit; hold R1+L3 = toggle 1080p/720p; hold L1+R3 = toggle h265/h264. GT7 on the go: the streaming lane of the ETK garage.</desc>
         <developer>ETK</developer>
         <publisher>ETK</publisher>
         <rating>5.0</rating>
