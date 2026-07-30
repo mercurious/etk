@@ -410,3 +410,7 @@ export ETK_CHIAKI_SVG="$ETK_ROOT/config/etk_chiaki.svg"
 # in-stream (R1+L3 resolution toggle, L1+R3 codec toggle) plus the RPCS3
 # R1+DPAD tools. Volatile SHM — a crash self-clears on reboot.
 export ETK_CHIAKI_LOCK="$SHM_DIR/chiaki_active"
+# mako toast helper the launcher hands to the binary as CHIAKI_NOTIFY_CMD —
+# surfaces toggle reconnects ("Switching to 1080p...") while the screen is
+# black. Fail-silent, replaces-id toast (see the script header).
+export ETK_CHIAKI_NOTIFY="$ETK_ROOT/bin/etk_chiaki_notify.sh"

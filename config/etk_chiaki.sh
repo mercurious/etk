@@ -81,6 +81,10 @@ LOCK="${ETK_CHIAKI_LOCK:-/dev/shm/etk_shm/chiaki_active}"
 mkdir -p "$(dirname "$LOCK")"
 touch "$LOCK"
 trap 'rm -f "$LOCK"' EXIT INT TERM
+
+# mako toast hook: the binary invokes this with a message whenever the
+# stream state changes (toggle reconnects, connected, console-busy).
+export CHIAKI_NOTIFY_CMD="${ETK_CHIAKI_NOTIFY:-$ETK_ROOT/bin/etk_chiaki_notify.sh}"
 echo "Starting Remote Play..."
 echo "  quit:              hold Select+Start (or the Home button)"
 echo "  toggle resolution: hold R1+L3   (1080p <-> 720p)"
