@@ -27,6 +27,10 @@ source /storage/games-internal/roms/etk/scripts/env.sh
 if [ "$ETK_SCALED" != "1" ]; then
     export ETK_SCALED=1
     setsid /usr/bin/foot -F -o font="monospace:size=20" "$0" "$@" >/dev/null 2>&1 &
+    # grace so setsid finishes detaching before this foot tears down its
+    # process group — exiting immediately raced the fork and killed the
+    # scaled foot mid-startup. Invisible: ES holds fullscreen over us.
+    sleep 1
     exit 0
 fi
 
