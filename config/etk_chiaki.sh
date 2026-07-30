@@ -70,9 +70,23 @@ fi
     done
 ) &
 
-# 5. Stream. Log goes to /storage (tail it over ssh when debugging); the
-#    interesting lines (quit reason) also land on the foot panel via tee.
-echo "Starting Remote Play (hold the Home/Guide button to quit)..."
-"$BIN" stream --config "$CONF" 2>&1 | tee "$LOG" | tail -n 6
+# 5. Stream. Log goes to /storage (tail it over ssh when debugging). No
+#    pipeline here: the binary's exit status gates the on-error hold below,
+#    and BusyBox ash has no PIPESTATUS.
+echo "Starting Remote Play..."
+echo "(quit: hold Select+Start, or hold the Home/Guide button)"
+"$BIN" stream --config "$CONF" > "$LOG" 2>&1
+RC=$?
+
+# 6. On failure, keep this foot window open so the reason (e.g. "Remote Play
+#    on Console is already in use") is readable instead of flashing past.
+if [ "$RC" -ne 0 ]; then
+    echo ""
+    echo "Remote Play ended with an error:"
+    tail -n 8 "$LOG"
+    echo ""
+    echo "Full log: $LOG   Press Enter to exit."
+    read _dummy
+fi
 
 exit 0
