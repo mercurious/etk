@@ -56,6 +56,10 @@ export CHIAKI_NOTIFY_CMD="$NOTIFY"
 
 # 6. Menu -> stream -> menu loop. The menu exits 0 with a choice file
 #    (stream that config) or 1 (EXIT -> back to ES).
+#    TERM=xterm: the rig ships NO terminfo database — ncurses resolves only
+#    its compiled-in xterm/linux fallbacks, and foot's default TERM=foot
+#    makes curses die with "could not find terminal" (found 20260730).
+export TERM=xterm
 while true; do
     rm -f "$CHOICE"
     python3 "$ETK_ROOT/bin/etk_chiaki_menu.py"
