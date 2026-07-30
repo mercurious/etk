@@ -18,10 +18,16 @@
 # 1. Single source of truth for all paths
 source /storage/games-internal/roms/etk/scripts/env.sh
 
-# 2. Readable font: the menu is the UI now, not a log dump.
+# 2. Readable font: the menu is the UI now, not a log dump. The scaled
+#    foot is spawned DETACHED (setsid) and this outer shell exits at once
+#    so ES's own foot window closes — an exec'd nested foot leaves the
+#    outer window alive showing only foot's startup warnings, and after a
+#    stream ends sway tiles it next to the menu (operator's split-screen
+#    with the tiny wayland error, 20260730).
 if [ "$ETK_SCALED" != "1" ]; then
     export ETK_SCALED=1
-    exec /usr/bin/foot -F -o font="monospace:size=20" "$0" "$@"
+    setsid /usr/bin/foot -F -o font="monospace:size=20" "$0" "$@" >/dev/null 2>&1 &
+    exit 0
 fi
 
 # 3. Wayland/SDL environment (SWAYSOCK not ambient in the ES/foot context)
@@ -90,6 +96,10 @@ while true; do
     rm -f "$LOCK"
     kill "$WATCHDOG" 2>/dev/null
     wait "$WATCHDOG" 2>/dev/null
+
+    # the stream window held fullscreen; with it gone, re-take it for this
+    # foot so the menu comes back full-size instead of tiled (idempotent)
+    swaymsg '[app_id="foot"] fullscreen enable' >/dev/null 2>&1
 
     # errors surfaced as toasts by the binary; give the toast a beat, then
     # land back on the chooser (not ES) so retry is one press away
