@@ -18,20 +18,17 @@
 # 1. Single source of truth for all paths
 source /storage/games-internal/roms/etk/scripts/env.sh
 
-# 2. Readable font: the menu is the UI now, not a log dump. The scaled
-#    foot is spawned DETACHED (setsid) and this outer shell exits at once
-#    so ES's own foot window closes — an exec'd nested foot leaves the
-#    outer window alive showing only foot's startup warnings, and after a
-#    stream ends sway tiles it next to the menu (operator's split-screen
-#    with the tiny wayland error, 20260730).
+# 2. Readable font: the menu is the UI now, not a log dump.
+#    EXEC-nesting (the Pitstop pattern) is LOAD-BEARING for ES: ES watches
+#    its spawned foot and takes the screen back the moment that child
+#    exits — a setsid-detach here orphaned the menu behind ES (operator's
+#    "auto-quits after loading the chooser", 20260730). The outer foot
+#    window survives showing only startup warnings; it stays invisible
+#    because something of ours is fullscreen at all times (the -F inner
+#    foot, the stream window, and the post-stream re-assert below).
 if [ "$ETK_SCALED" != "1" ]; then
     export ETK_SCALED=1
-    setsid /usr/bin/foot -F -o font="monospace:size=20" "$0" "$@" >/dev/null 2>&1 &
-    # grace so setsid finishes detaching before this foot tears down its
-    # process group — exiting immediately raced the fork and killed the
-    # scaled foot mid-startup. Invisible: ES holds fullscreen over us.
-    sleep 1
-    exit 0
+    exec /usr/bin/foot -F -o font="monospace:size=20" "$0" "$@"
 fi
 
 # 3. Wayland/SDL environment (SWAYSOCK not ambient in the ES/foot context)
