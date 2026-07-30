@@ -4,6 +4,63 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-07-30 — Chiaki-Rocknix Remote Play Edition
+
+The kit gains a whole new lane: PS4/PS5 Remote Play, built as a true fork of
+chiaki and shipped as a first-class ETK citizen. Stack otherwise unchanged:
+RPCS3 **GTK Edition v0.7.5**, Mesa Turnip **26.1.3 gtk_0.4**, kernel
+**rocknix-gtk-20260706-0.2**, base **ROCKNIX official 20260701**; new
+flashable image **ROCKNIX-GTK-SM8250.aarch64-20260730** with the Remote Play
+lane staged. **Update if** you own a PS4 or PS5.
+
+### Added
+- **"Chiaki Remote Play" in the ES Tools menu.** Launching it opens an
+  on-device app — title screen, console chooser, and a full gamepad pairing
+  wizard: it scans the network for consoles, takes the console's 8-digit PIN
+  and your PSN account id on a gamepad-driven on-screen keyboard (either form
+  psntools.com shows works — base64 or the plain number — or reuse the
+  account from an already-paired console with one press). Pair every
+  PlayStation in the house; pick one and play. An existing pairing made over
+  ssh migrates into the chooser automatically.
+- **The client itself is our fork, published like the other GTK-lane forks:**
+  [chiaki-rocknix](https://github.com/mercurious/chiaki-rocknix) — an SDL2
+  controller-first frontend over Florian Märkl's chiaki (upstream's CLI
+  cannot stream and its GUI needs a desktop). The committed binary + its
+  provenance ride the kit; BUILDING.md reproduces it in one container run;
+  STANDALONE.md installs it on stock ROCKNIX via Ports with no ETK at all.
+- **In-game DualSense haptics, felt as rumble.** PS5 titles send no classic
+  rumble events at all — GT7's road feel arrives as a haptics audio stream.
+  The client negotiates it (protocol work ported from chiaki-ng) and converts
+  it to controller rumble. `haptics = off/weak/normal/strong` per console.
+- **Change resolution and codec mid-game.** Hold R1+L3 to flip 1080p/720p,
+  L1+R3 to flip h265/h264; the setting persists and the stream reconnects in
+  place (~10s) with mako toasts narrating. The Remote Play protocol pins both
+  at session start — a live switch is impossible, so the kit makes the
+  reconnect honest instead of hiding it.
+- **Handheld-honest session UX.** Console in rest mode? The client wakes it
+  on connect. Put it back to rest mid-game? Clean exit back to the chooser
+  with a "Console Sleeping" toast — no terminal prompts anywhere (the rig has
+  no keyboard). A previous session that died hard self-heals with retries
+  instead of surfacing Sony's 0x80108b10.
+- **Trigger deadzone with rescale** (`trigger_deadzone`, default 10%). The
+  Flip 2's triggers rest off zero after their first pull — measured L2 at
+  12/255 with no deadzone declared anywhere — which streamed as permanently
+  dragging brakes in GT7. A full pull still delivers the full 255.
+- **`ETK_CHIAKI=0`** in etk.conf skips the whole lane (kill-switch precedent).
+
+### Changed
+- **The Tools-menu registrar (`etk_modules_inject.py`) is now a table** and
+  registers any number of ETK apps; the Sentry tripwire re-asserts the Chiaki
+  entry alongside Pitstop after every boot wipe.
+- **input_d stands down its R1+L3 / L1+R3 chords while a stream is active**
+  (they belong to the stream's toggles); punchbox and recovery resume the
+  instant the stream ends. Screenshots stay live throughout.
+- **New rig-side toast helper** (`bin/etk_chiaki_notify.sh`) posts mako
+  notifications that replace in place instead of stacking — usable by any
+  future lane.
+- `uninstall.sh` removes the Remote Play lane in lockstep; console pairings
+  are preserved unless `--zap-vault`.
+
 ## [0.8.1] - 2026-07-27 — maintenance
 
 A bug-fix release. Everything here was found by running v0.8.0 on real
