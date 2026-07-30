@@ -38,7 +38,7 @@ House developed Gran Turismo-specific bug fixes and special tunings to the emula
 1. **HIGH PERFORMANCE RIG**: It's faster and more playable than anything I've attempted to get running on the Android boot, including our own [aPS3e fork](https://github.com/mercurious/aps3e/releases) `.apk`.
 2. **CRASH PREVENTION:** By forking and patching the entire stack on the device, we were able to cross-integrate the OS to the emulator with the video driver as a single “chassis” and wire it to the native MangoHUD overlay so you can see in real-time an alert when you’ve just been rescued from a GPU wedge crash `|·«!»·|`. The same GTK ANTI-LOCK gauge keeps a live counter `|·×03·|` for the current boot so you know when it’s time to refresh the rig with a reboot. This “anti-lock” system emulates how Android provides a similar level of stability, enabling the Adreno Kernel Graphics Support Layer (KGSL) but running on the bare metal of linux opens up tremendous performance headroom by comparison.
 3. **BUGS FIXED:** Owning the chassis allowed us to fix the stubborn “road flicker” [bug](https://github.com/RPCS3/rpcs3/issues/11912) that affects GT5P on all platforms, solved a glitchy audio card boot sequence in ROCKNIX, and more.
-4. **FEATURES ADDED:** We’ve added new core capabilities to the device such as video mirroring, easy firmware & package install, advanced shader management, on-device tuning down to the overclock and Turnip dials, advanced trigger calibration for the top-end, and an advanced telemetry UI/UX to inform your tuning choices.
+4. **FEATURES ADDED:** We’ve added new core capabilities to the device such as PSRemotePlay streaming, video mirroring, easy firmware & package install, advanced shader management, on-device tuning down to the overclock and Turnip dials, advanced trigger calibration for the top-end, and an advanced telemetry UI/UX to inform your tuning choices.
 
 ## Dyno-Proven
 Every claim above is scored against the ETK telemetry ledger (1,400+ instrumented sessions on the reference rig) — not vibes.
@@ -87,6 +87,7 @@ See [Getting Started](https://github.com/mercurious/etk/#getting-started) to ins
 | Video Mirroring | Device screen on while USB-DisplayPort-HDMI out active | turn USB plug upside-down to solve video-out issue |
 | Flicker-free Road Surfaces | 5 year emulator old [bug](https://github.com/RPCS3/rpcs3/issues/11912) solved with non-upstreamable patch | perfectly rendered road surfaces |
 | Audio card boot fixed | Sound works reliably vs official release | sound just works now, finally; solving race stutter is a different problem |
+| PSRemotePlay Streaming | Custom chiaki-rocknix fork pairs with your PS4 or PS5 | Chiaki-Rocknix app in Tools |
 
 
 ## Handheld System Support
