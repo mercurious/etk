@@ -405,3 +405,8 @@ export ETK_PITSTOP_SVG="$ETK_ROOT/config/etk_pitstop.svg"
 export ETK_CHIAKI_BIN="$ETK_ROOT/tools/chiaki"
 export ETK_CHIAKI_CONF_DIR="/storage/.config/chiaki"
 export ETK_CHIAKI_SVG="$ETK_ROOT/config/etk_chiaki.svg"
+# Stream-active sentinel (ETK_INSTALL_LOCK pattern): touched/removed by the
+# launcher; while present, input_d stands down the chords chiaki owns
+# in-stream (R1+L3 resolution toggle, L1+R3 codec toggle) plus the RPCS3
+# R1+DPAD tools. Volatile SHM — a crash self-clears on reboot.
+export ETK_CHIAKI_LOCK="$SHM_DIR/chiaki_active"

@@ -436,6 +436,17 @@ def toggle_hud_position():
         _remember_position(_read_active_game_id(), new)
         _signal_mangohud_reload()
 
+def _chiaki_active():
+    """True while a Chiaki Remote Play stream runs (sentinel touched/removed
+    by config/etk_chiaki.sh). Chiaki owns R1+L3 (resolution toggle) and
+    L1+R3 (codec toggle) in-stream, so the ETK chords that share those
+    shapes — punchbox, recovery, and the R1+DPAD RPCS3 tools — stand down.
+    Screenshots (bare L1 / SELECT+DPAD-Up) stay live: shots of a stream are
+    useful and collide with nothing."""
+    return os.path.exists(os.environ.get('ETK_CHIAKI_LOCK',
+                                         '/dev/shm/etk_shm/chiaki_active'))
+
+
 def event_loop(device):
     clutch = False
     l1_held = False   # BTN_TL  (310) — shoulder modifier for the R3 recovery chord
@@ -457,13 +468,13 @@ def event_loop(device):
 
                 # L1 + R3 = RECOVERY PANIC. Chord-gated so a bare R3 stick-click
                 # in-game never trips recovery. 318 = BTN_THUMBR (R3).
-                if code == 318 and val == 1 and l1_held:
+                if code == 318 and val == 1 and l1_held and not _chiaki_active():
                     fire_recovery()
 
                 # R1 + L3 = HUD PUNCHBOX cycle. Chord-gated so a bare L3
                 # stick-click stays with the game. 317 = BTN_THUMBL (L3).
                 # Cycles top -> bottom -> default -> off -> repeat.
-                if code == 317 and val == 1 and r1_held:
+                if code == 317 and val == 1 and r1_held and not _chiaki_active():
                     cycle_hud_state()
 
                 # 310 = BTN_TL (L1): ETK SCREENSHOT (in-race recommended).
@@ -517,9 +528,9 @@ def event_loop(device):
                 #   R1+DPAD-Up = RSX FRAME CAPTURE / resume toggle (RELOCATED
                 #     from R1+Down 2026-07-10 when the operator assigned Down to
                 #     the bog profiler; same R1 mechanics, rule 4 intact).
-                if r1_held and code == 17 and val == 1:
+                if r1_held and code == 17 and val == 1 and not _chiaki_active():
                     fire_bog_profile()
-                elif r1_held and code == 17 and val == -1:
+                elif r1_held and code == 17 and val == -1 and not _chiaki_active():
                     fire_rsx_capture()
 
 if __name__ == "__main__":

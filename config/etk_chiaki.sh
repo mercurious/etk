@@ -73,10 +73,21 @@ fi
 # 5. Stream. Log goes to /storage (tail it over ssh when debugging). No
 #    pipeline here: the binary's exit status gates the on-error hold below,
 #    and BusyBox ash has no PIPESTATUS.
+#
+#    The SHM sentinel tells input_d to stand down the chords chiaki owns
+#    in-stream (R1+L3 / L1+R3). trap so a launcher death can't leave it
+#    behind; SHM is boot-volatile so a hard crash self-clears anyway.
+LOCK="${ETK_CHIAKI_LOCK:-/dev/shm/etk_shm/chiaki_active}"
+mkdir -p "$(dirname "$LOCK")"
+touch "$LOCK"
+trap 'rm -f "$LOCK"' EXIT INT TERM
 echo "Starting Remote Play..."
-echo "(quit: hold Select+Start, or hold the Home/Guide button)"
+echo "  quit:              hold Select+Start (or the Home button)"
+echo "  toggle resolution: hold R1+L3   (1080p <-> 720p)"
+echo "  toggle codec:      hold L1+R3   (h265 <-> h264)"
 "$BIN" stream --config "$CONF" > "$LOG" 2>&1
 RC=$?
+rm -f "$LOCK"
 
 # 6. On failure, keep this foot window open so the reason (e.g. "Remote Play
 #    on Console is already in use") is readable instead of flashing past.
