@@ -1594,10 +1594,21 @@ fi
 # §G.5 note: once a fork is bound, the Mesa fingerprint tracks OUR driver, so a
 # nightly's stock-Mesa change is intentionally masked (we want our driver).
 ssh $RIG_SSH "mkdir -p /storage/turnip/drivers /storage/.config/system.d/" 2>/dev/null
-# CERTIFIED release catalog: ship stock (synthetic, no file) + only proven fork
-# build(s). Dev/experimental builds (gtk_0.1, lsd-*) stay LOCAL in drivers/ and
-# are NOT staged, so the user-facing DRIVER tab stays "stock + the proven fork."
-# Add a build (filename + sha256 in driver_sha) only after it proves on the track.
+# The host drivers/ dir IS the catalog: every .so in it is staged to the rig and
+# offered in the DRIVER tab. Dropping a build into drivers/ is all it takes.
+#
+# CERTIFIED_BUILDS is NOT an allowlist — it is the BOOTSTRAP manifest. drivers/
+# is gitignored, so a fresh clone starts empty; these get fetched from the latest
+# release and sha256-verified (a download can truncate or be swapped), which is
+# why a normal user install still ends up as exactly "stock + the proven fork".
+# An operator with local builds simply has more in drivers/, and gets all of them.
+#
+# History: this was an allowlist + prune, added by the 0.5.0 productization
+# commit to curate the END-USER catalog. That is a release-packaging concern, and
+# enforcing it at install time also blocked the operator's own experiments —
+# backwards, since a build must run on the rig before it can ever earn
+# certification. Curate the shipped catalog by what goes in the release, not by
+# refusing to install what the operator built.
 CERTIFIED_BUILDS="etk_turnip_rocknix_26.1.3_gtk_0.4.so"
 DRIVER_RELEASE_BASE="https://github.com/mercurious/etk/releases/latest/download"
 # sha256 of each certified build — a fetched binary is verified against this.
@@ -1609,34 +1620,43 @@ sha256_of() {  # portable host sha256 (Linux sha256sum | macOS shasum)
     if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}';
     elif command -v shasum   >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}';
     else echo ""; fi; }
-TURNIP_KEEP="stock"   # basenames allowed in the on-rig catalog (stock is synthetic)
-staged=0
+TURNIP_KEEP="stock"   # basenames present in the on-rig catalog (stock is synthetic)
+# --- bootstrap: fetch any certified build we don't already have locally -----
 for cb in $CERTIFIED_BUILDS; do
-    # drivers/ is gitignored, so a fresh clone has no .so — fetch the certified
-    # build from the latest GitHub release, then sha256-verify it before staging.
-    if [ ! -f "./drivers/$cb" ]; then
-        say "${G}[ETK]${N} Fetching certified driver $cb from the latest ETK release..."
-        mkdir -p ./drivers
-        curl -fL --retry 2 -o "./drivers/$cb" "$DRIVER_RELEASE_BASE/$cb" 2>/dev/null \
-            || { rm -f "./drivers/$cb"; say "${Y}[ETK]${N} Could not fetch $cb (offline or asset missing) — skipping."; }
-    fi
-    want=$(driver_sha "$cb")
-    if [ -f "./drivers/$cb" ] && [ -n "$want" ]; then
-        got=$(sha256_of "./drivers/$cb")
-        if [ -n "$got" ] && [ "$got" != "$want" ]; then
-            rm -f "./drivers/$cb"
-            say "${Y}[ETK]${N} $cb FAILED sha256 verification — refusing to stage (expected $want)."
+    # Already present? Leave it completely alone. It is either a previous fetch
+    # or the operator's OWN build of that name — and a local rebuild legitimately
+    # has a different sha (MESA_GIT_SHA1 changes every build), so verifying it
+    # here would delete their work from the host tree. Only ever sha-check bytes
+    # we just pulled off the network.
+    [ -f "./drivers/$cb" ] && continue
+    say "${G}[ETK]${N} Fetching certified driver $cb from the latest ETK release..."
+    mkdir -p ./drivers
+    _part="./drivers/.$cb.part"
+    if curl -fL --retry 2 -o "$_part" "$DRIVER_RELEASE_BASE/$cb" 2>/dev/null; then
+        want=$(driver_sha "$cb"); got=$(sha256_of "$_part")
+        if [ -n "$want" ] && [ -n "$got" ] && [ "$got" != "$want" ]; then
+            rm -f "$_part"
+            say "${Y}[ETK]${N} $cb FAILED sha256 verification — discarded (expected $want)."
+        else
+            mv "$_part" "./drivers/$cb"
         fi
-    fi
-    if [ -f "./drivers/$cb" ]; then
-        rsync -az "./drivers/$cb" "$RIG_SSH:/storage/turnip/drivers/$cb" >/dev/null 2>&1 \
-            && { staged=$((staged + 1)); TURNIP_KEEP="$TURNIP_KEEP $cb"; }
+    else
+        rm -f "$_part"
+        say "${Y}[ETK]${N} Could not fetch $cb (offline or asset missing) — skipping."
     fi
 done
+# --- stage the whole catalog: every .so in drivers/ ------------------------
+staged=0
+for f in ./drivers/*.so; do
+    [ -e "$f" ] || continue          # literal glob when drivers/ is empty
+    b=$(basename "$f")
+    rsync -az "$f" "$RIG_SSH:/storage/turnip/drivers/$b" >/dev/null 2>&1 \
+        && { staged=$((staged + 1)); TURNIP_KEEP="$TURNIP_KEEP $b"; }
+done
 if [ "$staged" -gt 0 ]; then
-    say "${G}[ETK]${N} Staged $staged certified Turnip build(s) -> catalog (stock + proven fork)"
+    say "${G}[ETK]${N} Staged $staged Turnip build(s) -> DRIVER-tab catalog"
 else
-    say "${Y}[ETK]${N} No certified Turnip build available — catalog will be stock-only"
+    say "${Y}[ETK]${N} No Turnip build in drivers/ — catalog will be stock-only"
 fi
 # An out-of-tree TURNIP_SO is staged into the catalog too, and names the DEFAULT
 # pick for a rig with no on-rig selection yet (preserves prior single-driver UX).
@@ -1646,9 +1666,10 @@ if [ -n "${TURNIP_SO:-}" ] && [ -f "$TURNIP_SO" ]; then
     TURNIP_DEFAULT_SEL="$(basename "$TURNIP_SO")"
     say "${G}[ETK]${N} Default driver build: $(basename "$TURNIP_SO")"
 fi
-# Keep the operator's out-of-tree default too, then prune any non-certified .so
-# left on the rig from prior dev installs — so the DRIVER-tab catalog ends up
-# exactly stock + the certified set (no stale gtk_0.1 / lsd-* lingering).
+# Keep the operator's out-of-tree default too, then garbage-collect: the on-rig
+# catalog MIRRORS host drivers/, so a build deleted from drivers/ also leaves the
+# rig. (This is now a mirror, not an allowlist — deleting a build from drivers/
+# is how you retire it, rather than editing a list.)
 [ "$TURNIP_DEFAULT_SEL" != "stock" ] && TURNIP_KEEP="$TURNIP_KEEP $TURNIP_DEFAULT_SEL"
 # Also keep the rig's CURRENT DRIVER-tab selection: staging a new dev build
 # must never prune the .so the selection still points at (bitten twice

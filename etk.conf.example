@@ -44,13 +44,24 @@ VAULT_SYNC="full"
 ETK_CHIAKI="1"
 
 # --- Custom Turnip driver catalog (Stage IV — optional) ---
-# Every Mesa Turnip .so (ROCKNIX glibc/msm build) you drop in this repo's
-# drivers/ folder is staged into the on-rig CATALOG (/storage/turnip/drivers/).
-# Pick which one binds over the stock /usr/lib driver from Pitstop's DRIVER tab
-# (DRIVER BUILD selector) and reboot to load it — the choice persists across
-# reboot and reinstall. 'stock' = run ROCKNIX's own Turnip (unbind). Builds come
-# from scripts/build_rocknix.sh, or download community Adreno-650 forks into
-# drivers/. Re-validate any swap on a COLD boot.
+# The on-rig CATALOG (/storage/turnip/drivers/) is what Pitstop's DRIVER tab
+# (DRIVER BUILD selector) offers. Pick one, reboot to load it — the choice
+# persists across reboot and reinstall. 'stock' = ROCKNIX's own Turnip (unbind).
+# Re-validate any swap on a COLD boot.
+#
+# The host drivers/ folder IS the catalog: drop a ROCKNIX glibc/msm .so in and
+# install.sh stages it — no allowlist, no sha to register. The on-rig catalog
+# MIRRORS drivers/, so deleting a build locally also retires it from the rig
+# (the current DRIVER-tab selection is never pruned out from under you).
+# Builds come from scripts/build_rocknix.sh or the etk-turnip-gtk fork.
+#
+# A fresh clone has an empty drivers/ (it's gitignored), so a normal install
+# fetches the proven fork from the latest GitHub release — sha256-verified — and
+# the catalog is "stock + the proven fork" as before. Local builds simply add to it.
+#
+# Every session's ledger row records which build actually ran (tune_tag carries a
+# build= prefix read from /storage/turnip/loaded), so etk_dyno scores each driver
+# as its own arm instead of pooling them.
 #
 # TURNIP_SO (optional): path to ONE .so that is the DEFAULT pick on a rig that
 # hasn't chosen yet (also staged into the catalog if it lives outside drivers/).
