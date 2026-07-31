@@ -4,6 +4,23 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ## [Unreleased]
 
+### Added
+- **Chiaki: connection status screen.** Choosing a console now shows the
+  session's phases in the branded frame as they happen — WAKING CONSOLE,
+  REQUESTING SESSION, CONTROL LINK UP, STREAMING — and an error quit shows
+  its reason in big type for a beat before returning to the chooser. The
+  blank terminal between the chooser and the video is gone.
+- **Chiaki: BITRATE row in the chooser** — cycles auto / low / medium / high
+  across every registered console. auto leaves the bitrate to the resolution
+  preset (console-managed); low/medium/high scale it to 50%/75%/150% (capped
+  30 Mbps). Client-side knob `bitrate` in each console config.
+
+### Fixed
+- **Chiaki: chooser button hints now show the Flip 2's real labels** — B
+  selects, A backs out. The shell is Nintendo-labeled over the pad's
+  south/east positions; behavior was always correct, the printed letters in
+  the hint bar weren't.
+
 ### Staged (dev, not yet certified)
 - **RPCS3 GTK Edition v0.8.0-dev — upstream base bump 19544 → 19638** (2026-07-31).
   New base `a1deb2921` = kd-11's PR #19090 (shader-interpreter MSAA + depth-redirect
