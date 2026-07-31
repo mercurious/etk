@@ -4,6 +4,24 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ## [Unreleased]
 
+### Staged (dev, not yet certified)
+- **RPCS3 GTK Edition v0.8.0-dev — upstream base bump 19544 → 19638** (2026-07-31).
+  New base `a1deb2921` = kd-11's PR #19090 (shader-interpreter MSAA + depth-redirect
+  sampling — the fix a contributor reports cured GT6's track-shadow mirror flicker)
+  plus the full rsxfp/rsxvp interpreter correctness series, 94 commits total. The
+  complete 0.7.5 feature set (remap fix, tguard, perfstat, semapark-v2, ffs-v5,
+  avwiden-v1) rebased clean — no conflicts; `decoded_remap()` untouched upstream.
+  Staged via `etk.conf` dev override (CERT pins unchanged until certification).
+  Patch: etk-rpcs3-gtk `ff8beab`; artifact sha256 `297d2f28e1db…b2b`.
+  - **First boot per game does a full PPU recompile** (upstream obj-cache tag
+    v7 → v8) — long and thermally heavy, not a hang.
+  - **Old savestates will not load** (upstream global savestate version bump).
+  - Pending: cold-boot certification + the #11912 A/B (does *stock* 19638 fix
+    the GT5P road dim-state? `GTK_REMAP0_ONE=0` arm vs default). Turnip pinned
+    at 26.1.3 gtk_0.4 for the A/B; the 26.1.6/zlatez lane stays parked.
+  - ffs-v5 00E59005 rescue baseline resets with the new emulator — fresh
+    baseline to be recorded; do not compare against 0.7.5 numbers.
+
 ## [0.8.2] - 2026-07-30 — Chiaki-Rocknix Remote Play Edition
 
 The kit gains a whole new lane: PS4/PS5 Remote Play, built as a true fork of
