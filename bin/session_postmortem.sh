@@ -478,6 +478,29 @@ fi
 TUNE_TAG=$(head -n1 "$ACTIVE_TUNE_FILE" 2>/dev/null | tr -d '\t\r')
 [ -z "$TUNE_TAG" ] && TUNE_TAG="default"
 
+# The dials alone no longer identify a run: the DRIVER tab's BUILD selector can
+# bind any of several Turnip .so builds (26.1.3 / 26.1.6 / 26.2.0-rc3 forks), and
+# a dial set means different things on each. Prefix the driver so every arm in
+# etk_dyno is (driver x dials) rather than dials-only — which silently pooled
+# different drivers into one arm.
+#
+# Read `loaded` (ground truth, stamped at boot by etk-turnip-bind.sh), NOT
+# `selected` (a pick that may still be pending a reboot). Absent/empty = the
+# rig is on ROCKNIX's own driver, which we tag "stock" rather than leaving
+# blank, so pre-catalog rows stay distinguishable from unattributed ones.
+# The label is compacted the same way Pitstop's _build_label does it, minus the
+# constant "rocknix" (every ROCKNIX build carries it — it adds no information
+# and the dyno ARM column is width-limited).
+TURNIP_BUILD=$(head -n1 "$TURNIP_LOADED_FILE" 2>/dev/null | tr -d '\t\r ')
+[ -z "$TURNIP_BUILD" ] && TURNIP_BUILD="stock"
+TURNIP_BUILD=$(printf '%s' "$TURNIP_BUILD" \
+    | sed -e 's/\.so$//' \
+          -e 's/^libvulkan_freedreno[-_]*//' \
+          -e 's/^etk_turnip[-_]*//' \
+          -e 's/^rocknix[-_]*//')
+[ -z "$TURNIP_BUILD" ] && TURNIP_BUILD="stock"
+TUNE_TAG="build=${TURNIP_BUILD};${TUNE_TAG}"
+
 # --- FPS / FRAMETIME (cols 17-19: fps_med, fps_1low, ft_p99_ms) ---
 # G-INSTR: MangoHud auto-logs a per-session CSV (config/MangoHud.conf knobs:
 # autostart_log + log_interval=1000) to $SHM_DIR/mangolog. Col1=fps,

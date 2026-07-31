@@ -291,6 +291,16 @@ export PIT_NOTE_FILE="$TELEMETRY_DIR/pit_note.txt"
 # stamps it onto each ledger row as tune_tag so genuine-play sessions are
 # attributable to their dial set. Absent/empty => "default".
 export ACTIVE_TUNE_FILE="$TELEMETRY_DIR/active_tune.txt"
+# Turnip driver-build catalog (Pitstop DRIVER tab BUILD selector). `loaded` is
+# ground truth stamped by etk-turnip-bind.sh at boot — WHICH .so is actually
+# bound right now, as opposed to `selected` (the operator's pick, which only
+# takes effect on the next reboot). session_postmortem folds `loaded` into
+# tune_tag so a ledger row names the driver it ran on, not just the dials:
+# with several builds in the catalog "tu_debug=sddepth" alone is ambiguous.
+export TURNIP_DIR="${TURNIP_DIR:-/storage/turnip}"
+export TURNIP_DRIVERS_DIR="$TURNIP_DIR/drivers"
+export TURNIP_SELECTED_FILE="$TURNIP_DIR/selected"
+export TURNIP_LOADED_FILE="$TURNIP_DIR/loaded"
 export SIGNATURES_FILE="$ETK_ROOT/config/crash_signatures.json"
 
 # Persistent session breadcrumb. Written at IDLE->RUNNING ignition, removed
