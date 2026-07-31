@@ -36,6 +36,14 @@ TITLE = "CHIAKI-ROCKNIX"
 SUBTITLE = "tuned by ETK"
 SPINNER = "|/-\\"
 
+# PHYSICAL button labels. The Flip 2 is Nintendo-labeled: the button printed
+# "B" sits on evdev BTN_SOUTH (our confirm) and "A" on BTN_EAST (our back).
+# Semantics stay south=confirm/east=back; only the printed letters differ.
+LBL_OK = "B"
+LBL_BACK = "A"
+
+BITRATE_VALUES = ["auto", "low", "medium", "high"]
+
 # --- gamepad (etk_pitstop.py pattern: InputPlumber virtual pad, direct evdev) ---
 PAD_HINTS = ("xbox", "dualsense", "dual sense", "playstation",
              "sony", "ds5", "wireless controller", "inputplumber")
@@ -217,6 +225,44 @@ def known_account_ids():
     return out
 
 
+def get_bitrate():
+    """Current bitrate tier, read from the first registered console (all
+    configs are kept in step by set_bitrate_all)."""
+    for path, _n, _h, _p in list_consoles():
+        conf = _parse_conf(path)
+        if conf and conf.get('bitrate') in BITRATE_VALUES:
+            return conf['bitrate']
+    return 'auto'
+
+
+def set_bitrate_all(value):
+    """Write the bitrate tier into every console config (and the last-used
+    chiaki.conf) — a rig-wide preference, not a per-console one."""
+    targets = [p for p, _n, _h, _p in list_consoles()]
+    if os.path.exists(LEGACY_CONF):
+        targets.append(LEGACY_CONF)
+    for path in targets:
+        try:
+            with open(path) as f:
+                lines = f.readlines()
+            out, seen = [], False
+            for line in lines:
+                if line.split('=')[0].strip() == 'bitrate':
+                    out.append(f"bitrate = {value}\n")
+                    seen = True
+                else:
+                    out.append(line)
+            if not seen:
+                out.append(f"bitrate = {value}\n")
+            tmp = path + '.tmp'
+            with open(tmp, 'w') as f:
+                f.writelines(out)
+            os.replace(tmp, path)
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
+
+
 def normalize_account_id(text):
     """Accept base64 (8 bytes) or the decimal account number; return b64 or None."""
     text = text.strip()
@@ -278,7 +324,7 @@ def busy(stdscr, inp, msg, work):
     return work.returncode, out
 
 
-def menu_select(stdscr, inp, items, subtitle=None, hints="A: select   B: back", start=0):
+def menu_select(stdscr, inp, items, subtitle=None, hints=f"{LBL_OK}: select   {LBL_BACK}: back", start=0):
     """Generic vertical chooser. items = [(label, dim)] -> index or None on back."""
     sel = max(0, min(start, len(items) - 1))
     while True:
@@ -339,7 +385,7 @@ def osk(stdscr, inp, prompt, rows, initial="", maxlen=64, upper_toggle=True):
                     stdscr.addstr(top + y * 2, 4 + x * 4, f" {shown} ", attr)
                 except curses.error:
                     pass
-        hint = "A: type   B: delete   Start: done"
+        hint = f"{LBL_OK}: type   {LBL_BACK}: delete   Start: done"
         if upper_toggle:
             hint += "   L1: case"
         draw_hints(stdscr, hint)
@@ -387,7 +433,7 @@ def scan_consoles(stdscr, inp):
     return found
 
 
-def message(stdscr, inp, lines, hints="A: continue"):
+def message(stdscr, inp, lines, hints=f"{LBL_OK}: continue"):
     while True:
         h, w = draw_frame(stdscr)
         for i, line in enumerate(lines):
@@ -437,7 +483,7 @@ def pair_wizard(stdscr, inp):
         items.append((label, state != 'ready'))
     items.append(("Enter IP address manually", False))
     idx = menu_select(stdscr, inp, items, subtitle="PAIR NEW CONSOLE",
-                      hints="A: select   B: cancel")
+                      hints=f"{LBL_OK}: select   {LBL_BACK}: cancel")
     if idx is None:
         return None
 
@@ -494,6 +540,91 @@ def pair_wizard(stdscr, inp):
     return conf_path
 
 
+# --- connection status screen ------------------------------------------------
+# Run by the launcher WHILE the stream binary starts (`--status <logfile>`):
+# tails the stream log and renders the connection phase in the branded frame,
+# so the gap between choosing a console and the video appearing reads as
+# progress instead of a blank terminal. Killed by the launcher when the
+# stream ends; also exits by itself shortly after a quit line appears.
+
+STATUS_PATTERNS = [
+    ("Session quit: ", None),  # special: surface the reason text
+    ("Video stream ", "STREAMING"),
+    ("Session connected", "STREAM STARTING"),
+    ("still holds a previous session", "CONSOLE BUSY - RETRYING"),
+    ("Ctrl connected", "CONTROL LINK UP"),
+    ("Session request successful", "SESSION GRANTED"),
+    ("Starting session request", "REQUESTING SESSION"),
+    ("Console is awake", "CONSOLE AWAKE"),
+    ("Console did not answer discovery", "SEARCHING FOR CONSOLE"),
+    ("Console is in rest mode", "WAKING CONSOLE"),
+    ("Streaming from ", "CONNECTING"),
+]
+
+
+def _status_from_log(log_path):
+    try:
+        with open(log_path, 'rb') as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - 8192))
+            text = f.read().decode('utf-8', 'replace')
+    except OSError:
+        return "STARTING", False
+    best_pos, best = -1, "CONNECTING"
+    quit_seen = False
+    for needle, label in STATUS_PATTERNS:
+        pos = text.rfind(needle)
+        if pos > best_pos:
+            best_pos = pos
+            if label is None:
+                reason = text[pos + len(needle):].splitlines()[0]
+                reason = reason.replace('(-)', '').strip().upper()
+                best = reason[:40] if reason else "SESSION ENDED"
+                quit_seen = True
+            else:
+                best = label
+                quit_seen = False
+    return best, quit_seen
+
+
+def status_screen(log_path):
+    import signal as _signal
+    _signal.signal(_signal.SIGTERM, lambda *_a: sys.exit(0))
+
+    def run(stdscr):
+        curses.curs_set(0)
+        curses.start_color()
+        curses.init_pair(PAIR_TITLE, curses.COLOR_CYAN, curses.COLOR_BLACK)
+        curses.init_pair(PAIR_OK, curses.COLOR_GREEN, curses.COLOR_BLACK)
+        curses.init_pair(5, curses.COLOR_WHITE, curses.COLOR_BLACK)
+        stdscr.bkgd(' ', curses.color_pair(5))
+        stdscr.nodelay(True)
+        i = 0
+        quit_ticks = 0
+        while True:
+            status, is_quit = _status_from_log(log_path)
+            h, w = draw_frame(stdscr)
+            try:
+                attr = curses.color_pair(PAIR_OK) | curses.A_BOLD if status == "STREAMING" \
+                    else curses.A_BOLD
+                stdscr.addstr(h // 2 - 1, max(2, (w - len(status)) // 2), status, attr)
+                if not is_quit:
+                    stdscr.addstr(h // 2 + 2, w // 2, SPINNER[i % len(SPINNER)], curses.A_BOLD)
+            except curses.error:
+                pass
+            draw_hints(stdscr, "starting Remote Play...")
+            stdscr.refresh()
+            if is_quit:
+                quit_ticks += 1
+                if quit_ticks > 12:  # ~3s to read the reason, then hand back
+                    return 0
+            i += 1
+            time.sleep(0.25)
+
+    return curses.wrapper(run)
+
+
 # --- main --------------------------------------------------------------------
 
 def chooser(stdscr, inp):
@@ -503,12 +634,21 @@ def chooser(stdscr, inp):
         consoles = list_consoles()
         items = [(f"{nick}  ({host})  [{'PS5' if ps5 else 'PS4'}]", False)
                  for _p, nick, host, ps5 in consoles]
+        items.append((f"BITRATE: {get_bitrate().upper()}", False))
         items.append(("PAIR NEW CONSOLE", False))
         items.append(("EXIT", False))
-        idx = menu_select(stdscr, inp, items, hints="A: select   B/Exit: back to ES",
+        idx = menu_select(stdscr, inp, items,
+                          hints=f"{LBL_OK}: select   {LBL_BACK}/Exit: back to ES",
                           start=last)
         if idx is None or idx == len(items) - 1:
             return None
+        if idx == len(items) - 3:
+            # cycle the bitrate tier in place; stay parked on the row
+            cur = get_bitrate()
+            nxt = BITRATE_VALUES[(BITRATE_VALUES.index(cur) + 1) % len(BITRATE_VALUES)]
+            set_bitrate_all(nxt)
+            last = idx
+            continue
         if idx == len(items) - 2:
             new = pair_wizard(stdscr, inp)
             if new:
@@ -559,6 +699,8 @@ def main(stdscr):
 
 if __name__ == '__main__':
     try:
+        if len(sys.argv) >= 3 and sys.argv[1] == '--status':
+            sys.exit(status_screen(sys.argv[2]))
         sys.exit(curses.wrapper(main))
     except KeyboardInterrupt:
         sys.exit(1)

@@ -79,6 +79,13 @@ while true; do
     # over ssh and pre-menu muscle memory both keep working)
     cp -f "$CONF" "$CONF_DIR/chiaki.conf" 2>/dev/null
 
+    # connection status screen: renders the stream log's phases in the
+    # branded frame while the session comes up (no more blank terminal
+    # between the chooser and the video). Killed when the stream ends.
+    : > "$LOG"
+    python3 "$ETK_ROOT/bin/etk_chiaki_menu.py" --status "$LOG" &
+    STATUS_PID=$!
+
     # 7. Fullscreen WATCHDOG for the stream's lifetime. Idempotent assert
     #    every 2s: survives toggle-reconnects, slow maps, and whatever
     #    caused the one-shot dance to miss. Killed when the stream ends.
@@ -97,14 +104,15 @@ while true; do
     rm -f "$LOCK"
     kill "$WATCHDOG" 2>/dev/null
     wait "$WATCHDOG" 2>/dev/null
+    # on an error quit the status screen lingers ~3s showing the reason in
+    # big type before we take the terminal back for the chooser
+    [ "$RC" -ne 0 ] && sleep 3
+    kill "$STATUS_PID" 2>/dev/null
+    wait "$STATUS_PID" 2>/dev/null
 
     # the stream window held fullscreen; with it gone, re-take it for this
     # foot so the menu comes back full-size instead of tiled (idempotent)
     swaymsg '[app_id="foot"] fullscreen enable' >/dev/null 2>&1
-
-    # errors surfaced as toasts by the binary; give the toast a beat, then
-    # land back on the chooser (not ES) so retry is one press away
-    [ "$RC" -ne 0 ] && sleep 2
 done
 
 exit 0
