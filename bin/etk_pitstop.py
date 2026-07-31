@@ -5363,10 +5363,14 @@ _TU_DEBUG_ADVANCED = ("nobin", "forcebin", "nocb",
                       # Patch #2: sdgate = depth-clean gated to depth-writing
                       # draws (the scalpel); sdclean = depth-clean alone.
                       "sddepth", "sdmem", "sdme", "sdclean", "sdgate",
-                      # Stage IV §5 resolution-alignment investigation: dimlog
-                      # logs the GMEM render dims + ragged remainder at tiling
-                      # setup (diagnostic, inert; REQUIRES the lsd-dim fork .so).
-                      "dimlog",
+                      # Patch #7 (gtk 0.5+): widen upstream's A630/A650
+                      # EARLY_Z_LATE_Z hang workaround past its D32S8 format gate.
+                      # zlatez adds D24_UNORM_S8_UINT (our Z24S8 target); zlatezany
+                      # drops the format gate entirely. First fork gear that is NOT
+                      # a resolve mechanism — it targets the fragment stage, which
+                      # is where the decode says the fault lives. UNVALIDATED:
+                      # run the dimlog probe below FIRST (see DIAGNOSTIC row).
+                      "zlatez", "zlatezany",
                       # Patch #3 "B" cure-candidate: cap the a6xx depth CCU cache
                       # size (FULL->HALF/QUARTER) to attack the DEPTH_CACHE=FULL
                       # boss-resolve saturation. (FALSIFIED — cache-size isn't the
@@ -5378,7 +5382,23 @@ _TU_DEBUG_ADVANCED = ("nobin", "forcebin", "nocb",
                       # refinement: ANY depth-attachment pass -> sysmem (catches the
                       # boss pass). REQUIRES the gtk fork .so.
                       "dsbypass", "dsany")
-_TU_DEBUG_KNOWN = set(_TU_DEBUG_PRIMARY) | set(_TU_DEBUG_ADVANCED)
+
+# --- DIAGNOSTIC flags (always visible, NOT behind Advanced) ----------------
+# These don't change how the driver renders — they only make it report. They
+# sit outside the ROAD FEEL stability<->performance axis on purpose: a
+# diagnostic is orthogonal to a tuning trade, and burying it in Advanced is
+# what made the cheap falsification step easy to skip.
+#
+# dimlog (REQUIRES a gtk fork .so; inert on stock Turnip):
+#   - GMEM render dims + ragged remainder at tiling setup ("[ETK dimlog]")
+#   - on gtk 0.5+, the zlatez reachability probe ("[ETK zlatez] hazard state
+#     reached: ... depth_format=..."), which fires with NO z-gear set. If that
+#     line never appears on a session, zlatez/zlatezany are inert and the
+#     hypothesis is falsified for one session instead of an N>=3 A/B.
+_TU_DEBUG_DIAG = ("dimlog",)
+
+_TU_DEBUG_KNOWN = (set(_TU_DEBUG_PRIMARY) | set(_TU_DEBUG_ADVANCED)
+                   | set(_TU_DEBUG_DIAG))
 
 
 # --- ROAD FEEL dial (the simple DRIVER view) -------------------------------
@@ -5398,8 +5418,13 @@ _DIAL_STOPS = (
 
 def _dial_index(model):
     """Which ROAD FEEL stop the live tu_debug matches EXACTLY, or None
-    ('Custom' — a hand-mixed / experimental flag set from Advanced)."""
-    td = model["tu_debug"]
+    ('Custom' — a hand-mixed / experimental flag set from Advanced).
+
+    Diagnostic flags are excluded from the match: they don't change how the
+    driver renders, so a probe like dimlog must not knock the dial off its
+    stop (which would also auto-open Advanced in _driver_load). 'Max Stability
+    + dimlog' is still Max Stability."""
+    td = model["tu_debug"] - set(_TU_DEBUG_DIAG)
     for i, (_lbl, _desc, s) in enumerate(_DIAL_STOPS):
         if td == s:
             return i
@@ -5553,7 +5578,12 @@ def _driver_rows(model):
     Each entry = (kind, payload). The BUILD selector leads (it's the bigger
     lever — which driver), then the env-var dials that tune it."""
     rows = [("build", None), ("build_apply", None), ("reboot", None),
-            ("dial", None), ("advanced", None)]
+            ("dial", None)]
+    # Diagnostics sit above Advanced, always reachable: the dimlog probe is the
+    # cheap falsification step that comes BEFORE an N>=3 A/B, so it must not be
+    # hidden behind a disclosure toggle.
+    rows += [("diag", f) for f in _TU_DEBUG_DIAG]
+    rows += [("advanced", None)]
     if model["show_advanced"]:
         rows += [("autotune", None)]
         rows += [("flag", f) for f in _TU_DEBUG_PRIMARY]
@@ -5635,6 +5665,11 @@ def draw_driver(stdscr, state):
             on = payload in model["tu_debug"]
             tail = curses.color_pair(PAIR_CLEAN) if (on and not sel) else base
             put(y, 6, f"TU_DEBUG  {'[x]' if on else '[ ]'} {payload}", tail)
+        elif kind == "diag":
+            on = payload in model["tu_debug"]
+            tail = curses.color_pair(PAIR_CLEAN) if (on and not sel) else base
+            put(y, 6, f"DIAGNOSTIC  {'[x]' if on else '[ ]'} {payload}"
+                      "   (logs only; needs fork .so)", tail)
         elif kind == "advanced":
             put(y, 6, f"Advanced flags  {'v' if model['show_advanced'] else '>'}",
                 base | curses.A_DIM)
@@ -5695,7 +5730,7 @@ def _driver_adjust(state, delta):
     elif kind == "autotune":
         model["autotune_idx"] = (model["autotune_idx"] + delta) % len(_AUTOTUNE_VALUES)
         state["driver_notice"] = None
-    elif kind == "flag":
+    elif kind in ("flag", "diag"):
         _driver_toggle_flag(state, payload)
 
 
@@ -5747,7 +5782,7 @@ def _driver_select(state):
             model["reboot_arm"] = False
             ok = _reboot_rig()
             state["driver_notice"] = (ok, "REBOOTING…" if ok else "REBOOT FAILED")
-    elif kind == "flag":
+    elif kind in ("flag", "diag"):
         _driver_toggle_flag(state, payload)
     elif kind == "dial":
         _driver_set_dial(state, 1)
