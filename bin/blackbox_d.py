@@ -120,6 +120,42 @@ def kmsg_recorder():
     log(f"flight recorder -> {path}")
     last_fsync = 0.0
     written = out.tell()
+
+    def ensure_linked(cur):
+        # SELF-RELINK GUARD (live incident 2026-08-01, 20260801 stack): the
+        # announced log was found UNLINKED while this daemon still held it —
+        # every write was going to an orphaned inode, which a panic-reboot
+        # cannot recover (the whole point of this recorder is surviving one).
+        # Culprit unknown (no kit code deletes the live file; hunt banked).
+        # Defense in depth: if the path vanishes, salvage the orphan's bytes
+        # through /proc/self/fd and re-open the path so the recording is
+        # back on disk. Fail-soft: any error keeps the current handle.
+        try:
+            if os.path.exists(path):
+                return cur
+            content = ''
+            try:
+                with open(f'/proc/self/fd/{cur.fileno()}', 'r',
+                          errors='replace') as orphan:
+                    content = orphan.read()
+            except Exception:
+                pass
+            try:
+                cur.close()
+            except Exception:
+                pass
+            fresh = open(path, 'a', buffering=1)
+            if content:
+                fresh.write(content)
+            log(f"kmsg log was unlinked externally — relinked {path} "
+                f"({len(content)}B salvaged)")
+            tripwire(f"blackbox kmsg log relinked after external unlink "
+                     f"({len(content)}B salvaged)")
+            return fresh
+        except Exception:
+            return cur
+
+    idle_ticks = 0
     with open('/dev/kmsg', 'r', errors='replace') as kmsg:
         while True:
             try:
@@ -130,11 +166,17 @@ def kmsg_recorder():
                 continue
             if not line:
                 time.sleep(0.2)
+                idle_ticks += 1
+                if idle_ticks >= 50:      # ~10s quiet: still verify the link
+                    idle_ticks = 0
+                    out = ensure_linked(out)
                 continue
+            idle_ticks = 0
             out.write(line)
             written += len(line)
             now = time.monotonic()
             if now - last_fsync >= FSYNC_INTERVAL_S:
+                out = ensure_linked(out)
                 try:
                     os.fsync(out.fileno())
                 except Exception:
