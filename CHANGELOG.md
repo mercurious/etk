@@ -22,6 +22,22 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
   the hint bar weren't.
 
 ### Staged (dev, not yet certified)
+- **RPCS3 GTK Edition v0.8.1-dev** (2026-08-01) — 0.8.0-dev **plus a temporary
+  revert of upstream `1d657c4e6`**, the bisect-proven cause (8 hardware rounds)
+  of a deterministic GT5P Spec II [BCUS98158, ISO] `CellSpursKernel0` boot fatal
+  on aarch64: skipping the SPU reduced-loop pattern reroutes an older-SPURS loop
+  through standard SPU LLVM compilation, which is miscompiled on ARM64 (x86
+  unaffected — upstream CI can't see it). Validated on-rig: Spec II boots past
+  copyright, Spec III clean. Upstream regression report + #11912 thread reply
+  drafted (operator posts).
+  - **#11912 A/B result (the bump's motivating question): SEPARATE.** On one
+    binary, env-toggled: default arm bright ×3 (marker present — the parked-TIU
+    state is still programmed on 19638); `GTK_REMAP0_ONE=0` arm reproduces the
+    dim road. Upstream's GT6 mirror fix (PR #19090) does not touch #11912; the
+    force-ONE workaround stays default-on.
+  - Turnip pin advanced to **26.1.6 gtk_0.6 (zlatez)** — racing live since
+    07-30 with clean ledger rows; 26.1.3 gtk_0.4 remains in `drivers/` as
+    fallback.
 - **RPCS3 GTK Edition v0.8.0-dev — upstream base bump 19544 → 19638** (2026-07-31).
   New base `a1deb2921` = kd-11's PR #19090 (shader-interpreter MSAA + depth-redirect
   sampling — the fix a contributor reports cured GT6's track-shadow mirror flicker)
