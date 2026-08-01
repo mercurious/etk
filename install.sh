@@ -1679,10 +1679,16 @@ ssh $RIG_SSH "mkdir -p /storage/turnip/drivers /storage/.config/system.d/" 2>/de
 # backwards, since a build must run on the rig before it can ever earn
 # certification. Curate the shipped catalog by what goes in the release, not by
 # refusing to install what the operator built.
-CERTIFIED_BUILDS="etk_turnip_rocknix_26.1.6_gtk_0.6.so"
+# The bootstrap manifest may carry LABELED prerelease builds alongside the
+# certified pick (operator-directed 2026-08-01): ETK users are expert
+# enthusiasts — an "-rcN" in the filename is all the gating a Turnip build
+# needs. Everything here is fetched sha-verified and lands in the DRIVER-tab
+# chooser; the certified build stays the recommended pick.
+CERTIFIED_BUILDS="etk_turnip_rocknix_26.1.6_gtk_0.6.so etk_turnip_rocknix_26.2.0-rc3_gtk_0.6.so"
 DRIVER_RELEASE_BASE="https://github.com/mercurious/etk/releases/latest/download"
 # sha256 of each certified build — a fetched binary is verified against this.
 driver_sha() { case "$1" in
+    etk_turnip_rocknix_26.2.0-rc3_gtk_0.6.so) echo "96a0dbf8113498ebb7828cdb214c0f444f9a88e8050ab9b78744bdeef8dc588c" ;;
     etk_turnip_rocknix_26.1.6_gtk_0.6.so) echo "718bddbc04c70e430ee124e83e1e2e090eabc64a32287e7f86504a4fc78506e4" ;;
     etk_turnip_rocknix_26.1.3_gtk_0.4.so) echo "6b9c50bf993c10d32941177e7b15868714ef64da7a3bbf28022f8f2fb745045f" ;;
     etk_turnip_rocknix_26.1.3_gtk_0.2.so) echo "245212454bb1809816f52fa7c04209db2ef63cf1b5ddc7a69533636a0a4b7d19" ;;

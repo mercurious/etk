@@ -128,6 +128,14 @@ the ROCKNIX 20260801 OS update** — see README § ROCKNIX OS Updates.
   - ffs-v5 00E59005 rescue baseline resets with the new emulator — fresh
     baseline to be recorded; do not compare against 0.7.5 numbers.
 
+### Added — for the curious
+- **Turnip 26.2.0-rc3 prerelease ships in the DRIVER-tab catalog** alongside
+  the certified 26.1.6 — installed automatically, sha-verified, one
+  selection away. Prerelease and unvalidated; the `rc3` in the filename is
+  the warning label, and that's all the gating an expert enthusiast needs
+  (operator doctrine, 2026-08-01). Newest-upstream Turnip packaged for
+  ROCKNIX is also a deliberate Android↔ROCKNIX-parity signal.
+
 ### Known issues
 - **Non-GT titles may regress on the emulator base bump.** The GTK is a
   GT-specialized project; incidental titles ride along at their own risk.
