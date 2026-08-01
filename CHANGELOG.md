@@ -4,7 +4,32 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ## [Unreleased]
 
+*Versioning for the next cut (operator-set 2026-08-01): ETK middleware →
+**0.8.3**; the GTK fork stack → **GTK 0.8.0** (from 0.7.0 — one stack version
+covering the kernel 7.1.2 rebase, RPCS3 base 19638, and Turnip 26.1.6).*
+
 ### Added
+- **OS-update coherence guard (`bin/osguard.sh` + `etk-osguard.service`,
+  default-ON, `ETK_OS_GUARD=0` kill-switch).** Makes ROCKNIX in-place updates
+  survivable on a GTK-kernel rig. Born from the 2026-08-01 update-day
+  frankenboot: the ROCKNIX updater writes the new kernel over the slot the
+  *running* boot used, strips the ETK grub entries from both twins, and
+  re-seeds grubenv (observed: wrong device id) — leaving an old-kernel/
+  new-SYSTEM boot with zero loadable modules (no WiFi, no sound). The guard
+  runs once per boot: **Phase A** detects the kernel/module-tree mismatch,
+  promotes the matching kernel into `/flash/KERNEL` (staged GTK artifact
+  preferred, sha-verified; displaced kernel backed up), refreshes the
+  pristine-stock snapshot, and re-points grubenv at this device
+  (confidence-gated); **Phase B** re-activates the GTK kernel on the next
+  coherent boot by replaying the heal bundle install.sh now renders at
+  deploy time (kernel + pre-rendered grub block + deploy mode — the guard
+  replays, never re-derives). It never reboots the device; it toasts and
+  the user reboots. install.sh STEP 6.45 deploys it unconditionally
+  (Phase A protects stock-kernel rigs too); uninstall.sh removes it.
+  Validated by `tools/test_osguard.sh` — 7 fixture scenarios replaying the
+  real incident (heal, check-mode no-write, healthy no-op, Phase B replay,
+  no-donor fail-loud, corrupt-stage rejection, kill-switch), 29/29 on host
+  and on the rig's BusyBox.
 - **Chiaki: connection status screen.** Choosing a console now shows the
   session's phases in the branded frame as they happen — WAKING CONSOLE,
   REQUESTING SESSION, CONTROL LINK UP, STREAMING — and an error quit shows

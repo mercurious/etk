@@ -68,6 +68,12 @@ export ETK_PAD_BIND="${ETK_PAD_BIND:-1}"
 # NEVER deployed, synced or published (secrets, etk.conf precedent). Set 0 to
 # disable (kill-switch: skips deploy, Tools entry and tripwire).
 export ETK_CHIAKI="${ETK_CHIAKI:-1}"
+# OS-update coherence guard (0.8.3, default-ON): bin/osguard.sh runs once per
+# boot (etk-osguard.service) and self-heals the kernel/module-tree mismatch a
+# ROCKNIX in-place update leaves behind (the 2026-08-01 frankenboot: updater
+# writes the new kernel over the RUNNING boot's slot + regenerates grub twins
+# and grubenv). Never reboots. Set 0 to disable (kill-switch).
+export ETK_OS_GUARD="${ETK_OS_GUARD:-1}"
 
 # --- [ SHM & STATE ] ---
 export SHM_DIR="/dev/shm/etk_shm"

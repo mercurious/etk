@@ -1425,10 +1425,13 @@ if [ -n "${KERNEL_IMAGE:-}" ] && [ -f "${KERNEL_IMAGE:-}" ]; then
             K_MODE="test"
         fi
     fi
+    # Kernel release string baked in the Image ("Linux version 7.1.2 ...") —
+    # the osguard heal bundle keys Phase B replay on it matching the SYSTEM.
+    K_RELEASE=$(strings "$KERNEL_IMAGE" 2>/dev/null | grep -m1 "Linux version " | sed 's/.*Linux version \([^ ]*\).*/\1/')
     # Skip re-staging if the rig already carries this exact Image (idempotent).
     K_RIG_SHA=$(ssh $RIG_SSH "sha256sum /flash/KERNEL.gtktest 2>/dev/null | cut -d' ' -f1" 2>/dev/null)
     scp -q "$KERNEL_IMAGE" "$RIG_SSH:/storage/rocknix-gtk.KERNEL.staging" 2>/dev/null
-    K_OUT=$(ssh $RIG_SSH "HOST_SHA='$K_HOST_SHA' K_CMDLINE='$K_CMDLINE' K_CMDLINE_QUIET='$K_CMDLINE_QUIET' FLIP2_DTB='$K_FLIP2_DTB' K_MODE='$K_MODE' sh -s" 2>&1 << 'KERNELREMOTE'
+    K_OUT=$(ssh $RIG_SSH "HOST_SHA='$K_HOST_SHA' K_CMDLINE='$K_CMDLINE' K_CMDLINE_QUIET='$K_CMDLINE_QUIET' FLIP2_DTB='$K_FLIP2_DTB' K_MODE='$K_MODE' K_RELEASE='$K_RELEASE' sh -s" 2>&1 << 'KERNELREMOTE'
 set -e
 S=$(sha256sum /storage/rocknix-gtk.KERNEL.staging 2>/dev/null | cut -d' ' -f1)
 [ "$S" = "$HOST_SHA" ] || { echo "KERNEL_FAIL staging sha mismatch ($S)"; rm -f /storage/rocknix-gtk.KERNEL.staging; exit 1; }
@@ -1437,7 +1440,15 @@ cp /storage/rocknix-gtk.KERNEL.staging /flash/KERNEL.gtktest
 sync
 F=$(sha256sum /flash/KERNEL.gtktest | cut -d' ' -f1)
 [ "$F" = "$HOST_SHA" ] || { echo "KERNEL_FAIL flash sha mismatch ($F)"; mount -o remount,ro /flash || true; exit 1; }
-rm -f /storage/rocknix-gtk.KERNEL.staging
+# OSGUARD HEAL BUNDLE (STEP 6.45's replay inputs): keep the verified staged
+# Image + its sha/release/mode so bin/osguard.sh can re-activate the GTK
+# kernel after a ROCKNIX in-place update clobbers the /flash slots and grub
+# (the 2026-08-01 frankenboot). install.sh RENDERS here; osguard only REPLAYS.
+mkdir -p /storage/rocknix-gtk/heal
+mv /storage/rocknix-gtk.KERNEL.staging /storage/rocknix-gtk/heal/KERNEL.staged
+printf '%s\n' "$HOST_SHA"  > /storage/rocknix-gtk/heal/KERNEL.staged.sha256
+printf '%s\n' "$K_RELEASE" > /storage/rocknix-gtk/heal/KERNEL.staged.release
+printf '%s\n' "$K_MODE"    > /storage/rocknix-gtk/heal/mode
 # Pristine-stock snapshot: taken once, while install.sh has never written
 # /flash/KERNEL, so on a virgin rig this IS the OS-shipped kernel. The managed
 # fallback entry boots it with the verbose forensic console.
@@ -1520,6 +1531,10 @@ for CFG in /flash/EFI/BOOT/grub.cfg /flash/boot/grub/grub.cfg; do
         printf '        fi\n'
         printf '}\n'
     } > "$CFG.etkblock"
+    # Bank the rendered block for osguard's Phase B replay (identical for both
+    # twins; last write wins). Rendered-at-install, replayed-at-heal — the
+    # guard never re-derives grub logic.
+    cp "$CFG.etkblock" /storage/rocknix-gtk/heal/grub.block 2>/dev/null
     # Insert the ETK block BEFORE the first existing menuentry so ROCKNIX-GTK
     # leads the menu (was appended at the end). Degrades safely to append if no
     # menuentry is found. grubenv still drives the DEFAULT boot (saved_entry).
@@ -1583,6 +1598,53 @@ KERNELREMOTE
 else
     [ -n "${KERNEL_IMAGE:-}" ] && say "${Y}[ETK]${N} KERNEL_IMAGE set but file missing ($KERNEL_IMAGE) — skipping kernel deploy."
 fi
+
+# ==========================================================
+# STEP 6.45: OS-UPDATE COHERENCE GUARD (osguard) — GTK 0.8.0
+# ==========================================================
+# The ROCKNIX in-place updater writes the new kernel over the slot the
+# RUNNING boot used, regenerates both grub twins (ETK entries stripped) and
+# grubenv (observed seeded to the WRONG device) — on a GTK-kernel rig the
+# next boot is an old-kernel/new-SYSTEM frankenboot with zero loadable
+# modules (live incident 2026-08-01, 20260701->20260801). bin/osguard.sh
+# (pushed with bin/ in STEP 3) runs once per boot and self-heals: Phase A
+# promotes the module-tree-matching kernel into /flash/KERNEL and fixes
+# grubenv; Phase B replays STEP 6.4's heal bundle to re-activate the GTK
+# kernel once the OS is coherent. NEVER reboots — it toasts + logs and the
+# user reboots. Deployed unconditionally (Phase A also protects stock-kernel
+# rigs); kill-switch ETK_OS_GUARD=0 in etk.conf. Runs BEFORE the bind
+# services only by accident of ordering — it needs neither; binds are
+# path-based and survive either way.
+OSG_OUT_FILE=$(mktemp /tmp/etk_osguard_XXXXXX)
+ssh $RIG_SSH "sh -s" > "$OSG_OUT_FILE" 2>&1 << 'OSGUARDREMOTE'
+    mkdir -p /storage/.config/system.d/
+cat << 'SVC' > /storage/.config/system.d/etk-osguard.service
+[Unit]
+Description=ETK OS-update coherence guard (kernel/module-tree self-heal)
+After=local-fs.target
+ConditionPathExists=/storage/games-internal/roms/etk/bin/osguard.sh
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh /storage/games-internal/roms/etk/bin/osguard.sh
+
+[Install]
+WantedBy=multi-user.target
+SVC
+    systemctl daemon-reload
+    systemctl enable /storage/.config/system.d/etk-osguard.service >/dev/null 2>&1
+    # Run a read-only check now so a rig that is ALREADY incoherent surfaces
+    # at install time, not at next boot.
+    sh /storage/games-internal/roms/etk/bin/osguard.sh --check >/dev/null 2>&1 \
+        && echo "OSGUARD_OK coherent" || echo "OSGUARD_OK (check reported findings — see tripwire log)"
+OSGUARDREMOTE
+if grep -q OSGUARD_OK "$OSG_OUT_FILE"; then
+    say "${G}[ETK]${N} OS-update coherence guard deployed (etk-osguard.service — $(grep -m1 OSGUARD_OK "$OSG_OUT_FILE" | sed 's/OSGUARD_OK //'))"
+else
+    say "${Y}[ETK]${N} osguard deploy: no status marker — check ssh output"
+fi
+rm -f "$OSG_OUT_FILE"
 
 # ==========================================================
 # STEP 6.5: CUSTOM TURNIP DRIVER CATALOG (Stage IV) — boot-persistent selector

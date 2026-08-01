@@ -263,6 +263,15 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
     rm -f /storage/.config/modules-load.d/etk-ramoops.conf /storage/.config/modprobe.d/etk-ramoops.conf
     echo "    Removed: etk-blackbox.service + ramoops module confs (grub token left; use arm_blackbox.sh --revert)"
 
+    # OS-update coherence guard (STEP 6.45): unit + heal bundle + marker.
+    # The displaced-kernel backup (KERNEL.osguard-displaced) is left in place —
+    # it may be the only copy of a kernel the operator still wants.
+    systemctl disable --now etk-osguard.service 2>/dev/null
+    rm -f /storage/.config/system.d/etk-osguard.service
+    rm -rf /storage/rocknix-gtk/heal
+    rm -f /storage/.etk-osguard-last
+    echo "    Removed: etk-osguard.service + heal bundle (KERNEL.osguard-displaced backup kept if present)"
+
     # Custom kernel (Tier K / STEP 6.4): strip the ETK-managed grub entries
     # (TEST + fallback-stock), un-seed the auto-boot if KERNEL_DEPLOY_MODE=
     # default pointed saved_entry at the GTK kernel, and drop the staged
