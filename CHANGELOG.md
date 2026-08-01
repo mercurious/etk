@@ -22,6 +22,30 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
   the hint bar weren't.
 
 ### Staged (dev, not yet certified)
+- **ROCKNIX base bump 20260701 → official 20260801 + kernel rocknix-gtk-20260801-0.3**
+  (2026-08-01) — the OS leg of the full-stack bump (with RPCS3 19638 + Turnip
+  26.1.6 already staged). Kernel rebased 7.0.11 → 7.1.2 against the 20260801
+  patch stack; both ETK patches (anti-lock `msm.context_keepalive` KGSL parity,
+  q6afe audio-probe-race) apply clean — no hunk drift. Stock-parity build:
+  exact stock byte size, 237/237 modules, new 7.1 `ARM64_LSUI` toolchain-probe
+  feature forced off to match the release binary. §4.4 cold-boot gate PASSED
+  on the reference rig (keepalive armed, audio up, drift tool: no structural
+  drift); warm-race certification pending.
+  - **Field hazard for updaters (documented in AI_MANIFEST):** the ROCKNIX
+    in-place updater writes the new kernel over the file the running boot
+    used — on a GTK-kernel boot that clobbers `/flash/KERNEL.gtktest` and
+    leaves the old kernel in `/flash/KERNEL`, and it regenerates grub twins
+    + grubenv (seen seeded to the wrong device entry). Result: an
+    old-kernel/new-SYSTEM boot with zero loadable modules (no WiFi, no
+    sound). v0.8.x users updating the OS in place must re-run the installer
+    with the new kernel; recovery procedure banked.
+  - 20260801 verified-unchanged surfaces: `start_rpcs3.sh`, `get_setting`
+    (the `[]` escaping bug persists — ISO rename workaround stays), ps3 ES
+    extensions, MangoHud, BusyBox, python3, grim. Notable upstream changes:
+    Retroid pad driver is now a module (input nodes renumber; ETK matches by
+    name), InputPlumber starts earlier, `output_monitor` now forces external
+    output to 1080p60 + auto-switches the HDMI audio profile, and the SM8250
+    DT gains DP/HDMI **audio** (new feature lane for video-out).
 - **RPCS3 GTK Edition v0.8.1-dev** (2026-08-01) — 0.8.0-dev **plus a temporary
   revert of upstream `1d657c4e6`**, the bisect-proven cause (8 hardware rounds)
   of a deterministic GT5P Spec II [BCUS98158, ISO] `CellSpursKernel0` boot fatal
