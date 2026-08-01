@@ -1,0 +1,27 @@
+{
+  "_comment": [
+    "GTK stack manifest — the certified fork-stack pins THIS repo tag ships.",
+    "Consumed by Pitstop self-update (hostless full-stack update: assets are",
+    "fetched from THIS tag's GitHub release and sha-verified before staging).",
+    "install.sh keeps its own CERT pins for the host lane;",
+    "tools/release_sanity.sh asserts the two stay in lockstep at every cut.",
+    "kernel.requires_os: the ROCKNIX release whose module tree this kernel",
+    "matches — bin/osguard.sh activates the staged kernel ONLY when the live",
+    "OS matches (stage now, activate when coherent; never boots a mismatch)."
+  ],
+  "gtk_stack": "0.8.0-dev",
+  "kernel": {
+    "asset": "KERNEL.rocknix-gtk-20260801-0.3",
+    "sha256": "0c0aa9d288e3426f365701e0f051b670c202f13548d3a137f1415ba55987eafe",
+    "kernel_release": "7.1.2",
+    "requires_os": "20260801"
+  },
+  "turnip": {
+    "asset": "etk_turnip_rocknix_26.1.3_gtk_0.4.so",
+    "sha256": "6b9c50bf993c10d32941177e7b15868714ef64da7a3bbf28022f8f2fb745045f"
+  },
+  "rpcs3": {
+    "asset": "rpcs3-etk_gtk-edition-0.7.5_v0.0.41-19544-60c9705a_linux_aarch64.AppImage",
+    "sha256": "c464771932da20064f0942fc61f22df9d6e67bc52893f319d5d02cde1eaae02d"
+  }
+}

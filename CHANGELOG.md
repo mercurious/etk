@@ -9,6 +9,24 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 covering the kernel 7.1.2 rebase, RPCS3 base 19638, and Turnip 26.1.6).*
 
 ### Added
+- **Full-stack self-update: the couch update now carries the GTK kernel.**
+  "We never ship a GTK without its feature set" — Pitstop's Check for ETK
+  Updates was middleware-only, which after a ROCKNIX OS update would have
+  parked hostless users on the stock kernel (no ANTI-LOCK kernel net)
+  indefinitely. Now: `config/gtk_stack.json` (the stack manifest, riding the
+  release tarball so pins are always the installed tag's own) names the
+  kernel asset + sha256 + the ROCKNIX release it requires; self-update
+  fetches it from the same release, sha-verifies, and hands it to
+  `bin/kernel_stage.sh`, which banks the osguard heal bundle and harvests
+  the live grub block. **Activation stays osguard's job** — the staged
+  kernel goes live only on a boot whose OS module tree matches
+  (`requires_os` gating), so staging can never make a rig unbootable, and
+  the advised update order (ETK first, then ROCKNIX) lands users on the
+  full GTK 0.8.0 stack automatically, no computer involved. Release
+  contract: the kernel artifact is now the FIFTH asset on every release;
+  `tools/release_sanity.sh` asserts manifest↔install.sh pin lockstep at
+  every cut. Suites: `tools/test_kernel_stage.sh` 18/18 on host and rig
+  BusyBox.
 - **OS-update coherence guard (`bin/osguard.sh` + `etk-osguard.service`,
   default-ON, `ETK_OS_GUARD=0` kill-switch).** Makes ROCKNIX in-place updates
   survivable on a GTK-kernel rig. Born from the 2026-08-01 update-day

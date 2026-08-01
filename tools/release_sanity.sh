@@ -126,6 +126,36 @@ else
     skip "install.sh not found"
 fi
 
+# E. gtk_stack.json manifest — the self-update lane's pins must be in
+# LOCKSTEP with install.sh's CERT pins (two sources, one truth: a drifted
+# manifest ships couch users a different stack than the host lane installs).
+# Also enforces the five-asset release contract: the kernel asset named in
+# the manifest must ship on the release like the other four.
+MANIFEST="$REPO_ROOT/config/gtk_stack.json"
+if [ -f "$MANIFEST" ] && [ -f "$REPO_ROOT/install.sh" ]; then
+    M_RPCS3=$(python3 -c "import json;print(json.load(open('$MANIFEST'))['rpcs3']['asset'])" 2>/dev/null)
+    M_RPCS3_SHA=$(python3 -c "import json;print(json.load(open('$MANIFEST'))['rpcs3']['sha256'])" 2>/dev/null)
+    M_TURNIP=$(python3 -c "import json;print(json.load(open('$MANIFEST'))['turnip']['asset'])" 2>/dev/null)
+    M_KERNEL=$(python3 -c "import json;print(json.load(open('$MANIFEST'))['kernel']['asset'])" 2>/dev/null)
+    I_RPCS3=$(grep -E '^CERT_RPCS3=' "$REPO_ROOT/install.sh" | tail -1 | sed -E 's/^[^=]*=//; s/^"//; s/".*$//')
+    I_RPCS3_SHA=$(grep -E '^CERT_RPCS3_SHA=' "$REPO_ROOT/install.sh" | tail -1 | sed -E 's/^[^=]*=//; s/^"//; s/".*$//')
+    if [ "$M_RPCS3" = "$I_RPCS3" ] && [ "$M_RPCS3_SHA" = "$I_RPCS3_SHA" ]; then
+        ok "gtk_stack.json rpcs3 pin matches install.sh CERT_RPCS3"
+    else
+        bad "gtk_stack.json rpcs3 pin DRIFTED from install.sh CERT_RPCS3 ($M_RPCS3 vs $I_RPCS3)"
+    fi
+    if grep -qE "^CERTIFIED_BUILDS=.*$M_TURNIP" "$REPO_ROOT/install.sh" \
+       && grep -q "$(python3 -c "import json;print(json.load(open('$MANIFEST'))['turnip']['sha256'])" 2>/dev/null)" "$REPO_ROOT/install.sh"; then
+        ok "gtk_stack.json turnip pin matches install.sh CERTIFIED_BUILDS"
+    else
+        bad "gtk_stack.json turnip pin DRIFTED from install.sh (asset or sha missing there)"
+    fi
+    check_kernel_versiononly "gtk_stack.json kernel asset" "$M_KERNEL"
+    printf "  ${c_warn:-}NOTE${c_off:-}: five-asset contract — '%s' must ship on the release\n" "$M_KERNEL"
+else
+    skip "config/gtk_stack.json or install.sh not found"
+fi
+
 echo
 if [ "$FAIL" = 0 ]; then
     printf "${c_ok}== release sanity: PASS ==${c_off}\n"

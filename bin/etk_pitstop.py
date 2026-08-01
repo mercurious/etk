@@ -3091,6 +3091,68 @@ def _self_update_apply(info):
                         os.chmod(d_abs, 0o755)
             except Exception as e:
                 _log(f"self-update: {d_abs} refresh failed: {e}")
+        # --- GTK stack: kernel (0.8.3 — self-update goes full-stack) ---
+        # "We never ship a GTK without its feature set": a couch update must
+        # carry the kernel, not just middleware. The gtk_stack.json manifest
+        # rides the release tarball (so these pins are THIS tag's), the asset
+        # is fetched from the same tag's release, sha-verified, then handed
+        # to bin/kernel_stage.sh which banks the osguard heal bundle and
+        # harvests the live grub block. Activation stays osguard's job: the
+        # staged kernel goes live only on a boot whose OS module tree matches
+        # (kernel.requires_os) — staging can never make the rig unbootable.
+        # Fail-soft: a kernel-step failure leaves the middleware update good.
+        stack_lines = []
+        try:
+            man_path = os.path.join(src, "config", "gtk_stack.json")
+            kern = None
+            if os.path.isfile(man_path):
+                with open(man_path) as f:
+                    kern = (json.load(f) or {}).get("kernel")
+            if kern and kern.get("asset") and kern.get("sha256"):
+                cur = ""
+                try:
+                    with open("/storage/rocknix-gtk/heal/"
+                              "KERNEL.staged.sha256") as f:
+                        cur = f.read().strip()
+                except OSError:
+                    pass
+                if cur == kern["sha256"]:
+                    stack_lines.append("Kernel: already staged (up to date).")
+                else:
+                    kpath = os.path.join(tmp, kern["asset"])
+                    kurl = (f"https://github.com/{_UPDATE_REPO}/releases/"
+                            f"download/{tag}/{kern['asset']}")
+                    kreq = urllib.request.Request(
+                        kurl, headers={"User-Agent": "etk-pitstop"})
+                    with urllib.request.urlopen(kreq, timeout=600) as r, \
+                            open(kpath, 'wb') as f:
+                        shutil.copyfileobj(r, f)
+                    import hashlib
+                    h = hashlib.sha256()
+                    with open(kpath, 'rb') as f:
+                        for chunk in iter(lambda: f.read(1 << 20), b''):
+                            h.update(chunk)
+                    if h.hexdigest() != kern["sha256"]:
+                        raise RuntimeError("kernel asset failed sha256 verify")
+                    rc = os.system(f"sh '{base}/bin/kernel_stage.sh' "
+                                   f"'{kpath}' '{kern['sha256']}' "
+                                   f">/dev/null 2>&1")
+                    if rc != 0:
+                        raise RuntimeError("kernel_stage.sh refused the stage")
+                    synced.append("kernel")
+                    if os.uname().release == kern.get("kernel_release"):
+                        stack_lines.append("Kernel: GTK kernel staged and "
+                                           "activated - REBOOT to load it.")
+                    else:
+                        stack_lines.append(
+                            f"Kernel: staged for ROCKNIX "
+                            f"{kern.get('requires_os', '?')} - it activates "
+                            f"itself after you update the OS.")
+        except Exception as e:
+            _log(f"self-update: kernel stage failed: "
+                 f"{e.__class__.__name__}: {e}")
+            stack_lines.append("Kernel: staging FAILED (middleware is still "
+                               "updated) - run install.sh from a computer.")
         # Cycle the watchdogged daemons: the Sentry respawns them from the
         # updated files within a tick or two.
         os.system("pkill -f mango_bridge.sh 2>/dev/null; "
@@ -3111,12 +3173,14 @@ def _self_update_apply(info):
         except Exception as e:
             _log(f"self-update: provenance write failed: {e}")
         _log(f"self-update: v{APP_VERSION} -> {tag} OK ({', '.join(synced)})")
-        return (True, [
-            f"Updated to {tag} (middleware layer).", "",
-            "Synced: " + ", ".join(synced), "",
-            "Stack components (emulator / driver / kernel / Sentry)",
-            "update via install.sh or a new card image.", "",
-            "Restart Pitstop to load the new version."])
+        out = [f"Updated to {tag}.", "",
+               "Synced: " + ", ".join(synced), ""]
+        if stack_lines:
+            out += stack_lines + [""]
+        out += ["Emulator / driver / Sentry still update via",
+                "install.sh or a new card image.", "",
+                "Restart Pitstop to load the new version."]
+        return (True, out)
     except Exception as e:
         _log(f"self-update: apply failed: {e.__class__.__name__}: {e}")
         return (False, [
