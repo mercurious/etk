@@ -1679,10 +1679,11 @@ ssh $RIG_SSH "mkdir -p /storage/turnip/drivers /storage/.config/system.d/" 2>/de
 # backwards, since a build must run on the rig before it can ever earn
 # certification. Curate the shipped catalog by what goes in the release, not by
 # refusing to install what the operator built.
-CERTIFIED_BUILDS="etk_turnip_rocknix_26.1.3_gtk_0.4.so"
+CERTIFIED_BUILDS="etk_turnip_rocknix_26.1.6_gtk_0.6.so"
 DRIVER_RELEASE_BASE="https://github.com/mercurious/etk/releases/latest/download"
 # sha256 of each certified build — a fetched binary is verified against this.
 driver_sha() { case "$1" in
+    etk_turnip_rocknix_26.1.6_gtk_0.6.so) echo "718bddbc04c70e430ee124e83e1e2e090eabc64a32287e7f86504a4fc78506e4" ;;
     etk_turnip_rocknix_26.1.3_gtk_0.4.so) echo "6b9c50bf993c10d32941177e7b15868714ef64da7a3bbf28022f8f2fb745045f" ;;
     etk_turnip_rocknix_26.1.3_gtk_0.2.so) echo "245212454bb1809816f52fa7c04209db2ef63cf1b5ddc7a69533636a0a4b7d19" ;;
     *) echo "" ;; esac; }
@@ -1840,8 +1841,8 @@ rm -f "$TURNIP_OUT_FILE"
 # stock needs no backup: unmounting always recovers it. Reboot-gated by the
 # same doctrine as Turnip: a bind-mount can't hot-swap a binary a running
 # RPCS3 already has open.
-CERT_RPCS3="rpcs3-etk_gtk-edition-0.7.5_v0.0.41-19544-60c9705a_linux_aarch64.AppImage"
-CERT_RPCS3_SHA="c464771932da20064f0942fc61f22df9d6e67bc52893f319d5d02cde1eaae02d"
+CERT_RPCS3="rpcs3-etk_gtk-edition-0.8.1_v0.0.41-19638-a1deb2921_linux_aarch64.AppImage"
+CERT_RPCS3_SHA="60da2a6536fec60bc5568f92ae094d75a5e49cf7b3610ec767302bb9a3cf106b"
 RPCS3_RELEASE_BASE="https://github.com/mercurious/etk/releases/latest/download"
 ssh $RIG_SSH "mkdir -p /storage/rpcs3 /storage/.config/system.d/" 2>/dev/null
 # Pre-flight: the staging target lives on /storage — the small UFS SYSTEM

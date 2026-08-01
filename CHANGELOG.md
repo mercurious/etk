@@ -4,9 +4,15 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ## [Unreleased]
 
-*Versioning for the next cut (operator-set 2026-08-01): ETK middleware →
-**0.8.3**; the GTK fork stack → **GTK 0.8.0** (from 0.7.0 — one stack version
-covering the kernel 7.1.2 rebase, RPCS3 base 19638, and Turnip 26.1.6).*
+## [0.8.3] - 2026-08-01 — GTK 0.8.0 Full-Stack Edition
+
+The whole chassis moves together: **ROCKNIX official 20260801** (kernel
+7.1.2), **rocknix-gtk-20260801-0.3**, **RPCS3 GTK Edition v0.8.1** (base
+19638), **Mesa Turnip 26.1.6 gtk_0.6** — the GTK stack steps 0.7.0 → **0.8.0**
+in one release. And because an OS update on a kit rig used to be a trap, this
+release makes it survivable: the OS Guard self-heals the post-update boot and
+the couch update now carries the kernel. **Update ETK to 0.8.3 BEFORE taking
+the ROCKNIX 20260801 OS update** — see README § ROCKNIX OS Updates.
 
 ### Added
 - **Full-stack self-update: the couch update now carries the GTK kernel.**
@@ -64,7 +70,7 @@ covering the kernel 7.1.2 rebase, RPCS3 base 19638, and Turnip 26.1.6).*
   south/east positions; behavior was always correct, the printed letters in
   the hint bar weren't.
 
-### Staged (dev, not yet certified)
+### Changed — the GTK 0.8.0 stack
 - **ROCKNIX base bump 20260701 → official 20260801 + kernel rocknix-gtk-20260801-0.3**
   (2026-08-01) — the OS leg of the full-stack bump (with RPCS3 19638 + Turnip
   26.1.6 already staged). Kernel rebased 7.0.11 → 7.1.2 against the 20260801
@@ -89,7 +95,7 @@ covering the kernel 7.1.2 rebase, RPCS3 base 19638, and Turnip 26.1.6).*
     name), InputPlumber starts earlier, `output_monitor` now forces external
     output to 1080p60 + auto-switches the HDMI audio profile, and the SM8250
     DT gains DP/HDMI **audio** (new feature lane for video-out).
-- **RPCS3 GTK Edition v0.8.1-dev** (2026-08-01) — 0.8.0-dev **plus a temporary
+- **RPCS3 GTK Edition v0.8.1** (2026-08-01; certified pin this release) — 0.8.0-dev **plus a temporary
   revert of upstream `1d657c4e6`**, the bisect-proven cause (8 hardware rounds)
   of a deterministic GT5P Spec II [BCUS98158, ISO] `CellSpursKernel0` boot fatal
   on aarch64: skipping the SPU reduced-loop pattern reroutes an older-SPURS loop
@@ -121,6 +127,17 @@ covering the kernel 7.1.2 rebase, RPCS3 base 19638, and Turnip 26.1.6).*
     at 26.1.3 gtk_0.4 for the A/B; the 26.1.6/zlatez lane stays parked.
   - ffs-v5 00E59005 rescue baseline resets with the new emulator — fresh
     baseline to be recorded; do not compare against 0.7.5 numbers.
+
+### Known issues
+- **Non-GT titles may regress on the emulator base bump.** The GTK is a
+  GT-specialized project; incidental titles ride along at their own risk.
+  Observed: **Ridge Racer 7 (NPUB30457)**, playable on 0.7.5, now struggles
+  to reach its menu on the 19638 base (three short RECOVERY:Silent sessions
+  in the ledger, 2026-08-01). Observation banked, not diagnosed — GT titles
+  are the mission.
+- **First boot per game does a full PPU recompile** on the new emulator
+  (upstream obj-cache v7→v8) — long and thermally heavy, not a hang.
+- **Old savestates will not load** (upstream global savestate version bump).
 
 ## [0.8.2] - 2026-07-30 — Chiaki-Rocknix Remote Play Edition
 

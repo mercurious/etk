@@ -102,13 +102,14 @@ See [Getting Started](https://github.com/mercurious/etk/#getting-started) to ins
 | Retroid Pocket | 6 | SM8550 Adreno 740 | (needs new profile + vault) | Not yet supported |
 
 ## ETK System Requirements
-The GTK fork was built from **ROCKNIX official release `20260701`** 
+The GTK fork was built from **ROCKNIX official release `20260801`** (the **GTK 0.8.0** stack)
 | Type | Detail |
 |---|---|
 | Host System | macOS or Linux native, Windows support via img flash, WLS, [PowerShell Port](https://github.com/mercurious/etk/tree/main/windows_installer) |
 | OS | ROCKNIX-GTK |
-| Emulator | RPCS3 **GTK Edition** v0.7.5 |
-| Driver | MESA Turnip 26.1.3 **GTK** |
+| Kernel | rocknix-gtk 7.1.2 (anti-lock + audio-fix patches) |
+| Emulator | RPCS3 **GTK Edition** v0.8.1 |
+| Driver | MESA Turnip 26.1.6 **GTK** |
 
 ## Getting Started
 
@@ -187,6 +188,29 @@ The companion repos: [chiaki-rocknix](https://github.com/mercurious/chiaki-rockn
 [etk-turnip-gtk](https://github.com/mercurious/etk-turnip-gtk) and
 [rocknix-gtk](https://github.com/mercurious/rocknix-gtk) — the tuned forks the
 kit deploys.
+
+## ROCKNIX OS Updates — one bad boot, by design
+A kernel and its OS are a matched pair: the OS image carries all the drivers
+(WiFi, sound, storage) keyed to one exact kernel. The kit's one deep
+modification is that your rig boots **our** kernel — that's where the
+ANTI-LOCK crash net and the audio-boot fix live. The ROCKNIX updater doesn't
+know we exist: it drops its new kernel into the slot the rig booted from
+(ours) and resets the boot menu to factory. So the **first boot after a
+ROCKNIX update comes up with no WiFi and no sound. This is expected.**
+
+The **ETK OS Guard** (v0.8.3+) repairs it automatically during that same
+boot — you'll see an on-screen message — and one reboot finishes the job.
+Don't reflash, don't panic: it's one bad boot, by design.
+
+- **Best order:** update ETK first (Pitstop `TOOLS` → Check for ETK Updates —
+  it now stages the matching GTK kernel ahead of time), then update ROCKNIX,
+  then reboot when the Guard asks. You end up back on the full GTK stack
+  automatically — no computer needed.
+- **Updated ROCKNIX first?** Also fine: the Guard heals to the standard
+  kernel; then run the ETK update (Pitstop or the one-liner) and reboot once
+  more to bring the GTK kernel back.
+- **On v0.8.2 or older?** Update ETK to v0.8.3 **before** taking a ROCKNIX
+  OS update — older kits can't self-repair; recovery needs a computer.
 
 ## Removing ETK
 - Use the provided `uninstall.sh` to remove the ETK from your system.
