@@ -1106,14 +1106,22 @@ if [ -f "$SESSION_ANCHOR" ]; then
         mkdir -p "$TELEMETRY_DIR"
         if [ ! -f "$SESSIONS_LEDGER" ]; then
             TMP="$SESSIONS_LEDGER.tmp"
-            printf 'epoch\tduration_s\tbuild\tgame_id\tstatus\tpeak_load\tpeak_ram_mb\tpeak_temp\tavg_temp\tcrash_sig\tfence_at_crash\tshaders_harvested\tdrain_pct\tthermal_overrides\n' > "$TMP"
+            printf 'epoch\tduration_s\tbuild\tgame_id\tstatus\tpeak_load\tpeak_ram_mb\tpeak_temp\tavg_temp\tcrash_sig\tfence_at_crash\tshaders_harvested\tdrain_pct\tthermal_overrides\ttune_tag\n' > "$TMP"
             mv "$TMP" "$SESSIONS_LEDGER"
         fi
 
-        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+        # Col 15 (tune_tag) carries the stack attribution. Orphan rows stopped at
+        # col 14 historically, so every kernel-panic session in the ledger is
+        # unattributable — and a panic is precisely the session you most want
+        # pinned to a stack. Trailing columns stay absent, which the readers
+        # already tolerate ("cols 15+ are append-only-trailing").
+        ORPHAN_TUNE=$(head -n1 "$ACTIVE_TUNE_FILE" 2>/dev/null | tr -d '\t\r')
+        [ -z "$ORPHAN_TUNE" ] && ORPHAN_TUNE="default"
+        ORPHAN_TUNE="$(etk_attribution_tag);${ORPHAN_TUNE}"
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
             "$ROW_EPOCH" "$ORPHAN_DURATION" "$BC_BUILD" "$BC_GAME" "PANIC" \
             "0.0" "$ORPHAN_PEAK_RAM" "0" "0" \
-            "PANIC_REBOOT" "0" "0" "0" "0" \
+            "PANIC_REBOOT" "0" "0" "0" "0" "$ORPHAN_TUNE" \
             >> "$SESSIONS_LEDGER"
 
         [ -x "$ETK_ROOT/scripts/career_aggregate.sh" ] && \

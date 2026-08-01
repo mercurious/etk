@@ -87,7 +87,32 @@ def main():
             vals = [v for v in vals if v > 0]
         return statistics.median(vals) if vals else 0.0
 
-    print(f"{'ARM (tune | res | clk | pwr)':<46} {'N':>3} {'PERFECT%':>8} "
+    # Split the stack attribution (build=…;stack=…) off the front of tune_tag and
+    # show it as a legend keyed S1, S2, … The tag is grouped on IN FULL — two arms
+    # on different stacks must never merge — but printing ~74 chars of fingerprint
+    # per row would wreck the table, and the whole point of the legend is that a
+    # stack change becomes visible at a glance instead of hiding inside a string.
+    def split_attr(tune):
+        parts = tune.split(";")
+        attr = [p for p in parts if p.startswith(("build=", "stack="))]
+        dials = [p for p in parts if not p.startswith(("build=", "stack="))]
+        return ";".join(attr), (";".join(dials) or "default")
+
+    stacks, order = {}, []
+    for arm in arms:
+        attr, _ = split_attr(arm[0])
+        if attr not in stacks:
+            stacks[attr] = f"S{len(order) + 1}"
+            order.append(attr)
+    if len(order) > 1 or (order and order[0]):
+        print("STACKS")
+        for attr in order:
+            print(f"  {stacks[attr]:<3} {attr or '(unattributed — pre-stack-tag rows)'}")
+        if len(order) > 1:
+            print("  !! more than one stack present — arms below are NOT comparable across S-ids")
+        print()
+
+    print(f"{'ARM (stack | tune | res | clk | pwr)':<46} {'N':>3} {'PERFECT%':>8} "
           f"{'LOCK%':>6} {'JIT ms':>6} {'RESC/h':>6} {'DUR p50':>8} {'DUR max':>8}  CRASH")
     scored = []
     for arm, rows in arms.items():
@@ -99,7 +124,8 @@ def main():
             scored, key=lambda t: (t[0], t[1]), reverse=True):
         if n < args.min_n:
             continue
-        label = f"{arm[0]} | {arm[1]} | {arm[2]} | {arm[3]}"
+        _attr, _dials = split_attr(arm[0])
+        label = f"{stacks[_attr]} | {_dials} | {arm[1]} | {arm[2]} | {arm[3]}"
         durs = sorted(f(r, "dur") for r in rows)
         flag = "" if n >= 3 else "  LOW-N"
         # rescue rate: keepalive survives per hour of play (the freeze-hitch

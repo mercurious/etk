@@ -301,6 +301,52 @@ export TURNIP_DIR="${TURNIP_DIR:-/storage/turnip}"
 export TURNIP_DRIVERS_DIR="$TURNIP_DIR/drivers"
 export TURNIP_SELECTED_FILE="$TURNIP_DIR/selected"
 export TURNIP_LOADED_FILE="$TURNIP_DIR/loaded"
+
+# --- STACK ATTRIBUTION -----------------------------------------------------
+# Every layer of the GTK stack self-identifies, and the ledger historically
+# recorded none of them (col 3 "build" is ETK_BUILD_TYPE — FULL on all 1488
+# rows, zero discriminating power). With ROCKNIX, the kernel, Turnip and RPCS3
+# all moving independently, an A/B arm that spans a bump silently pools two
+# different stacks and reads as one. That has already happened once: the
+# 2026-07-30/31 zlatez arms straddled an RPCS3 base bump and the pooled N=6
+# looked like a weakening effect rather than two different stacks.
+#
+# These helpers produce the tune_tag prefix. Used by BOTH ledger writers:
+# session_postmortem.sh (normal rows) and the Sentry's orphan-PANIC synthesis
+# in install.sh — panic sessions are the ones you most want attributed.
+etk_turnip_build_tag() {
+    _b=$(head -n1 "$TURNIP_LOADED_FILE" 2>/dev/null | tr -d '\t\r ')
+    [ -z "$_b" ] && _b="stock"
+    # Compact the catalog filename the same way Pitstop's _build_label does,
+    # minus the constant "rocknix" (every ROCKNIX build carries it).
+    _b=$(printf '%s' "$_b" | sed -e 's/\.so$//' \
+                                 -e 's/^libvulkan_freedreno[-_]*//' \
+                                 -e 's/^etk_turnip[-_]*//' \
+                                 -e 's/^rocknix[-_]*//')
+    [ -z "$_b" ] && _b="stock"
+    printf 'build=%s' "$_b"
+}
+
+etk_stack_tag() {
+    # ROCKNIX image: BUILD_ID is a 40-char sha; 7 pins a release unambiguously.
+    _rk=$(sed -n 's/^BUILD_ID="\{0,1\}\([0-9a-f]\{7\}\).*/\1/p' /etc/os-release 2>/dev/null | head -n1)
+    [ -z "$_rk" ] && _rk="?"
+    # Kernel: `uname -r` reads 7.0.11 for BOTH the stock and the GTK kernel, so
+    # it cannot discriminate on its own. The build counter in `uname -v` (#3)
+    # is what actually changes per rebuild.
+    _kr=$(uname -r 2>/dev/null)
+    _kn=$(uname -v 2>/dev/null | sed -n 's/^#\([0-9][0-9]*\).*/\1/p')
+    [ -n "$_kn" ] && _kr="${_kr}#${_kn}"
+    [ -z "$_kr" ] && _kr="?"
+    # RPCS3: the log banner's etk/<ver> field carries the fork version AND the
+    # upstream build number — exactly the pair that moves on a base bump.
+    _r3=$(grep -m1 -aoE 'etk/[^ |]+' "$RPCS3_LOG" 2>/dev/null | head -n1 | cut -d/ -f2)
+    [ -z "$_r3" ] && _r3="?"
+    printf 'stack=rk%s/k%s/r%s' "$_rk" "$_kr" "$_r3"
+}
+
+# build=<turnip>;stack=rk<img>/k<kernel>/r<rpcs3>  — the full attribution prefix.
+etk_attribution_tag() { printf '%s;%s' "$(etk_turnip_build_tag)" "$(etk_stack_tag)"; }
 export SIGNATURES_FILE="$ETK_ROOT/config/crash_signatures.json"
 
 # Persistent session breadcrumb. Written at IDLE->RUNNING ignition, removed
