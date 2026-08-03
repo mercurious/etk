@@ -60,13 +60,27 @@ an operator with local builds just has more in the catalog.
 | Build | Base | Status | Notes |
 |---|---|---|---|
 | `etk_turnip_rocknix_26.1.3_gtk_0.4.so` | mesa-26.1.3 | **proven** | The track-validated fork; shipped in the release, and `TURNIP_SO` (default pick). |
-| `etk_turnip_rocknix_26.1.6_gtk_0.6.so` | mesa-26.1.6 | unvalidated | **Race this one.** 26.1.6 rebase + 2 upstream backports + `zlatez`. |
-| `etk_turnip_rocknix_26.2.0-rc3_gtk_0.6.so` | mesa-26.2.0-rc3 | unvalidated | Same series on the pre-release base (carries both backports natively). |
+| `etk_turnip_rocknix_26.1.6_gtk_0.7.so` | mesa-26.1.6 | unvalidated | 26.1.6 rebase + 2 upstream backports + `zlatez`, on the decoupled gear registry. |
+| `etk_turnip_rocknix_26.2.0-rc3_gtk_0.7.so` | mesa-26.2.0-rc3 | unvalidated | **Race this one.** Same series on the pre-release base (carries both backports natively). |
 
-Retired (deleted 2026-07-30, so the rig catalog stays readable): `gtk_0.1`, `gtk_0.2`, and both
-`gtk_0.5` builds. The 0.5 pair shipped with `TU_ETK_QUERY_SURVIVE` defaulted OFF — see the fork's
-`PATCHES.md`. One ledger row (2026-07-30) still names `build=26.1.6_gtk_0.5`; the row stays
-meaningful and correctly attributed, it just no longer has a binary to re-run.
+Retired: `gtk_0.1`, `gtk_0.2`, both `gtk_0.5` (2026-07-30) and both `gtk_0.6` (2026-08-03).
+
+- **0.5** shipped with `TU_ETK_QUERY_SURVIVE` defaulted OFF.
+- **0.6** predates the gear-registry decoupling. The **26.2 build of 0.6 had a real defect**:
+  ETK's bits were hard-coded from 37, and upstream took bit 37 in 26.2
+  (`TU_DEBUG_COMPUTE_ROUND_ROBIN`), so `sddepth` and `computeroundrobin` were the same bit and each
+  enabled the other. C permits duplicate enum values, so it compiled clean and shipped in v0.8.3.
+  **Any `sddepth` measurement taken on a 26.2 `gtk_0.6` driver is contaminated** — discard it. The
+  `zlatez` A/B used a different bit and is unaffected, as are all 26.1 builds (bit 37 was free
+  there). Fixed in 0.7: `ETK_GEAR_BIT` allocates from 63 downward so upstream and ETK grow toward
+  each other and can only meet visibly. See the fork's `PATCHES.md`.
+
+Ledger rows naming a retired build stay meaningful and correctly attributed — they simply no longer
+have a binary to re-run.
+
+> **Switching off a retired build.** `install.sh` never prunes the rig's *current* selection, so a
+> rig still bound to `gtk_0.6` keeps it until you pick `0.7` in the DRIVER tab and reboot. Do that
+> before the next A/B, then re-run `install.sh` to clear the stale `.so`.
 
 > **Why the 0.5 → 0.6 bump rather than rebuilding 0.5 in place.** That ledger row already attributes
 > a session to `26.1.6_gtk_0.5`. Reusing the name for a binary that behaves differently would make
