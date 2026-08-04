@@ -151,6 +151,22 @@ CORE_WRAPPER_PATH = "/storage/.config/etk-rpcs3-launch.sh"
 CERT_CORE = "certified"   # synthetic catalog id: no pin, exec rpcs3-sa.custom
 CERT_CORE_SRC = "/storage/rpcs3/rpcs3-sa.custom.src"
 
+# TUNING > PATCH (community patch toggles — multigame lane §3). NOT a new
+# patch system: these are RPCS3's own files — the community patch.yml
+# (install.sh STEP 6.554 keeps it fresh from the official endpoint) and the
+# engine's patch_config.yml enablement file (the same one the desktop GUI
+# writes). bin/etk_patchlib.py does the dependency-free parsing (no PyYAML on
+# the rig); a broken/missing lib or patch file just means no PATCH section —
+# never a dead Pitstop. Toggles apply at next game launch.
+PATCHES_YML = "/storage/.config/rpcs3/patches/patch.yml"
+PATCH_CONFIG_YML = "/storage/.config/rpcs3/patch_config.yml"
+PATCH_PINS_FILE = os.environ.get('PATCH_PINS_FILE',
+                                 f"{TELEMETRY_DIR}/patch_pins.tsv")
+try:
+    import etk_patchlib as _patchlib
+except Exception as _e:  # pragma: no cover — import must never kill Pitstop
+    _patchlib = None
+
 # POWER tab (CPU/GPU governors + clock pinning). Schema-driven (power_profiles.json:
 # OPP-bounded pulldowns + named presets). The tab resolves a preset/knob set into a
 # flat path<TAB>value profile that etk-power.service re-applies at boot (govs/freqs
@@ -843,6 +859,56 @@ def load_menu_matrix():
                    {"label": "CONFIG", "type": "header", "current_val": ""}]
                   + matrix)
 
+    # --- PATCH section: auto-detected community patches for this title. ---
+    # One bool-shaped row per patch declaring this serial in the community
+    # file; enabled state read from RPCS3's own patch_config.yml. Fail-soft
+    # to no-section on any parse trouble (logged) — the classic list must
+    # never be hostage to a community file.
+    if _patchlib is not None:
+        try:
+            found = _patchlib.parse_patch_yml(PATCHES_YML, TARGET_ID)
+        except Exception as e:
+            _log(f"PATCH: parse of {PATCHES_YML} failed: "
+                 f"{e.__class__.__name__}: {e}")
+            found = []
+        if found:
+            try:
+                tree, dropped = _patchlib.read_patch_config(PATCH_CONFIG_YML)
+                if dropped:
+                    _log(f"PATCH: {dropped} Configurable Values subtree(s) in "
+                         f"{PATCH_CONFIG_YML} are not preserved by ETK saves")
+            except Exception as e:
+                _log(f"PATCH: read of {PATCH_CONFIG_YML} failed: "
+                     f"{e.__class__.__name__}: {e}")
+                tree = {}
+            matrix.append({"label": "PATCH", "type": "header",
+                           "current_val": ""})
+            for p in found:
+                bits = []
+                if p.get("notes"):
+                    bits.append(p["notes"])
+                if p.get("patch_version"):
+                    bits.append(f"Patch v{p['patch_version']}")
+                if p.get("author"):
+                    bits.append(f"by {p['author']}")
+                bits.append("Community patch (RPCS3 framework); applies at "
+                            "next launch. Enabled under every app version "
+                            "the patch declares, so a version mismatch can't "
+                            "silently no-op.")
+                if p.get("has_config_values"):
+                    bits.append("Has advanced values -- ETK enables the "
+                                "patch defaults.")
+                item = {
+                    "label": p["description"][:38], "kind": "patch",
+                    "type": "bool", "section": None, "yaml_key": "",
+                    "patch": p,
+                    "current_val": _patchlib.patch_is_enabled(
+                        tree, p, TARGET_ID),
+                    "help": "  ".join(bits),
+                }
+                item["original_render"] = _render_value(item)
+                matrix.append(item)
+
     return matrix
 
 
@@ -1439,6 +1505,35 @@ def _tuning_save(state):
             state["status"] = "CORE PIN FAILED (core_map.tsv write)"
             return "continue"
         core_msg = f"  CORE={_core_label(pick)} next launch"
+    # PATCH toggles: apply every changed row to the enablement tree in one
+    # read-modify-write of RPCS3's patch_config.yml, then refresh the
+    # per-serial pin TSV (the wrapper's tune_tag feed) from the FINAL state
+    # of all patch rows. Same next-launch cadence as the config YAML.
+    patch_items = [i for i in matrix if i.get("kind") == "patch"]
+    patch_dirty = [i for i in patch_items
+                   if _render_value(i) != i.get("original_render")]
+    if patch_dirty and _patchlib is not None:
+        try:
+            tree, _dropped = _patchlib.read_patch_config(PATCH_CONFIG_YML)
+            for it in patch_dirty:
+                _patchlib.set_patch_enabled(tree, it["patch"], TARGET_ID,
+                                            bool(it["current_val"]))
+            ok = _patchlib.write_patch_config(PATCH_CONFIG_YML, tree)
+        except Exception as e:
+            _log(f"patch config write failed: {e.__class__.__name__}: {e}")
+            ok = False
+        if not ok:
+            state["status"] = "PATCH SAVE FAILED (patch_config.yml)"
+            return "continue"
+        try:
+            slugs = [_patchlib.patch_slug(i["patch"]["description"])
+                     for i in patch_items if i["current_val"]]
+            _patchlib.write_patch_pins(PATCH_PINS_FILE, TARGET_ID, slugs)
+        except Exception as e:
+            # The engine-side enable stands; only the ledger tag feed failed.
+            _log(f"patch pins write failed: {e.__class__.__name__}: {e}")
+        n_on = sum(1 for i in patch_items if i["current_val"])
+        core_msg += f"  PATCHES={n_on} on, next launch"
     yaml_items = [i for i in matrix
                   if i.get("type") != "header" and not i.get("kind")]
     ok, status = commit_and_verify(yaml_items)

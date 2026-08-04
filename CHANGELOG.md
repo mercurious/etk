@@ -23,8 +23,24 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 - **TUNING tab: PPU/SPU Decoder fields** — the interpreter A/B without ssh.
   Enum values verified against fork source; ASMJIT deliberately omitted
   (x86-only, dead code on ARM64).
-- **TUNING tab: CORE / CONFIG section headers** — non-selectable rules;
-  the classic flat list is preserved on kill-switched or pre-wrapper rigs.
+- **TUNING > PATCH: community patch toggles** (multigame lane §3 — NOT a
+  new patch system; RPCS3 ships the framework, ETK surfaces it). install.sh
+  refreshes the rig's community `patches/patch.yml` from the same official
+  endpoint the desktop GUI uses (JSON contract verified against fork
+  source; sha-verified, offline-safe, gated on the RPCS3 config dir
+  existing). Pitstop auto-detects the patches declaring the selected title
+  and shows them as switches — Notes become the pit-engineer help text —
+  writing RPCS3's own `patch_config.yml` (dependency-free parser/emitter in
+  `bin/etk_patchlib.py`; no PyYAML on the rig). The upstream version
+  anti-trap is defused structurally: enabling writes an Enabled leaf under
+  EVERY app version the patch declares, so a version mismatch can't
+  silently no-op. Attribution: the launch wrapper stamps the serial's
+  active set and `tune_tag` gains `patches=slug,slug` (omitted when empty —
+  patch-free rows group unchanged). A patch is a tune. Kill-switch
+  `ETK_PATCH_FETCH=0`.
+- **TUNING tab: CORE / CONFIG / PATCH section headers** — non-selectable
+  rules; the classic flat list is preserved on kill-switched or pre-wrapper
+  rigs.
 
 ### Staged (dev, not yet certified)
 - **RPCS3 GTK Edition v0.8.2-dev** (2026-08-04) — LLVM 22.1.8 toolchain rebuild

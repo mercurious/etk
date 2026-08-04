@@ -2000,12 +2000,22 @@ if [ -n "$SERIAL" ] && [ -f "${RPCS3_CORE_MAP:-}" ]; then
     fi
 fi
 
-# Ledger marker (active_tune.txt pattern; PERSISTENT so a PANIC row still
-# knows its core). Fail-silent: attribution must never block a launch.
+# Ledger markers (active_tune.txt pattern; PERSISTENT so a PANIC row still
+# knows its core + patch set). Fail-silent: attribution must never block a
+# launch. The patches marker is ALWAYS rewritten — an empty line overwrites
+# a stale prior session's set (this launch runs with what THIS serial pins).
 if [ -n "${ACTIVE_CORE_FILE:-}" ]; then
     mkdir -p "$(dirname "$ACTIVE_CORE_FILE")" 2>/dev/null
     printf '%s\n' "$TOKEN" > "$ACTIVE_CORE_FILE.tmp" 2>/dev/null \
         && mv -f "$ACTIVE_CORE_FILE.tmp" "$ACTIVE_CORE_FILE" 2>/dev/null
+fi
+if [ -n "${ACTIVE_PATCHES_FILE:-}" ]; then
+    PATCHSET=""
+    if [ -n "$SERIAL" ] && [ -f "${PATCH_PINS_FILE:-}" ]; then
+        PATCHSET=$(awk -F'\t' -v s="$SERIAL" '$1==s {print $2; exit}' "$PATCH_PINS_FILE" 2>/dev/null)
+    fi
+    printf '%s\n' "$PATCHSET" > "$ACTIVE_PATCHES_FILE.tmp" 2>/dev/null \
+        && mv -f "$ACTIVE_PATCHES_FILE.tmp" "$ACTIVE_PATCHES_FILE" 2>/dev/null
 fi
 
 if [ ! -f "$TARGET" ]; then
@@ -2071,6 +2081,72 @@ else
     say "${Y}[ETK]${N} $(grep -m1 -E 'RPCS3|error|denied' "$RPCS3_OUT_FILE" || echo 'RPCS3 custom-build deploy: no status marker')"
 fi
 rm -f "$RPCS3_OUT_FILE"
+
+# --- STEP 6.554: COMMUNITY PATCH FETCH (multigame lane §3) ---
+# NOT a new patch system: RPCS3 ships the framework (the upstream community
+# patch.yml + per-title enablement in patch_config.yml — the same files the
+# desktop GUI manages). This step fetches the official patch file from the
+# SAME endpoint the GUI's "Download latest patches" uses (verified against
+# fork source: rpcs3.net/compatibility?patch&api=v1&v=<engine-ver>, JSON
+# {return_code, version, sha256, patch}) and stages it to the rig's patches
+# dir. Cached on /storage = offline-capable; refresh on install cadence.
+# Fail-soft: any fetch/verify failure keeps the existing file. GATED on the
+# RPCS3 config dir existing — creating it early would make start_rpcs3.sh
+# skip its stock-config seed (the STEP 1b lesson). Kill-switch ETK_PATCH_FETCH=0.
+if [ "${ETK_PATCH_FETCH:-1}" = "1" ]; then
+    if ssh $RIG_SSH "[ -d /storage/.config/rpcs3 ]" 2>/dev/null; then
+        RIG_PATCH_SHA=$(ssh $RIG_SSH "sha256sum /storage/.config/rpcs3/patches/patch.yml 2>/dev/null | cut -d' ' -f1")
+        PATCH_URL="https://rpcs3.net/compatibility?patch&api=v1&v=1.2"
+        [ -n "$RIG_PATCH_SHA" ] && PATCH_URL="${PATCH_URL}&sha256=${RIG_PATCH_SHA}"
+        PATCH_TMP=$(mktemp /tmp/etk_patchjson_XXXXXX)
+        PATCH_YML_TMP=$(mktemp /tmp/etk_patchyml_XXXXXX)
+        if curl -fsS --retry 2 -o "$PATCH_TMP" "$PATCH_URL" 2>/dev/null; then
+            PATCH_RC=$(python3 - "$PATCH_TMP" "$PATCH_YML_TMP" <<'PYEOF'
+import hashlib, json, sys
+try:
+    data = json.load(open(sys.argv[1]))
+    rc = int(data.get("return_code", -255))
+    if rc == 1:
+        print("UPTODATE"); sys.exit(0)
+    if rc != 0:
+        print(f"SERVER {rc}"); sys.exit(0)
+    if data.get("version") != "1.2":
+        print("BADVER"); sys.exit(0)
+    patch = data.get("patch") or ""
+    want = (data.get("sha256") or "").lower()
+    got = hashlib.sha256(patch.encode()).hexdigest()
+    if not patch or (want and got != want):
+        print("BADSHA"); sys.exit(0)
+    open(sys.argv[2], "w").write(patch)
+    print("FRESH")
+except Exception as e:
+    print(f"PARSEFAIL {e.__class__.__name__}")
+PYEOF
+)
+            case "$PATCH_RC" in
+                FRESH)
+                    ssh $RIG_SSH "mkdir -p /storage/.config/rpcs3/patches" 2>/dev/null
+                    if rsync -az "$PATCH_YML_TMP" "$RIG_SSH:/storage/.config/rpcs3/patches/patch.yml" >/dev/null 2>&1; then
+                        say "${G}[ETK]${N} Community patch file updated (rpcs3.net, sha-verified) — TUNING > PATCH surfaces per-title toggles"
+                    else
+                        say "${Y}[ETK]${N} Community patch file fetched but staging failed — existing file kept."
+                    fi
+                    ;;
+                UPTODATE)
+                    say "${G}[ETK]${N} Community patch file already up to date."
+                    ;;
+                *)
+                    say "${Y}[ETK]${N} Community patch fetch skipped ($PATCH_RC) — existing file kept."
+                    ;;
+            esac
+        else
+            say "${Y}[ETK]${N} Community patch fetch failed (offline?) — existing file kept."
+        fi
+        rm -f "$PATCH_TMP" "$PATCH_YML_TMP"
+    else
+        say "${Y}[ETK]${N} RPCS3 config dir not seeded yet (no game launched) — patch fetch deferred to next install."
+    fi
+fi
 
 # --- STEP 6.56: RPCS3 runtime env flags (profile.d vector) ---
 # Runtime-gated switches for custom RPCS3 builds (e.g. the #11912 probe/fix

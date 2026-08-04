@@ -120,6 +120,19 @@ RPCS3_APPIMAGE=""
 # 1 = on (default) · 0 = kill-switch (certified AppImage binds directly)
 ETK_CORE_SWAP="1"
 
+# --- Community patch surface (multigame lane, ships ON) ---
+# RPCS3 already ships a community patch framework (the same "Download latest
+# patches" file the desktop GUI manages — MLAA disables, deltatime fixes,
+# 30fps caps...). install.sh refreshes that file from the official endpoint
+# (sha-verified, offline-safe: a failed fetch keeps what you have) and
+# Pitstop TUNING > PATCH shows the patches available for the selected title
+# as switches. Nothing is enabled until you flip one; toggles apply at the
+# next game launch, no reboot. The active set is recorded in the session
+# ledger (patches=), because a patch IS a tune.
+# 1 = on (default) · 0 = kill-switch (no fetch; PATCH section still shows a
+#     previously fetched file if one exists)
+ETK_PATCH_FETCH="1"
+
 # RPCS3_ENV_FLAGS (optional): space-separated VAR=value pairs exported into
 # the RPCS3 runtime at every game launch via the profile.d vector
 # (/storage/.config/profile.d/096-etk-rpcs3-flags). Used for runtime-gated

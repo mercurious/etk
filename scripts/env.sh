@@ -82,6 +82,11 @@ export ETK_OS_GUARD="${ETK_OS_GUARD:-1}"
 # is operator-staged (host emulators/*.AppImage), never fetched. Set 0 to
 # disable (kill-switch: certified AppImage binds directly, no wrapper).
 export ETK_CORE_SWAP="${ETK_CORE_SWAP:-1}"
+# Community patch fetch (multigame lane, default-ON): install.sh refreshes the
+# rig's RPCS3 community patch file (patches/patch.yml) from the same official
+# endpoint the desktop GUI uses, sha-verified, fail-soft offline. Pitstop
+# TUNING > PATCH then surfaces per-title toggles. Set 0 to disable.
+export ETK_PATCH_FETCH="${ETK_PATCH_FETCH:-1}"
 
 # --- [ SHM & STATE ] ---
 export SHM_DIR="/dev/shm/etk_shm"
@@ -330,6 +335,15 @@ export RPCS3_CORE_MAP="$RPCS3_CORES_DIR/core_map.tsv"
 # r0.8.0-19638 wart: the branch name didn't move for 0.8.1-dev).
 export ACTIVE_CORE_FILE="$TELEMETRY_DIR/active_core.txt"
 
+# Community patch surface (multigame lane §3 — NOT a new patch system; RPCS3
+# ships the framework, ETK only surfaces it). Pitstop TUNING > PATCH writes
+# RPCS3's own patch_config.yml AND the per-serial pin TSV below; the launch
+# wrapper resolves this serial's pins and stamps the active set into
+# ACTIVE_PATCHES_FILE so the ledger tune_tag records `patches=` per session
+# (a patch IS a tune — unattributed patches pollute every future A/B).
+export PATCH_PINS_FILE="$TELEMETRY_DIR/patch_pins.tsv"
+export ACTIVE_PATCHES_FILE="$TELEMETRY_DIR/active_patches.txt"
+
 # --- STACK ATTRIBUTION -----------------------------------------------------
 # Every layer of the GTK stack self-identifies, and the ledger historically
 # recorded none of them (col 3 "build" is ETK_BUILD_TYPE — FULL on all 1488
@@ -388,10 +402,21 @@ etk_rpcs3_core_tag() {
     printf 'core=%s' "$_c"
 }
 
-# build=<turnip>;stack=rk<img>/k<kernel>/r<rpcs3>;core=<rpcs3-core>  — the full
-# attribution prefix. core= is the marker-stamped ground truth for WHICH RPCS3
-# binary ran (per-title CORE swap makes the stack r-segment ambiguous alone).
-etk_attribution_tag() { printf '%s;%s;%s' "$(etk_turnip_build_tag)" "$(etk_stack_tag)" "$(etk_rpcs3_core_tag)"; }
+etk_patches_tag() {
+    # Active community-patch set for the session (wrapper-stamped, comma-
+    # joined slugs). EMPTY when no patches ran — and then the segment is
+    # omitted entirely, so patch-free rows group identically with and
+    # without this feature deployed.
+    _p=$(head -n1 "$ACTIVE_PATCHES_FILE" 2>/dev/null | tr -d '\t\r ')
+    [ -n "$_p" ] && printf ';patches=%s' "$_p"
+}
+
+# build=<turnip>;stack=rk<img>/k<kernel>/r<rpcs3>;core=<rpcs3-core>[;patches=..]
+# — the full attribution prefix. core= is the marker-stamped ground truth for
+# WHICH RPCS3 binary ran (per-title CORE swap makes the stack r-segment
+# ambiguous alone); patches= appears only when the session ran with community
+# patches enabled (a patch is a tune).
+etk_attribution_tag() { printf '%s;%s;%s%s' "$(etk_turnip_build_tag)" "$(etk_stack_tag)" "$(etk_rpcs3_core_tag)" "$(etk_patches_tag)"; }
 export SIGNATURES_FILE="$ETK_ROOT/config/crash_signatures.json"
 
 # Persistent session breadcrumb. Written at IDLE->RUNNING ignition, removed
