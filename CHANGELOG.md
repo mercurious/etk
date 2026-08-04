@@ -4,6 +4,19 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ## [Unreleased]
 
+### Staged (dev, not yet certified)
+- **RPCS3 GTK Edition v0.8.2-dev** (2026-08-04) — LLVM 22.1.8 toolchain rebuild
+  of 0.8.1 (same source; new `etk-rpcs3-jammy-aarch64:llvm22` image from
+  upstream rpcs3-docker `e261762`). Closes the last gap against upstream's arm64
+  advancement set: the LLVM 22 arm64 backend that official builds have carried
+  since ~Jul 18. With this, GTK carries the SDOT/UDOT SPU optimizations, the
+  loop-iteration-prediction path (ACTIVE, unlike current upstream master), and
+  the LLVM 22 backend. **Deploy requires a per-title PPU cache clear** (`ppu-*`
+  dirs only; shader caches preserved) — LLVM-19-built v8 objects must not mix
+  with the LLVM 22 binary; first boot per game recompiles PPUs.
+  Toolchain saga: ~30 h; first attempt died ENOSPC at hour 22 (colima disk
+  100%); BUILDING.md gained image-freshness + VM-disk-preflight doctrine.
+
 ## [0.8.3] - 2026-08-01 — GTK 0.8.0 Full-Stack Edition
 
 The whole chassis moves together: **ROCKNIX official 20260801** (kernel
