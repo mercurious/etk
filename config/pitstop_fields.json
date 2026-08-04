@@ -209,6 +209,18 @@
     "help": "How SPU job code becomes ARM code. Recompiler (LLVM) is the only playable choice. Both interpreters are DIAGNOSTIC gears (slideshow fps): if an SPU-suspect crash or glitch clears on one, the recompiler path is convicted. ASMJIT is x86-only (dead code on this rig) and deliberately not offered."
   },
   {
+    "label": "Sleep Timers Accuracy",
+    "section": "Core",
+    "yaml_key": "  Sleep Timers Accuracy",
+    "type": "enum",
+    "options": [
+      "As Host",
+      "Usleep Only",
+      "All Timers"
+    ],
+    "help": "How faithfully guest sleep/timer waits are honored. As Host (default) lets the OS round waits -- cheapest. Usleep Only, then All Timers, spin-wait for exact timing: a wiki-recommended fix for titles with timing-sensitive pacing or audio, at real CPU cost -- on this 8-core rig that fights the pack-racing CPU budget, so treat wiki advice as a STARTING preset and judge by frametime jitter and PERFECT%, not the desktop lore."
+  },
+  {
     "label": "Write Color Buffers",
     "section": "Video",
     "yaml_key": "  Write Color Buffers",
