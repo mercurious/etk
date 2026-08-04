@@ -136,6 +136,21 @@ TURNIP_SELECTED_FILE = os.path.join(TURNIP_DIR, "selected")
 TURNIP_LOADED_FILE = os.path.join(TURNIP_DIR, "loaded")
 STOCK_BUILD = "stock"  # synthetic catalog id: unbind, run ROCKNIX's own Turnip
 
+# TUNING > CORE (per-title RPCS3 core swap — multigame lane 2026-08-04).
+# The DRIVER-tab catalog model, but per-title and launch-cadence: install.sh
+# stages host emulators/*.AppImage to the card catalog; the launch wrapper
+# (bound over /usr/bin/rpcs3-sa by etk-rpcs3-bind.sh) resolves serial -> core
+# via core_map.tsv at every launch and execs it. No map entry = the certified
+# default. A/B tooling — pins are the operator's; nothing ships pinned. The
+# CORE section only surfaces when the wrapper is deployed (ETK_CORE_SWAP=1
+# rigs), so a kill-switched or host-dev run renders the classic flat list.
+RPCS3_CORES_DIR = os.environ.get('RPCS3_CORES_DIR', f"{ETK_ROOT}/emulators")
+RPCS3_CORE_MAP = os.environ.get('RPCS3_CORE_MAP',
+                                f"{RPCS3_CORES_DIR}/core_map.tsv")
+CORE_WRAPPER_PATH = "/storage/.config/etk-rpcs3-launch.sh"
+CERT_CORE = "certified"   # synthetic catalog id: no pin, exec rpcs3-sa.custom
+CERT_CORE_SRC = "/storage/rpcs3/rpcs3-sa.custom.src"
+
 # POWER tab (CPU/GPU governors + clock pinning). Schema-driven (power_profiles.json:
 # OPP-bounded pulldowns + named presets). The tab resolves a preset/knob set into a
 # flat path<TAB>value profile that etk-power.service re-applies at boot (govs/freqs
@@ -604,6 +619,81 @@ def find_gamepad():
 
 # === SCHEMA & CONFIG IO (TUNING TAB) ===
 
+# --- TUNING > CORE helpers (per-title RPCS3 core pin) ---
+
+def _core_surface_live():
+    """The CORE section exists only where the launch wrapper does — i.e. an
+    ETK_CORE_SWAP=1 rig install. Host-dev runs and kill-switched rigs get
+    the classic flat TUNING list."""
+    return os.path.isfile(CORE_WRAPPER_PATH)
+
+
+def _core_catalog():
+    """Sorted catalog of stageable core builds on the card."""
+    try:
+        return sorted(f for f in os.listdir(RPCS3_CORES_DIR)
+                      if f.endswith(".AppImage"))
+    except OSError:
+        return []
+
+
+def _core_label(token):
+    """Compact display label for a core token. MUST mirror env.sh's
+    etk_rpcs3_core_tag compaction so what the operator reads on-screen is
+    what the ledger tune_tag records."""
+    if token == CERT_CORE:
+        try:
+            with open(CERT_CORE_SRC) as f:
+                src = f.read().strip()
+            if src:
+                return "certified " + _core_label(src)
+        except OSError:
+            pass
+        return CERT_CORE
+    t = re.sub(r'\.AppImage$', '', token)
+    t = re.sub(r'^rpcs3[-_]*', '', t)
+    t = re.sub(r'^etk[-_]*', '', t)
+    t = re.sub(r'^gtk-edition[-_]*', '', t)
+    t = re.sub(r'_linux_aarch64$', '', t)
+    return t or token
+
+
+def _core_map_read():
+    """core_map.tsv -> {serial: core_file}. Missing file = no pins."""
+    m = {}
+    try:
+        with open(RPCS3_CORE_MAP) as f:
+            for ln in f:
+                if ln.startswith("#"):
+                    continue
+                parts = ln.rstrip("\n").split("\t")
+                if len(parts) >= 2 and parts[0] and parts[1]:
+                    m[parts[0]] = parts[1]
+    except OSError:
+        pass
+    return m
+
+
+def _core_map_write(serial, pick):
+    """Upsert this serial's core pin (pick == certified removes the row —
+    an absent row IS the certified default, so the map stays a list of
+    exceptions). Atomic tmp+mv; read-back verified. Returns bool."""
+    m = _core_map_read()
+    if pick == CERT_CORE:
+        m.pop(serial, None)
+    else:
+        m[serial] = pick
+    os.makedirs(RPCS3_CORES_DIR, exist_ok=True)
+    tmp = RPCS3_CORE_MAP + ".tmp"
+    with open(tmp, "w") as f:
+        f.write("# serial<TAB>core-file — written by Pitstop TUNING > CORE;"
+                " read by etk-rpcs3-launch.sh at every game launch\n")
+        for s in sorted(m):
+            f.write(f"{s}\t{m[s]}\n")
+    os.replace(tmp, RPCS3_CORE_MAP)
+    return _core_map_read().get(serial, CERT_CORE) == pick
+
+
 def load_menu_matrix():
     """Initialize schema definition and parse real values live from the
     target YAML file. Captures each item's original rendered value into
@@ -717,6 +807,41 @@ def load_menu_matrix():
         # been ingested AND any options-list adoption is settled, so it is
         # a stable string representing the on-disk state at load time.
         item["original_render"] = _render_value(item)
+
+    # --- TUNING sections (multigame lane): CORE leads, then CONFIG. ---
+    # Headers are non-selectable furniture (type "header": drawn as a rule,
+    # skipped by the cursor, ignored by every save/diff path — they carry an
+    # empty current_val so _render_value stays total). The CORE row is an
+    # enum-shaped item flagged kind="core": draw/adjust/diff all reuse the
+    # enum machinery for free; only _tuning_save diverts it (core_map.tsv,
+    # not the YAML injector).
+    if _core_surface_live():
+        cur = _core_map_read().get(TARGET_ID, CERT_CORE)
+        options = [CERT_CORE] + _core_catalog()
+        if cur not in options:
+            # Pinned core no longer staged: adopt it so the pin round-trips
+            # on save instead of silently unpinning (the enum-adoption idiom
+            # above). The wrapper already fail-softs a missing file to the
+            # certified core at launch.
+            options.insert(1, cur)
+        core_item = {
+            "label": "Emulator Core", "kind": "core", "type": "enum",
+            "section": None, "yaml_key": "",
+            "options": options, "enum_idx": options.index(cur),
+            "current_val": cur,
+            "help": "Which RPCS3 core THIS title launches -- the LLVM 19-vs-22 "
+                    "split made core choice per-title (RR7/Ratchet regress on 22 "
+                    "while Sega/Namco titles gain). certified = the shipped "
+                    "default; other entries come from host emulators/ via "
+                    "install.sh. Applies at the NEXT launch, no reboot. Each "
+                    "core keeps its own PPU cache, so the first boot after a "
+                    "swap recompiles -- pin, don't flap.",
+        }
+        core_item["original_render"] = _render_value(core_item)
+        matrix = ([{"label": "CORE", "type": "header", "current_val": ""},
+                   core_item,
+                   {"label": "CONFIG", "type": "header", "current_val": ""}]
+                  + matrix)
 
     return matrix
 
@@ -1156,11 +1281,23 @@ def draw_tuning(stdscr, state):
         _draw_inert_panel(stdscr, state, "TUNING")
         return
     matrix = state["matrix"]
-    active_idx = state["cursor_idx"]
     h, w = stdscr.getmaxyx()
     total = len(matrix)
 
-    setting = f"SETTING {active_idx + 1:02d}/{total:02d}"
+    # Never rest the cursor on a section header (index 0 is one whenever the
+    # CORE surface is live). Normalize here so every entry path — first draw,
+    # tab return — lands on a real field without each caller knowing.
+    active_idx = state["cursor_idx"] % max(1, total)
+    for _ in range(total):
+        if matrix[active_idx].get("type") != "header":
+            break
+        active_idx = (active_idx + 1) % total
+    state["cursor_idx"] = active_idx
+
+    # The position counter counts FIELDS, not rows — headers are furniture.
+    fields = [i for i, it in enumerate(matrix) if it.get("type") != "header"]
+    pos = (fields.index(active_idx) + 1) if active_idx in fields else 1
+    setting = f"SETTING {pos:02d}/{len(fields):02d}"
     _draw_meta_line(stdscr, w, state["gamepad_status"], setting)
 
     start_y = 4
@@ -1183,6 +1320,16 @@ def draw_tuning(stdscr, state):
     for row, idx in enumerate(range(offset, min(offset + capacity, total))):
         item = matrix[idx]
         y = start_y + row
+
+        # Section headers render as a dim rule, unselectable by construction.
+        if item.get("type") == "header":
+            rule = f"-- {item['label']} " + "-" * max(0, w - 14 - len(item["label"]))
+            try:
+                stdscr.addstr(y, 4, rule[:max(0, w - 6)], curses.A_DIM | curses.A_BOLD)
+            except curses.error:
+                pass
+            continue
+
         is_selected = (idx == active_idx)
         prefix = "> " if is_selected else "  "
         attr = curses.A_REVERSE if is_selected else curses.A_NORMAL
@@ -1190,14 +1337,23 @@ def draw_tuning(stdscr, state):
         stdscr.addstr(y, 4, prefix, curses.color_pair(1) if is_selected else curses.A_NORMAL)
         stdscr.addstr(y, 8, f"{item['label']:<30}")
 
-        if item["type"] == "enum":
+        if item.get("kind") == "core":
+            # Catalog filenames are ~60 chars; show the compact build label
+            # (same compaction the ledger tune_tag uses).
+            val_str = f"[ {_core_label(item['options'][item['enum_idx']])} ]"
+        elif item["type"] == "enum":
             val_str = f"[ {item['options'][item['enum_idx']]} ]"
         elif item["type"] == "bool":
             val_str = f"[ {'ON' if item['current_val'] else 'OFF'} ]"
         else:
             val_str = f"[ {item['current_val']} ]"
 
-        stdscr.addstr(y, 40, val_str, attr)
+        # Clip to the pane so a long value can never throw addstr off the
+        # right edge (curses raises on out-of-window writes).
+        try:
+            stdscr.addstr(y, 40, val_str[:max(0, w - 42)], attr)
+        except curses.error:
+            pass
 
     # Pit-engineer hint band: explain the SELECTED field (what it does, the
     # effect, the tradeoff) so the tuner teaches instead of just listing knobs.
@@ -1233,7 +1389,8 @@ def draw_tuning(stdscr, state):
 
 
 def _adjust_item(item, direction):
-    """Shared value adjustment for keyboard and gamepad."""
+    """Shared value adjustment for keyboard and gamepad. Headers fall
+    through every branch (no-op) by construction."""
     if item["type"] == "int":
         delta = item["step"] * direction
         item["current_val"] = max(item["min"], min(item["max"], item["current_val"] + delta))
@@ -1243,19 +1400,54 @@ def _adjust_item(item, direction):
         item["enum_idx"] = (item["enum_idx"] + direction) % len(item["options"])
 
 
+def _tuning_step(state, matrix, delta):
+    """Move the cursor, skipping section headers (wrap-around preserved).
+    Bounded scan so an all-header matrix can never loop forever."""
+    idx = state["cursor_idx"]
+    for _ in range(len(matrix)):
+        idx = (idx + delta) % len(matrix)
+        if matrix[idx].get("type") != "header":
+            break
+    state["cursor_idx"] = idx
+
+
 def _tuning_save(state):
     """Save, verify, emit CONFIG ledger row(s) on success. Returns the
     verb for the main loop: 'save_exit' on success (matches pre-tabs
     behavior of leaving the editor once the write is proven), 'continue'
-    on failure (status string set, stay in tab so the operator can react)."""
+    on failure (status string set, stay in tab so the operator can react).
+
+    Multigame lane: the matrix may carry non-YAML rows. Section headers are
+    skipped outright; the CORE row diverts to core_map.tsv (its own atomic
+    write + read-back verify) BEFORE the YAML commit, so a core-pin failure
+    surfaces without half-saving. Both stores succeeding = one save."""
     matrix = state["matrix"]
     pending = _diff_matrix(matrix)
-    ok, status = commit_and_verify(matrix)
-    state["status"] = status
+    core_msg = ""
+    for item in matrix:
+        if item.get("kind") != "core":
+            continue
+        pick = item["options"][item["enum_idx"]]
+        if pick == item.get("original_render"):
+            continue
+        try:
+            ok = _core_map_write(TARGET_ID, pick)
+        except OSError as e:
+            _log(f"core map write failed: {e.__class__.__name__}: {e}")
+            ok = False
+        if not ok:
+            state["status"] = "CORE PIN FAILED (core_map.tsv write)"
+            return "continue"
+        core_msg = f"  CORE={_core_label(pick)} next launch"
+    yaml_items = [i for i in matrix
+                  if i.get("type") != "header" and not i.get("kind")]
+    ok, status = commit_and_verify(yaml_items)
+    state["status"] = status + core_msg
     if ok:
         # Q3(a): emit CONFIG ledger rows immediately on success. Ledger
         # write failure is logged but does NOT fail the save — a
-        # side-effect file shouldn't lose the user a real save.
+        # side-effect file shouldn't lose the user a real save. The CORE
+        # pin rides the same ledger (label "Emulator Core", raw tokens).
         if pending:
             _append_config_change_rows(pending)
         _refresh_baseline(matrix)
@@ -1270,10 +1462,10 @@ def handle_tuning_kb(state, ch):
     if ch == ord('q') or ch == ord('Q'):
         return "quit"
     if ch == curses.KEY_UP:
-        state["cursor_idx"] = (state["cursor_idx"] - 1) % len(matrix)
+        _tuning_step(state, matrix, -1)
         state["status"] = ""
     elif ch == curses.KEY_DOWN:
-        state["cursor_idx"] = (state["cursor_idx"] + 1) % len(matrix)
+        _tuning_step(state, matrix, 1)
         state["status"] = ""
     elif ch == curses.KEY_LEFT:
         _adjust_item(matrix[state["cursor_idx"]], -1)
@@ -1296,10 +1488,10 @@ def handle_tuning_pad(state, etype, code, val):
         return "quit"
     if etype == EV_ABS and code == ABS_HAT0Y:
         if val == -1:
-            state["cursor_idx"] = (state["cursor_idx"] - 1) % len(matrix)
+            _tuning_step(state, matrix, -1)
             state["status"] = ""
         elif val == 1:
-            state["cursor_idx"] = (state["cursor_idx"] + 1) % len(matrix)
+            _tuning_step(state, matrix, 1)
             state["status"] = ""
     elif etype == EV_ABS and code == ABS_HAT0X and val != 0:
         _adjust_item(matrix[state["cursor_idx"]], val)

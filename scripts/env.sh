@@ -74,6 +74,14 @@ export ETK_CHIAKI="${ETK_CHIAKI:-1}"
 # writes the new kernel over the RUNNING boot's slot + regenerates grub twins
 # and grubenv). Never reboots. Set 0 to disable (kill-switch).
 export ETK_OS_GUARD="${ETK_OS_GUARD:-1}"
+# Per-title CORE swap (multigame lane, default-ON): install.sh binds a launch
+# wrapper over /usr/bin/rpcs3-sa that resolves serial -> core AppImage via
+# core_map.tsv and execs it (launch-cadence, no reboot). Behavior-neutral
+# until a title is pinned in Pitstop TUNING > CORE: an empty map always execs
+# the certified default. A/B tooling — nothing ships pinned, and the catalog
+# is operator-staged (host emulators/*.AppImage), never fetched. Set 0 to
+# disable (kill-switch: certified AppImage binds directly, no wrapper).
+export ETK_CORE_SWAP="${ETK_CORE_SWAP:-1}"
 
 # --- [ SHM & STATE ] ---
 export SHM_DIR="/dev/shm/etk_shm"
@@ -308,6 +316,20 @@ export TURNIP_DRIVERS_DIR="$TURNIP_DIR/drivers"
 export TURNIP_SELECTED_FILE="$TURNIP_DIR/selected"
 export TURNIP_LOADED_FILE="$TURNIP_DIR/loaded"
 
+# Per-title RPCS3 CORE catalog + map (multigame lane; see ETK_CORE_SWAP above).
+# The catalog lives on the GAME CARD, not UFS /storage — cores are ~78MB each
+# and the ~6.6GB SYSTEM partition has been filled to ENOSPC before (2026-07-04;
+# emulator staging silently failed). NOTE: $ETK_ROOT/cores is the COREDUMP dir;
+# the AppImage catalog is $ETK_ROOT/emulators, mirroring the host-side dir.
+export RPCS3_CORES_DIR="$ETK_ROOT/emulators"
+export RPCS3_CORE_MAP="$RPCS3_CORES_DIR/core_map.tsv"
+# Launch-time core marker (active_tune.txt pattern — PERSISTENT, not SHM, so a
+# PANIC row still knows which core its session ran): the launch wrapper stamps
+# the resolved core token here at every launch. This is the ground truth the
+# ledger attributes by — not the binary's baked branch string (the
+# r0.8.0-19638 wart: the branch name didn't move for 0.8.1-dev).
+export ACTIVE_CORE_FILE="$TELEMETRY_DIR/active_core.txt"
+
 # --- STACK ATTRIBUTION -----------------------------------------------------
 # Every layer of the GTK stack self-identifies, and the ledger historically
 # recorded none of them (col 3 "build" is ETK_BUILD_TYPE — FULL on all 1488
@@ -351,8 +373,25 @@ etk_stack_tag() {
     printf 'stack=rk%s/k%s/r%s' "$_rk" "$_kr" "$_r3"
 }
 
-# build=<turnip>;stack=rk<img>/k<kernel>/r<rpcs3>  — the full attribution prefix.
-etk_attribution_tag() { printf '%s;%s' "$(etk_turnip_build_tag)" "$(etk_stack_tag)"; }
+etk_rpcs3_core_tag() {
+    # Which RPCS3 core the session ACTUALLY launched (wrapper-stamped marker;
+    # see ACTIVE_CORE_FILE). Absent marker = pre-wrapper rig or stock opt-out
+    # = the certified default. Compaction mirrors Pitstop's _core_label.
+    _c=$(head -n1 "$ACTIVE_CORE_FILE" 2>/dev/null | tr -d '\t\r ')
+    [ -z "$_c" ] && _c="certified"
+    _c=$(printf '%s' "$_c" | sed -e 's/\.AppImage$//' \
+                                 -e 's/^rpcs3[-_]*//' \
+                                 -e 's/^etk[-_]*//' \
+                                 -e 's/^gtk-edition[-_]*//' \
+                                 -e 's/_linux_aarch64$//')
+    [ -z "$_c" ] && _c="certified"
+    printf 'core=%s' "$_c"
+}
+
+# build=<turnip>;stack=rk<img>/k<kernel>/r<rpcs3>;core=<rpcs3-core>  — the full
+# attribution prefix. core= is the marker-stamped ground truth for WHICH RPCS3
+# binary ran (per-title CORE swap makes the stack r-segment ambiguous alone).
+etk_attribution_tag() { printf '%s;%s;%s' "$(etk_turnip_build_tag)" "$(etk_stack_tag)" "$(etk_rpcs3_core_tag)"; }
 export SIGNATURES_FILE="$ETK_ROOT/config/crash_signatures.json"
 
 # Persistent session breadcrumb. Written at IDLE->RUNNING ignition, removed

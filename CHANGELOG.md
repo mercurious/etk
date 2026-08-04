@@ -4,6 +4,28 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ## [Unreleased]
 
+### Added
+- **TUNING > CORE: per-title emulator core swap** (multigame lane). The LLVM
+  19-vs-22 split made core choice per-title (RR7/Ratchet/Spec II regress on
+  22; ABC/TTT2/GTA:SA gain), so the DRIVER-tab catalog pattern is replicated
+  for RPCS3 cores — per-title and launch-cadence: a launch wrapper bound
+  over `/usr/bin/rpcs3-sa` resolves serial → core via
+  `$ETK_ROOT/emulators/core_map.tsv` and execs the pinned AppImage; no pin =
+  the certified default, no reboot per swap, fail-soft everywhere. The
+  catalog is operator A/B tooling (host `emulators/*.AppImage` staged to the
+  game card by install.sh, mirror-with-GC that never prunes a mapped pin) —
+  not a distribution channel; the only shipped emulator remains the
+  certified build. Attribution is non-negotiable and marker-based: the
+  wrapper stamps `active_core.txt` (persistent, so even a PANIC row knows
+  its core) and `tune_tag` gains a `core=` segment — ground truth from the
+  resolved file, not the binary's baked branch string (retiring the
+  `r0.8.0-19638` wart). Kill-switch `ETK_CORE_SWAP=0`.
+- **TUNING tab: PPU/SPU Decoder fields** — the interpreter A/B without ssh.
+  Enum values verified against fork source; ASMJIT deliberately omitted
+  (x86-only, dead code on ARM64).
+- **TUNING tab: CORE / CONFIG section headers** — non-selectable rules;
+  the classic flat list is preserved on kill-switched or pre-wrapper rigs.
+
 ### Staged (dev, not yet certified)
 - **RPCS3 GTK Edition v0.8.2-dev** (2026-08-04) — LLVM 22.1.8 toolchain rebuild
   of 0.8.1 (same source; new `etk-rpcs3-jammy-aarch64:llvm22` image from

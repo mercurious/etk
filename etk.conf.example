@@ -108,6 +108,18 @@ KERNEL_DEPLOY_MODE="test"
 # fully validate (a bind-mount can't hot-swap a binary a running RPCS3 holds).
 RPCS3_APPIMAGE=""
 
+# --- Per-title CORE swap (multigame lane, ships ON) ---
+# Lets Pitstop TUNING > CORE pin a specific title to a specific RPCS3 core
+# build — the LLVM 19-vs-22 split made core choice per-title (RR7/Ratchet
+# regress on 22 while Sega/Namco titles gain). Behavior-neutral until you pin:
+# with no pins every launch runs the certified core above. The catalog is
+# whatever *.AppImage sits in the host ./emulators/ dir at install time (A/B
+# tooling; nothing extra is downloaded). Takes effect at next game launch —
+# no reboot. Each core keeps its own PPU cache: first boot after a swap
+# recompiles, so pin, don't flap.
+# 1 = on (default) · 0 = kill-switch (certified AppImage binds directly)
+ETK_CORE_SWAP="1"
+
 # RPCS3_ENV_FLAGS (optional): space-separated VAR=value pairs exported into
 # the RPCS3 runtime at every game launch via the profile.d vector
 # (/storage/.config/profile.d/096-etk-rpcs3-flags). Used for runtime-gated
