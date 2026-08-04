@@ -61,11 +61,38 @@ def _indent_of(line):
     return len(line) - len(line.lstrip(" "))
 
 
+def _strip_comment(s):
+    """Drop a trailing YAML comment (whitespace-preceded '#') that sits
+    OUTSIDE quotes. Live-file idioms this covers: hash lines annotated
+    'PPU-<hash>: # NPWR02973_00' (which silently skipped the whole hash
+    block until 2026-08-04) and anchor scalars with post-quote comments."""
+    out = []
+    q = None
+    i = 0
+    while i < len(s):
+        c = s[i]
+        if q:
+            if q == '"' and c == "\\":
+                out.append(s[i:i + 2]); i += 2; continue
+            if c == q:
+                if q == "'" and i + 1 < len(s) and s[i + 1] == "'":
+                    out.append("''"); i += 2; continue
+                q = None
+            out.append(c); i += 1; continue
+        if c in "\"'":
+            q = c; out.append(c); i += 1; continue
+        if c == "#" and (i == 0 or s[i - 1] in " \t"):
+            break
+        out.append(c); i += 1
+    return "".join(out).rstrip()
+
+
 def _split_key(line):
     """Split a 'key: value' line into (key, value) with quote awareness —
-    a ':' inside a quoted key must not split it. Returns (None, None) when
-    the line isn't a mapping entry."""
-    s = line.strip()
+    a ':' inside a quoted key must not split it, and a trailing comment
+    outside quotes is stripped. Returns (None, None) when the line isn't a
+    mapping entry."""
+    s = _strip_comment(line.strip())
     if not s or s.startswith("#"):
         return None, None
     if s[0] in ("'", '"'):
@@ -103,8 +130,81 @@ def _parse_inline_list(v):
     return [_dequote(x) for x in inner.split(",")]
 
 
+def _collect_anchors(lines):
+    """Pre-pass over the top-level `Anchors:` block: every entry there is
+    `name: &name` followed by an indent-2 subtree (the upstream idiom — 791
+    of them in the live file; no inline defs elsewhere, verified 2026-08-04).
+    Returns {anchor_name: [subtree lines]} with the subtree kept raw; the
+    users below interpret it as a Games map or a scalar on demand."""
+    anchors = {}
+    in_block = False
+    name = None
+    for raw in lines:
+        # Comments interleave at ANY indent inside the live Anchors block
+        # (op-anchor entries carry indent-2 comment runs) — they must not
+        # reset the current capture.
+        if not raw.strip() or raw.strip().startswith("#"):
+            continue
+        ind = _indent_of(raw)
+        if ind == 0:
+            key, val = _split_key(raw)
+            in_block = (key == "Anchors" and val == "")
+            name = None
+            continue
+        if not in_block:
+            continue
+        if ind == 2:
+            key, val = _split_key(raw)
+            name = None
+            if key is not None and val.startswith("&"):
+                anch = val[1:].split()[0] if val[1:] else ""
+                rest = val[len(anch) + 1:].strip()
+                if anch:
+                    name = anch
+                    anchors[name] = [rest] if rest else []
+            continue
+        if name is not None and ind > 2:
+            anchors[name].append(raw)
+    return anchors
+
+
+def _anchor_games_lookup(block, serial):
+    """Interpret an anchor subtree as a Games map (title -> serial ->
+    [versions]) and return (title, versions) for `serial`, or (None, None).
+    Subtree indents: title at 4, serials at 6 (the Anchors-block shape)."""
+    title = None
+    for raw in block:
+        if not raw.strip() or raw.strip().startswith("#"):
+            continue
+        ind = _indent_of(raw)
+        key, val = _split_key(raw)
+        if key is None:
+            continue
+        if ind == 4 and val == "":
+            title = key
+            continue
+        if ind == 6 and title is not None and key.replace("-", "") == serial:
+            vers = _parse_inline_list(val)
+            if vers:
+                return title, vers
+    return None, None
+
+
+def _anchor_scalar(block):
+    """Interpret an anchor subtree as a scalar (the Notes idiom: the string
+    sits alone on the following line, quoted, sometimes with a trailing
+    comment after the closing quote)."""
+    for raw in block:
+        s = _strip_comment(raw.strip())
+        if s and not s.startswith("#"):
+            return _dequote(s)
+    return ""
+
+
 def parse_patch_yml(path, serial):
-    """Return the list of community patches that declare `serial` explicitly.
+    """Return the list of community patches that declare `serial` explicitly
+    — in a literal `Games:` block OR through a `Games: *anchor` alias into
+    the top-level Anchors block (the RDR shape; missed until 2026-08-04).
 
     Each entry: {hash, description, title, versions: [app_ver, ...],
                  notes, author, patch_version, has_config_values}.
@@ -116,6 +216,7 @@ def parse_patch_yml(path, serial):
     with open(path, errors="replace") as f:
         lines = f.read().splitlines()
 
+    anchors = _collect_anchors(lines)
     patches = []
     cur_hash = None
     cur = None            # patch entry being accumulated
@@ -141,8 +242,8 @@ def parse_patch_yml(path, serial):
         if pending_serial is not None:
             if raw.strip().startswith("- ") and ind > (serial_indent or 0):
                 if cur is not None:
-                    v = _dequote(raw.strip()[2:])
-                    if v not in cur["versions"]:
+                    v = _dequote(_strip_comment(raw.strip()[2:]))
+                    if v and v not in cur["versions"]:
                         cur["versions"].append(v)
                 continue
             pending_serial = None
@@ -175,8 +276,20 @@ def parse_patch_yml(path, serial):
         if ind == 4:
             in_games = (key == "Games" and val == "")
             games_indent = ind if in_games else None
-            if key == "Notes":
-                cur["notes"] = _dequote(val)
+            if key == "Games" and val.startswith("*"):
+                # Alias into the Anchors block (Games: *rdr_disc100title).
+                t, vers = _anchor_games_lookup(
+                    anchors.get(val[1:].strip(), []), serial)
+                if t is not None:
+                    cur["title"] = t
+                    cur["versions"].extend(v for v in vers
+                                           if v not in cur["versions"])
+            elif key == "Notes":
+                if val.startswith("*"):
+                    cur["notes"] = _anchor_scalar(
+                        anchors.get(val[1:].strip(), []))
+                else:
+                    cur["notes"] = _dequote(val)
             elif key == "Author":
                 cur["author"] = _dequote(val)
             elif key == "Patch Version":
