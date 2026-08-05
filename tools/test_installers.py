@@ -378,6 +378,18 @@ elif mode == "phantom":
     # Claims success but writes no game folder.
     out.write("·S 0:00:36.77 GUI: Successfully installed %s "
               "(title_id=NPEA90002, title=GT HD, version=02.00).\n" % pkg)
+elif mode == "id_mismatch":
+    # Disc-to-PKG conversion: PARAM.SFO keeps the DISC serial, extraction
+    # goes to the CONTENT id. Observed live 2026-08-05 (Demon's Souls:
+    # verdict said BLUS30443, files landed in NPUB30910). The installer must
+    # follow the extracted path, not the verdict tuple.
+    d = os.path.join(game, "NPUB30910", "USRDIR")
+    os.makedirs(d, exist_ok=True)
+    open(os.path.join(d, "EBOOT.BIN"), "w").write("eboot")
+    out.write("·! 0:05:47.07 {PKG Installer 2} PKG: Created file "
+              "%s/NPUB30910/USRDIR/EBOOT.BIN\n" % game)
+    out.write("·S 0:05:47.45 GUI: Successfully installed %s "
+              "(title_id=BLUS30443, title=Demon's Souls, version=01.00).\n" % pkg)
 out.close()
 # The rig's observed exit: killed by SIGTERM in teardown, AFTER the work.
 sys.exit(143)
@@ -756,6 +768,29 @@ try:
     check("run 2 wrote the launcher",
           os.listdir(pit.PS3_ROMS_DIR), ["GRAN TURISMO HD Concept.psn"])
     check("run 2 drained staging", os.listdir(os.path.join(etk, "pkg_install_drop")), [])
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+
+print("\n[E2E-4] disc-to-PKG id mismatch: follow the extracted id, not the verdict")
+# Live 2026-08-05 (Demon's Souls): PARAM.SFO carried the DISC serial
+# (BLUS30443) so RPCS3's verdict line named it, but extraction went to the
+# CONTENT id (NPUB30910). 0.8.3 trusted the verdict, found no folder, and
+# abandoned a complete 8 GB install with no launcher, licence or config.
+tmp = tempfile.mkdtemp()
+try:
+    cfg, bios, etk = build_pkg_rig(tmp)
+    os.environ["FAKE_MODE"] = "id_mismatch"
+    os.environ["FAKE_LOG"] = pit.RPCS3_LOG
+    os.environ["FAKE_GAMEDIR"] = pit.RPCS3_CFG_GAME_DIR
+
+    pkg, raps = stage_pkg(etk)
+    ok, lines = pit._run_install(pkg, raps, FakeNotifier())
+    check("install reported success", ok, True)
+    check("launcher keyed to the EXTRACTED id",
+          open(os.path.join(pit.PS3_ROMS_DIR,
+                            os.listdir(pit.PS3_ROMS_DIR)[0])).read(), "NPUB30910")
+    check("staging drained",
+          os.listdir(os.path.join(etk, "pkg_install_drop")), [])
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 

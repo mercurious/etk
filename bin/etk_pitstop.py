@@ -3868,14 +3868,27 @@ def _rpcs3_log_since(mark, limit=262144):
 
 
 # RPCS3's per-package verdict lines (main_window.cpp:1201/1208/1213/1219 and
-# :1041/:1320/:1349). The tuple form is authoritative — it carries the title
-# id, human title and version straight out of the package's own PARAM.SFO, so
-# nothing has to be inferred from the filesystem afterwards.
+# :1041/:1320/:1349). The tuple form carries the title id, human title and
+# version straight out of the package's own PARAM.SFO.
+#
+# It is NOT always where the package actually landed. Disc-to-PKG conversions
+# keep the DISC serial in PARAM.SFO (TITLE_ID) while RPCS3 extracts to the
+# package's CONTENT id — e.g. Demon's Souls installed 2026-08-05 reported
+# title_id=BLUS30443 while every "Created file" line wrote to .../game/NPUB30910
+# (and its .rap licence is keyed NPUB30910 too). Trusting the tuple alone left
+# a complete 8 GB install with no launcher, no licence and no config. So we
+# also scrape the directory RPCS3 says it wrote, and prefer it when the two
+# disagree — the extracted path is ground truth for everything downstream
+# (.psn, exdata, per-game config, vault keying).
 _PKG_VERDICT_RE = re.compile(
     r'(?P<verb>Successfully installed|Failed to install|Partially installed'
     r'|Aborted installation of)\s+(?P<path>.+?)\s+'
     r'\(title_id=(?P<tid>[^,]*),\s*title=(?P<title>.*?),\s*'
     r'version=(?P<ver>[^)]*)\)\.')
+# "PKG: Created file <dev_hdd0 root>/game/<ID>/..." — the id RPCS3 actually
+# extracted under. Used only as a fallback when the verdict tuple's id has no
+# game folder (see the disc-to-PKG note above).
+_PKG_CREATED_ID_RE = re.compile(r'PKG: Created file .*?/game/(?P<tid>[A-Z0-9_\-]{4,16})/')
 # Bare (no-tuple) forms. "Cannot install <path>." is specifically the
 # app_version error: an update PKG whose base-game version doesn't match what
 # is installed. In GUI mode that becomes a QMessageBox spelling out expected
@@ -4047,6 +4060,17 @@ def _run_install(pkg_path, rap_path, notify):
                 "a title ID for it, so the game launcher could not",
                 "be created. Staged files were kept."])
         game_dir = os.path.join(game_real, new_id)
+        if not os.path.isdir(game_dir):
+            # Verdict id has no folder — fall back to the id RPCS3 logged
+            # writing to (disc-to-PKG conversions report the disc serial but
+            # extract under the content id).
+            for m in _PKG_CREATED_ID_RE.finditer(blob):
+                cand = m.group('tid')
+                if cand != new_id and os.path.isdir(os.path.join(game_real, cand)):
+                    _log(f"pkg install: verdict id {new_id} has no folder; "
+                         f"using extracted id {cand}")
+                    new_id, game_dir = cand, os.path.join(game_real, cand)
+                    break
         if not human:
             human = _sfo_title(game_dir) or ""
         human = human or new_id
