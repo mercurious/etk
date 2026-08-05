@@ -619,16 +619,37 @@ case "$PWR_TAG" in '') PWR_TAG=none ;; esac
 # aud: end-of-session cellAudio counters from the aud1 GTK-Edition build
 # (/dev/shm/rpcs3_audio_stat — refreshed every ~2s in play + final dump at
 # teardown, so even a hard crash leaves near-final values). Spaces fold to
-# commas so the cell stays one token for whitespace-split readers. Stale-
-# guarded by mtime vs session start; absent (stock build / no dump) => '-'.
+# commas so the cell stays one token for whitespace-split readers. Absent
+# (stock build / no dump) => '-'.
+#
+# STALE-GUARD, two independent checks (bug found 2026-08-05): the file is NOT
+# reset between games, so a session that ends before the emulator writes it
+# inherits the PREVIOUS game's audio wholesale. Live proof: a 14 s Demon's
+# Souls session carried byte-identical audio to the 500 s SOULCALIBUR V session
+# that preceded it by ~30 s (up_s=431.2, skip=2401 ...). The old mtime guard
+# (>= START_EPOCH - 60) could not catch it — a 60 s grace window is wider than
+# the gap between two consecutive launches.
+#   1. mtime must be at or after this session's start (5 s slack for clock
+#      skew only, not a grace window).
+#   2. the file's own up_s= must not exceed this session's duration (+30 s
+#      slack). A stale file describes a longer run than we just had.
+# Either check failing => '-', because a wrong audio row is worse than none.
 AUD_STAT="-"
 AUD_FILE="/dev/shm/rpcs3_audio_stat"
 if [ -f "$AUD_FILE" ]; then
     AUD_MT=$(stat -c %Y "$AUD_FILE" 2>/dev/null)
     case "$AUD_MT" in ''|*[!0-9]*) AUD_MT=0 ;; esac
-    if [ "$START_EPOCH" -gt 0 ] && [ "$AUD_MT" -ge $((START_EPOCH - 60)) ]; then
+    if [ "$START_EPOCH" -gt 0 ] && [ "$AUD_MT" -ge $((START_EPOCH - 5)) ]; then
         AUD_STAT=$(head -1 "$AUD_FILE" 2>/dev/null | tr ' \t' ',,')
         case "$AUD_STAT" in '') AUD_STAT="-" ;; esac
+        # content cross-check: up_s claimed vs actual session duration
+        if [ "$AUD_STAT" != "-" ]; then
+            AUD_UP=$(printf '%s' "$AUD_STAT" | sed -n 's/.*up_s=\([0-9]*\).*/\1/p')
+            case "$AUD_UP" in ''|*[!0-9]*) AUD_UP=0 ;; esac
+            if [ "$AUD_UP" -gt $((DURATION + 30)) ]; then
+                AUD_STAT="-"
+            fi
+        fi
     fi
 fi
 
@@ -651,12 +672,16 @@ fi
 # ppu/spu/rsx %. Spaces fold to commas (one whitespace-split token). mtime-guarded
 # vs session start; absent (overlay off / stock build) => '-'. The always-live
 # reader len-guards, so pre-v0.7.1 rows without this column stay valid.
+# Same stale-inheritance exposure as the audio block above (this file is not
+# reset between games either), so the same tight mtime rule: at-or-after session
+# start, 5 s clock-skew slack only. There is no self-reported uptime field here
+# to cross-check against, so the mtime test carries it alone.
 PERF_STAT="-"
 PERF_FILE="/dev/shm/rpcs3_perf_stat"
 if [ -f "$PERF_FILE" ]; then
     PERF_MT=$(stat -c %Y "$PERF_FILE" 2>/dev/null)
     case "$PERF_MT" in ''|*[!0-9]*) PERF_MT=0 ;; esac
-    if [ "$START_EPOCH" -gt 0 ] && [ "$PERF_MT" -ge $((START_EPOCH - 60)) ]; then
+    if [ "$START_EPOCH" -gt 0 ] && [ "$PERF_MT" -ge $((START_EPOCH - 5)) ]; then
         PERF_STAT=$(head -1 "$PERF_FILE" 2>/dev/null | tr ' \t' ',,')
         case "$PERF_STAT" in '') PERF_STAT="-" ;; esac
     fi
