@@ -43,6 +43,18 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
   rigs.
 
 ### Staged (dev, not yet certified)
+- **RPCS3 GTK Edition v0.8.3-dev** (2026-08-05) — 0.8.2-dev **plus a one-attribute
+  workaround for a clang 22 miscompile**. `clang 22.1.8 -O2` on aarch64
+  miscompiles `spu_thread::stop_and_signal` (clang 19.1.7 does not), corrupting
+  the SPURS group exit/restart context; pre-2008-SDK SPURS kernels — GT5P Spec II
+  [BCUS98158] — then restart at a garbage PC and die before the copyright screen.
+  Decoder-independent (SPU LLVM, dynamic and static interpreters fail
+  identically), which is why no config change could ever fix it. Isolated across
+  **8 hardware-boot rounds** of pragma/`optnone` bisection. **Keeps every LLVM 22
+  gain and boots Spec II**, so it supersedes the dual-core plan unless other
+  titles still need the LLVM 19 core (the 0.8.1 artifact is retained for that).
+  Mitigation only — to be dropped once the root cause (compiler bug vs. latent UB)
+  is settled; upstream report drafted.
 - **RPCS3 GTK Edition v0.8.2-dev** (2026-08-04) — LLVM 22.1.8 toolchain rebuild
   of 0.8.1 (same source; new `etk-rpcs3-jammy-aarch64:llvm22` image from
   upstream rpcs3-docker `e261762`). Closes the last gap against upstream's arm64
