@@ -43,6 +43,16 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
   rigs.
 
 ### Staged (dev, not yet certified)
+- **RPCS3 GTK Edition v0.8.4-dev** (2026-08-05) — restores the **`GTK_PROBE_11912`**
+  TIU transition probe, the diagnostic that localized the #11912 road-flicker in the
+  first place. It was silently dropped during the 0.7.x patch consolidation and was
+  absent from 0.7.5 through 0.8.3, so `GTK_PROBE_11912=1` did nothing on any of those
+  builds. Found during an SSD audit, not by any gate — so a gate now exists:
+  **`scripts/verify-markers.sh`** asserts all 13 shipped-feature markers survive into
+  both the cumulative patch and the built binary, and fails the publish otherwise
+  (it flagged 0.8.3 immediately; 0.8.4 is 13/13). This is the second silent feature
+  loss in the same consolidation step — the first dropped `RSXTexture.cpp` and with it
+  the flicker fix itself (corrected 2026-07-09).
 - **RPCS3 GTK Edition v0.8.3-dev** (2026-08-05) — 0.8.2-dev **plus a one-attribute
   workaround for a clang 22 miscompile**. `clang 22.1.8 -O2` on aarch64
   miscompiles `spu_thread::stop_and_signal` (clang 19.1.7 does not), corrupting
