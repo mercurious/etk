@@ -110,6 +110,52 @@ Integration invariants worth remembering: Pitstop and input_d share `PAD_HINTS`/
 
 ---
 
+## 8.5 THE BUILD FLEET (where artifacts are made)
+
+**Two build hosts, one rule: the rig is only ever reached from the LAN-local Mac.** The cloud
+node builds; the Mac stages and relays; the rig never faces the internet.
+
+| Node | Spec | Owns | Reached by |
+|---|---|---|---|
+| **The Air** (MacBook Air 2020, M1, **8 GB, fanless**) | colima aarch64 VM (59 GB disk) | staging, `install.sh` handoff, **all rig contact**, quick warm rebuilds | local |
+| **etk-cloud** (Oracle Always-Free **Ampere A1**) | 4 cores / **23 GB** / 145 GB, Ubuntu 24.04 aarch64, **native docker** | long/heavy builds — toolchain images, clean rebuilds, sanitizer builds | `ssh -i ~/.ssh/etk_rig ubuntu@<IP>` |
+
+- **Why it exists (2026-08-05):** the Air was the sole build node and the LLVM-22 toolchain
+  image took **~30 h across two attempts**, dying once to ENOSPC (colima disk 100% at hour 22)
+  and once to a host memory overload. The same image built on etk-cloud unattended, first try.
+  Free tier, $0 — the always-free A1 shape is 4 OCPU/24 GB. Native Linux docker also removes
+  the whole **colima virtiofs** trap class (corrupted linuxdeploy vendoring) and the VM-in-VM tax.
+- **Three lanes are prepped there**, mirroring the Mac's warm containers:
+  · **RPCS3** — `etk-rpcs3-jammy-aarch64:llvm22` (rebuilt natively; static LLVM 22.1.8 verified),
+    source at `~/rpcs3`.
+  · **Turnip** — `~/etk-turnip-gtk` + `turnip-rocknix` container.
+  · **Kernel** — `~/rocknix-gtk` + `rocknix-gtk-kernel-sid` container, staging byte-parity with
+    the Air (config, carved initramfs, firmware, DTS, patches), kernel tarball re-fetched and
+    sha-verified.
+- **TOOLCHAIN PARITY IS NOT AUTOMATIC — pin it.** Debian `sid` moves: on 2026-08-05 its default
+  `gcc` was **16.1.0/binutils 2.47** while every validated kernel artifact was built with
+  **15.3.0/2.46.50**. The kernel's failure mode is silent (clean build, clean verify, black
+  screen pre-userspace), so `build_stock.sh` now defaults `KCC=gcc-15` and BUILDING.md documents
+  the explicit `CC=gcc-15`. Reproducing an environment elsewhere is also how three latent bugs
+  surfaced in one afternoon (that gcc-14 default; a wrong kernel tarball sha256 in BUILDING.md;
+  the Pitstop installer's title-id assumption).
+- **Nothing about the gates changes.** A cloud-built artifact clears exactly the same bars: the
+  packager's MARKER/VERIFY for an AppImage, the §7 cold-boot gate for a kernel, `install.sh` +
+  cold boot + LIVE-artifact sha for anything reaching the rig. Cloud builds are *unvalidated by
+  definition* until they clear them.
+- **Setup gotchas (cost an hour, written down so they cost none):** A1 capacity is scarce —
+  Ashburn AD-1/AD-2 refused, **AD-3** allocated · the wizard's SSH-key field is at the **bottom of
+  the Networking step** (not Advanced; ZPR "security attributes" is unrelated enterprise tagging)
+  · the instance can launch with **no public IP** even when the VCN gateway and route exist — fix
+  at *VNIC → IP administration → primary IP → Edit → assign ephemeral* (that table menu lives in a
+  frame the browser tools can't click; operator does it) · the IP is **ephemeral**: it changes on
+  stop/start, re-read it from the console.
+- **Artifact flow:** build on etk-cloud → stream the finished artifact to the Air
+  (`docker run … cat … | ssh`) → Air stages it per §8 → operator runs `install.sh`. Game dumps and
+  rig-derived assets are the operator's own data; only what a build needs goes up.
+
+---
+
 ## 9. ROADMAP & LIVE FRONTIER
 
 **Shipped ladder (evidence the method compounds):** v0.1 (05-27) Pitstop+Sentry+vault → v0.2 (06-11) Stage III harness + leak-fix re-pin (sessions 2–3× longer same day) → v0.3 (06-14) Private Paddock + thermal v14 auto-recovery → v0.4 (06-18) DRIVER tab + tune_tag = attributable tuning → v0.5 (06-30) GTK Turnip public (median run 204→394 s) → v0.6 (07-03) GTK RPCS3 default + #11912 fix + official-ROCKNIX certification ("the nightly treadmill is over") → **v0.7.0 (07-07) full stack owned, anti-lock default-on, Fable's-Challenge KPIs in the ledger, firmware installer, flashable image**.
@@ -132,7 +178,7 @@ cardless Windows installer — remain **ON HOLD**. **Upstream lane:** #11912 psl
 
 ## 10. QUICK REFERENCE
 
-- **Repos:** `origin`=github.com/mercurious/etk · sisters: rocknix-gtk / etk-turnip-gtk / etk-rpcs3-gtk · aPS3e fork: mercurious/aps3e · `garage`=private, never to origin · `dossiers/`=private clone, gitignored, citations expected to dangle in public checkouts. - **Rig paths:** `ETK_ROOT=/storage/games-internal/roms/etk` · vault symlink `/storage/.cache/mesa_shader_cache` · RPCS3 configs `/storage/roms/bios/rpcs3/custom_configs/config_<ID>.yml` · saves `.../dev_hdd0/home/00000001/savedata/` · live process = `AppRun.wrapped` (never trust `pgrep -x`; gate on live_stat freshness or cmdline-walk `/proc`). - **Host dirs:** `state/` = Tier-B rig mirror (ledger, configs, saves, screenshots, drained forensics) · `vault/` = host shader vault + `os_profiles/` · `manual_forensics/` = wedge capture sets · build trees at `~/rocknix-gtk`, `~/rpcs3-linux-build`, colima containers. - **Golden diagnostics:** `journalctl -u etk.service` (Sentry) · `dmesg | grep -E 'a6xx|hangcheck|context_keepalive'` (wedges/rescues) · `tail sessions.tsv` (but a wedged row is written BY R3/postmortem — don't look before recovery) · `/proc/PID/environ` (dial ground truth) · `stat -c %s /usr/lib/libvulkan_freedreno.so` (live driver — vulkaninfo lies). - **BusyBox laws:** POSIX only — no `--long-options`, `grep -P`, `find -printf`, `du -h`, `stat --format`; `cp -rn` is a silent no-op AND `tar -xkf` ABORTS at the first existing file rather than skipping it (both cost a live data-loss bug; for a content-addressed merge use plain `tar -xf` and verify the count); awk for float math; foot has `-F` not `-f`.
+- **Build hosts:** the Air (colima, all rig contact) · **etk-cloud** = Oracle A1 aarch64, 4c/23 GB, `ssh -i ~/.ssh/etk_rig ubuntu@<IP>` (ephemeral IP — re-read from console), lanes for RPCS3 / Turnip / kernel — see §8.5. - **Repos:** `origin`=github.com/mercurious/etk · sisters: rocknix-gtk / etk-turnip-gtk / etk-rpcs3-gtk · aPS3e fork: mercurious/aps3e · `garage`=private, never to origin · `dossiers/`=private clone, gitignored, citations expected to dangle in public checkouts. - **Rig paths:** `ETK_ROOT=/storage/games-internal/roms/etk` · vault symlink `/storage/.cache/mesa_shader_cache` · RPCS3 configs `/storage/roms/bios/rpcs3/custom_configs/config_<ID>.yml` · saves `.../dev_hdd0/home/00000001/savedata/` · live process = `AppRun.wrapped` (never trust `pgrep -x`; gate on live_stat freshness or cmdline-walk `/proc`). - **Host dirs:** `state/` = Tier-B rig mirror (ledger, configs, saves, screenshots, drained forensics) · `vault/` = host shader vault + `os_profiles/` · `manual_forensics/` = wedge capture sets · build trees at `~/rocknix-gtk`, `~/rpcs3-linux-build`, colima containers. - **Golden diagnostics:** `journalctl -u etk.service` (Sentry) · `dmesg | grep -E 'a6xx|hangcheck|context_keepalive'` (wedges/rescues) · `tail sessions.tsv` (but a wedged row is written BY R3/postmortem — don't look before recovery) · `/proc/PID/environ` (dial ground truth) · `stat -c %s /usr/lib/libvulkan_freedreno.so` (live driver — vulkaninfo lies). - **BusyBox laws:** POSIX only — no `--long-options`, `grep -P`, `find -printf`, `du -h`, `stat --format`; `cp -rn` is a silent no-op AND `tar -xkf` ABORTS at the first existing file rather than skipping it (both cost a live data-loss bug; for a content-addressed merge use plain `tar -xf` and verify the count); awk for float math; foot has `-F` not `-f`.
 
 ---
 
