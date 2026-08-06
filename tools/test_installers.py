@@ -456,7 +456,9 @@ def build_pkg_rig(tmp):
     open(pit.ETK_TEMPLATE_CONFIG, "w").write("Video:\n  Resolution Scale: 100\n")
 
     pit._rpcs3_running = lambda: False
+    pit._game_running = lambda: False
     pit._kill_rpcs3 = lambda: None
+    pit._kill_installer_rpcs3 = lambda: None
     pit._storage_incoherent_msg = lambda: None
     # RPCS3_BIN is python3; prepend the fake script so argv lines up. Always
     # wrap the PRISTINE Popen — wrapping the wrapper nests and mangles argv.
@@ -522,6 +524,7 @@ def pad_rig(tmp, text=STOCK_PAD, names=("DualSense Wireless Controller 1",),
     pit.RPCS3_PAD_CONFIG = cfgp
     pit._sdl_gamepad_names = lambda: list(names)
     pit._rpcs3_running = lambda: running
+    pit._game_running = lambda: running
     return cfgp
 
 
@@ -746,7 +749,9 @@ def build_fw_rig(tmp):
     pit.ETK_INSTALL_LOCK = os.path.join(tmp, "shm", "lock")
     pit.FIRMWARE_DROP_DIR = drop
     pit._rpcs3_running = lambda: False
+    pit._game_running = lambda: False
     pit._kill_rpcs3 = lambda: None
+    pit._kill_installer_rpcs3 = lambda: None
     pit._storage_incoherent_msg = lambda: None
 
     def popen(cmd, **kw):

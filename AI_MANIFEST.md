@@ -24,6 +24,37 @@ A custom Rocknix middleware rig to enable PS3 Emulation on ARM64 Retrogaming Han
 4. **AUTOSTART LIMITATIONS:** Do NOT use `/storage/.config/autostart/` for backend/daemon execution — but for the correct reason. Rocknix's `rocknix-autostart.service` runs each script **synchronously** at boot and is ordered `Before=` the UI service (its final act is launching the UI). A long-running or blocking script dropped there **stalls UI bring-up**. A persistent supervisor therefore belongs in its own systemd unit under `/storage/.config/system.d/` (where ETK already puts `etk.service`). NOTE: the earlier claim that autostart "causes race conditions with MangoHud" was **unsupported and has been empirically disproven** (2026-06-01) — autostart completes at boot (~12 s), while MangoHud is a game-launch overlay loaded by `runemu.sh` at an arbitrary later time; the two never share a time window. Re-run the proof with `tools/probe_autostart_race.sh`.
 5. **ENV-INJECTION VECTOR (profile.d):** To push an environment variable into the RPCS3 runtime (Turnip `TU_*`, `MESA_*`, etc.), write `export VAR=value` to `/storage/.config/profile.d/09x-etk-<name>`. `start_rpcs3.sh` sources `/etc/profile` → `profile.d` at **every game launch**, so the var reaches RPCS3/`AppRun.wrapped` (always verify via `/proc/$PID/environ`, NOT by assuming). **SURPRISE vs the volatile-dir boss above:** ROCKNIX regenerates only its OWN profile.d entries on boot/update and **leaves foreign ETK entries intact** — so a profile.d injection PERSISTS across cold boots like a real config file (no Sentry tripwire needed). This is the vector behind the Stage-III harness (`098-etk-stage3`, Mesa cache cap) and the Pitstop DRIVER-tab Turnip dials (`097-etk-turnip-dials`). Because they live OUTSIDE `$ETK_ROOT`, `uninstall.sh` MUST delete them explicitly (see the deployment laws below).
 
+## BACKGROUND INSTALLS (0.8.4) — AN INSTALLER AND A GAME ARE BOTH RPCS3
+Installs used to be modal: one Pitstop main-loop iteration, no input, no leaving the app. They now
+run OUT OF PROCESS in `bin/etk_install_worker.py`, which drains a queue in SHM and calls Pitstop's
+own `_run_install`/`_run_install_fw` (no second copy of the verdict-from-the-log contract).
+Default-ON, kill-switch `ETK_BG_INSTALL=0`.
+
+- **THE DISCRIMINATION LAW.** A headless installer's argv always carries `--installpkg` or
+  `--installfw`; a game launch never does. Everything safe about this change rests on that:
+  - The **Sentry** (`etk_game_running()`, install.sh) ignites only on a NON-installer RPCS3, so a
+    real race started during an install still gets its telemetry row. 0.8.3 instead parked the
+    Sentry on `ETK_INSTALL_LOCK` for the whole install — blind to everything.
+  - **Kills are PID-scoped** (`_kill_installer_rpcs3`). `pkill -f rpcs3-sa` also matches the
+    operator's game, so an install timing out would have taken their race down with it. The blunt
+    `_kill_rpcs3` remains only for recovery paths that mean it.
+  - Match the flags as **WHOLE argv TOKENS** (`grep -qxE` in sh, `a in _INSTALLER_FLAGS` in
+    Python). A substring test misreads a ROM whose path contains `--installfw` and silently costs
+    that session its telemetry — caught on the harness before it shipped.
+- **A GAME LAUNCH OUTRANKS AN INSTALL.** ROCKNIX's `start_rpcs3.sh` does `rm -rf` + `ln -sf` on the
+  RPCS3 config dirs at EVERY game launch — the very tree an install writes into. The worker
+  therefore polls for a game every 2 s, terminates its OWN emulator, requeues the job at the head
+  of the queue, and toasts `INSTALL PAUSED`. A part-installed PKG is re-runnable (RPCS3
+  overwrites), which is why requeueing is safe and abandoning would not be.
+- **The queue is volatile by design** (`$SHM_DIR/install_queue/`, `install_worker.pid`,
+  `etk_install_stat`). A cold boot is a clean slate; installs are operator-initiated, so nothing
+  should resume itself across a reboot.
+- **Verify any change here on the disposable harness first** — the Sentry is locked-down core.
+  `tools/test_install_queue.py` runs install.sh's own `etk_game_running` text against a fixture
+  `/proc` across 11 cases (installer kinds, game-only, game-during-install, AppRun games, the
+  postmortem's own `strings RPCS3.log`, the worker's and Pitstop's argv, and the pathological ROM
+  name) and holds the Python rule to the same answers.
+
 ## ROCKNIX SD CARD BASED STORAGE PATHS
 1. `/storage/roms` is the same as `/storage/games-internal/roms` on single-card devices such as the target device (Retroid Pocket Flip 2)
 1. `/storage/games-external/roms` is used for storing games on the second card slot on a two slot device. Do not let this throw you off.

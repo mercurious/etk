@@ -275,6 +275,18 @@ ROCKNIX_SYSTEM_CFG = os.environ.get(
     'ROCKNIX_SYSTEM_CFG', '/storage/.config/system/configs/system.cfg')
 SHM_DIR = os.environ.get('SHM_DIR', '/dev/shm/etk_shm')
 ETK_INSTALL_LOCK = os.environ.get('ETK_INSTALL_LOCK', f"{SHM_DIR}/etk_install_lock")
+# Background installs (0.8.4, default-ON; env.sh exports the etk.conf
+# kill-switch ETK_BG_INSTALL=0). An install used to hold the whole app
+# hostage — one main-loop iteration, no input, no leaving. EmulationStation
+# runs a scrape or a content install in the background behind a progress card
+# while the frontend stays live, and the kit now does the same: Pitstop does
+# the fast pre-flight, queues the job, and hands it to bin/etk_install_worker.py
+# out of process, so the operator can keep using the Pitstop, browse ES, or
+# close the terminal entirely. Set 0 to fall back to the old modal path.
+BG_INSTALL_ENABLED = os.environ.get('ETK_BG_INSTALL', '1').strip() != '0'
+INSTALL_QUEUE_DIR = os.path.join(SHM_DIR, 'install_queue')
+INSTALL_WORKER_PID = os.path.join(SHM_DIR, 'install_worker.pid')
+INSTALL_STAT_FILE = os.path.join(SHM_DIR, 'etk_install_stat')
 # L1-screenshot gating mode, shared with bin/input_d.py (which reads it live
 # on each L1 press). Cycled from the TOOLS tab. See env.sh for semantics.
 SCREENSHOT_MODE_FILE = os.environ.get(
@@ -3005,10 +3017,89 @@ def _fullscreen_preview(env):
     return False
 
 
+# An installer and a game are BOTH RPCS3 processes, and once installs run in
+# the background the two can be live at the same moment. Telling them apart by
+# cmdline is what makes that safe: it is how the Sentry keeps recording a real
+# race while an install runs, and how an install timeout kills its OWN emulator
+# instead of the operator's game. The headless installer always carries one of
+# these flags; a game launch never does.
+_RPCS3_PATTERNS = ("rpcs3-sa", "AppRun.wrapped")
+_INSTALLER_FLAGS = ("--installpkg", "--installfw")
+
+
+def _rpcs3_pids(installer=None, procfs="/proc"):
+    """PIDs of live RPCS3 processes.
+
+    installer=True  -> only headless install instances
+    installer=False -> only real game sessions
+    installer=None  -> every RPCS3
+
+    `procfs` exists so the discrimination can be tested against a fixture
+    tree; nothing in the kit passes it.
+
+    Reads /proc directly rather than shelling to pgrep: we need each match's
+    cmdline anyway, and this cannot self-match (Pitstop's and the worker's own
+    argv carry neither pattern)."""
+    out = []
+    try:
+        entries = os.listdir(procfs)
+    except OSError:
+        return out
+    for entry in entries:
+        if not entry.isdigit():
+            continue
+        try:
+            with open(os.path.join(procfs, entry, "cmdline"), "rb") as f:
+                raw = f.read()
+        except OSError:
+            continue          # process exited between listdir and open
+        # argv is NUL-separated. Split it and match the flags as WHOLE TOKENS:
+        # a substring test would misread a game whose ROM path happened to
+        # contain "--installfw" as an installer, and the Sentry would then give
+        # that whole session no telemetry.
+        argv = [a for a in raw.decode("utf-8", "ignore").split("\0") if a]
+        if not any(p in a for a in argv for p in _RPCS3_PATTERNS):
+            continue
+        is_installer = any(a in _INSTALLER_FLAGS for a in argv)
+        if installer is None or is_installer == installer:
+            out.append(int(entry))
+    return out
+
+
+def _game_running():
+    """True when a REAL game session is live (a background install is not).
+    This is the guard installs must use — an installer must never mistake
+    itself for a reason to refuse."""
+    return bool(_rpcs3_pids(installer=False))
+
+
+def _kill_installer_rpcs3():
+    """Terminate only the headless install instances, by PID.
+
+    NEVER pattern-kill from an install path: `pkill -f rpcs3-sa` also matches
+    a game the operator has just launched, so an install timing out would take
+    their race down with it. SIGTERM first so RPCS3 can unwind, SIGKILL only
+    for what refuses."""
+    pids = _rpcs3_pids(installer=True)
+    for sig in (15, 9):
+        alive = []
+        for pid in pids:
+            try:
+                os.kill(pid, sig)
+                alive.append(pid)
+            except OSError:
+                pass          # already gone
+        if not alive:
+            return
+        pids = alive
+        time.sleep(2 if sig == 15 else 0.5)
+
+
 def _kill_rpcs3():
-    """Force-kill any RPCS3 process. Pitstop's own cmdline does not contain
-    these patterns, so pkill -f cannot self-match."""
-    for pat in ("rpcs3-sa", "AppRun.wrapped"):
+    """Force-kill EVERY RPCS3 process, game included. Blunt by design and kept
+    for the recovery paths that mean it; install paths want
+    _kill_installer_rpcs3() instead."""
+    for pat in _RPCS3_PATTERNS:
         try:
             subprocess.run(["pkill", "-9", "-f", pat],
                            capture_output=True, timeout=10)
@@ -3018,11 +3109,137 @@ def _kill_rpcs3():
 
 
 def _rpcs3_running():
+    """True when ANY RPCS3 is live (install or game). Used by the paths that
+    must not touch shared state while the emulator has it open."""
+    return bool(_rpcs3_pids())
+
+
+# --- background install queue -------------------------------
+
+def _worker_alive():
     try:
-        return subprocess.run(["pgrep", "-f", "rpcs3-sa|AppRun.wrapped"],
-                              capture_output=True, timeout=10).returncode == 0
+        with open(INSTALL_WORKER_PID) as f:
+            pid = int(f.read().strip() or 0)
     except Exception:
         return False
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False          # stale pidfile — the worker died or SHM survived
+
+
+def _install_queue():
+    """Queued jobs, oldest first, as (seq_filename, job dict)."""
+    out = []
+    try:
+        names = sorted(f for f in os.listdir(INSTALL_QUEUE_DIR)
+                       if f.endswith(('.job', '.running')))
+    except OSError:
+        return out
+    for n in names:
+        try:
+            with open(os.path.join(INSTALL_QUEUE_DIR, n)) as f:
+                parts = f.read().rstrip('\n').split('\t')
+        except OSError:
+            continue
+        if len(parts) >= 2:
+            out.append((n, {'kind': parts[0], 'path': parts[1],
+                            'running': n.endswith('.running')}))
+    return out
+
+
+def _install_status():
+    """The worker's current line for the TOOLS tab, or None when idle."""
+    try:
+        with open(INSTALL_STAT_FILE) as f:
+            parts = f.read().rstrip('\n').split('\t')
+    except OSError:
+        return None
+    if not parts or not parts[0]:
+        return None
+    while len(parts) < 4:
+        parts.append('')
+    return {'state': parts[0], 'name': parts[1],
+            'pct': parts[2], 'msg': parts[3]}
+
+
+def _install_preflight(kind, path):
+    """The refusals that must be answered on-screen, BEFORE a job is queued.
+
+    Split deliberately from the installers' own pre-flight: these are instant
+    and the operator is still looking at the Pitstop, so a refusal can be
+    read and acted on. The slow half (the possible multi-GB
+    _ensure_rpcs3_storage_links migration, dev_flash provisioning) stays
+    inside _run_install/_run_install_fw and therefore runs in the worker,
+    where it belongs — it is part of the job, not a reason to reject it.
+
+    A running GAME is NOT a refusal any more: that is the whole point of a
+    queue. Returns None to proceed, or a list of result lines."""
+    if not path or not os.path.isfile(path):
+        return ["That file is no longer there.",
+                "Re-copy it to the drop folder and try again."]
+    incoherent = _storage_incoherent_msg()
+    if incoherent:
+        return incoherent
+    return None
+
+
+def _enqueue_install(kind, path, rap=None):
+    """Queue an install and make sure the worker is running.
+
+    Returns (ok, message). Deduplicates against what is already queued — ES's
+    ContentInstaller does the same, and a double-press should not install a
+    package twice."""
+    dup = False
+    try:
+        os.makedirs(INSTALL_QUEUE_DIR, exist_ok=True)
+        dup = any(job['path'] == path for _, job in _install_queue())
+        if not dup:
+            # Licences are a LIST (a title can need several, and they are keyed
+            # by content id). They ride as TRAILING tab-separated fields —
+            # writing the list directly would serialise its Python repr, and
+            # the installer would then treat that text as one licence path,
+            # failing every copy while still reporting the install complete.
+            raps = [rap] if isinstance(rap, str) else list(rap or [])
+            # The sequence number is the queue order; the worker takes the
+            # lowest. os.link claims the name atomically, so two enqueues
+            # inside the same millisecond cannot overwrite one another.
+            seq = int(time.time() * 1000)
+            tmp = os.path.join(INSTALL_QUEUE_DIR, f".{seq}.{os.getpid()}.tmp")
+            with open(tmp, 'w') as f:
+                f.write("\t".join([kind, path] + raps) + "\n")
+            for bump in range(64):
+                try:
+                    os.link(tmp, os.path.join(INSTALL_QUEUE_DIR,
+                                              f"{seq + bump}.job"))
+                    break
+                except FileExistsError:
+                    continue
+            os.remove(tmp)
+    except Exception as e:
+        _log(f"enqueue failed: {e}")
+        return False, f"could not queue: {e.__class__.__name__}"
+
+    # Re-arm OUTSIDE the duplicate check. A job can land in the window between
+    # the worker's last look at an empty queue and its pidfile removal, which
+    # would leave the queue with nothing draining it; returning early on a
+    # duplicate would then make the obvious fix — pressing install again —
+    # the one thing that cannot help.
+    if not _worker_alive():
+        try:
+            # Detached on purpose: the install must outlive this Pitstop.
+            subprocess.Popen(
+                ["python3", f"{ETK_ROOT}/bin/etk_install_worker.py"],
+                env=_tools_env(), stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+                start_new_session=True)
+        except Exception as e:
+            _log(f"worker spawn failed: {e}")
+            return False, f"could not start installer: {e.__class__.__name__}"
+    return (False, "already queued") if dup else (True, "queued")
 
 
 # --- package / config inspection ----------------------------
@@ -4207,7 +4424,7 @@ def _run_install(pkg_path, rap_path, notify):
             out = proc.communicate(timeout=budget)[0]
             out = (out or b"").decode('utf-8', 'ignore')
         except subprocess.TimeoutExpired:
-            _kill_rpcs3()
+            _kill_installer_rpcs3()
             return False, out_lines(
                 [f"Install timed out after {budget // 60} minutes.",
                  "RPCS3 may be wedged - reboot and retry.",
@@ -4360,7 +4577,7 @@ def _run_install(pkg_path, rap_path, notify):
     finally:
         card.stop()
         if proc is not None and proc.poll() is None:
-            _kill_rpcs3()
+            _kill_installer_rpcs3()
         try:
             os.remove(ETK_INSTALL_LOCK)
         except Exception:
@@ -4570,7 +4787,7 @@ def _run_install_fw(pup_path, notify, _progress=None):
             out = proc.communicate(timeout=420)[0]
             out = (out or b"").decode('utf-8', 'ignore')
         except subprocess.TimeoutExpired:
-            _kill_rpcs3()
+            _kill_installer_rpcs3()
             return False, ["Firmware install timed out (7 min).",
                            "RPCS3 may be wedged - reboot and retry.",
                            f"The {name} file was kept."]
@@ -4621,7 +4838,7 @@ def _run_install_fw(pup_path, notify, _progress=None):
     finally:
         card.stop()
         if proc is not None and proc.poll() is None:
-            _kill_rpcs3()
+            _kill_installer_rpcs3()
         try:
             os.remove(ETK_INSTALL_LOCK)
         except Exception:
@@ -5142,6 +5359,23 @@ def draw_tools(stdscr, state):
         y += 1  # extra breathing line between the chrome rules and the title
         put(y, 2, "TOOLS", curses.A_BOLD); y += 1
         put(y, 2, "-" * (w - 4), curses.A_DIM); y += 1
+        # Live background-install line. The toasts are the primary surface,
+        # but they expire — an operator who came back to the Pitstop after
+        # queueing something needs to see it is still going without waiting
+        # for the next toast.
+        st = _install_status() if BG_INSTALL_ENABLED else None
+        queued = len(_install_queue()) if BG_INSTALL_ENABLED else 0
+        if st:
+            pct = f"  {st['pct']}%" if st.get('pct') else ""
+            extra = f"  (+{queued - 1} waiting)" if queued > 1 else ""
+            note = st.get('msg') or ''
+            put(y, 4, f"{st['state']}: {st['name'][:24]}{pct}{extra}"
+                      + (f"  - {note}" if note else ""),
+                curses.color_pair(1) | curses.A_BOLD)
+            y += 1
+        elif queued:
+            put(y, 4, f"{queued} install(s) queued", curses.color_pair(1))
+            y += 1
         # Single-spaced items (the uninstall-list idiom): the rig's foot
         # terminal is only ~22 rows, and double spacing pushed everything
         # below into the footer.
@@ -7802,10 +8036,42 @@ def main(stdscr):
             notifier = _Notifier()
             kind = action[0]
             skip_result = False
-            if kind == "install":
-                # Headless since 0.8.1, same shape as firmware below: RPCS3
-                # never takes the screen, so Pitstop keeps its own spinner up
-                # on the main thread while _run_install blocks on the worker.
+            if kind in ("install", "firmware") and BG_INSTALL_ENABLED:
+                # BACKGROUND (0.8.4 default). Queue it and get out of the way:
+                # the worker runs out of process, so the operator can keep
+                # using the Pitstop, go back to ES, or close the terminal
+                # while RPCS3 unpacks. Progress and the verdict arrive on the
+                # ES-style notification surfaces, exactly as a scrape does.
+                # Pre-flight stays HERE and stays synchronous — a refusal has
+                # to be answerable on the screen the operator is looking at.
+                pre = _install_preflight("fw" if kind == "firmware" else "pkg",
+                                         action[1])
+                if pre:
+                    ok, lines = False, pre
+                else:
+                    qkind = "fw" if kind == "firmware" else "pkg"
+                    rap = action[2] if kind == "install" else None
+                    qok, why = _enqueue_install(qkind, action[1], rap)
+                    name = os.path.basename(action[1])
+                    if qok:
+                        busy = _game_running()
+                        notifier.post(
+                            "QUEUED" if busy else "INSTALLING",
+                            f"{name[:28]}" + ("  after your game" if busy
+                                              else "  in the background"),
+                            timeout=10000)
+                        ok, lines = True, [
+                            f"QUEUED:  {name}",
+                            "",
+                            "It installs in the background - you can keep",
+                            "using the Pitstop, go back to your games, or",
+                            "close this app. Watch the top-right corner.",
+                        ] + (["", "It starts once you finish playing."]
+                             if busy else [])
+                    else:
+                        ok, lines = False, [f"Could not queue: {why}"]
+            elif kind == "install":
+                # Modal fallback (ETK_BG_INSTALL=0).
                 res = _run_with_spinner(
                     stdscr, "Installing PS3 package — please wait…",
                     _run_install, action[1], action[2], notifier,
@@ -7813,9 +8079,7 @@ def main(stdscr):
                 ok, lines = res if res else (
                     False, ["package install failed — see log"])
             elif kind == "firmware":
-                # Headless install: RPCS3 runs in the background (no screen
-                # handoff), so we keep the Pitstop spinner alive on the main
-                # thread while _run_install_fw blocks on the worker.
+                # Modal fallback (ETK_BG_INSTALL=0).
                 res = _run_with_spinner(
                     stdscr, "Installing PS3 firmware — about a minute…",
                     _run_install_fw, action[1], notifier, indeterminate=True)

@@ -53,6 +53,14 @@ export ETK_GOLDEN_SEED="${ETK_GOLDEN_SEED:-1}"
 # .iso never lists), enables the per-game MangoHud key, and golden-seeds
 # the config from the filename serial. Set 0 to disable (kill-switch).
 export ETK_ISO_ONBOARD="${ETK_ISO_ONBOARD:-1}"
+# Background installs (0.8.4, default-ON): a PS3 package or firmware install
+# no longer holds the Pitstop hostage. Pitstop queues the job and
+# bin/etk_install_worker.py runs it OUT OF PROCESS, so you can keep using the
+# app, go back to your games, or close it entirely while RPCS3 unpacks —
+# the same way EmulationStation scrapes in the background. A game launch
+# always wins: the worker stands its install down and resumes when you are
+# done playing. Set 0 to go back to the old modal installer (kill-switch).
+export ETK_BG_INSTALL="${ETK_BG_INSTALL:-1}"
 # Controller binding repair (0.8.1, default-ON): ROCKNIX's stock RPCS3 pad
 # config names "InputPlumber GameController 1" — the Xbox-style virtual pad
 # InputPlumber used to expose. It now targets a DualSense, so that name

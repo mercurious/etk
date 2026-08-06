@@ -201,6 +201,21 @@ ETK_GOLDEN_SEED=1
 # 1 = on (default) · 0 = kill-switch (ISOs are left exactly as dropped)
 ETK_ISO_ONBOARD=1
 
+# --- Background installs (0.8.4, ships ON) ---
+# A PS3 package or firmware install no longer holds the Pitstop hostage. The
+# Pitstop queues the job and a worker runs it out of process, so you can keep
+# using the app, go back to your games, or close it entirely while RPCS3
+# unpacks — the same way EmulationStation scrapes in the background. Progress
+# and the result arrive as on-screen notifications, and queued installs run in
+# order.
+# A GAME ALWAYS WINS: ROCKNIX rebuilds RPCS3's config directories at every game
+# launch — the same directories an install writes into — so if you start a race
+# mid-install the worker stands the install down, keeps your place in the
+# queue, and resumes when you have finished playing.
+# 1 = on (default) · 0 = kill-switch (installs run modally, as in 0.8.3:
+#     the Pitstop blocks until the install finishes)
+ETK_BG_INSTALL=1
+
 # --- OS-update coherence guard (0.8.3, ships ON) ---
 # Makes ROCKNIX in-place updates survivable on a GTK-kernel rig. The ROCKNIX
 # updater writes the new kernel over the boot slot the running system used

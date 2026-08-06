@@ -1058,6 +1058,43 @@ echo "0"    > "$SHM_DIR/vault_count"
 #    the Accountant re-baselines against the correct tree.
 # BusyBox-safe: readlink -f, rsync, ln -sfn, [ -L ], [ -d ].
 # ==========================================================
+# ==========================================================
+# etk_game_running -- is a REAL game session live?
+# ==========================================================
+# Background installs (0.8.4) mean an installer RPCS3 and a game RPCS3 can be
+# live at the same moment, and only the second is a telemetry session. The old
+# `pgrep -f "rpcs3-sa|AppRun.wrapped"` could not tell them apart, which is why
+# an install used to park the Sentry entirely (blind to everything for the
+# whole install).
+#
+# Discriminate on argv: the headless installer always carries --installpkg or
+# --installfw; a game launch never does. argv in /proc is NUL-separated, so
+# converting NULs to newlines lets `grep -x` match the flag as a WHOLE TOKEN --
+# a substring test would misread a ROM whose path contains "--installfw" and
+# silently cost that session its telemetry. Proven on a disposable harness
+# across 11 cases (empty proc, each installer kind, game-only, game-during-
+# install, AppRun games, the postmortem's own `strings RPCS3.log`, the worker's
+# and Pitstop's own argv, two installers, and the pathological ROM name).
+# BusyBox-safe: tr, grep -q/-x/-E only.
+etk_game_running() {
+    # pgrep only names CANDIDATES -- it matches the same cmdline content, with
+    # spaces where the NULs are. The authoritative whole-token test below is
+    # unchanged, so a ROM path containing the literal text "--installfw" still
+    # cannot cost a real race its telemetry. Walking all of /proc here instead
+    # would cost two forks per process every 2 seconds, forever.
+    for _PID in $(pgrep -f "rpcs3-sa|AppRun.wrapped" 2>/dev/null); do
+        [ -r "/proc/$_PID/cmdline" ] || continue
+        _C=$(tr '\0' '\n' < "/proc/$_PID/cmdline" 2>/dev/null)
+        # Re-verify rather than trusting pgrep's pattern to have been the only
+        # filter: this function decides whether a session is recorded, and it
+        # should not silently change meaning if that pattern is ever widened.
+        echo "$_C" | grep -qE 'rpcs3-sa|AppRun\.wrapped' || continue
+        echo "$_C" | grep -qxE '\-\-installpkg|\-\-installfw' && continue
+        return 0
+    done
+    return 1
+}
+
 etk_link_cache() {
     DESIRED="$1"
     [ -z "$DESIRED" ] && return 0
@@ -1248,12 +1285,24 @@ while true; do
         python3 "$ETK_ROOT/bin/etk_modules_inject.py" >> "$TRIPWIRE_LOG" 2>&1
     fi
 
-    # --- INSTALL LOCK (dossier §4) ---
-    # While the TOOLS-tab installer runs, RPCS3 IS the installer process,
-    # not a game. Stay parked in IDLE: no RUNNING transition, no worker
-    # spawn, no post-mortem, no phantom telemetry row. The lock lives in
-    # volatile SHM, so a crash mid-install self-clears on the next reboot.
-    if [ -f "$ETK_INSTALL_LOCK" ]; then
+    # --- INSTALL LOCK (legacy, 0.8.3 and older) ---
+    # An installer's RPCS3 is not a game, and igniting on one produced a
+    # phantom telemetry session. The old cure was this lock: park the Sentry
+    # in IDLE for the whole install. That worked while installs were modal —
+    # nobody could launch a game anyway — but it made the Sentry blind to
+    # EVERYTHING for the duration, and 0.8.4 runs installs in the BACKGROUND,
+    # where a real race can start at any moment and must still be recorded.
+    #
+    # The lock is therefore no longer a reason to stop looking; the cmdline
+    # test below tells an installer from a game directly. It is still honoured
+    # for the brief window a job spends MIGRATING RPCS3's storage tree (no
+    # emulator is running then, so there is nothing to misread) and so that a
+    # 0.8.3 Pitstop against a 0.8.4 Sentry keeps its old contract.
+    # PREV_STATE guard: if a game was running on the previous tick, this tick
+    # owes it a RUNNING->IDLE rollup (postmortem, ledger row, workers reaped).
+    # Parking here would swallow that edge and lose the session.
+    if [ -f "$ETK_INSTALL_LOCK" ] && ! etk_game_running \
+       && [ "$PREV_STATE" != "RUNNING" ]; then
         PREV_STATE="IDLE"
         sleep 2
         continue
@@ -1273,7 +1322,15 @@ while true; do
     # DO NOT use `pgrep -x rpcs3` -- /usr/bin/rpcs3-sa is a static ELF whose
     # comm is "rpcs3-sa", so exact-comm match misses it and ignition never
     # fires (VAULT:ERROR / thermal-WAIT regression, caught 2026-05-30).
-    if pgrep -f "rpcs3-sa|AppRun.wrapped" > /dev/null; then
+    #
+    # 0.8.4: pgrep alone is no longer enough. Background installs mean an
+    # installer RPCS3 and a game RPCS3 can be live at the same time, and only
+    # the second one is a session. etk_game_running (defined above) walks
+    # /proc and ignores any RPCS3 whose argv carries --installpkg/--installfw,
+    # matched as a WHOLE TOKEN so a ROM path containing that text cannot cost
+    # a real race its telemetry. Proven against 11 cases on a disposable
+    # harness before it was allowed near this file.
+    if etk_game_running; then
         CUR_STATE="RUNNING"
     else
         CUR_STATE="IDLE"

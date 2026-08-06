@@ -5,6 +5,53 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 ## [Unreleased]
 
 ### Changed
+- **Installing a game no longer takes the app hostage.** A PS3 package or
+  firmware install used to run inside a single Pitstop main-loop iteration:
+  no input, no tab switching, no leaving until RPCS3 was done — several
+  minutes of staring at a spinner for a big game. It now runs in the
+  background, the way EmulationStation scrapes: the Pitstop queues the job and
+  hands it to a worker that runs **out of process**, so you can keep using the
+  Pitstop, go back to your games, or close it entirely while the package
+  unpacks. Progress and the verdict arrive on the notification surfaces.
+  Queue several and they install in order. Kill-switch `ETK_BG_INSTALL=0`
+  restores the old modal installer.
+- **A game always wins.** ROCKNIX rebuilds RPCS3's config directories at every
+  game launch — the same directories an install is writing into — so starting
+  a race mid-install was never safe. The worker watches for one, stands its
+  install down, puts the job back at the head of the queue and says so; it
+  resumes when you are finished playing. "RPCS3 is already running, close the
+  game first" is therefore no longer a refusal: it queues.
+- **Your telemetry survives an install now.** The Sentry used to park itself
+  for the whole install — the only way it had to avoid mistaking the
+  installer's RPCS3 for a game — which left it blind to everything, including
+  a real race. It now tells the two apart directly (the headless installer
+  carries `--installpkg`/`--installfw` in its arguments; a game launch never
+  does), so a session started during a background install is recorded like any
+  other.
+
+### Fixed
+- **A licence (`.rap`) could be silently dropped by a background install**, so
+  a DRM'd game installed, reported success, and then refused to boot. The queue
+  wrote the licence list as one field, which turned it into text the installer
+  read as a single bogus path. Caught in review before it shipped; licences now
+  ride as separate fields and the round-trip is gated.
+- **A background failure could be silent.** Several of the installers' early
+  returns predate the background path and only ever reported themselves on the
+  result screen — which nobody is looking at once the job has been handed off.
+  The worker now always leaves a verdict on screen.
+- **An install could start on top of the session postmortem.** The Sentry reads
+  RPCS3.log whole to write a finished race's ledger row, and an installer
+  rewrites that log the moment it launches. The worker now waits for the rollup
+  before taking a job, so finishing a race and queueing an install no longer
+  costs the race its telemetry row.
+- **A game ending during an install lost its ledger row**, because the Sentry's
+  install-lock branch swallowed the RUNNING→IDLE edge that fires the postmortem.
+- **An install timing out could kill the game you were playing.** The
+  installers' cleanup was a pattern-wide `pkill -f rpcs3-sa`, which matches
+  any RPCS3 — including a race the operator had just started. Install paths
+  now terminate only their own emulator, by PID.
+
+### Changed
 - **Notifications now speak EmulationStation.** ETK had invented its own
   toast — a 1280×560 cyan-bordered panel unlike anything else on the rig.
   It is replaced by ES's own two surfaces, mirrored one-for-one, so the kit
@@ -63,6 +110,14 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
   is illegal inside an app-name criteria; the new blocks do not use it.)
 
 ### Added
+- **`tools/test_install_queue.py`** — release gate for background installs.
+  Runs install.sh's own game-vs-installer test as shipped text against a
+  fixture `/proc` across eleven cases (each installer kind, game-only, a game
+  launched during an install, AppRun-era games, the postmortem's own log grep,
+  the worker's and Pitstop's argv, two installers, and a ROM whose filename
+  contains `--installfw`), holds the Python rule to the same answers, and
+  proves the install kill never targets a game PID. Checked against four
+  deliberately broken variants; the shell logic verified under BusyBox.
 - **`tools/test_notify.py`** — release gate for the notification surfaces:
   pins every sender's app-name to install.sh's criteria headers (mako matches
   byte-exact, so a typo silently downgrades a toast to the stock style),

@@ -75,13 +75,20 @@ date +%s > "$SHM_DIR/r3_pressed.txt"
 
 # Flush stale IPC state, but PRESERVE the post-mortem seed files.
 # The Sentry observes RUNNING->IDLE on its next tick (rule 3 handoff)
-# and fires session_postmortem.sh — which needs these five files to
+# and fires session_postmortem.sh — which needs these files to
 # attribute DUR / DRAIN / SHD and R3-origin to the crash you just
 # recovered from. They are overwritten cleanly on the next ignition, so
 # nothing stale leaks forward. BusyBox-safe: for/case/${##} are all POSIX.
+#
+# The background-install state (0.8.4) is preserved for a different reason:
+# R3 recovers a wedged GAME and has no quarrel with an install queued behind
+# it. Wiping the queue would silently discard jobs the operator queued and
+# orphan a live worker from its own pidfile; naming install_queue also stops
+# the "Is a directory" noise this loop used to print for it.
 for f in "$SHM_DIR"/*; do
     case "${f##*/}" in
         session_start.txt|battery_start.txt|thermal_log_start.txt|vault_new.txt|r3_pressed.txt|crash_shot.txt) ;;
+        install_worker.pid|etk_install_stat|install_queue) ;;
         *) rm -f "$f" ;;
     esac
 done
