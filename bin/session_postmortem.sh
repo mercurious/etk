@@ -698,6 +698,22 @@ if [ -f /dev/shm/rpcs3_perf_log ] && [ "$PERF_STAT" != "-" ]; then
     done
 fi
 
+# RPCS3.log archive — the emulator TRUNCATES its log at every launch, so the log
+# of a crashed session survives only until the next one starts. That cost a real
+# investigation on 2026-08-05: the 1.6MB log of a deterministic Spec II SPU crash
+# was overwritten by the two short runs that followed it, and the only surviving
+# copy was a 13KB tail someone had happened to grab. Same convention as the two
+# archives above (named by $NOW = ledger col 1, so row and log join directly).
+# Plain cp, not gzip: this runs inside the postmortem's <2s budget. Kept to 6
+# because these are ~1-2MB each rather than the tens of KB the SHM logs run.
+if [ -f "${RPCS3_LOG:-/storage/.cache/rpcs3/RPCS3.log}" ]; then
+    mkdir -p "$TELEMETRY_DIR/rpcs3_logs" 2>/dev/null
+    cp "${RPCS3_LOG:-/storage/.cache/rpcs3/RPCS3.log}" "$TELEMETRY_DIR/rpcs3_logs/$NOW.log" 2>/dev/null
+    ls -1t "$TELEMETRY_DIR/rpcs3_logs"/*.log 2>/dev/null | tail -n +7 | while read -r f; do
+        rm -f "$f" 2>/dev/null
+    done
+fi
+
 # snd: did this session have real audio hardware? A silent session (only the
 # PipeWire dummy sink) must be excludable from audio A/B. CARD-PRESENCE-ONLY
 # since 2026-07-07: the SM8250 probe race is fixed in the GTK kernel and the
