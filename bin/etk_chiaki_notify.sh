@@ -9,19 +9,21 @@
 # is what the user sees while the screen sits black during a profile
 # reconnect.
 #
-# dbus env derivation per the manifest (cf. bin/bog_profile.sh): there
-# is NO notify-send on ROCKNIX, mako listens on the session bus at
-# $XDG_RUNTIME_DIR/bus. Fail-silent — a toast must never break a stream.
+# Sends through bin/etk_notify.sh so Chiaki shares the ETK toast surface.
+# It used to send app_name="Chiaki", which matched no mako criteria and so
+# silently fell through to the stock system style — right look, by accident.
+# Now it is on purpose, and a restyle reaches it with everything else.
 #
-# replaces_id (cf. etk_pitstop.py _Notifier): the last notification id is
-# kept in volatile SHM and passed back so rapid updates REPLACE the toast
-# in place instead of stacking a column of stale ones.
+# replaces_id: the last notification id is kept in volatile SHM and passed
+# back so rapid updates REPLACE the toast in place instead of stacking a
+# column of stale ones. Fail-silent — a toast must never break a stream.
 # ==========================================================
 MSG="$1"
 [ -z "$MSG" ] && exit 0
 
-export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/var/run/0-runtime-dir}"
-export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
+ETK_ROOT="${ETK_ROOT:-/storage/games-internal/roms/etk}"
+SENDER="$ETK_ROOT/bin/etk_notify.sh"
+[ -x "$SENDER" ] || exit 0
 
 IDDIR="/dev/shm/etk_shm"
 IDFILE="$IDDIR/chiaki_notify_id"
@@ -33,13 +35,7 @@ esac
 # The MESSAGE rides in the SUMMARY slot: mako renders the summary in the
 # large title font (the only reliably legible text on the 1080p panel at
 # handheld distance); the body field stays empty by design.
-REPLY=$(dbus-send --session --print-reply --dest=org.freedesktop.Notifications \
-    /org/freedesktop/Notifications org.freedesktop.Notifications.Notify \
-    "string:Chiaki" "uint32:$ID" string: \
-    "string:$MSG" "string:" \
-    array:string: dict:string:variant: int32:6000 2>/dev/null)
-
-NEW=$(echo "$REPLY" | grep uint32 | head -n 1 | awk '{print $2}')
+NEW=$(ETK_NOTIFY_ID="$ID" "$SENDER" "$MSG" "" 6000 2>/dev/null)
 case "$NEW" in
     ''|*[!0-9]*) ;;
     *)

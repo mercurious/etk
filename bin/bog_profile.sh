@@ -107,14 +107,12 @@ ls -1t "$OUTDIR"/bog_*.meta 2>/dev/null | tail -n +13 | while read -r m; do
     rm -f "$b.meta" "$b.perf.data" "$b.stacks.gz" "$b.summary.txt" 2>/dev/null
 done
 
-# --- COMPLETION toast (mako, fail-silent; env derived per manifest) ---
-export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/var/run/0-runtime-dir}"
-export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
-dbus-send --session --dest=org.freedesktop.Notifications \
-    /org/freedesktop/Notifications org.freedesktop.Notifications.Notify \
-    "string:ETK Pitstop" uint32:0 string: \
-    "string:BOG SAMPLE BANKED" "string:${DUR}s @ bog_$EP — say 'grab sample'" \
-    array:string: dict:string:variant: int32:4000 >/dev/null 2>&1
+# --- COMPLETION toast (mako, fail-silent; shared sender owns the surface) ---
+# env.sh is sourced best-effort at the top, so resolve ETK_ROOT the same way
+# every other path here does rather than trusting the export to have landed.
+"${ETK_ROOT:-/storage/games-internal/roms/etk}/bin/etk_notify.sh" \
+    "BOG SAMPLE BANKED" "${DUR}s @ bog_$EP — say 'grab sample'" 6000 \
+    >/dev/null 2>&1
 
 rm -f "$LOCK" 2>/dev/null
 exit 0

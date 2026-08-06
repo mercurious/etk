@@ -2673,34 +2673,245 @@ def _tools_env():
     return env
 
 
-class _Notifier:
-    """Posts mako notifications via dbus-send, reusing one notification id
-    (replaces_id) so progress updates one toast in place. Best-effort —
-    a notification failure must never abort an install."""
+# ==========================================================
+# NOTIFICATION SURFACES (aligned to EmulationStation, mako 1.10.0)
+# ==========================================================
+# ROCKNIX's EmulationStation has exactly two notification surfaces, and the
+# kit now mirrors them one-for-one so ETK reads as part of the system
+# instead of a bolted-on style of its own:
+#
+#   TOAST     -> ES's GuiInfoPopup. Top-center, ~10s, centered text. This is
+#                the VERDICT of a job ("INSTALL COMPLETE"), never its
+#                progress. Shares the anchor with ROCKNIX's own volume /
+#                brightness toasts, deliberately: same place, same manners.
+#   PROGRESS  -> ES's AsyncNotificationComponent — the card the Scraper puts
+#                in the upper-right. Left-aligned title + name, carries a
+#                progress bar, lives exactly as long as the job, and is
+#                DISMISSED at completion rather than left to fade (ES closes
+#                its card and posts a separate popup; copying that grammar
+#                is most of what makes this feel native).
+#
+# These strings are mako CRITERIA KEYS: mako matches app-name with a
+# byte-exact strcmp (criteria.c:75), so they must equal the [app-name=...]
+# sections install.sh writes into /storage/.config/mako/config. A mismatch
+# does not error — it silently falls through to the stock black system
+# style, which is why the two live here as constants rather than literals.
+NOTIFY_APP = "ETK"
+NOTIFY_APP_PROGRESS = "ETK Progress"
 
-    def __init__(self):
+# Progress cards send an explicit, finite timeout and are re-posted on a
+# heartbeat well inside it. That is deliberate: a never-expiring card would
+# outlive a crashed installer and pin itself on screen until the next
+# reboot. Each replace restarts mako's timer, so a live job holds the card
+# open and a dead one lets it fall off by itself.
+NOTIFY_PROGRESS_TTL = 20000
+
+
+class _Notifier:
+    """Posts mako notifications, reusing one notification id (replaces_id)
+    so an update rewrites ONE toast in place instead of stacking a column.
+    Best-effort throughout — a notification failure must never abort an
+    install.
+
+    Two transports, because the rig's `dbus-send` cannot marshal a nested
+    a{sv} (its own man page rules out nested containers) and mako's progress
+    bar is driven by the standard `value` hint:
+
+      plain text  -> dbus-send   (proven, always present)
+      with a bar  -> busctl      (systemd's bus tool: builds containers from
+                                  a signature string)
+
+    The hint MUST be int32. mako reads it as `v` of `i` (dbus/xdg.c:230)
+    with no type fallback, so sending uint32 fails the WHOLE Notify call —
+    the cost of getting this wrong is the notification, not just the bar.
+    Where busctl is missing the bar degrades to an ASCII meter in the body,
+    never to a silent toast."""
+
+    _busctl = None      # None = unprobed; True/False = cached capability
+
+    def __init__(self, app=NOTIFY_APP):
         self._id = "0"
+        self._app = app
         self._env = _tools_env()
 
-    def post(self, summary, body, timeout=6000):
+    @classmethod
+    def _have_busctl(cls):
+        if cls._busctl is None:
+            cls._busctl = bool(shutil.which("busctl"))
+            if not cls._busctl:
+                _log("notify: busctl absent — progress bars fall back to ASCII")
+        return cls._busctl
+
+    def post(self, summary, body="", timeout=8000, value=None):
+        """Post (or replace) this notifier's toast. `value` is 0..100 and
+        draws mako's native progress bar; None leaves the bar off. Note that
+        mako CLEARS the bar on any replace that omits the hint, so a live
+        progress card must pass `value` on every single update."""
         try:
-            r = subprocess.run(
-                ["dbus-send", "--session", "--print-reply",
-                 "--dest=org.freedesktop.Notifications",
-                 "/org/freedesktop/Notifications",
-                 "org.freedesktop.Notifications.Notify",
-                 "string:ETK Pitstop", "uint32:" + self._id, "string:",
-                 "string:" + summary, "string:" + body,
-                 "array:string:", "dict:string:variant:",
-                 "int32:%d" % timeout],
-                env=self._env, capture_output=True, text=True, timeout=10)
+            if value is None:
+                cmd = ["dbus-send", "--session", "--print-reply",
+                       "--dest=org.freedesktop.Notifications",
+                       "/org/freedesktop/Notifications",
+                       "org.freedesktop.Notifications.Notify",
+                       "string:" + self._app, "uint32:" + self._id, "string:",
+                       "string:" + summary, "string:" + body,
+                       "array:string:", "dict:string:variant:",
+                       "int32:%d" % timeout]
+            elif self._have_busctl():
+                pct = max(0, min(100, int(value)))
+                # susssasa{sv}i — actions = empty array (0), hints = one
+                # entry (1) "value" as variant int32.
+                cmd = ["busctl", "--user", "call",
+                       "org.freedesktop.Notifications",
+                       "/org/freedesktop/Notifications",
+                       "org.freedesktop.Notifications", "Notify",
+                       "susssasa{sv}i",
+                       self._app, self._id, "", summary, body,
+                       "0", "1", "value", "i", str(pct), str(timeout)]
+            else:
+                pct = max(0, min(100, int(value)))
+                meter = _ascii_bar(pct / 100.0)
+                return self.post(summary,
+                                 f"{body}  {meter}" if body else meter,
+                                 timeout=timeout)
+            r = subprocess.run(cmd, env=self._env, capture_output=True,
+                               text=True, timeout=10)
             for ln in r.stdout.splitlines():
                 ln = ln.strip()
-                if ln.startswith("uint32"):
-                    self._id = ln.split()[1]
+                # dbus-send prints "   uint32 7"; busctl prints "u 7".
+                if ln.startswith("uint32") or ln.startswith("u "):
+                    tok = ln.split()
+                    if len(tok) > 1 and tok[1].isdigit():
+                        self._id = tok[1]
                     break
         except Exception as e:
             _log(f"mako notify failed: {e}")
+
+    def close(self):
+        """Dismiss this notifier's toast NOW. The progress card has to go the
+        instant its job ends — that is what ES does, and a card left to fade
+        would report work that has already finished. CloseNotification takes
+        a bare uint32, so plain dbus-send can call it."""
+        if not self._id or self._id == "0":
+            return
+        try:
+            subprocess.run(
+                ["dbus-send", "--session",
+                 "--dest=org.freedesktop.Notifications",
+                 "/org/freedesktop/Notifications",
+                 "org.freedesktop.Notifications.CloseNotification",
+                 "uint32:" + self._id],
+                env=self._env, capture_output=True, text=True, timeout=10)
+            self._id = "0"
+        except Exception as e:
+            _log(f"mako dismiss failed: {e}")
+
+
+def _progress_notifier():
+    """A notifier bound to the upper-right progress surface."""
+    return _Notifier(NOTIFY_APP_PROGRESS)
+
+
+class _ProgressCard:
+    """ES's upper-right scraper card, driven from a background thread.
+
+    A long op that blocks (RPCS3 installing a package, a git sync) cannot
+    pump its own notification, and mako expires a toast the moment its
+    timeout lapses — so the card is held open by a heartbeat well inside
+    NOTIFY_PROGRESS_TTL. Every re-post carries the hint again because mako
+    clears the bar on any replace that omits it.
+
+    `frac` is an optional callable returning 0.0..1.0. With one, the card
+    shows a real bar and percentage; without one it shows elapsed time and
+    no bar — which is exactly what ES does when a job reports no percentage
+    (AsyncNotificationComponent hides the bar while mPercent < 0). Elapsed
+    time is honest movement; a fabricated percentage would not be.
+
+    Fail-soft by construction: the worker only ever touches the notifier, so
+    a broken notification path costs a card, never the install."""
+
+    def __init__(self, title, name="", frac=None, interval=1.5):
+        self._title = title
+        self._name = name
+        self._frac = frac
+        self._interval = interval
+        self._notifier = _progress_notifier()
+        self._stop = threading.Event()
+        self._thread = None
+        self._t0 = time.time()
+
+    def _body(self):
+        if self._frac is None:
+            el = int(time.time() - self._t0)
+            stamp = f"{el // 60}:{el % 60:02d}"
+            return f"{self._name}  {stamp}" if self._name else stamp
+        return self._name
+
+    def _tick(self):
+        value = None
+        if self._frac is not None:
+            try:
+                f = self._frac()
+                value = None if f is None else int(max(0.0, min(1.0, f)) * 100)
+            except Exception:
+                value = None
+        title = self._title if value is None else f"{self._title}  {value}%"
+        self._notifier.post(title, self._body(),
+                            timeout=NOTIFY_PROGRESS_TTL, value=value)
+
+    def _run(self):
+        while not self._stop.wait(self._interval):
+            self._tick()
+
+    def start(self):
+        # Every step here is best-effort: this runs on the critical path of an
+        # install, and a card that cannot be drawn must cost a card, not the
+        # install.
+        try:
+            self._tick()
+            self._thread = threading.Thread(target=self._run, daemon=True)
+            self._thread.start()
+        except Exception as e:
+            _log(f"progress card start failed: {e}")
+        return self
+
+    def stop(self):
+        """Close the card. ES dismisses its card the instant the job ends and
+        announces the outcome as a separate top-center popup — leaving the
+        card up would keep reporting work that is already over.
+
+        Safe to call twice: the installers stop the card explicitly before
+        posting their verdict AND again in a finally, so the card cannot
+        outlive a failure path."""
+        try:
+            self._stop.set()
+            if self._thread is not None:
+                self._thread.join(timeout=3)
+                self._thread = None
+            self._notifier.close()
+        except Exception as e:
+            _log(f"progress card stop failed: {e}")
+
+
+def _es_reload_gamelists():
+    """Ask EmulationStation to rescan its gamelists so a freshly installed
+    game simply appears — the operator no longer has to know about
+    START > Game Settings > Update Gamelists.
+
+    ES serves an HTTP API on 127.0.0.1:1234 whenever it is running (compiled
+    in unconditionally; localhost is always allowed regardless of the public
+    web-access setting). The rescan is queued onto ES's UI thread, and posted
+    work only runs inside Window::update() — so it executes on the first ES
+    frame AFTER Pitstop exits, never while the terminal is up. Use the
+    numeric address: the listener is IPv4-only and `localhost` can resolve to
+    ::1 first. Fail-silent — no ES, no problem."""
+    try:
+        subprocess.run(["curl", "-fsS", "-m", "5",
+                        "http://127.0.0.1:1234/reloadgames"],
+                       capture_output=True, timeout=8)
+        _log("ES gamelist reload requested")
+    except Exception as e:
+        _log(f"ES gamelist reload skipped: {e}")
 
 
 def _preview_crash_frame(state, shot):
@@ -2722,7 +2933,7 @@ def _preview_crash_frame(state, shot):
         return
     if not shutil.which("swayimg"):
         # No image viewer on this build — point at the file over SMB instead.
-        _Notifier().post("Crash frame", f"{shot}  (SMB: roms/etk/screenshots/)")
+        _Notifier().post("CRASH FRAME SAVED", shot[:40])
         return
     env = _tools_env()   # carries XDG_RUNTIME_DIR / WAYLAND_DISPLAY / SWAYSOCK
     try:
@@ -3284,6 +3495,10 @@ def _self_update_apply(info):
     tmp = os.path.join(base, ".update_tmp")
     import urllib.request
     import tarfile
+    # The update used to run silently: several minutes of download + kernel
+    # staging with nothing on screen but a spinner. It gets the same card
+    # every other long job now.
+    card = _ProgressCard("UPDATING ETK", tag[:30]).start()
     try:
         shutil.rmtree(tmp, ignore_errors=True)
         os.makedirs(tmp, exist_ok=True)
@@ -3467,15 +3682,22 @@ def _self_update_apply(info):
         out += ["Emulator / driver / Sentry still update via",
                 "install.sh or a new card image.", "",
                 "Restart Pitstop to load the new version."]
+        card.stop()
+        _Notifier().post("ETK UPDATED", f"{tag} - restart Pitstop",
+                         timeout=10000)
         return (True, out)
     except Exception as e:
         _log(f"self-update: apply failed: {e.__class__.__name__}: {e}")
+        card.stop()
+        _Notifier().post("ETK UPDATE FAILED", e.__class__.__name__[:40],
+                         timeout=12000)
         return (False, [
             f"Update failed: {e.__class__.__name__}: {e}", "",
             "Nothing outside the temp area is touched until the download",
             "verifies; if the failure was mid-copy, re-run the update",
             "(or install.sh from the host) to repair."])
     finally:
+        card.stop()
         shutil.rmtree(tmp, ignore_errors=True)
 
 
@@ -3629,10 +3851,9 @@ def _ensure_rpcs3_storage_links(notify=None):
             # replace it with the link. This is the stranded-install repair.
             if notify is not None and not announced:
                 announced = True
-                notify.post("Tidying RPCS3 storage",
-                            "Moving already-installed data onto your games "
-                            "card.\nThis runs once and can take a few "
-                            "minutes for a big game.", timeout=20000)
+                notify.post("TIDYING STORAGE",
+                            "Moving game data onto your games card",
+                            timeout=15000)
             left = _merge_move(src, dst)
             if left:
                 warn.append(f"{folder}: {left} item(s) exist in both trees -")
@@ -3816,9 +4037,8 @@ def _ensure_pad_binding(notify=None):
         return ["controller: could NOT update the RPCS3 pad config",
                 f"  it still points at {device or '(unset)'}"]
     if notify is not None:
-        notify.post("Controller configured",
-                    f"RPCS3 is now set up for your {target.rsplit(' ', 1)[0]}.",
-                    timeout=12000)
+        notify.post("CONTROLLER CONFIGURED",
+                    target.rsplit(' ', 1)[0][:40], timeout=10000)
     return [f"controller : {target}",
             f"  was      : {device or '(unset)'}  (no such device)"]
 
@@ -3975,10 +4195,8 @@ def _run_install(pkg_path, rap_path, notify):
             [f"  {ln}" for ln in link_warn]
 
     proc = None
+    card = _ProgressCard("INSTALLING", name[:30]).start()
     try:
-        notify.post("Installing PS3 package",
-                    f"Installing {name[:40]} in the background.\n"
-                    "You can watch the Pitstop screen - nothing will open.")
         proc = subprocess.Popen(
             [RPCS3_BIN, "--headless", "--installpkg", pkg_path],
             env=_tools_env(),
@@ -4010,8 +4228,8 @@ def _run_install(pkg_path, rap_path, notify):
                 return any(m.group('path') == pkg_path for m in rx.finditer(blob))
 
             if mine(_PKG_VERSION_ERR_RE):
-                notify.post("Install failed",
-                            "This update needs a different game version.",
+                notify.post("INSTALL FAILED",
+                            "Update needs a different game version",
                             timeout=12000)
                 return False, out_lines([
                     "This package could NOT be installed.",
@@ -4023,7 +4241,8 @@ def _run_install(pkg_path, rap_path, notify):
                     "Install the base game first, or get the update that",
                     "matches it. Staged files were kept."])
             if mine(_PKG_INVALID_RE):
-                notify.post("Install failed", "Package unreadable.", timeout=12000)
+                notify.post("INSTALL FAILED", "Package unreadable",
+                            timeout=12000)
                 return False, out_lines([
                     "RPCS3 could not read this package.",
                     "",
@@ -4031,7 +4250,8 @@ def _run_install(pkg_path, rap_path, notify):
                     "to the drop folder and try again.",
                     "Staged files were kept."])
             if mine(_PKG_FAILED_RE):
-                notify.post("Install failed", "Extraction failed.", timeout=12000)
+                notify.post("INSTALL FAILED", "Extraction failed",
+                            timeout=12000)
                 return False, out_lines([
                     "RPCS3 could not finish unpacking this package.",
                     "",
@@ -4042,7 +4262,7 @@ def _run_install(pkg_path, rap_path, notify):
             reason = (f"RPCS3 reported: {bad}" if bad
                       else "RPCS3 exited without confirming the install.")
             _log(f"pkg install failed rc={proc.returncode}: {reason}")
-            notify.post("Install failed", reason, timeout=12000)
+            notify.post("INSTALL FAILED", reason[:40], timeout=12000)
             return False, out_lines(["Install did NOT complete.",
                                      f"  {reason}",
                                      "",
@@ -4118,10 +4338,12 @@ def _run_install(pkg_path, rap_path, notify):
             except Exception as e:
                 _log(f"staging cleanup failed for {staged}: {e}")
 
-        notify.post("Install complete",
-                    f"{human} installed.\n"
-                    "Press START > Game Settings > Update Gamelists "
-                    "to add it to your library.", timeout=15000)
+        # Card down, then the verdict — ES's own order. The gamelist rescan is
+        # queued here rather than asked of the operator: it lands on the first
+        # ES frame after Pitstop exits, so the game is simply there.
+        card.stop()
+        notify.post("INSTALL COMPLETE", human[:40], timeout=10000)
+        _es_reload_gamelists()
         return True, out_lines([
             f"INSTALLED:  {human}",
             f"  title id   : {new_id}" + (f"  (v{version})" if version else ""),
@@ -4130,13 +4352,13 @@ def _run_install(pkg_path, rap_path, notify):
             f"  mangohud   : {'enabled' if mh_ok else 'FAILED - enable manually'}",
             f"  etk config : {cfg_status}",
         ]) + ["",
-              "Press START > Game Settings > Update Gamelists",
-              "on the handheld to see it in your library."]
+              "Your library refreshes by itself when you leave the Pitstop."]
     except Exception as e:
         _log(f"install flow error: {e}\n{traceback.format_exc()}")
         return False, out_lines(["Install error:",
                                  f"  {e.__class__.__name__}: {str(e)[:48]}"])
     finally:
+        card.stop()
         if proc is not None and proc.poll() is None:
             _kill_rpcs3()
         try:
@@ -4202,18 +4424,15 @@ def _run_uninstall(game, notify):
                 _log(f"uninstall rm {f}: {e}")
 
     mb = freed // (1024 * 1024)
-    notify.post("Game uninstalled",
-                f"{name} removed - {mb} MB freed.\n"
-                "Press START > Game Settings > Update Gamelists to refresh.",
-                timeout=15000)
+    notify.post("GAME REMOVED", f"{name[:28]} - {mb} MB freed", timeout=10000)
+    _es_reload_gamelists()
     return True, [
         f"UNINSTALLED:  {name}",
         f"  title id : {tid}",
         f"  removed  : {removed} items, {mb} MB freed",
         "  kept     : your save data + ETK shader vault",
         "",
-        "Press START > Game Settings > Update Gamelists",
-        "on the handheld to refresh your library.",
+        "Your library refreshes by itself when you leave the Pitstop.",
     ]
 
 
@@ -4340,10 +4559,8 @@ def _run_install_fw(pup_path, notify, _progress=None):
     mark = _rpcs3_log_mark()
 
     proc = None
+    card = _ProgressCard("INSTALLING FIRMWARE", name[:30]).start()
     try:
-        notify.post("Installing PS3 firmware",
-                    f"Installing {name} in the background.\n"
-                    "This takes about a minute - please wait.")
         proc = subprocess.Popen(
             [RPCS3_BIN, "--headless", "--installfw", pup_path],
             env=_tools_env(),
@@ -4369,9 +4586,10 @@ def _run_install_fw(pup_path, notify, _progress=None):
         # with no error line (covers a log we couldn't read).
         if ok_m or (proc.returncode == 0 and new_ver and not err_m):
             ver = (ok_m.group(1) if ok_m else new_ver) or "?"
-            notify.post("Firmware installed",
-                        f"PS3 firmware {ver} installed.\n"
-                        "Your PS3 games can now boot.", timeout=15000)
+            card.stop()
+            notify.post("FIRMWARE INSTALLED",
+                        f"PS3 firmware {ver} - games can now boot",
+                        timeout=10000)
             lines = [f"INSTALLED:  PS3 firmware {ver}",
                      f"  source : {name}  (kept in firmware_drop/)"]
             if prev_ver and prev_ver != ver:
@@ -4390,7 +4608,7 @@ def _run_install_fw(pup_path, notify, _progress=None):
         reason = (err_m.group(1).strip()[:56] if err_m
                   else "RPCS3 exited without confirming the install.")
         _log(f"fw install failed rc={proc.returncode}: {reason}")
-        notify.post("Firmware install failed", reason, timeout=12000)
+        notify.post("FIRMWARE INSTALL FAILED", reason[:40], timeout=12000)
         return False, ["Firmware install did NOT complete.",
                        f"  {reason}",
                        "",
@@ -4401,6 +4619,7 @@ def _run_install_fw(pup_path, notify, _progress=None):
         return False, ["Firmware install error:",
                        f"  {e.__class__.__name__}: {str(e)[:48]}"]
     finally:
+        card.stop()
         if proc is not None and proc.poll() is None:
             _kill_rpcs3()
         try:
@@ -4747,8 +4966,8 @@ def _run_shader_op(op, scope_all, gid, notify):
                 except ValueError:
                     pass
         mb = kb // 1024
-        notify.post("Shaders swept",
-                    f"{files} stale files removed, {mb} MB freed.", timeout=12000)
+        notify.post("SHADERS SWEPT",
+                    f"{files} files, {mb} MB freed", timeout=10000)
         return True, [
             f"SWEPT stale shaders ({'all games' if scope_all else gid})",
             f"  removed : {files} files, {mb} MB freed",
@@ -4771,9 +4990,8 @@ def _run_shader_op(op, scope_all, gid, notify):
                 except Exception as e:
                     _log(f"delete_vault rmtree {d}: {e}")
         mb = freed // 1024
-        notify.post("Vault deleted",
-                    f"{mb} MB freed ({removed} game(s)). Shaders recompile next launch.",
-                    timeout=15000)
+        notify.post("VAULT DELETED",
+                    f"{mb} MB freed - rebuilds on next launch", timeout=10000)
         return True, [
             f"DELETED vault ({'all games' if scope_all else gid})",
             f"  freed   : {mb} MB across {removed} game(s)",
@@ -4800,8 +5018,8 @@ def _run_shader_op(op, scope_all, gid, notify):
                 except Exception as e:
                     _log(f"clear_cache rmtree {t}: {e}")
         mb = freed // 1024
-        notify.post("RPCS3 cache cleared",
-                    f"{mb} MB freed. RPCS3 rebuilds it next launch.", timeout=12000)
+        notify.post("CACHE CLEARED",
+                    f"{mb} MB freed - rebuilds on next launch", timeout=10000)
         return True, [
             f"CLEARED RPCS3 runtime cache ({'all games' if scope_all else gid})",
             f"  freed   : {mb} MB, {removed} dir(s)",
@@ -7035,7 +7253,7 @@ def _run_paddock_sync(verb, row, notifier):
     cmd = ["bash", PADDOCK_SYNC, verb, gid]
     if verb == "push" and name and name != gid:
         cmd.append(name)     # bank the display name in paddock_names.json
-    notifier.post("PADDOCK", f"{name}: {verb} starting…")
+    notifier.post(verb.upper(), name[:30], timeout=NOTIFY_PROGRESS_TTL)
     lines = []
     try:
         proc = subprocess.Popen(cmd, env=_tools_env(),
@@ -7047,12 +7265,15 @@ def _run_paddock_sync(verb, row, notifier):
             if not ln:
                 continue
             lines.append(ln)
-            notifier.post("PADDOCK", f"{name}: {ln[:60]}")
+            notifier.post(verb.upper(), f"{name[:20]}  {ln[:28]}",
+                          timeout=NOTIFY_PROGRESS_TTL)
         proc.wait(timeout=1800)
         ok = proc.returncode == 0
     except Exception as e:
         return False, [f"{verb} failed: {e}"] + lines[-10:]
-    notifier.post("PADDOCK", f"{name}: {verb} {'done ✓' if ok else 'FAILED'}")
+    notifier.close()
+    _Notifier().post(f"{verb.upper()} {'COMPLETE' if ok else 'FAILED'}",
+                     name[:40], timeout=10000)
     tail = lines[-12:]
     head = [f"{verb.upper()} {'OK' if ok else 'FAILED'}: {name}", ""]
     return ok, head + tail
@@ -7095,13 +7316,21 @@ def _curl_total_bytes(url):
 
 
 def _curl_with_progress(url, dest, notifier, label, timeout=7200):
-    """Download `url` to `dest` with a LIVE mako progress bar. mako has no
-    progress widget and a static toast self-expires in ~1.5s, so we re-post an
-    ASCII bar every ~1.5s — which both shows progress AND keeps the toast on
-    screen. This is the QoL fix for multi-GB PKG downloads that otherwise read
-    as hung. Returns curl's return code (0 = ok, 124 = timeout)."""
+    """Download `url` to `dest` behind ES's upper-right progress card.
+
+    The card is re-posted every ~1.5s: that both advances the bar and holds
+    the toast open, since mako expires a notification on its own timeout and
+    clears the bar on any replace that omits the `value` hint. Where the
+    server reports no Content-Length there is no honest fraction, so the card
+    shows megabytes only and the bar stays hidden — which is what ES does for
+    a job that reports no percentage. Returns curl's return code (0 = ok,
+    124 = timeout).
+
+    (Historical note: this used to draw an ASCII bar because ETK believed
+    mako had no progress widget. The shipped mako is 1.10.0, which renders
+    the standard `value` hint natively — see _Notifier.)"""
     total = _curl_total_bytes(url)
-    notifier.post("PADDOCK", f"{label}  starting…")
+    notifier.post("DOWNLOADING", label, timeout=NOTIFY_PROGRESS_TTL, value=0)
     try:
         proc = subprocess.Popen(["curl", "-fsSL", "-o", dest, url],
                                 stdout=subprocess.DEVNULL,
@@ -7120,11 +7349,13 @@ def _curl_with_progress(url, dest, notifier, label, timeout=7200):
             got = 0
         mb = got >> 20
         if total > 0:
-            body = (f"{label}  {_ascii_bar(got / total)} "
-                    f"{int(100 * got / total)}%  {mb}/{total >> 20} MB")
+            pct = int(100 * got / total)
+            notifier.post(f"DOWNLOADING  {pct}%",
+                          f"{label}  {mb}/{total >> 20} MB",
+                          timeout=NOTIFY_PROGRESS_TTL, value=pct)
         else:
-            body = f"{label}  downloading… {mb} MB"
-        notifier.post("PADDOCK", body, timeout=4000)
+            notifier.post("DOWNLOADING", f"{label}  {mb} MB",
+                          timeout=NOTIFY_PROGRESS_TTL)
         time.sleep(1.5)
     return proc.returncode
 
@@ -7156,7 +7387,8 @@ def _run_paddock_pkg_install(row, ent, notifier):
         # Only hash when there's something to compare against — a 2+ GB hash on
         # an UNVERIFIED install is wasted work (and looks like another hang).
         if pkg_sha:
-            notifier.post("PADDOCK", f"{name}: verifying sha256…")
+            notifier.post("VERIFYING", name[:30],
+                          timeout=NOTIFY_PROGRESS_TTL)
             got = (_sha256_file(tmp_pkg) or "").lower()
             if got != pkg_sha:
                 return False, ["pkg sha256 MISMATCH — refusing to install",
@@ -7179,8 +7411,12 @@ def _run_paddock_pkg_install(row, ent, notifier):
                 rap_path = tmp_rap
             else:
                 lines.append(f"rap download failed (curl {rrc}) — pkg only")
-        notifier.post("PADDOCK", f"{name}: installing PKG (headless)…")
-        ok, ilines = _run_install(tmp_pkg, rap_path, notifier)
+        # Hand off to the headless installer, which raises its own progress
+        # card. Close ours first: both live on the upper-right surface and
+        # mako shows one notification per surface, so a stale card left open
+        # here would mask the installer's own.
+        notifier.close()
+        ok, ilines = _run_install(tmp_pkg, rap_path, _Notifier())
         head = [f"{'INSTALLED' if ok else 'FAILED'}: {name}", ""]
         return ok, head + lines + [""] + (ilines or [])[-10:]
     except Exception as e:
@@ -7648,7 +7884,7 @@ def main(stdscr):
             prow = pact["row"]
             res = _run_with_spinner(
                 stdscr, f"{pact['verb'].upper()}: {prow['name']} ↔ your paddock",
-                _run_paddock_sync, pact["verb"], prow, _Notifier(),
+                _run_paddock_sync, pact["verb"], prow, _progress_notifier(),
                 draw=_paddock_busy, indeterminate=True)
             ok, lines = res if res else (False, ["sync failed — see log"])
             state["paddock_result"] = (ok, lines)
@@ -7675,7 +7911,8 @@ def main(stdscr):
         if pkg_act:
             prow2, pent = pkg_act
             _paddock_busy(stdscr, f"Getting {prow2['name']}: downloading, then installing — watch notifications")
-            ok, lines = _run_paddock_pkg_install(prow2, pent, _Notifier())
+            ok, lines = _run_paddock_pkg_install(prow2, pent,
+                                                _progress_notifier())
             state["paddock_result"] = (ok, lines)
             state["paddock_mode"] = "result"
             # A successful install changes the library — refresh on next entry.

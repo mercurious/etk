@@ -4,7 +4,74 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ## [Unreleased]
 
+### Changed
+- **Notifications now speak EmulationStation.** ETK had invented its own
+  toast — a 1280×560 cyan-bordered panel unlike anything else on the rig.
+  It is replaced by ES's own two surfaces, mirrored one-for-one, so the kit
+  reads as part of the system instead of a bolt-on: a **top-center verdict
+  toast** (ES's `GuiInfoPopup` — ~10 s, centered, the black system pill
+  ROCKNIX already uses for volume and brightness) and an **upper-right
+  progress card** (ES's Scraper card — left-aligned title + name, a real
+  progress bar, alive for exactly as long as the job, then dismissed and
+  answered by a separate verdict toast, which is ES's own order of events).
+  Message copy is rewritten to ES's character economy throughout: an
+  uppercase verb for the summary, the name and one fact for the body. The
+  build-era prose that explained what the kit was doing to itself is gone.
+- **Real progress bars.** ETK believed mako had no progress widget and drew
+  ASCII meters into toast text. The shipped mako is 1.10.0, which renders the
+  standard `value` hint natively — so downloads, PADDOCK syncs and the
+  self-update now show a true bar. `dbus-send` cannot marshal the hint's
+  nested `a{sv}`, so those go out through `busctl`; where that is missing the
+  bar degrades to the old ASCII meter rather than losing the notification.
+  Jobs that genuinely cannot report a fraction (a headless PKG extract) show
+  an elapsed clock and no bar — the same thing ES does — instead of a
+  fabricated percentage.
+- **A finished install just appears in your library.** Pitstop asks
+  EmulationStation to rescan (its localhost HTTP API) after an install or
+  uninstall, and the rescan lands on the first ES frame after Pitstop exits.
+  The "Press START > Game Settings > Update Gamelists" instruction is
+  retired from the toast, the results screen and the README.
+- **One shell sender.** `bin/etk_notify.sh` replaces four hand-rolled copies
+  of the same `dbus-send` incantation (Pitstop, osguard, bog profiler,
+  Chiaki). Chiaki toasts previously sent an app-name that matched no mako
+  criteria and fell through to the stock style by accident; they are now on
+  the ETK surface on purpose.
+- **The ETK self-update reports itself.** It ran silently before — several
+  minutes of download and kernel staging behind a bare spinner. It gets the
+  same progress card and verdict toast as every other long job.
+
+### Fixed
+- **`tools/test_installers.py` was scoring its own notifications.** The
+  fixtures patch `pit.subprocess.Popen`, and `subprocess.run()` resolves
+  `Popen` from the same module globals — so the installers' progress-card
+  heartbeat was being routed into the fake RPCS3. The firmware fake ignores
+  its arguments, so a notification performed the install: `[FW-1]` passed even
+  when the real `--installfw` did nothing. The suite now stubs the
+  notification surfaces, and fails as it should against a no-op install.
+- **`uninstall.sh` left its notification styling on the rig.** The mako
+  criteria block lives in ROCKNIX's own config, outside `$ETK_ROOT`, so an
+  uninstall never removed it and the rig kept styling toasts for a kit that
+  was gone. Now stripped (legacy block included), leaving the operator's own
+  sections untouched.
+- **Re-installing grew the operator's mako config by a blank line every
+  time.** The 0.8.3 strip-and-append left the previous block's leading blank
+  behind, forever. Trimmed, and the round-trip is now byte-idempotent.
+- **Guarded against a mako config outage.** One invalid option makes mako
+  reject the whole config — a reload keeps the old one, but the next boot
+  mako exits and the rig loses *every* notification, ROCKNIX's included.
+  install.sh now backs up, reloads, and rolls back on rejection. (`max-visible`
+  is illegal inside an app-name criteria; the new blocks do not use it.)
+
 ### Added
+- **`tools/test_notify.py`** — release gate for the notification surfaces:
+  pins every sender's app-name to install.sh's criteria headers (mako matches
+  byte-exact, so a typo silently downgrades a toast to the stock style),
+  refuses config-killing options, asserts each criteria has room for at least
+  three text lines (mako's default height renders the summary alone and
+  silently drops the body), holds the shell sender to its exit-status contract,
+  and runs the real installer/uninstaller config surgery for idempotency and
+  clean removal. Verified against nine deliberately broken variants; the awk
+  and the sender checked under BusyBox rather than host tools.
 - **TUNING > CORE: per-title emulator core swap** (multigame lane). The LLVM
   19-vs-22 split made core choice per-title (RR7/Ratchet/Spec II regress on
   22; ABC/TTT2/GTA:SA gain), so the DRIVER-tab catalog pattern is replicated

@@ -40,6 +40,31 @@ REAL_POPEN = subprocess.Popen
 REAL_SDL_NAMES = pit._sdl_gamepad_names
 FAILS = []
 
+# SILENCE THE NOTIFICATION SURFACES FOR THE WHOLE SUITE.
+# The fixtures patch `pit.subprocess.Popen`, and `pit.subprocess` IS the shared
+# subprocess module object — `subprocess.run()` resolves Popen from module
+# globals, so the patch intercepts run() too. The installers raise a
+# _ProgressCard whose internal notifier shells out to dbus-send on a heartbeat
+# thread, and every one of those calls was landing in the fake rpcs3 script.
+# For the firmware fixture that is not merely noise: its fake ignores argv and
+# unconditionally writes version.txt and the success line, so a notification
+# PERFORMED THE INSTALL and [FW-1] passed even when the real --installfw
+# subprocess did nothing. Stubbing the surfaces here keeps the suite measuring
+# the installers instead of its own toasts.
+class _NoCard:
+    def __init__(self, *a, **kw):
+        pass
+
+    def start(self):
+        return self
+
+    def stop(self):
+        pass
+
+
+pit._ProgressCard = _NoCard
+pit._es_reload_gamelists = lambda: None
+
 
 def check(name, got, want):
     if got == want:

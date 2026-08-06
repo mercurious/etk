@@ -481,52 +481,130 @@ Diagnostics: if a press produces no file, check `.last_error` in this
 folder — `bin/screenshot.sh` writes grim's stderr there on failure.
 SHOTREADME
 
-# ETK mako notification style: a criteria section scoped to app-name
-# "ETK Pitstop" so ETK toasts are wide and readable WITHOUT altering
-# Rocknix's own notifications. REWRITTEN IN PLACE on every install (was
-# append-once) so a restyle/reposition actually reaches already-installed rigs:
-# strip any prior ETK block (header -> next [section]/EOF), then append the
-# current one. anchor=top-center + a top margin drops the toast below the top
-# HUD band (operator-approved 2026-07-07) so it no longer hugs the top edge.
-# Output captured + summarized so the [OK]/[SKIP] echo doesn't break the TUI.
+# ETK mako notification style — ALIGNED TO EMULATIONSTATION (0.8.4).
+#
+# EmulationStation has exactly two notification surfaces, and the kit now
+# mirrors them one-for-one instead of inventing a third look of its own:
+#
+#   [app-name="ETK"]           ES's GuiInfoPopup — top-center, ~10s, centered.
+#                              VERDICTS ("INSTALL COMPLETE"). Deliberately the
+#                              same anchor, and near enough the same black pill,
+#                              as ROCKNIX's own volume/brightness toasts: same
+#                              place, same manners.
+#   [app-name="ETK Progress"]  ES's scraper card (AsyncNotificationComponent) —
+#                              upper-right, left-aligned title + name, a real
+#                              progress bar, alive for exactly as long as the
+#                              job and dismissed at the end.
+#
+# Two anchors genuinely work: mako 1.10.0 keys its layer-surfaces on the
+# (output, layer, anchor) triple and creates one surface per distinct triple
+# (criteria.c:440-453), so the two blocks render simultaneously at different
+# corners. Older mako had a single global anchor — do not backport this.
+#
+# The progress bar is mako's native `value` hint, NOT an ASCII bar: it paints
+# a full-body fill clipped to the notification, so `over` with a translucent
+# accent reads as a meter while leaving the text legible — a `source` fill at
+# full alpha would white out the words on top of it.
+#
+# `height` IS NOT OPTIONAL. mako's default format is "<b>%s</b>\n%b" — summary
+# and body are two pango PARAGRAPHS — and mako feeds
+# (height - border - padding) to pango_layout_set_height(). A positive cap
+# there defeats pango's usual "at least one line per paragraph" behaviour, so
+# a box too short for two lines silently renders the summary ALONE. mako's
+# built-in default is height=100, which at monospace 26 (40px lines, 36px
+# padding) leaves 64px where two lines need 80: every BODY would vanish, and
+# the body is the payload at nearly every call site (worst case osguard, whose
+# summary is the constant "ETK OS GUARD" and whose body is the entire recovery
+# instruction). These are MAXIMA — mako shrinks the surface to its content —
+# so they are set generously enough to wrap a long osguard sentence.
+# Regression guard: tools/test_notify.py asserts room for >= 3 lines.
+#
+# DO NOT ADD `max-visible` HERE. It is rejected inside an app-name criteria
+# (mako criteria.c:522-533, "allowed only for output and/or anchor"), and a
+# single bad option makes mako reject the WHOLE config: `makoctl reload`
+# keeps the old one, but the NEXT BOOT mako exits EXIT_FAILURE and the rig
+# loses every notification, ROCKNIX's included. That is why the write below
+# backs up, reloads, and rolls back on failure. ROCKNIX's global
+# `max-visible=1` already gives each surface its own single slot, which is
+# the behaviour we want anyway.
+#
+# REWRITTEN IN PLACE on every install so a restyle reaches installed rigs;
+# strips the legacy 0.8.3 "ETK Pitstop" block as well as its own two.
+# Output captured + summarized so the echo doesn't break the TUI.
 tui_log "Installing ETK mako notification style"
 MAKO_OUT=$(ssh $RIG_SSH 'bash -s' 2>&1 <<'ETKMAKO'
 MCFG=/storage/.config/mako/config
 if [ -f "$MCFG" ]; then
+cp -f "$MCFG" "$MCFG.etk.bak"
+# Second stage trims trailing blank lines (same idiom as the grub strip at
+# STEP 6.4). Without it every re-install leaves the previous block's leading
+# blank line behind and the operator's config grows a blank line per install
+# forever - a real defect in the 0.8.3 version of this step.
 awk '
-  /^\[app-name="ETK Pitstop"\]/ { skip=1; next }
+  /^\[app-name="ETK Pitstop"\]/  { skip=1; next }
+  /^\[app-name="ETK"\]/          { skip=1; next }
+  /^\[app-name="ETK Progress"\]/ { skip=1; next }
   skip && /^\[/ { skip=0 }
   !skip { print }
-' "$MCFG" > "$MCFG.etk.tmp"
+' "$MCFG" | awk 'NF{last=NR} {ln[NR]=$0} END{for(i=1;i<=last;i++)print ln[i]}' \
+  > "$MCFG.etk.tmp"
 cat >> "$MCFG.etk.tmp" <<'MK'
 
-[app-name="ETK Pitstop"]
+[app-name="ETK"]
 anchor=top-center
-width=1280
-height=560
-font=monospace 24
-default-timeout=8000
-padding=20
-margin=240,24,24,24
-border-size=3
-border-color=#00b4d8
-border-radius=14
+width=900
+height=260
+font=monospace 26
+text-alignment=center
+text-color=#ffffff
+background-color=#000000e6
+border-size=0
+border-radius=10
+padding=18
+margin=22,24,24,24
+default-timeout=10000
+
+[app-name="ETK Progress"]
+anchor=top-right
+width=620
+height=220
+font=monospace 22
 text-alignment=left
-background-color=#10141a
+text-color=#ffffff
+background-color=#1c1c1cdc
+progress-color=over #00b4d866
+border-size=0
+border-radius=10
+padding=16
+margin=22,20,0,0
+default-timeout=20000
 MK
 mv "$MCFG.etk.tmp" "$MCFG"
-XDG_RUNTIME_DIR=/var/run/0-runtime-dir makoctl reload 2>/dev/null
-echo "    [OK] ETK mako notification style installed/updated."
+if ! pgrep -x mako >/dev/null 2>&1; then
+    rm -f "$MCFG.etk.bak"
+    echo "    [OK] ETK mako style written (mako not running - unvalidated)."
+elif XDG_RUNTIME_DIR=/var/run/0-runtime-dir makoctl reload 2>/dev/null; then
+    rm -f "$MCFG.etk.bak"
+    echo "    [OK] ETK mako notification style installed/updated."
+else
+    # mako refused the config. It is still running on the OLD one, but a
+    # reboot would leave it dead and the rig silent - put the file back.
+    mv -f "$MCFG.etk.bak" "$MCFG"
+    XDG_RUNTIME_DIR=/var/run/0-runtime-dir makoctl reload 2>/dev/null
+    echo "    [FAIL] mako rejected the ETK style - rolled back, notifications unchanged."
+fi
 else
 echo "    [SKIP] mako config absent."
 fi
 ETKMAKO
 )
 if [ "$TUI_ACTIVE" = "1" ]; then
-    if echo "$MAKO_OUT" | grep -q '\[OK\]'; then
+    if echo "$MAKO_OUT" | grep -q '\[FAIL\]'; then
+        tui_log "ETK mako style REJECTED by mako - rolled back"
+    elif echo "$MAKO_OUT" | grep -q '\[OK\]'; then
         tui_log "ETK mako notification style installed"
     else
-        tui_log "ETK mako style already present"
+        tui_log "mako config absent - style skipped"
     fi
 else
     echo "$MAKO_OUT"

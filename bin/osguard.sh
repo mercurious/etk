@@ -87,17 +87,16 @@ finish() { flash_ro; exit "${1:-0}"; }
 notify() {
     # Marker always (Pitstop/operator-visible); mako toast best-effort in a
     # detached retry loop — mako may not be up yet at oneshot time. Fail-silent.
+    # 15s rather than the 10s house default: these are recovery instructions,
+    # and they fire during a boot the operator is already puzzled by.
     printf '%s\t%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" > "$MARKER" 2>/dev/null
     [ "$MODE" != "heal" ] && return 0
     (
         i=0
         while [ $i -lt 12 ]; do
-            if XDG_RUNTIME_DIR=/var/run/0-runtime-dir dbus-send --session \
-                --print-reply --dest=org.freedesktop.Notifications \
-                /org/freedesktop/Notifications org.freedesktop.Notifications.Notify \
-                "string:ETK Pitstop" uint32:0 string: \
-                "string:ETK OS GUARD" "string:$1" \
-                array:string: dict:string:variant: int32:15000 \
+            if [ -x "$ETK_ROOT/bin/etk_notify.sh" ] && \
+               XDG_RUNTIME_DIR=/var/run/0-runtime-dir \
+               "$ETK_ROOT/bin/etk_notify.sh" "ETK OS GUARD" "$1" 15000 \
                 >/dev/null 2>&1; then break; fi
             i=$((i + 1)); sleep 5
         done

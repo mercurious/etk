@@ -347,6 +347,29 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
         echo "    Preserved: /storage/.config/chiaki (console pairing)"
     fi
 
+    # ETK mako notification style (install.sh STEP 1). Same
+    # outside-ETK_ROOT story as the profile.d entries above: the criteria
+    # sections live in ROCKNIX's own /storage/.config/mako/config, so an
+    # ETK_ROOT cleanup leaves them behind and the rig keeps styling toasts
+    # for a kit that is gone. Strip only OUR sections (header -> next
+    # [section] or EOF) and leave the rest of the operator's file intact.
+    # NOTE: this runs inside the UNQUOTED 'CLEAN' heredoc, so every awk \$
+    # must be escaped or the host shell eats it before the rig sees it.
+    MCFG=/storage/.config/mako/config
+    if [ -f "\$MCFG" ]; then
+        awk '
+          /^\[app-name="ETK Pitstop"\]/  { skip=1; next }
+          /^\[app-name="ETK"\]/          { skip=1; next }
+          /^\[app-name="ETK Progress"\]/ { skip=1; next }
+          skip && /^\[/ { skip=0 }
+          !skip { print }
+        ' "\$MCFG" \
+          | awk 'NF{last=NR} {ln[NR]=\$0} END{for(i=1;i<=last;i++)print ln[i]}' \
+          > "\$MCFG.etk.tmp" && mv "\$MCFG.etk.tmp" "\$MCFG"
+        XDG_RUNTIME_DIR=/var/run/0-runtime-dir makoctl reload 2>/dev/null
+        echo "    Removed: ETK mako style (toasts revert to ROCKNIX default)"
+    fi
+
     # ETK MangoHud overlay
     rm -f /storage/.config/MangoHud/MangoHud.conf
     echo "    Removed: MangoHud overlay config"
