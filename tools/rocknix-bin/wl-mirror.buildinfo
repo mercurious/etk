@@ -1,0 +1,12 @@
+built_utc=2026-08-06T00:28:05Z
+base_os=24.04.4 LTS (Noble Numbat)
+gcc=13.3.0
+libwayland-dev=1.22.0-2.1build1
+wayland-protocols=1.45-1~ubuntu0.24.04.2
+libegl-dev=1.7.0-1build1
+libgles-dev=1.7.0-1build1
+libdrm-dev=2.4.125-1ubuntu0.1~24.04.2
+upstream_ref=428b5079fbf19c5fcbecf60177024cbc2f63190d
+base_image=ubuntu@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
+sha256=53de6e6f1c7fbd8ea4df7d6b38b83ec1635459c0429beb51e362e1cd5b5be2e3
+bytes=134088

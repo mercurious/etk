@@ -158,8 +158,9 @@ etk/
 │   ├── commander.sh · probe.sh · etk_probe.sh · arm_blackbox.sh · career_aggregate.sh
 │   └── turnip/                 #   GPU forensics (rd_inspect/rd_repair for cffdump captures)
 ├── tools/                      # host-side probes, gates & rig-native binaries
-│   ├── rocknix-bin/            #   Tier-P builds: build_chiaki.sh, build_wl_mirror.sh + the
-│   │                           #   committed aarch64 binaries with .commit/.ldd provenance
+│   ├── rocknix-bin/            #   Tier-P builds: build_chiaki.sh / build_wl_mirror.sh are
+│   │                           #   STAGERS (build on etk-cloud, stream back, rig-check here);
+│   │                           #   binaries committed with .commit/.ldd/.buildinfo provenance
 │   ├── etk_dyno.py · etk_drift.py · vault_doctor.sh · vault_sweep.sh
 │   │                           #   dyno analytics · OS-drift detector · shader-vault surgeons
 │   ├── release_sanity.sh · test_installers.py · test_paddock.py

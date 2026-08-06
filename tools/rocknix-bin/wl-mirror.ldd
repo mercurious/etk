@@ -1,0 +1,6 @@
+libwayland-egl.so.1
+libEGL.so.1
+libGLESv2.so.2
+libwayland-client.so.0
+libc.so.6
+ld-linux-aarch64.so.1
