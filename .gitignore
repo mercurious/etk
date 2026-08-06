@@ -47,7 +47,18 @@ __pycache__/
 
 # 5 Ignore the dev _archive
 _archive/
-/os-install
+
+# 5a. os-install holds multi-GB .img.gz payloads AND the Tier-I image lane's
+# build scripts. A blanket /os-install ignore was protecting the payloads and
+# taking the recipe with it: build_gtk_image_v2.sh bakes a SHIPPED RELEASE
+# ASSET and was tracked in no repository at all — it existed only on the
+# laptop, so no other machine could run the lane (etk-cloud could not,
+# 2026-08-05). Ignore the payloads, keep the recipe.
+/os-install/*
+!/os-install/build/
+/os-install/build/*
+!/os-install/build/*.sh
+!/os-install/build/*.md
 
 # 5b. Design dossiers — LOCAL-PRIVATE, never committed. The dossiers/ tree
 # lives at $ETK_ROOT/dossiers as the design-rationale archive (referenced
