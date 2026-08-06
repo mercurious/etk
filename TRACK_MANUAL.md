@@ -132,8 +132,12 @@ node builds; the Mac stages and relays; the rig never faces the internet.
   hosts — don't split an A/B's arms across boxes); kernel 7.1.2 at the **exact** shipped image size
   (60,246,528 B) with the same 237 modules, differing only in embedded toolchain strings
   (cloud binutils 2.47 vs the laptop's 2.46.50 — still §7-cold-boot-gated, as BUILDING.md requires);
-  flashable image builds clean with every internal gate green. **RPCS3 AppImage packaging is the
-  one lane not yet exercised** — see below.
+  flashable image builds clean with every internal gate green. **RPCS3 packages there too** — the
+  full `deploy-linux.sh aarch64` path ran to completion on 2026-08-05 23:34 with both gates green
+  (`marker OK: 'rpcs3_perf_stat' present in binary`, `VERIFY OK — packaged AppImage loads without
+  system ffmpeg`), producing a 188,695,852 B AppImage. So all six lanes are proven on the node.
+  Two honest caveats: what was packaged there was the **asan** build rather than a release one,
+  and the wrapper that drove it is still uncaptured (below).
 - **THE REAL FINDING: four lanes could not be reproduced off the laptop at all.** The audit set out
   to answer "does the cloud work" and instead found that the recipes for most of the kit lived
   nowhere a second machine could reach them. Turnip's `build_rocknix.sh` — the authoritative
@@ -141,10 +145,14 @@ node builds; the Mac stages and relays; the rig never faces the internet.
   `docker rm` from gone. The kernel container's package set existed only inside its containers.
   `build_gtk_image_v2.sh`, which bakes a **shipped release asset**, was covered by a blanket
   `/os-install` gitignore and tracked in no repo. All three are now in git and installed by
-  provisioning scripts (`etk-turnip-gtk`, `rocknix-gtk`). **The RPCS3 build+package driver is the
-  fourth and is still uncaptured** — including the MARKER/VERIFY gate cited below, which is why
-  that lane stops here rather than being reconstructed by guesswork: the gate that would catch a
-  wrong AppImage is itself the missing piece.
+  provisioning scripts (`etk-turnip-gtk`, `rocknix-gtk`). **The RPCS3 build+package wrapper is the
+  fourth and is still uncaptured** — it is in no repo and on neither box's disk; it was piped to
+  the node from an authoring session, so only its *output* survives, in `~/asan-pkg.log`. That log
+  is currently the sole record of what the lane does: `deploy-linux.sh aarch64` → `DESTDIR=AppDir
+  ninja install` → linuxdeploy (qt + checkrt) → the `rpcs3_perf_stat` MARKER check → a VERIFY step
+  that re-resolves the bundled libs with system ffmpeg hidden (the rig condition) → a named,
+  sized, sha256'd artifact. Recover it from the operator's session or rebuild it from that log
+  before the log is rotated away.
 - **Four lanes are prepped there**, mirroring the Mac's warm containers:
   · **RPCS3** — `etk-rpcs3-jammy-aarch64:llvm22` (rebuilt natively; static LLVM 22.1.8 verified),
     source at `~/rpcs3`.
