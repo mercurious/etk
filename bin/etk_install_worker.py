@@ -173,12 +173,17 @@ def _run_one(pit, job, jobfile):
                 if not aborted.is_set():
                     _log(f"game launched during {name} — yielding")
                     _write_stat('YIELDING', name, '', 'game launched')
+                    # We are about to kill this install on purpose, so the
+                    # INSTALL FAILED it is about to report is our doing, not a
+                    # real verdict. Mute it or the operator sees FAILED flash
+                    # immediately before PAUSED — two answers to one event.
+                    notifier.mute()
                 aborted.set()
                 pit._kill_installer_rpcs3()
 
+    notifier = pit._Notifier()
     watcher = threading.Thread(target=watch, daemon=True)
     watcher.start()
-    notifier = pit._Notifier()
     try:
         _write_stat('INSTALLING', name, '', '')
         if job['kind'] == 'fw':
@@ -200,6 +205,7 @@ def _run_one(pit, job, jobfile):
             os.rename(jobfile + '.running', jobfile)
         except OSError:
             pass
+        notifier.unmute()
         notifier.post("INSTALL PAUSED", "resumes when you finish playing",
                       timeout=10000)
         _log(f"{name}: yielded to a game session, requeued")

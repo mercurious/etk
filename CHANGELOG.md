@@ -30,6 +30,11 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
   other.
 
 ### Fixed
+- **Pausing an install showed two contradictory messages.** Standing an install
+  down to let a game start makes the installer report a genuine failure — it
+  was killed — so "install failed" flashed up immediately before "install
+  paused". The installer is now muted while the kit is deliberately tearing it
+  down, leaving the one message that is actually true.
 - **A firmware or package install could get stuck in a retry loop**, flickering
   between "install failed" and "install paused" and never finishing. The
   emulator ships as an AppImage, which spawns a filesystem helper carrying the

@@ -2745,6 +2745,22 @@ class _Notifier:
         self._id = "0"
         self._app = app
         self._env = _tools_env()
+        self._muted = False
+
+    def mute(self):
+        """Drop posts until unmuted.
+
+        Used when a caller is about to tear an operation down deliberately and
+        knows the failure it is causing is not the failure worth reporting.
+        The background installer yielding to a game is exactly that: killing
+        its own emulator makes _run_install report an honest INSTALL FAILED,
+        which the operator then sees flash immediately before INSTALL PAUSED —
+        two contradictory verdicts for one event (seen on the rig
+        2026-08-06). Muting the loser leaves one true message."""
+        self._muted = True
+
+    def unmute(self):
+        self._muted = False
 
     @classmethod
     def _have_busctl(cls):
@@ -2759,6 +2775,8 @@ class _Notifier:
         draws mako's native progress bar; None leaves the bar off. Note that
         mako CLEARS the bar on any replace that omits the hint, so a live
         progress card must pass `value` on every single update."""
+        if self._muted:
+            return
         try:
             if value is None:
                 cmd = ["dbus-send", "--session", "--print-reply",

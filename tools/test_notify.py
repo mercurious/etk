@@ -486,6 +486,25 @@ finally:
     import shutil as _sh2
     _sh2.rmtree(tmp, ignore_errors=True)
 
+# A muted notifier drops posts. The background installer mutes itself while it
+# kills its own emulator to yield to a game, because the INSTALL FAILED that
+# kill produces is not the verdict worth showing — INSTALL PAUSED is. Without
+# this the operator sees both, contradicting each other (rig, 2026-08-06).
+_real_run = pit.subprocess.run
+pit.subprocess.run = fake_run
+n = pit._Notifier()
+CALLS.clear()
+n.post("BEFORE", "x")
+n.mute()
+n.post("SUPPRESSED", "this is our own doing")
+n.unmute()
+n.post("AFTER", "x")
+flat = [a for c in CALLS for a in c]
+check_true("the post before muting goes out", "string:BEFORE" in flat)
+check("a muted notifier drops the post", "string:SUPPRESSED" in flat, False)
+check_true("posts resume after unmute", "string:AFTER" in flat)
+pit.subprocess.run = _real_run
+
 print()
 if FAILS:
     print(f"FAILED: {len(FAILS)} check(s) -> {FAILS}")
