@@ -1,107 +1,113 @@
 #!/usr/bin/env bash
 # ==========================================================
-# ETK — reproducible build of chiaki (Remote Play) for the ROCKNIX rig
+# ETK — stage the chiaki (Remote Play) binary for the ROCKNIX rig
 # ==========================================================
-# Builds the ETK chiaki fork's SDL2 frontend (rocknix/) as an aarch64/glibc
-# binary that runs natively on ROCKNIX. This is the GT7 lane: PS4/PS5 Remote
-# Play on the rig (MissionBrief: "GT7 is Remote Play (Chiaki)").
+# This is the STAGER, not the build recipe. The recipe lives in the fork
+# (chiaki-rocknix: scripts/build_chiaki.sh) so the cloud node and the Air run
+# byte-identical builds from one source of truth.
 #
-# WHY A CONTAINER: ROCKNIX is read-only and ships no toolchain. We build in
-# an Ubuntu 24.04 *arm64* container (glibc 2.39). glibc is backward-compatible,
-# so a binary linked against 2.39 runs on the rig's newer 2.41. Noble is the
-# one image whose ffmpeg (6.1 -> libavcodec.so.60) matches the rig's ffmpeg
-# 6.0.1 SONAME exactly; SDL2 2.30 and OpenSSL 3 line up the same way.
+# Default lane: build on **etk-cloud** (Oracle A1 aarch64, native docker) and
+# stream the artifact back — see TRACK_MANUAL §8.5. The Air stays the staging
+# host and the ONLY node that ever touches the rig.
 #
-# libopus is NOT on the rig's loader path (/usr/lib/compat is box64-only),
-# so opus is linked STATICALLY from noble's libopus.a.
+#   ./build_chiaki.sh                 # cloud build of the published rocknix head
+#   ./build_chiaki.sh --ref <sha>     # cloud build of a specific published commit
+#   ./build_chiaki.sh --local         # fall back to the Air's colima
 #
-# Runtime deps (all already present on ROCKNIX, verified 2026-07-29):
-#   libSDL2-2.0.so.0  libavcodec.so.60  libavutil.so.58  libcrypto.so.3
-#   libm/libpthread/libc (glibc)
+# Outputs into this directory (install.sh pushes ./chiaki to $ETK_ROOT/tools/):
+#   chiaki  chiaki.ldd  chiaki.commit  chiaki.buildinfo
 #
-# Source: the LOCAL fork at ~/chiaki (branch rocknix), mounted read-only —
-# not cloned — because the frontend lives only there until it is published.
-# Output: ./chiaki (committed; install.sh pushes it to $ETK_ROOT/tools/)
-#         ./chiaki.commit (fork SHA, -dirty if uncommitted)
-#         ./chiaki.ldd (NEEDED manifest, verified against the rig when reachable)
+# CONTRACT: the cloud builds PUBLISHED commits only. That keeps chiaki.commit
+# resolvable on github.com/mercurious/chiaki-rocknix — a release requirement,
+# and the thing that makes a cloud artifact auditable at all. Push first.
 # ==========================================================
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
+BUILD_HOST="${CHIAKI_BUILD_HOST:-etk-cloud}"
+LANE_DIR="${CHIAKI_LANE_DIR:-chiaki-rocknix}"
+FORK_URL="${CHIAKI_FORK_URL:-https://github.com/mercurious/chiaki-rocknix.git}"
 CHIAKI_SRC="${CHIAKI_SRC:-$HOME/chiaki}"
 RIG_SSH="${RIG_SSH:-root@SM8250.local}"
 
-if [ ! -f "$CHIAKI_SRC/rocknix/CMakeLists.txt" ]; then
-    echo "ERROR: no rocknix frontend at $CHIAKI_SRC (set CHIAKI_SRC)" >&2
-    exit 1
+MODE=cloud
+REF=rocknix
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --local) MODE=local; shift ;;
+        --cloud) MODE=cloud; shift ;;
+        --ref)   REF="${2:?--ref needs a value}"; shift 2 ;;
+        -h|--help) sed -n '2,25p' "$0"; exit 0 ;;
+        *) echo "unknown arg: $1" >&2; exit 2 ;;
+    esac
+done
+
+# ----------------------------------------------------------------------------
+# LOCAL lane — the Air's colima. Kept as the fallback for when the cloud node
+# is down or its ephemeral IP has moved.
+# ----------------------------------------------------------------------------
+if [ "$MODE" = local ]; then
+    if [ ! -x "$CHIAKI_SRC/scripts/build_chiaki.sh" ]; then
+        echo "ERROR: no build recipe at $CHIAKI_SRC/scripts/build_chiaki.sh" >&2
+        echo "       (set CHIAKI_SRC to the chiaki-rocknix checkout)" >&2
+        exit 1
+    fi
+    echo "== local build (colima) from $CHIAKI_SRC =="
+    OUT_DIR="$HERE" "$CHIAKI_SRC/scripts/build_chiaki.sh"
+
+# ----------------------------------------------------------------------------
+# CLOUD lane — build on etk-cloud, stream the artifact back.
+# ----------------------------------------------------------------------------
+else
+    if ! ssh -o ConnectTimeout=10 -o BatchMode=yes "$BUILD_HOST" true 2>/dev/null; then
+        echo "ERROR: build host '$BUILD_HOST' unreachable." >&2
+        echo "       etk-cloud's public IP is EPHEMERAL — it changes on stop/start." >&2
+        echo "       Re-read it from the Oracle console and update 'Host etk-cloud'" >&2
+        echo "       in ~/.ssh/config, or run with --local to build on the Air." >&2
+        exit 1
+    fi
+
+    echo "== cloud build on $BUILD_HOST (ref: $REF) =="
+    ssh -o BatchMode=yes "$BUILD_HOST" "
+        set -euo pipefail
+        if [ ! -d ~/$LANE_DIR ]; then
+            git clone -q -b rocknix --recurse-submodules '$FORK_URL' ~/$LANE_DIR
+        fi
+        cd ~/$LANE_DIR
+        git fetch -q --all --tags
+        git checkout -q '$REF' 2>/dev/null || git checkout -q \"origin/$REF\"
+        git submodule update -q --init --recursive
+        ./scripts/build_chiaki.sh
+    "
+
+    echo "== streaming artifacts back to the Air =="
+    ssh -o BatchMode=yes "$BUILD_HOST" \
+        "cd ~/$LANE_DIR/out && tar -cf - chiaki chiaki.ldd chiaki.commit chiaki.buildinfo" \
+        | tar -xf - -C "$HERE"
+    chmod 0755 "$HERE/chiaki"
 fi
 
-# provenance stamp (host-side git; the mount below excludes nothing, but the
-# container image has no git and must not need it)
-COMMIT="$(git -C "$CHIAKI_SRC" rev-parse HEAD)"
-if ! git -C "$CHIAKI_SRC" diff --quiet HEAD 2>/dev/null; then
-    COMMIT="$COMMIT-dirty"
+COMMIT="$(cat "$HERE/chiaki.commit")"
+echo "staged chiaki @ $COMMIT"
+
+# Loud warning if the operator's local checkout is ahead of what was built —
+# a cloud build of the published head is NOT your uncommitted work.
+if [ -d "$CHIAKI_SRC/.git" ] && [ "$MODE" = cloud ]; then
+    LOCAL_HEAD="$(git -C "$CHIAKI_SRC" rev-parse HEAD 2>/dev/null || echo '')"
+    if [ -n "$LOCAL_HEAD" ] && [ "$LOCAL_HEAD" != "$COMMIT" ]; then
+        echo "WARNING: your local $CHIAKI_SRC is at $LOCAL_HEAD" >&2
+        echo "         but the cloud built  $COMMIT" >&2
+        echo "         Push your branch (or pass --ref) if you meant to build local work." >&2
+    fi
 fi
-echo "$COMMIT" > "$HERE/chiaki.commit"
 
-docker run --rm --platform linux/arm64 \
-    -v "$CHIAKI_SRC:/src:ro" -v "$HERE:/out" ubuntu:24.04 bash -c '
-  set -e
-  export DEBIAN_FRONTEND=noninteractive
-  apt-get update -qq
-  apt-get install -y -qq build-essential cmake ninja-build pkg-config \
-    protobuf-compiler python3-protobuf python3-setuptools \
-    libssl-dev libopus-dev libavcodec-dev libavutil-dev libsdl2-dev >/dev/null
-
-  OPUS_A=/usr/lib/aarch64-linux-gnu/libopus.a
-  if [ ! -f "$OPUS_A" ]; then
-    echo "ERROR: static libopus.a missing from libopus-dev" >&2
-    exit 1
-  fi
-
-  # writable copy: the nanopb generator writes nanopb_pb2.py into its own
-  # source dir, which the read-only mount (deliberately) forbids
-  mkdir -p /root/srcw
-  tar -C /src --exclude=.git -cf - . | tar -C /root/srcw -xf -
-
-  cmake -S /root/srcw -B /root/build -G Ninja \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DCHIAKI_ENABLE_GUI=OFF \
-    -DCHIAKI_ENABLE_TESTS=OFF \
-    -DCHIAKI_ENABLE_CLI=ON \
-    -DCHIAKI_ENABLE_ROCKNIX=ON \
-    -DCHIAKI_ENABLE_SETSU=OFF \
-    -DCHIAKI_ENABLE_PI_DECODER=OFF \
-    -DCHIAKI_ENABLE_FFMPEG_DECODER=ON \
-    -DOpus_INCLUDE_DIRS=/usr/include \
-    -DOpus_LIBRARIES="$OPUS_A;/usr/lib/aarch64-linux-gnu/libm.so"
-  cmake --build /root/build
-
-  BIN=/root/build/rocknix/chiaki
-  strip "$BIN"
-
-  # NEEDED manifest: this is the contract with the rig. Static opus means
-  # libopus must NOT appear here.
-  readelf -d "$BIN" | awk "/NEEDED/ {gsub(/[\[\]]/,\"\",\$5); print \$5}" > /out/chiaki.ldd
-  if grep -q opus /out/chiaki.ldd; then
-    echo "ERROR: libopus leaked into NEEDED (static link failed):" >&2
-    cat /out/chiaki.ldd >&2
-    exit 1
-  fi
-
-  # native container: the binary itself must run (catches ABI screwups early)
-  "$BIN" --help >/dev/null
-
-  install -m 0755 "$BIN" /out/chiaki
-  echo "--- NEEDED ---"; cat /out/chiaki.ldd
-'
-
-echo "built chiaki @ $(cat "$HERE/chiaki.commit")"
-
-# verify every NEEDED soname resolves on the rig (best effort: skip if off)
+# ----------------------------------------------------------------------------
+# Rig check — Air ONLY. The rig is never reached from the cloud node.
+# ----------------------------------------------------------------------------
 if ssh -o ConnectTimeout=5 -o BatchMode=yes "$RIG_SSH" true 2>/dev/null; then
     MISSING=0
     while read -r so; do
+        [ -n "$so" ] || continue
         if ! ssh -o BatchMode=yes "$RIG_SSH" "[ -e /usr/lib/$so ] || [ -e /lib/$so ]" 2>/dev/null; then
             echo "MISSING ON RIG: $so" >&2
             MISSING=1

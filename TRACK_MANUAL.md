@@ -132,7 +132,18 @@ node builds; the Mac stages and relays; the rig never faces the internet.
   · **Kernel** — `~/rocknix-gtk` + `rocknix-gtk-kernel-sid` container, staging byte-parity with
     the Air (config, carved initramfs, firmware, DTS, patches), kernel tarball re-fetched and
     sha-verified.
-- **TOOLCHAIN PARITY IS NOT AUTOMATIC — pin it.** Debian `sid` moves: on 2026-08-05 its default
+  · **Chiaki** (added 2026-08-05) — `~/chiaki-rocknix`, stock `ubuntu:24.04` pinned by digest,
+    no persistent container. Recipe lives in the FORK (`scripts/build_chiaki.sh`), so cloud and
+    Air run the same file; `etk/tools/rocknix-bin/build_chiaki.sh` is now only a stager
+    (`--ref <sha>` to pick a commit, `--local` to fall back to colima). **The cloud builds
+    published commits only** — that keeps `chiaki.commit` resolvable on the public fork, which
+    is a release requirement. Cloud and Air produce a **byte-identical** binary (sha256
+    `6ab192e7…`, 802,984 B) — the strongest parity evidence in the fleet.
+- **TOOLCHAIN PARITY IS NOT AUTOMATIC — pin it.** It is not only sid: on 2026-08-05 the Air and
+  etk-cloud held *different images behind the same `ubuntu:24.04` tag* (786a8b55 vs 561618e2).
+  The chiaki lane now pins its base by digest and gates on the NEEDED manifest, because the
+  failure mode is an undeployable binary (an ffmpeg-7 noble emits `libavcodec.so.61`).
+  Debian `sid` moves the same way: on 2026-08-05 its default
   `gcc` was **16.1.0/binutils 2.47** while every validated kernel artifact was built with
   **15.3.0/2.46.50**. The kernel's failure mode is silent (clean build, clean verify, black
   screen pre-userspace), so `build_stock.sh` now defaults `KCC=gcc-15` and BUILDING.md documents
@@ -178,7 +189,7 @@ cardless Windows installer — remain **ON HOLD**. **Upstream lane:** #11912 psl
 
 ## 10. QUICK REFERENCE
 
-- **Build hosts:** the Air (colima, all rig contact) · **etk-cloud** = Oracle A1 aarch64, 4c/23 GB, `ssh -i ~/.ssh/etk_rig ubuntu@<IP>` (ephemeral IP — re-read from console), lanes for RPCS3 / Turnip / kernel — see §8.5. - **Repos:** `origin`=github.com/mercurious/etk · sisters: rocknix-gtk / etk-turnip-gtk / etk-rpcs3-gtk · aPS3e fork: mercurious/aps3e · `garage`=private, never to origin · `dossiers/`=private clone, gitignored, citations expected to dangle in public checkouts. - **Rig paths:** `ETK_ROOT=/storage/games-internal/roms/etk` · vault symlink `/storage/.cache/mesa_shader_cache` · RPCS3 configs `/storage/roms/bios/rpcs3/custom_configs/config_<ID>.yml` · saves `.../dev_hdd0/home/00000001/savedata/` · live process = `AppRun.wrapped` (never trust `pgrep -x`; gate on live_stat freshness or cmdline-walk `/proc`). - **Host dirs:** `state/` = Tier-B rig mirror (ledger, configs, saves, screenshots, drained forensics) · `vault/` = host shader vault + `os_profiles/` · `manual_forensics/` = wedge capture sets · build trees at `~/rocknix-gtk`, `~/rpcs3-linux-build`, colima containers. - **Golden diagnostics:** `journalctl -u etk.service` (Sentry) · `dmesg | grep -E 'a6xx|hangcheck|context_keepalive'` (wedges/rescues) · `tail sessions.tsv` (but a wedged row is written BY R3/postmortem — don't look before recovery) · `/proc/PID/environ` (dial ground truth) · `stat -c %s /usr/lib/libvulkan_freedreno.so` (live driver — vulkaninfo lies). - **BusyBox laws:** POSIX only — no `--long-options`, `grep -P`, `find -printf`, `du -h`, `stat --format`; `cp -rn` is a silent no-op AND `tar -xkf` ABORTS at the first existing file rather than skipping it (both cost a live data-loss bug; for a content-addressed merge use plain `tar -xf` and verify the count); awk for float math; foot has `-F` not `-f`.
+- **Build hosts:** the Air (colima, all rig contact) · **etk-cloud** = Oracle A1 aarch64, 4c/23 GB, `ssh -i ~/.ssh/etk_rig ubuntu@<IP>` (ephemeral IP — re-read from console; `Host etk-cloud` alias in `~/.ssh/config`), lanes for RPCS3 / Turnip / kernel / chiaki — see §8.5. - **Repos:** `origin`=github.com/mercurious/etk · sisters: rocknix-gtk / etk-turnip-gtk / etk-rpcs3-gtk · aPS3e fork: mercurious/aps3e · `garage`=private, never to origin · `dossiers/`=private clone, gitignored, citations expected to dangle in public checkouts. - **Rig paths:** `ETK_ROOT=/storage/games-internal/roms/etk` · vault symlink `/storage/.cache/mesa_shader_cache` · RPCS3 configs `/storage/roms/bios/rpcs3/custom_configs/config_<ID>.yml` · saves `.../dev_hdd0/home/00000001/savedata/` · live process = `AppRun.wrapped` (never trust `pgrep -x`; gate on live_stat freshness or cmdline-walk `/proc`). - **Host dirs:** `state/` = Tier-B rig mirror (ledger, configs, saves, screenshots, drained forensics) · `vault/` = host shader vault + `os_profiles/` · `manual_forensics/` = wedge capture sets · build trees at `~/rocknix-gtk`, `~/rpcs3-linux-build`, colima containers. - **Golden diagnostics:** `journalctl -u etk.service` (Sentry) · `dmesg | grep -E 'a6xx|hangcheck|context_keepalive'` (wedges/rescues) · `tail sessions.tsv` (but a wedged row is written BY R3/postmortem — don't look before recovery) · `/proc/PID/environ` (dial ground truth) · `stat -c %s /usr/lib/libvulkan_freedreno.so` (live driver — vulkaninfo lies). - **BusyBox laws:** POSIX only — no `--long-options`, `grep -P`, `find -printf`, `du -h`, `stat --format`; `cp -rn` is a silent no-op AND `tar -xkf` ABORTS at the first existing file rather than skipping it (both cost a live data-loss bug; for a content-addressed merge use plain `tar -xf` and verify the count); awk for float math; foot has `-F` not `-f`.
 
 ---
 

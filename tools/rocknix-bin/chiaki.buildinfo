@@ -1,0 +1,12 @@
+built_utc=2026-08-06T00:11:51Z
+base_image_id=24.04.4 LTS (Noble Numbat)
+gcc=13.3.0
+libavcodec-dev=7:6.1.1-3ubuntu5
+libavutil-dev=7:6.1.1-3ubuntu5
+libsdl2-dev=2.30.0+dfsg-1ubuntu3.1
+libssl-dev=3.0.13-0ubuntu3.12
+libopus-dev=1.4-1build1
+commit=8e1f9c744c00ccfb158b64ce2763e858e81fa1ad
+base_image=ubuntu@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
+sha256=6ab192e71d12e58c2215c55848b5713453b77b9bcc6b733d43c7efa7e4915daf
+bytes=802984
