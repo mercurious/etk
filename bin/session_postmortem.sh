@@ -487,7 +487,7 @@ TUNE_TAG=$(head -n1 "$ACTIVE_TUNE_FILE" 2>/dev/null | tr -d '\t\r')
 # This is not hypothetical: the 2026-07-30/31 zlatez arms straddled an RPCS3
 # base bump, and pooling them read as a weakening effect rather than as two
 # different stacks. An arm that spans a bump is not a measurement.
-TUNE_TAG="$(etk_attribution_tag);${TUNE_TAG}"
+TUNE_TAG="$(etk_attribution_tag "$GAME_ID");${TUNE_TAG}"
 
 # --- FPS / FRAMETIME (cols 17-19: fps_med, fps_1low, ft_p99_ms) ---
 # G-INSTR: MangoHud auto-logs a per-session CSV (config/MangoHud.conf knobs:

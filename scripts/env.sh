@@ -411,12 +411,44 @@ etk_patches_tag() {
     [ -n "$_p" ] && printf ';patches=%s' "$_p"
 }
 
-# build=<turnip>;stack=rk<img>/k<kernel>/r<rpcs3>;core=<rpcs3-core>[;patches=..]
+etk_decoder_tag() {
+    # A DECODER IS A TUNE — and a non-default one is invisible everywhere else.
+    # Emitted ONLY when a decoder is off the golden default (Recompiler (LLVM)),
+    # so default rows group byte-identically with and without this feature.
+    #
+    # Bought on 2026-08-05: a Bug-B diagnostic set GT5P Spec II to PPU AND SPU
+    # "Interpreter (static)" (the no-JIT arm) at 15:33 and never restored it.
+    # Because a per-game config is CORE-INDEPENDENT, it presented as "the game is
+    # broken on every core", survived reboots, reinstalls and core swaps, and cost
+    # an evening being attributed to binaries and drivers. The ledger carried
+    # core=, patches=, build= and stack= — but not the one field that had changed.
+    # config_changes.tsv had the two rows all along; nothing surfaced them.
+    _gid="$1"
+    [ -z "$_gid" ] && return 0
+    _cf="$RPCS3_CUSTOM_CONFIGS/config_${_gid}.yml"
+    [ -f "$_cf" ] || return 0
+    _pd=$(grep -m1 '^  PPU Decoder:' "$_cf" 2>/dev/null | sed 's/.*: *//' | tr -d '\r')
+    _sd=$(grep -m1 '^  SPU Decoder:' "$_cf" 2>/dev/null | sed 's/.*: *//' | tr -d '\r')
+    # Compact so a human scanning a ledger row sees it instantly:
+    # "Interpreter (static)" -> int-static, "Interpreter (fast)" -> int-fast.
+    _etk_dec_short() { printf '%s' "$1" | sed -e 's/Interpreter (static)/int-static/' \
+                                      -e 's/Interpreter (fast)/int-fast/' \
+                                      -e 's/Recompiler (ASMJIT)/asmjit/' \
+                                      -e 's/[^A-Za-z0-9._-]//g'; }
+    _seg=""
+    case "$_pd" in ''|'Recompiler (LLVM)') : ;; *) _seg="ppu=$(_etk_dec_short "$_pd")" ;; esac
+    case "$_sd" in ''|'Recompiler (LLVM)') : ;; *) _seg="${_seg:+$_seg,}spu=$(_etk_dec_short "$_sd")" ;; esac
+    [ -n "$_seg" ] && printf ';dec=%s' "$_seg"
+}
+
+# build=<turnip>;stack=rk<img>/k<kernel>/r<rpcs3>;core=<rpcs3-core>[;patches=..][;dec=..]
 # — the full attribution prefix. core= is the marker-stamped ground truth for
 # WHICH RPCS3 binary ran (per-title CORE swap makes the stack r-segment
 # ambiguous alone); patches= appears only when the session ran with community
-# patches enabled (a patch is a tune).
-etk_attribution_tag() { printf '%s;%s;%s%s' "$(etk_turnip_build_tag)" "$(etk_stack_tag)" "$(etk_rpcs3_core_tag)" "$(etk_patches_tag)"; }
+# patches enabled (a patch is a tune); dec= appears only when a PPU/SPU decoder
+# is off the golden default (so is a decoder). Optional $1 = game id for dec=;
+# callers without a resolved id simply omit that segment.
+etk_attribution_tag() { printf '%s;%s;%s%s%s' "$(etk_turnip_build_tag)" "$(etk_stack_tag)" "$(etk_rpcs3_core_tag)" "$(etk_patches_tag)" "$(etk_decoder_tag "${1:-}")"; }
 export SIGNATURES_FILE="$ETK_ROOT/config/crash_signatures.json"
 
 # Persistent session breadcrumb. Written at IDLE->RUNNING ignition, removed
