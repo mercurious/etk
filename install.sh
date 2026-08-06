@@ -1085,11 +1085,16 @@ etk_game_running() {
     for _PID in $(pgrep -f "rpcs3-sa|AppRun.wrapped" 2>/dev/null); do
         [ -r "/proc/$_PID/cmdline" ] || continue
         _C=$(tr '\0' '\n' < "/proc/$_PID/cmdline" 2>/dev/null)
-        # Re-verify rather than trusting pgrep's pattern to have been the only
-        # filter: this function decides whether a session is recorded, and it
-        # should not silently change meaning if that pattern is ever widened.
-        echo "$_C" | grep -qE 'rpcs3-sa|AppRun\.wrapped' || continue
-        echo "$_C" | grep -qxE '\-\-installpkg|\-\-installfw' && continue
+        # Test argv[0] -- the EXECUTABLE -- not the whole cmdline. The AppImage
+        # spawns a dwarfs FUSE helper whose arguments carry the image's own
+        # path (".../rpcs3-sa.custom") while carrying none of the install
+        # flags, so a whole-cmdline test reads the installer's own mount helper
+        # as a GAME. That cost a live install loop on 2026-08-06. Only the
+        # emulator itself has an rpcs3 argv[0]. pgrep stays a candidate filter.
+        echo "$_C" | head -n1 | grep -qE 'rpcs3-sa|AppRun\.wrapped' || continue
+        # No backslash-escaped dashes: BusyBox grep warns "stray \ before -" on
+        # every call, and this runs every 2 seconds -- it flooded the journal.
+        echo "$_C" | grep -qxE '^(--installpkg|--installfw)$' && continue
         return 0
     done
     return 1

@@ -30,6 +30,14 @@ run OUT OF PROCESS in `bin/etk_install_worker.py`, which drains a queue in SHM a
 own `_run_install`/`_run_install_fw` (no second copy of the verdict-from-the-log contract).
 Default-ON, kill-switch `ETK_BG_INSTALL=0`.
 
+- **IDENTIFY THE EMULATOR BY `argv[0]`, NOT BY "any argument mentions rpcs3".** The AppImage
+  spawns a **dwarfs FUSE mount helper** whose arguments carry the image's own path
+  (`/storage/rpcs3/rpcs3-sa.custom`) while carrying none of the install flags. A whole-cmdline
+  test therefore reads the installer's OWN mount helper as a game — which on 2026-08-06 made the
+  worker kill its install 2 s in, requeue, and toggle between INSTALL FAILED and INSTALL PAUSED
+  forever on the live rig. Only the emulator itself has an rpcs3 `argv[0]`. This is the same trap
+  the Sentry's pgrep comment already warned about in another form (a process whose argv merely
+  *references* RPCS3), and it will bite again anywhere a match is made against a whole cmdline.
 - **THE DISCRIMINATION LAW.** A headless installer's argv always carries `--installpkg` or
   `--installfw`; a game launch never does. Everything safe about this change rests on that:
   - The **Sentry** (`etk_game_running()`, install.sh) ignites only on a NON-installer RPCS3, so a
@@ -49,6 +57,12 @@ Default-ON, kill-switch `ETK_BG_INSTALL=0`.
 - **The queue is volatile by design** (`$SHM_DIR/install_queue/`, `install_worker.pid`,
   `etk_install_stat`). A cold boot is a clean slate; installs are operator-initiated, so nothing
   should resume itself across a reboot.
+- **BusyBox `grep` warns `stray \ before -` on a backslash-escaped dash** — harmless per call,
+  but the Sentry runs every 2 s and it flooded the journal. Write the flag pattern as
+  `'^(--installpkg|--installfw)$'`, not `'\-\-installpkg|...'`.
+- **A retry that can loop must have a cap.** The worker stands down after `MAX_YIELDS` consecutive
+  yields for one job and says so, so the next false-positive of this class fails visibly instead
+  of thrashing the emulator.
 - **Verify any change here on the disposable harness first** — the Sentry is locked-down core.
   `tools/test_install_queue.py` runs install.sh's own `etk_game_running` text against a fixture
   `/proc` across 11 cases (installer kinds, game-only, game-during-install, AppRun games, the

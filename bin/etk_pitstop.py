@@ -3058,7 +3058,16 @@ def _rpcs3_pids(installer=None, procfs="/proc"):
         # contain "--installfw" as an installer, and the Sentry would then give
         # that whole session no telemetry.
         argv = [a for a in raw.decode("utf-8", "ignore").split("\0") if a]
-        if not any(p in a for a in argv for p in _RPCS3_PATTERNS):
+        if not argv:
+            continue          # kernel thread or zombie
+        # Match argv[0] — the EXECUTABLE — not "any argument contains rpcs3".
+        # The AppImage spawns a dwarfs FUSE helper whose argv carries the
+        # image's own path (".../rpcs3-sa.custom") but none of the install
+        # flags, so an any-argument test saw the installer's own mount helper
+        # as a GAME: the worker killed its install 2s in, requeued, and looped
+        # forever between INSTALL FAILED and INSTALL PAUSED (live on the rig
+        # 2026-08-06). Only the emulator itself has an rpcs3 argv[0].
+        if not any(p in argv[0] for p in _RPCS3_PATTERNS):
             continue
         is_installer = any(a in _INSTALLER_FLAGS for a in argv)
         if installer is None or is_installer == installer:

@@ -30,6 +30,15 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
   other.
 
 ### Fixed
+- **A firmware or package install could get stuck in a retry loop**, flickering
+  between "install failed" and "install paused" and never finishing. The
+  emulator ships as an AppImage, which spawns a filesystem helper carrying the
+  image's own name — so the check for "is a game running?" was seeing the
+  install's own helper and standing the install down, over and over. Found on
+  the rig and fixed by identifying the emulator by the program being run rather
+  than by anything that merely mentions it. As a backstop, an install that
+  stands down repeatedly now gives up cleanly and says so instead of retrying
+  forever.
 - **A licence (`.rap`) could be silently dropped by a background install**, so
   a DRM'd game installed, reported success, and then refused to boot. The queue
   wrote the licence list as one field, which turned it into text the installer

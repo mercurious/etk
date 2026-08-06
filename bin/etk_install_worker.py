@@ -54,6 +54,11 @@ GAME_POLL_S = 2.0
 # is deliberately generous — a late install costs nothing, a shredded ledger
 # row cannot be recovered.
 SETTLE_S = 20.0
+# Consecutive yields tolerated for one job before the worker stands down. A
+# genuine yield happens once (the operator started a race); repeated yields for
+# the same job mean the game test is firing on something that is not a game,
+# and retrying forever thrashes the emulator instead of failing visibly.
+MAX_YIELDS = 3
 
 
 def _log(msg):
@@ -241,6 +246,7 @@ def main():
         pit = _load_pitstop()
         _log(f"worker up (pid {os.getpid()})")
         idle_since = None
+        yields = {}
         while True:
             jobs = _jobs()
             if not jobs:
@@ -294,7 +300,30 @@ def main():
                 continue                   # someone else took it; re-scan
             result = _run_one(pit, job, jobfile)
             if result == 'yielded':
+                # A yield is normal ONCE — the operator started a race. Yielding
+                # over and over for the SAME job is not: it means something is
+                # being read as a game that is not one, and retrying forever
+                # just thrashes the emulator and flickers toasts at the
+                # operator (live on the rig 2026-08-06, when the AppImage's own
+                # dwarfs mount helper matched the game test). Stand down instead
+                # and leave the job queued for a deliberate retry.
+                yields[job['path']] = yields.get(job['path'], 0) + 1
+                if yields[job['path']] >= MAX_YIELDS:
+                    _log(f"{os.path.basename(job['path'])}: yielded "
+                         f"{MAX_YIELDS}x — standing down, job left queued")
+                    _write_stat('DEFERRED', os.path.basename(job['path']),
+                                '', 'start it again when you are not playing')
+                    try:
+                        pit._Notifier().post(
+                            "INSTALL DEFERRED",
+                            "start it again when you are not playing",
+                            timeout=12000)
+                    except Exception:
+                        pass
+                    return 0
                 time.sleep(GAME_POLL_S)    # let the game settle before re-checking
+            else:
+                yields.pop(job['path'], None)
     except Exception as e:
         _log(f"worker fatal: {e.__class__.__name__}: {e}")
     finally:

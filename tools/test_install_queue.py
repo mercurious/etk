@@ -79,6 +79,21 @@ CASES = [
     # Pathological but decisive: a substring test would call this an installer
     # and silently cost a real session its telemetry.
     ("rom_named_installfw",  {112: "/usr/bin/rpcs3-sa --no-gui /roms/ps3/my--installfw.iso"}, True),
+    # THE LIVE LOOP BUG (rig, 2026-08-06), argv verbatim. The AppImage spawns a
+    # dwarfs FUSE helper carrying the image's own path but none of the install
+    # flags. Matching "any argument" saw the installer's OWN mount helper as a
+    # game: the worker killed its install 2s in, requeued, and toggled between
+    # INSTALL FAILED and INSTALL PAUSED forever. Only argv[0] tells them apart.
+    ("installer_with_dwarfs_helper",
+     {113: "/storage/rpcs3/rpcs3-sa.custom --headless --installfw /d/PS3UPDAT.PUP",
+      114: "dwarfs /storage/rpcs3/rpcs3-sa.custom /tmp/.mount_rqZmH1hm -f -o ro,nodev,noatime",
+      115: "/tmp/.mount_rqZmH1hm/AppRun.wrapped --headless --installfw /d/PS3UPDAT.PUP"},
+     False),
+    # ...and the same helper alongside a real game must still read as a game.
+    ("game_with_dwarfs_helper",
+     {116: "/storage/rpcs3/rpcs3-sa.custom /roms/ps3/GT5P.psn",
+      117: "dwarfs /storage/rpcs3/rpcs3-sa.custom /tmp/.mount_ab12 -f -o ro,nodev,noatime"},
+     True),
 ]
 
 
@@ -102,6 +117,12 @@ if m:
     check_true("Sentry matches the install flags as whole tokens (grep -x)",
                "-qxE" in fn,
                "a substring test misreads a ROM path containing --installfw")
+    check_true("Sentry identifies the emulator by argv[0]",
+               "head -n1" in fn,
+               "else the AppImage's dwarfs helper reads as a game")
+    check_true("Sentry's flag pattern has no backslash-escaped dashes",
+               "\\-\\-install" not in fn,
+               "BusyBox warns 'stray \\ before -' every 2s into the journal")
     tmp = tempfile.mkdtemp()
     try:
         for name, procs, want_game in CASES:
@@ -375,6 +396,9 @@ try:
                and "if not aborted.is_set():" in src_main)
     check_true("no fabricated percentage in the status line",
                "_write_stat('INSTALLING', name, '', '')" in src_main)
+    check_true("repeated yields for one job stand the worker down",
+               "MAX_YIELDS" in src_main and "INSTALL DEFERRED" in src_main,
+               "a false game reading must not thrash the emulator forever")
 
     worker._write_stat("INSTALLING", "x.pkg", "10", "")
     with open(worker.STATFILE) as f:
