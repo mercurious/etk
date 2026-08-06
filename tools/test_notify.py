@@ -199,6 +199,7 @@ check_true("install.sh rolls back if mako rejects the config",
 # New). Kept deliberately conservative — the failure is invisible on a host.
 LINE_RATIO = 1.55
 MIN_LINES = 3
+GEOM = {}
 for name, block in zip(re.findall(r'^\[app-name="(ETK[^"]*)"\]', install_src, re.M),
                        etk_blocks):
     def opt(key, default=None):
@@ -218,6 +219,24 @@ for name, block in zip(re.findall(r'^\[app-name="(ETK[^"]*)"\]', install_src, re
     check_true(f"[{name}] fits >= {MIN_LINES} lines "
                f"({usable}px usable vs {need:.0f}px needed)",
                usable >= need)
+    GEOM[name] = {"width": int(opt("width", "0")),
+                  "margin": opt("margin", "0"),
+                  "anchor": opt("anchor", "")}
+
+# The two surfaces are independent layer-surfaces at different anchors, so
+# sway composites them side by side and nothing prevents a collision. On the
+# rig this showed up as the centred toast running under the top-right card
+# and muddying its text. Assert they cannot overlap at their MAXIMUM widths.
+PANEL_W = 1920
+if {"ETK", "ETK Progress"} <= set(GEOM):
+    toast, card = GEOM["ETK"], GEOM["ETK Progress"]
+    toast_right = PANEL_W / 2 + toast["width"] / 2
+    card_margin_right = int(card["margin"].split(",")[1])
+    card_left = PANEL_W - card_margin_right - card["width"]
+    check_true(f"toast and progress card cannot overlap "
+               f"(toast ends {toast_right:.0f}px, card starts {card_left}px)",
+               toast_right <= card_left,
+               "measured on the 1920x1080 panel")
 
 # ==========================================================
 print("\n[MAKO] config surgery — real installer text, temp config")

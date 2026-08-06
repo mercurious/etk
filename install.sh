@@ -519,6 +519,14 @@ SHOTREADME
 # so they are set generously enough to wrap a long osguard sentence.
 # Regression guard: tools/test_notify.py asserts room for >= 3 lines.
 #
+# The WIDTHS are on-rig measurements, not guesses (validated 2026-08-06 on the
+# 1920x1080 panel). The two surfaces are separate layer-surfaces at different
+# anchors, so sway composites them independently and nothing stops them
+# colliding: at 900/620 the centred toast ran under the top-right card and
+# muddied its text. 720 + 560 leaves a clean gap at both surfaces' MAXIMUM
+# width, and 720 lands the toast at ~32 characters a line — ES's own card
+# budget. tools/test_notify.py now fails if the two can overlap.
+#
 # DO NOT ADD `max-visible` HERE. It is rejected inside an app-name criteria
 # (mako criteria.c:522-533, "allowed only for output and/or anchor"), and a
 # single bad option makes mako reject the WHOLE config: `makoctl reload`
@@ -552,7 +560,7 @@ cat >> "$MCFG.etk.tmp" <<'MK'
 
 [app-name="ETK"]
 anchor=top-center
-width=900
+width=720
 height=260
 font=monospace 26
 text-alignment=center
@@ -566,7 +574,7 @@ default-timeout=10000
 
 [app-name="ETK Progress"]
 anchor=top-right
-width=620
+width=560
 height=220
 font=monospace 22
 text-alignment=left
