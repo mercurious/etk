@@ -125,13 +125,39 @@ node builds; the Mac stages and relays; the rig never faces the internet.
   and once to a host memory overload. The same image built on etk-cloud unattended, first try.
   Free tier, $0 — the always-free A1 shape is 4 OCPU/24 GB. Native Linux docker also removes
   the whole **colima virtiofs** trap class (corrupted linuxdeploy vendoring) and the VM-in-VM tax.
-- **Three lanes are prepped there**, mirroring the Mac's warm containers:
+- **LANE STATUS (audited end-to-end 2026-08-05).** "Prepped" and "can actually build" turned out
+  to be different things. Five of six lanes now produce their artifact on etk-cloud, each verified
+  against the shipped one: chiaki + wl-mirror **byte-identical**; Turnip `.so` within 296 B of the
+  shipped driver (its own script documents that Mesa builds are not byte-reproducible across
+  hosts — don't split an A/B's arms across boxes); kernel 7.1.2 at the **exact** shipped image size
+  (60,246,528 B) with the same 237 modules, differing only in embedded toolchain strings
+  (cloud binutils 2.47 vs the laptop's 2.46.50 — still §7-cold-boot-gated, as BUILDING.md requires);
+  flashable image builds clean with every internal gate green. **RPCS3 AppImage packaging is the
+  one lane not yet exercised** — see below.
+- **THE REAL FINDING: four lanes could not be reproduced off the laptop at all.** The audit set out
+  to answer "does the cloud work" and instead found that the recipes for most of the kit lived
+  nowhere a second machine could reach them. Turnip's `build_rocknix.sh` — the authoritative
+  configure line behind every shipped driver — existed only *inside* the laptop's container, one
+  `docker rm` from gone. The kernel container's package set existed only inside its containers.
+  `build_gtk_image_v2.sh`, which bakes a **shipped release asset**, was covered by a blanket
+  `/os-install` gitignore and tracked in no repo. All three are now in git and installed by
+  provisioning scripts (`etk-turnip-gtk`, `rocknix-gtk`). **The RPCS3 build+package driver is the
+  fourth and is still uncaptured** — including the MARKER/VERIFY gate cited below, which is why
+  that lane stops here rather than being reconstructed by guesswork: the gate that would catch a
+  wrong AppImage is itself the missing piece.
+- **Four lanes are prepped there**, mirroring the Mac's warm containers:
   · **RPCS3** — `etk-rpcs3-jammy-aarch64:llvm22` (rebuilt natively; static LLVM 22.1.8 verified),
     source at `~/rpcs3`.
   · **Turnip** — `~/etk-turnip-gtk` + `turnip-rocknix` container.
   · **Kernel** — `~/rocknix-gtk` + `rocknix-gtk-kernel-sid` container, staging byte-parity with
     the Air (config, carved initramfs, firmware, DTS, patches), kernel tarball re-fetched and
     sha-verified.
+  · **Image** (added 2026-08-05) — `etk-imgtool` container (debian:sid) mirroring the Air's:
+    `~/etk`→`/etk`, `~/rocknix-gtk`→`/rocknix-gtk`, `~/etk/os-install`→`/work`. Base ROCKNIX
+    img.gz is fetched **on the node** from ROCKNIX/distribution releases (sha-verified) rather
+    than pushed up from the Air. Tooling beyond the base image: `parted mtools e2fsprogs
+    dosfstools fdisk gdisk rsync file gzip xz-utils squashfs-tools cpio` — the script is
+    unprivileged (mtools/mke2fs), so no loop devices or root are needed.
   · **wl-mirror** (added 2026-08-05) — no repo on the node at all: `build_wl_mirror.sh` pipes
     `lane_wl_mirror.sh` up over `ssh bash -s`, so the recipe that runs is the one in the etk
     working tree and there is no second copy to drift. (Recipe lives in etk, not a fork, because
