@@ -80,6 +80,21 @@ find "$ER/bin" "$ER/scripts" -type f \( -name '*.sh' -o -name '*.py' \) -exec ch
 if [ -n "$SEED_CONFIG" ]; then
   [ -d "$SEED_CONFIG" ] || die "SEED_CONFIG set but missing: $SEED_CONFIG"
   cp -a "$SEED_CONFIG" "$ER/.seed_config"
+  # The seed is a RENDERED snapshot of a past install, so any unit in it that
+  # install.sh normally templates is frozen at whatever the snapshot captured.
+  # etk-gtk-version.service was found baked at "0.7.0-20260706" — a hostless
+  # first boot would announce a version and a kernel date that are both years of
+  # releases stale, because the /flash hook installs the seed directly and never
+  # runs install.sh's sed. Re-render it here from the repo template using this
+  # image's OWN inputs, so the flashed card and the host install agree.
+  _GV=$(grep -m1 '^APP_VERSION' "$REPO/bin/etk_pitstop.py" | cut -d'"' -f2)
+  _GD=$(basename "$KERNEL" | grep -oE '[0-9]{8}' | head -1)
+  for _t in "$ER/.seed_config/system.d/etk-gtk-version.service"; do
+    [ -f "$_t" ] || continue
+    sed -e "s/@GTKVER@/${_GV:-dev}/" -e "s/@KDATE@/${_GD:-dev}/" \
+        "$REPO/config/etk-gtk-version.service" > "$_t"
+    echo "   re-rendered seed boot-identity: ROCKNIX-GTK ${_GV:-dev}-${_GD:-dev}"
+  done
   echo "   staged .seed_config: $(find "$ER/.seed_config" -type f | wc -l | tr -d ' ') files + $(find "$ER/.seed_config" -type l | wc -l | tr -d ' ') symlinks (hook installs on boot 2)"
 fi
 # GTK forks staged where install.sh binds them (outside .config → don't block resize)
