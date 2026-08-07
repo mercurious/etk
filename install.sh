@@ -1735,11 +1735,16 @@ KERNELREMOTE
         # prints "ROCKNIX-GTK <ver>-<date>" to the boot console right after the
         # stock show-version.service — via ETK's /storage/.config/system.d/
         # vector, enabled into basic.target. It self-gates on the live cmdline
-        # (silent on a stock-kernel boot). Date is derived from the Image name.
+        # (silent on a stock-kernel boot). Date is derived from the Image name;
+        # version comes from bin/etk_pitstop.py's APP_VERSION — the tag-aligned
+        # single source. It used to be a hardcoded "0.7.0" in the unit while only
+        # the date templated, so every boot from 0.7.0 on announced the wrong
+        # edition. Both fields are placeholders now; never hand-write either.
         GTK_KDATE=$(basename "$KERNEL_IMAGE" | grep -oE '[0-9]{8}' | head -1)
-        tui_log "Deploying GTK boot-identity line"
+        GTK_VER=$(grep -m1 '^APP_VERSION' ./bin/etk_pitstop.py | cut -d'"' -f2)
+        tui_log "Deploying GTK boot-identity line (${GTK_VER:-dev}-${GTK_KDATE:-dev})"
         scp -q ./config/etk-gtk-version.service "$RIG_SSH:/storage/.config/system.d/etk-gtk-version.service" 2>/dev/null
-        ssh $RIG_SSH "sed -i 's/@KDATE@/${GTK_KDATE:-dev}/' /storage/.config/system.d/etk-gtk-version.service 2>/dev/null; mkdir -p /storage/.config/system.d/basic.target.wants; ln -sf /storage/.config/system.d/etk-gtk-version.service /storage/.config/system.d/basic.target.wants/etk-gtk-version.service" 2>/dev/null
+        ssh $RIG_SSH "sed -i 's/@KDATE@/${GTK_KDATE:-dev}/; s/@GTKVER@/${GTK_VER:-dev}/' /storage/.config/system.d/etk-gtk-version.service 2>/dev/null; mkdir -p /storage/.config/system.d/basic.target.wants; ln -sf /storage/.config/system.d/etk-gtk-version.service /storage/.config/system.d/basic.target.wants/etk-gtk-version.service" 2>/dev/null
     else
         say "${Y}[ETK]${N} Custom kernel deploy FAILED: $(echo "$K_OUT" | grep -m1 KERNEL_FAIL || echo "$K_OUT" | tail -1)"
     fi

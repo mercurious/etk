@@ -4,8 +4,14 @@
 # os-release is read-only squashfs (branding it needs the image lane). This
 # oneshot ADDS a "ROCKNIX-GTK <ver>-<date>" line to the same boot console right
 # after show-version — no image rebuild. It self-gates on the live cmdline, so
-# it stays silent on a stock-kernel boot. @KDATE@ is sed'd to the deployed GTK
-# kernel's build date by install.sh; the same !morequiet guard as show-version.
+# it stays silent on a stock-kernel boot. BOTH fields are templated by install.sh:
+# @GTKVER@ from bin/etk_pitstop.py's APP_VERSION (the tag-aligned single source,
+# also load-bearing for self-update) and @KDATE@ from the deployed GTK kernel's
+# build date. Same !morequiet guard as show-version.
+#
+# @GTKVER@ exists because the version here was a HARDCODED "0.7.0" from the
+# release it was written in, while only the date updated — so every boot since
+# 0.7.0 announced the wrong edition. Never hand-write a version into this file.
 Description=Show ETK ROCKNIX-GTK Edition version at boot
 DefaultDependencies=false
 ConditionKernelCommandLine=!morequiet
@@ -13,7 +19,7 @@ After=show-version.service
 
 [Service]
 Type=oneshot
-ExecStart=/bin/sh -c 'grep -q KERNEL.gtktest /proc/cmdline && echo "ROCKNIX-GTK 0.7.0-@KDATE@" || true'
+ExecStart=/bin/sh -c 'grep -q KERNEL.gtktest /proc/cmdline && echo "ROCKNIX-GTK @GTKVER@-@KDATE@" || true'
 RemainAfterExit=yes
 StandardOutput=tty
 
