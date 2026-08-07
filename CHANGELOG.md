@@ -4,6 +4,81 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ## [Unreleased]
 
+## [0.8.4] - 2026-08-07 — Cloud Forge Edition
+
+**Every binary in this release was built on a machine that is not the maintainer's
+laptop.** Kernel, both Turnip drivers, the RPCS3 core, the Chiaki and wl-mirror
+helpers and the flashable SD image were all minted on a free Oracle Ampere A1
+node from recipes that now live in git — and each was verified against the
+artifact it replaces rather than against the build log. Getting there forced out
+a class of defect that had been invisible for releases: pins naming files that
+no longer existed, a source lineage that survived only inside one Docker volume,
+and rendered config snapshots frozen years behind the version they claimed.
+
+### Fixed
+- **Fresh installs were silently running the stock Vulkan driver.** `install.sh`
+  pinned `etk_turnip_rocknix_26.1.6_gtk_0.6.so`, which had been unpublished after
+  a shipped debug-flag bit collision was fixed in `gtk_0.7`. The pinned asset
+  404s, and the fetch is deliberately fail-soft, so every new install quietly fell
+  back to stock Turnip and lost the ETK gears. `config/gtk_stack.json` carried the
+  same stale pin, so the release gate's consistency check passed them both.
+- **The boot line announced the wrong edition.** The ETK boot-identity service
+  printed `ROCKNIX-GTK 0.7.0-<date>`: install.sh templated the date but the
+  version was a literal frozen at the release the unit was written in. It now
+  templates from `APP_VERSION`, the same string self-update compares against.
+- **A freshly flashed card announced a worse one.** The hostless seed payload
+  carried a *rendered* copy of that unit, baked at `0.7.0-20260706`, installed
+  directly by the `/flash` hook without ever running install.sh — so the fix
+  above could not reach an SD install. The image build now re-renders it from the
+  template using the version and kernel date it is actually baking.
+- **The image lane could not have run at all.** Its default inputs still named
+  the deleted `gtk_0.6` driver and a superseded kernel, so the build would have
+  died at its own input check; its label comment claimed the distributable used
+  standard partition labels, which reading the published image disproves
+  (`ROCKNIX-GTK` / `GTKSTOR`).
+
+### Added
+- **The release gate now asks whether a pinned artifact is real.** Every existing
+  check validated names and cross-file consistency — which is how two files could
+  agree with each other and both be wrong. `tools/release_sanity.sh` now probes
+  local existence as a hard failure and release reachability as an advisory one
+  (a cut legitimately precedes its own upload).
+- **`tune_tag` records the PPU/SPU decoders.** A decoder is a tune, and a
+  non-default one was invisible everywhere. A diagnostic left on static
+  interpreters made one title appear broken on every emulator core, survived
+  reboots and reinstalls, and cost a full session before `config_changes.tsv`
+  gave it up. Off-default decoders now ride in the ledger row.
+- **Crash logs survive the next launch.** RPCS3 truncates its log at every start,
+  so a crashed session's evidence lived only until the next one. The postmortem
+  now archives it beside the audio and perf logs, keyed to the ledger row.
+- **`etk_dyno.py --audio`** ranks titles by audio skip-per-second, with a
+  retroactive filter for SHM cross-contamination in pre-fix rows.
+
+### Changed
+- **RPCS3 GTK Edition 0.8.5** is the certified core, replacing 0.8.1. It carries
+  the full LLVM-22 toolchain gains and keeps GT5P Spec II bootable via a
+  `noinline` barrier on `spu_thread::stop_and_signal` — a cheaper mitigation than
+  the `optnone` it replaces, which de-optimised the whole function (1300
+  instructions and 243 out-of-line calls) on the SPU stop/signal hot path where
+  `noinline` leaves it fully optimised at 1549. See "known limitations".
+- **Kernel `20260801-0.3.1`** — same source as `-0.3`, rebuilt on the forge.
+- **Turnip `26.1.6_gtk_0.7` and `26.2.0-rc3_gtk_0.7`** reminted. New driver build
+  ids invalidate cached pipeline objects, so **the first launch after updating
+  recompiles shaders before the menu.** That is expected, not a hang.
+- **The RPCS3 0.8.x patch lineage is published** in `etk-rpcs3-gtk/patches/`.
+  It had never been committed anywhere; five revisions, including the shipped
+  core, existed only in a Docker volume on one machine.
+
+### Known limitations
+- **GT5P Spec II's fix is a mitigation, not a repair.** Five one-variable builds
+  isolated it: `optnone` on an inert function, and on two other SPURS-path
+  functions, all still crash identically; only `stop_and_signal` boots. Both
+  working fixes act by forcing a real call where `cpu_task` would otherwise
+  inline it, so the defect is an ordering problem at that inlining boundary —
+  which is why an AddressSanitizer campaign found nothing (ASan cannot see
+  ordering bugs). **It must be re-verified after any toolchain or base change.**
+- Ridge Racer 7 fails on both cores and both drivers; not a toolchain regression.
+
 ### Changed
 - **Installing a game no longer takes the app hostage.** A PS3 package or
   firmware install used to run inside a single Pitstop main-loop iteration:

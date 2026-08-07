@@ -9,7 +9,7 @@
     "matches \u2014 bin/osguard.sh activates the staged kernel ONLY when the live",
     "OS matches (stage now, activate when coherent; never boots a mismatch)."
   ],
-  "gtk_stack": "0.8.0",
+  "gtk_stack": "0.8.4",
   "kernel": {
     "asset": "KERNEL.rocknix-gtk-20260801-0.3.1",
     "sha256": "32eb9e96dded4936fd6d594c5684e8e745b8edd6b2654c5e576dfa31522291a9",
@@ -21,7 +21,7 @@
     "sha256": "8a16efa627e5c22fb155e16b4b8b7834cfef5b383c307f8cc23f668f7e3b8a14"
   },
   "rpcs3": {
-    "asset": "rpcs3-etk_gtk-edition-0.8.1_v0.0.41-19638-a1deb2921_linux_aarch64.AppImage",
-    "sha256": "60da2a6536fec60bc5568f92ae094d75a5e49cf7b3610ec767302bb9a3cf106b"
+    "asset": "rpcs3-etk_gtk-edition-0.8.5_v0.0.41-19638-a1deb2921_linux_aarch64.AppImage",
+    "sha256": "395177a6a7000621721c992ff902a1227a47c43bda417741ca06ba35628d40cc"
   }
 }

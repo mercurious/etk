@@ -2002,8 +2002,8 @@ rm -f "$TURNIP_OUT_FILE"
 # stock needs no backup: unmounting always recovers it. Reboot-gated by the
 # same doctrine as Turnip: a bind-mount can't hot-swap a binary a running
 # RPCS3 already has open.
-CERT_RPCS3="rpcs3-etk_gtk-edition-0.8.1_v0.0.41-19638-a1deb2921_linux_aarch64.AppImage"
-CERT_RPCS3_SHA="60da2a6536fec60bc5568f92ae094d75a5e49cf7b3610ec767302bb9a3cf106b"
+CERT_RPCS3="rpcs3-etk_gtk-edition-0.8.5_v0.0.41-19638-a1deb2921_linux_aarch64.AppImage"
+CERT_RPCS3_SHA="395177a6a7000621721c992ff902a1227a47c43bda417741ca06ba35628d40cc"
 RPCS3_RELEASE_BASE="https://github.com/mercurious/etk/releases/latest/download"
 ssh $RIG_SSH "mkdir -p /storage/rpcs3 /storage/.config/system.d/" 2>/dev/null
 # Pre-flight: the staging target lives on /storage — the small UFS SYSTEM
