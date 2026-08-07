@@ -18,7 +18,7 @@
   },
   "turnip": {
     "asset": "etk_turnip_rocknix_26.1.6_gtk_0.7.so",
-    "sha256": "55ce2d5401e590f5ee9dc44996335e6cd6f1f072ab3c6d7907fceb7437b59c4e"
+    "sha256": "8a16efa627e5c22fb155e16b4b8b7834cfef5b383c307f8cc23f668f7e3b8a14"
   },
   "rpcs3": {
     "asset": "rpcs3-etk_gtk-edition-0.8.1_v0.0.41-19638-a1deb2921_linux_aarch64.AppImage",

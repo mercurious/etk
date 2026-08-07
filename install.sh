@@ -1836,9 +1836,9 @@ CERTIFIED_BUILDS="etk_turnip_rocknix_26.1.6_gtk_0.7.so etk_turnip_rocknix_26.2.0
 DRIVER_RELEASE_BASE="https://github.com/mercurious/etk/releases/latest/download"
 # sha256 of each certified build — a fetched binary is verified against this.
 driver_sha() { case "$1" in
-    etk_turnip_rocknix_26.2.0-rc3_gtk_0.7.so) echo "1f500c0e84be87043c768c9fbc1bd2920443c21f4ce42738865094fe8763515c" ;;
+    etk_turnip_rocknix_26.2.0-rc3_gtk_0.7.so) echo "0041e22968e4c74157eae902138f0d158cf2089b196c4ee0821f1625f5b4a0ac" ;;
     etk_turnip_rocknix_26.2.0-rc3_gtk_0.6.so) echo "96a0dbf8113498ebb7828cdb214c0f444f9a88e8050ab9b78744bdeef8dc588c" ;;
-    etk_turnip_rocknix_26.1.6_gtk_0.7.so) echo "55ce2d5401e590f5ee9dc44996335e6cd6f1f072ab3c6d7907fceb7437b59c4e" ;;
+    etk_turnip_rocknix_26.1.6_gtk_0.7.so) echo "8a16efa627e5c22fb155e16b4b8b7834cfef5b383c307f8cc23f668f7e3b8a14" ;;
     etk_turnip_rocknix_26.1.6_gtk_0.6.so) echo "718bddbc04c70e430ee124e83e1e2e090eabc64a32287e7f86504a4fc78506e4" ;;
     etk_turnip_rocknix_26.1.3_gtk_0.4.so) echo "6b9c50bf993c10d32941177e7b15868714ef64da7a3bbf28022f8f2fb745045f" ;;
     etk_turnip_rocknix_26.1.3_gtk_0.2.so) echo "245212454bb1809816f52fa7c04209db2ef63cf1b5ddc7a69533636a0a4b7d19" ;;
