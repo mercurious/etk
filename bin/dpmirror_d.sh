@@ -37,6 +37,7 @@ export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}"
 
 WLM="${ETK_ROOT:-/storage/games-internal/roms/etk}/tools/wl-mirror"
 CONF="${ETK_ROOT:-/storage/games-internal/roms/etk}/etk.conf"
+NOTIFY="${ETK_ROOT:-/storage/games-internal/roms/etk}/bin/etk_notify.sh"
 DP_STATUS="/sys/class/drm/card0-DP-1/status"
 CAP_OUT="DP-1"     # capture source: game renders here natively
 VIEW_OUT="DSI-1"   # handheld: wl-mirror displays the DP-1 mirror here
@@ -89,6 +90,101 @@ _mirror_enabled() {
     [ "${v:-${ETK_DP_MIRROR:-1}}" = "1" ]
 }
 
+# read a live etk.conf knob with a default (same contract as _mirror_enabled)
+_knob() {  # $1=NAME $2=default
+    local v
+    v=$(sed -n "s/^[[:space:]]*$1=//p" "$CONF" 2>/dev/null | tail -1 | tr -d '"'"'"' \t')
+    printf '%s' "${v:-$2}"
+}
+
+# ==========================================================
+# DP AUDIO TAPS (2026-08-07 — dossier WlMirrorTeardown_20260807.md)
+# ==========================================================
+# In mirror mode ROCKNIX's own DP-audio path is dead BY DESIGN COLLISION: we
+# pkill output_monitor to keep the panel on, and its `wpctl set-profile
+# external` IS the entire stock DP-audio path (UCM HDMI-RP -> MultiMedia4 tap
+# + DP sink). This block tried the direct route — tap the game's own
+# speaker/headphone PCMs (MultiMedia1+2) into DISPLAY_PORT_RX for dual
+# output — and the 2026-08-07 validation KILLED it in every ordering
+# (dossier WlMirrorTeardown_20260807.md):
+#   * FE opened with speaker+DP backends together -> dpcm_run_update_startup
+#     -22 wedges the stream half-open and takes the GAME LAUNCH down with it
+#   * DP backend added to a live RUNNING FE -> ADSP refuses: "AFE enable for
+#     port 0x6020 failed", DSP error[9] at snd_soc_dai_prepare
+#   * only a DP-ONLY FE works (proven by aplay on MultiMedia3) — which is
+#     exactly the stock UCM HDMI-RP shape
+# DEFAULT OFF (ETK_DP_AUDIO=0). The mechanism stays behind the knob for
+# experiments only. The real fix is the stock shape: a dedicated DP stream
+# (profile switch / UCM device -> DP sink), with pw-loopback duplication if
+# handheld+capture simultaneous audio is wanted — next design pass.
+# DISARM ON UNPLUG FIRST regardless: tearing the link down with the audio
+# backend live logs kernel `msm_dp_bridge_atomic_post_disable: audio comp
+# timeout` (seen live).
+AUDIO_ARMED=0
+_audio_tap() {  # $1=on|off
+    local m
+    for m in MultiMedia1 MultiMedia2; do
+        amixer -D hw:0 cset "iface=MIXER,name=DISPLAY_PORT_RX Audio Mixer $m" "$1" >/dev/null 2>&1
+    done
+}
+_audio_arm() {
+    [ "$AUDIO_ARMED" = 1 ] && return
+    [ "$(_knob ETK_DP_AUDIO 0)" = "1" ] || return
+    _audio_tap on
+    AUDIO_ARMED=1
+    _log "DP audio taps armed (EXPERIMENTAL — known to break game launch; see dossier)"
+}
+_audio_disarm() {
+    # unconditional taps-off: also covers taps left armed by a prior daemon
+    _audio_tap off
+    [ "$AUDIO_ARMED" = 1 ] && _log "DP audio taps disarmed"
+    AUDIO_ARMED=0
+}
+
+# ==========================================================
+# PAD HEAL (2026-08-07 — dossier WlMirrorTeardown_20260807.md)
+# ==========================================================
+# The DP unplug's udev remove storm kills TWO layers while both stay
+# "active": InputPlumber's pipeline dies on a malformed remove (journal
+# tripwire: "Removed device had an empty id"), taking the virtual DualSense
+# from EVERYONE — ES, the game, input_d, INCLUDING THE R3 PANIC CHORD — and
+# ES's input loop wedges independently even after re-opening the new pad.
+# Proven recovery (no reboot): restart inputplumber, THEN essway.
+# ETK_DP_PADHEAL (live knob): 1 = heal when the tripwire fires (default),
+# force = heal on every unplug, 0 = off.
+# essway restart would kill a RUNNING game session (ES is its parent), so
+# with a game up we heal InputPlumber only and tell the operator.
+_pad_heal() {
+    local mode; mode=$(_knob ETK_DP_PADHEAL 1)
+    [ "$mode" = "0" ] && return
+    if [ "$mode" != "force" ]; then
+        # THE STORM LAGS THE SWAY EVENT (measured live 2026-08-07): our
+        # output-event reconcile fires at unplug+0s, but the malformed udev
+        # remove reaches InputPlumber ~1s later — a single-shot check RACES
+        # and misses (heal logged "presumed healthy" at :23.0; tripwire
+        # landed at :23.x; pad stayed dead). Poll a grace window instead,
+        # early-exit on hit.
+        local hit="" i=0
+        while [ "$i" -lt 10 ]; do
+            if journalctl -u inputplumber --since=-60s 2>/dev/null \
+                 | grep -q "Removed device had an empty id"; then hit=1; break; fi
+            sleep 1; i=$((i+1))
+        done
+        [ -n "$hit" ] || { _log "pad-heal: no InputPlumber tripwire within 10s of unplug — pad presumed healthy"; return; }
+    fi
+    _log "pad-heal: InputPlumber udev-storm wedge -> restarting inputplumber"
+    systemctl restart inputplumber 2>>"$LOG"
+    if pgrep -f "AppRun.wrappe[d]|rpcs3-s[a]" >/dev/null 2>&1; then
+        _log "pad-heal: game RUNNING — essway restart deferred (it would kill the session)"
+        "$NOTIFY" "PAD RECOVERED" "controls restored; if still dead, exit and relaunch the game" >/dev/null 2>&1 || true
+    else
+        sleep 2
+        systemctl restart essway 2>>"$LOG"
+        _log "pad-heal: essway restarted (ES input-loop wedge pairs with the InputPlumber one)"
+        "$NOTIFY" "PAD RECOVERED" "display unplug glitch healed — no reboot needed" >/dev/null 2>&1 || true
+    fi
+}
+
 # SIGKILL: instant, so wl-mirror can never linger and fall back onto DP-1.
 _stop_mirror() {
     [ -n "$MIRROR_PID" ] && kill -9 "$MIRROR_PID" 2>/dev/null
@@ -113,19 +209,27 @@ _start_mirror() {
     _log "mirror started pid=$MIRROR_PID backend=$BACKEND (capture $CAP_OUT -> view $VIEW_OUT)"
 }
 
+# DP_LAST tracks the connect state ACROSS reconciles so plug/unplug EDGES run
+# their actions exactly once (arm taps / disarm+heal), while the per-tick body
+# stays idempotent. The heal must never loop: it fires only on the 1->0 edge.
+DP_LAST=0
 _reconcile() {
     _mirror_alive || MIRROR_PID=""
-    if _dp_connected && _session_up; then
+    local dp_now=0; _dp_connected && dp_now=1
+    if [ "$dp_now" = 1 ] && _session_up; then
         if _mirror_enabled; then
             # CONDITIONAL ONLY — issuing `output ...` commands unconditionally here
             # generates output events that re-trigger this reconcile = a ~14/s
             # command storm that resets ES's menu and eats gamepad input. In
             # steady state (output_monitor already dead, DSI-1 already on, mirror
             # already running) this branch must issue ZERO sway commands.
+            # (_audio_arm is flag-gated: one amixer pair on the first tick, then
+            # zero commands — same steady-state law.)
             pgrep -f /usr/bin/output_monitor >/dev/null 2>&1 && pkill -f /usr/bin/output_monitor
             _out_active "$VIEW_OUT" || _sway output "$VIEW_OUT" enable
             # Bump capture output to 1080p once (correct HUD scale + quality).
             _dp_mode_ok || _sway output "$CAP_OUT" mode 1920x1080@60Hz
+            _audio_arm
             # SAFETY: mirror running but its display panel vanished -> kill it now
             # so it can't relocate onto DP-1 and feedback.
             if _mirror_alive && ! _out_active "$VIEW_OUT"; then
@@ -133,21 +237,37 @@ _reconcile() {
             fi
             _start_mirror
         else
-            _stop_mirror   # record-only: leave ROCKNIX TV-mode (game on DP-1, handheld off)
+            # record-only: leave ROCKNIX TV-mode (game on DP-1, handheld off).
+            # No taps either — output_monitor is alive here and the stock
+            # profile-switch path owns DP audio.
+            _audio_disarm
+            _stop_mirror
         fi
     else
-        # DP gone / no session: kill immediately. sway falls ws1 back to DSI-1.
-        _stop_mirror
+        # DP gone / no session: disarm audio FIRST (a live audio backend makes
+        # the bridge teardown time out), kill the mirror, then — on a true
+        # unplug edge only — run the pad heal.
+        if [ "$DP_LAST" = 1 ] && [ "$dp_now" = 0 ]; then
+            _audio_disarm
+            _stop_mirror
+            _pad_heal
+        else
+            _stop_mirror
+        fi
     fi
+    DP_LAST=$dp_now
 }
 
-trap '_stop_mirror; exit 0' TERM INT
+trap '_audio_disarm; _stop_mirror; exit 0' TERM INT
 
 # SHM_DIR is seeded by the Sentry at boot; ensure the log dir exists in case we
 # start first, so diagnostics aren't silently lost.
 mkdir -p "$(dirname "$LOG")" 2>/dev/null
 : > "$LOG" 2>/dev/null
 _log "dpmirror_d (Approach B) starting (event-driven)"
+# startup hygiene: if DP is unplugged, force taps off — covers taps left
+# armed by a daemon that died mid-session (AUDIO_ARMED state is not persisted)
+_dp_connected || _audio_tap off
 _reconcile
 
 while :; do

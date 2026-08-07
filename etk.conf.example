@@ -258,6 +258,23 @@ ETK_VERBOSE=0
 # NOTE: DP only links in the Type-C "normal" plug orientation (kernel AUX bug).
 ETK_DP_MIRROR=1
 
+# --- DP capture audio (mirror mode; read live by dpmirror_d) ---
+# EXPERIMENTAL — LEAVE OFF. The direct audio-tap approach breaks game launch
+# on this kernel (the ADSP cannot feed speaker and DP from one stream); a
+# proper DP-sink design is in progress. 0 = off (default) · 1 = experiments only
+ETK_DP_AUDIO=0
+
+# --- Gamepad self-heal on display unplug (read live by dpmirror_d) ---
+# Unplugging the capture cable can kill the controller system-wide (an OS
+# input-service fault; previously only a reboot recovered it). The kit now
+# detects the fault signature after an unplug and restarts the affected
+# services itself — you'll see a "PAD RECOVERED" notice. If a game is running
+# it heals what it safely can and tells you if a relaunch is needed.
+#   1 = heal when the fault is detected (default)
+#   force = heal on every unplug
+#   0 = off (manual recovery: restart inputplumber, then essway)
+ETK_DP_PADHEAL=1
+
 # --- Private Paddock (optional — personal cloud backup of YOUR vaults/saves/tunes) ---
 # To get private shader storage, add your GitHub token here BEFORE running
 # ./install.sh. The PADDOCK tab appears on the rig only when this is configured.
