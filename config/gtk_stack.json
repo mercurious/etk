@@ -1,18 +1,18 @@
 {
   "_comment": [
-    "GTK stack manifest — the certified fork-stack pins THIS repo tag ships.",
+    "GTK stack manifest \u2014 the certified fork-stack pins THIS repo tag ships.",
     "Consumed by Pitstop self-update (hostless full-stack update: assets are",
     "fetched from THIS tag's GitHub release and sha-verified before staging).",
     "install.sh keeps its own CERT pins for the host lane;",
     "tools/release_sanity.sh asserts the two stay in lockstep at every cut.",
     "kernel.requires_os: the ROCKNIX release whose module tree this kernel",
-    "matches — bin/osguard.sh activates the staged kernel ONLY when the live",
+    "matches \u2014 bin/osguard.sh activates the staged kernel ONLY when the live",
     "OS matches (stage now, activate when coherent; never boots a mismatch)."
   ],
   "gtk_stack": "0.8.0",
   "kernel": {
-    "asset": "KERNEL.rocknix-gtk-20260801-0.3",
-    "sha256": "0c0aa9d288e3426f365701e0f051b670c202f13548d3a137f1415ba55987eafe",
+    "asset": "KERNEL.rocknix-gtk-20260801-0.3.1",
+    "sha256": "32eb9e96dded4936fd6d594c5684e8e745b8edd6b2654c5e576dfa31522291a9",
     "kernel_release": "7.1.2",
     "requires_os": "20260801"
   },
