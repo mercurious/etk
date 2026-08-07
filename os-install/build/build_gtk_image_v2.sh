@@ -32,9 +32,19 @@ SEED_CONFIG="${SEED_CONFIG:-}"             # optional: stage $ETK_ROOT/.seed_con
 # feature name (…-p0hook.img) — feature names are cruft the end user must clean up at release.
 OUT_IMG="${OUT_IMG:-/work/ROCKNIX-GTK-SM8250.aarch64-20260801.img}"
 STORAGE_MIB="${STORAGE_MIB:-256}"          # small; fs-resize grows to full card
-# STANDARD labels = the distributable: single card => no split-brain, and
-# install.sh (STEP 6.4 hardcodes ROCKNIX/STORAGE) doesn't clobber it. Override
-# to unique labels ONLY to test alongside another ROCKNIX on the same box.
+# ⚠ THESE DEFAULTS ARE NOT WHAT SHIPS. Verified 2026-08-06 by decompressing the
+# published v0.8.3 image and reading the partition table directly (GPT; p1
+# 'system' FAT label, p2 'storage' ext4 superblock label):
+#     p1 = ROCKNIX-GTK        p2 = GTKSTOR
+# i.e. the distributable uses the UNIQUE labels, not these. The comment that
+# stood here claimed the opposite ("STANDARD labels = the distributable") and was
+# wrong for at least two releases — the same stale line TRACK_MANUAL §8 flags
+# with "do not trust this line; recover the labels by decompressing the image".
+# The shipped invocation is in FLASH_AND_TEST.md and overrides all four:
+#   HOOK_SCRIPT=/work/build/mount-storage.sh SEED_CONFIG=/work/build/seed_config \
+#   BOOT_LABEL=ROCKNIX-GTK STOR_LABEL=GTKSTOR OUT_IMG=...
+# Defaults stay STANDARD because they are the safe choice for a test card built
+# to sit beside an internal ROCKNIX — but never cut a release from them.
 BOOT_LABEL="${BOOT_LABEL:-ROCKNIX}"        # <=11 chars for FAT
 STOR_LABEL="${STOR_LABEL:-STORAGE}"
 FLIP2_DTB="/boot/grub/sm8250-retroidpocket-flip2.dtb"
