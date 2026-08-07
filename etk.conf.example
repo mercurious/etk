@@ -264,6 +264,13 @@ ETK_DP_MIRROR=1
 # proper DP-sink design is in progress. 0 = off (default) · 1 = experiments only
 ETK_DP_AUDIO=0
 
+# --- DP capture-audio format pin (install.sh STEP 6.75, ships ON) ---
+# Fixes quiet capture audio: the DP port's 24-bit path silently loses ~25 dB,
+# and PipeWire prefers it — this pins the capture sink to bit-honest 16-bit.
+# Inert during normal handheld use; only affects the HDMI/DP capture profile.
+# 1 = deploy the pin (default) · 0 = remove it (stock S24 behavior returns)
+ETK_DP_AUDIO_S16=1
+
 # --- Gamepad self-heal on display unplug (read live by dpmirror_d) ---
 # Unplugging the capture cable can kill the controller system-wide (an OS
 # input-service fault; previously only a reboot recovered it). The kit now

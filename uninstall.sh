@@ -189,6 +189,15 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
     rm -f /storage/.config/custom_scripts/01-etk-sentry.sh
     echo "    Removed: 01-etk-sentry.sh"
 
+    # DP capture-audio S16 pin (install.sh STEP 6.75): lives OUTSIDE $ETK_ROOT
+    # like the profile.d entries, so remove explicitly; bounce WirePlumber so
+    # the stock S24 negotiation returns immediately.
+    if [ -f /storage/.config/wireplumber/wireplumber.conf.d/50-etk-dp-audio-s16.conf ]; then
+        rm -f /storage/.config/wireplumber/wireplumber.conf.d/50-etk-dp-audio-s16.conf
+        systemctl restart wireplumber 2>/dev/null
+        echo "    Removed: WirePlumber DP-audio S16 pin"
+    fi
+
     # Stage III stability harness (v0.2.0): oneshot unit, coredump script,
     # profile.d env snippet. Restore the Rocknix stock core_pattern
     # (|/bin/false — cores discarded) so the rig leaves no ETK behavior behind.

@@ -2481,6 +2481,33 @@ DPMIRRORREMOTE
 say "${G}[ETK]${N} DP-mirror daemon deployed (etk-dpmirror.service — idle until a capture display links on DP-1)"
 
 # ==========================================================
+# STEP 6.75: DP CAPTURE-AUDIO FORMAT PIN (WirePlumber S16 rule)
+# ==========================================================
+# The DP port's S24_LE path drops ~25 dB (q6 DSP bit-alignment; convicted by
+# controlled A/B tones 2026-08-07, validated to clipping-roof with this pin —
+# dossiers/WlMirrorTeardown_20260807.md). PipeWire otherwise picks S24 and
+# capture audio arrives at "+1000% OBS gain" levels. The rule is inert during
+# normal speaker use (it matches only the HDMI/DP profile sink). WirePlumber
+# is bounced ONLY when the deployed file actually changes, so routine installs
+# never blip the rig's audio. Kill-switch ETK_DP_AUDIO_S16=0 removes it.
+ETK_DP_AUDIO_S16="${ETK_DP_AUDIO_S16:-1}"
+WP_CONF_RIG="/storage/.config/wireplumber/wireplumber.conf.d/50-etk-dp-audio-s16.conf"
+if [ "$ETK_DP_AUDIO_S16" = "1" ] && [ -f "./config/wireplumber-dp-s16.conf" ]; then
+    NEW_SUM=$(shasum "./config/wireplumber-dp-s16.conf" 2>/dev/null | cut -d' ' -f1)
+    OLD_SUM=$(ssh $RIG_SSH "sha1sum '$WP_CONF_RIG' 2>/dev/null | cut -d' ' -f1")
+    if [ "$NEW_SUM" != "$OLD_SUM" ]; then
+        ssh $RIG_SSH "mkdir -p /storage/.config/wireplumber/wireplumber.conf.d && cat > '$WP_CONF_RIG' && systemctl restart wireplumber 2>/dev/null" \
+            < "./config/wireplumber-dp-s16.conf"
+        say "${G}[ETK]${N} DP capture-audio S16 pin deployed (WirePlumber bounced)"
+    else
+        say "${G}[ETK]${N} DP capture-audio S16 pin already current"
+    fi
+else
+    ssh $RIG_SSH "[ -f '$WP_CONF_RIG' ] && { rm -f '$WP_CONF_RIG'; systemctl restart wireplumber 2>/dev/null; }" 2>/dev/null
+    [ "$ETK_DP_AUDIO_S16" != "1" ] && say "${G}[ETK]${N} DP capture-audio S16 pin removed (kill-switch)"
+fi
+
+# ==========================================================
 # STEP 6.8: STAGE III STABILITY HARNESS
 # Two rig-side primitives validated on-rig 2026-06-11 (see
 # dossiers/Stage3CustomRigDossier.md §T0):
