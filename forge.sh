@@ -305,7 +305,7 @@ fp_bank() {  # <lane> <staged-artifact-path>
 
 if [ "$DRY" = 1 ]; then
     tui_step_done 0
-    say "DRY RUN — would do:"
+    say "DRY RUN -- would do:"
     for L in $SEL_LANES; do
         if lane_fresh "$L"; then say "  $L: SKIP (fingerprint fresh)"
         else say "  $L: BUILD"; fi
@@ -365,7 +365,7 @@ lane_launch_or_attach() {  # <lane>  — sets ATTACH_DIR (node-relative rundir p
         fi
         if ! FSSH "test -f $adir/lane_$L.rc"; then
             # trap #6: a crash must not look like "still running"
-            say "$L: prior build DIED without an exit marker — relaunching"
+            say "$L: prior build DIED without an exit marker -- relaunching"
         fi
         FSSH "rm -f \$HOME/forge-runs/active_$L"
     fi
@@ -413,7 +413,11 @@ lane_poll() {  # <lane> <step_idx> [<extra probe cmd>] -> rc in LANE_RC
         fi
         [ -n "$pct" ] && tui_step_progress "$idx" "$pct" && forge_status "$L" WORK "$pct" "building on $FORGE_HOST"
         local line
-        line=$(printf '%s\n' "$tailtxt" | grep -vE '^\s*$' | tail -1 | cut -c1-70)
+        # ${var:0:N} slices CHARACTERS (locale-aware); cut -c slices BYTES and
+        # tears multibyte glyphs mid-sequence — a torn ellipsis/em-dash briefly
+        # garbles the datalog row until the next redraw (operator-caught).
+        line=$(printf '%s\n' "$tailtxt" | grep -vE '^\s*$' | tail -1)
+        line="${line:0:70}"
         [ -n "$line" ] && tui_log "$L: $line"
         # stall watch (informational — the rc marker stays authoritative)
         local now; now=$(date +%s)
@@ -447,7 +451,7 @@ stage_artifact() {  # <lane> <local-target-path> <node-sha> — .prev backup + s
     ( cd "$(dirname "$tgt")" && { command -v sha256sum >/dev/null 2>&1 \
         && sha256sum "$(basename "$tgt")" || shasum -a 256 "$(basename "$tgt")"; } \
         > "$(basename "$tgt").sha256" )
-    say "$L: staged $(basename "$tgt") sha=$(printf '%.12s' "$got")…"
+    say "$L: staged $(basename "$tgt") sha=${got:0:12}.."
     return 0
 }
 
@@ -470,7 +474,7 @@ if lane_selected rpcs3; then
             tui_rsync 1 90 98 "rpcs3 fetch" "$FORGE_HOST:etk/emulators/$FORGE_RPCS3_ARTIFACT" "emulators/$FORGE_RPCS3_ARTIFACT.forge-tmp"
             if stage_artifact rpcs3 "emulators/$FORGE_RPCS3_ARTIFACT" "$NSHA"; then
                 fp_bank rpcs3 "emulators/$FORGE_RPCS3_ARTIFACT"
-                forge_status rpcs3 DONE 100 "gates green; $(printf '%.12s' "$NSHA")…"
+                forge_status rpcs3 DONE 100 "gates green; ${NSHA:0:12}.."
                 tui_step_done 1
             fi
         else
@@ -530,8 +534,8 @@ if lane_selected kernel; then
             if stage_artifact kernel "$FORGE_KERNEL_ARTDIR/$KNAME" "$NSHA"; then
                 fp_bank kernel "$FORGE_KERNEL_ARTDIR/$KNAME"
                 DRIFT=$(grep -c '^[<>]' "$LOGDIR/lane_kernel.log" 2>/dev/null || echo '?')
-                forge_status kernel DONE 100 "config drift: $DRIFT lines (surfaced in log) — COLD-BOOT GATED"
-                say "kernel: REMINDER — candidate is unvalidated until the operator's cold boot"
+                forge_status kernel DONE 100 "config drift: $DRIFT lines (surfaced in log) -- COLD-BOOT GATED"
+                say "kernel: REMINDER -- candidate is unvalidated until the operator's cold boot"
                 tui_step_done 3
             fi
         else
@@ -554,9 +558,10 @@ run_stager() {  # <name> <script> [args]
         post=$(sha256_of "$bin")
         if [ "$pre" = "$post" ]; then
             git checkout -q -- "tools/rocknix-bin/$nm.buildinfo" 2>/dev/null
-            say "$nm: byte-identical rebuild — buildinfo churn reverted"
+            say "$nm: byte-identical rebuild -- buildinfo churn reverted"
         fi
-        forge_status "$nm" DONE 100 "$(tail -1 "$LOGDIR/lane_$nm.log" | cut -c1-60)"
+        _last=$(tail -1 "$LOGDIR/lane_$nm.log")
+        forge_status "$nm" DONE 100 "${_last:0:60}"
         return 0
     fi
     mark_fail "$nm" 50 "stager failed — see $LOGDIR/lane_$nm.log"
@@ -599,7 +604,7 @@ if lane_selected image; then
         if [ "$LANE_RC" = "0" ]; then
             tui_step_progress 5 88
             NSHA=$(FSSH "cut -d' ' -f1 \$HOME/etk/os-install/$IMGNAME.gz.sha256 2>/dev/null")
-            say "image: fetching $IMGNAME.gz (~1.6 GB — a few minutes)"
+            say "image: fetching $IMGNAME.gz (~1.6 GB -- a few minutes)"
             tui_rsync 5 88 98 "image fetch" "$FORGE_HOST:etk/os-install/$IMGNAME.gz" "os-install/$IMGNAME.gz.forge-tmp"
             if stage_artifact image "os-install/$IMGNAME.gz" "$NSHA"; then
                 fp_bank image "os-install/$IMGNAME.gz"
@@ -621,7 +626,7 @@ if bash tools/release_sanity.sh > "$LOGDIR/release_sanity.log" 2>&1; then
     SANITY=PASS
 else
     SANITY=FAIL
-    say "[FAIL] release_sanity — see $LOGDIR/release_sanity.log"
+    say "[FAIL] release_sanity -- see $LOGDIR/release_sanity.log"
 fi
 tui_step_progress 6 60
 
@@ -632,7 +637,7 @@ if lane_selected image && lane_selected kernel \
     if [ -n "$KREL" ] && grep -q "Linux version $KREL" "$LOGDIR/lane_image.log"; then
         say "cross-check: image bakes kernel $KREL ✓"
     elif [ -n "$KREL" ]; then
-        say "WARN: image's baked kernel string does not match $KREL — check lane logs"
+        say "WARN: image's baked kernel string does not match $KREL -- check lane logs"
     fi
 fi
 
