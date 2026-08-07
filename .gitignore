@@ -105,3 +105,10 @@ drivers/**/*.so
 drivers/**/*.zip
 drivers/android/
 /emulators/
+
+# Forge staging sidecars (forge.sh): sha manifests + .prev backups of replaced
+# artifacts. Local provenance only — the artifacts themselves are already
+# ignored above; these ride along with them.
+drivers/*.sha256
+drivers/*.prev
+*.forge-tmp
