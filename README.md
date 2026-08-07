@@ -186,8 +186,10 @@ etk/
 
 The companion repos: [chiaki-rocknix](https://github.com/mercurious/chiaki-rocknix)
 (Remote Play client), [etk-rpcs3-gtk](https://github.com/mercurious/etk-rpcs3-gtk),
-[etk-turnip-gtk](https://github.com/mercurious/etk-turnip-gtk) and
-[rocknix-gtk](https://github.com/mercurious/rocknix-gtk) — the tuned forks the
+[etk-turnip-gtk](https://github.com/mercurious/etk-turnip-gtk),
+[rocknix-gtk](https://github.com/mercurious/rocknix-gtk) and
+[wl-mirror-rocknix](https://github.com/mercurious/wl-mirror-rocknix) (screen
+mirror for DP capture; unpatched build mirror at a pinned ref) — the forks the
 kit deploys.
 
 ## ROCKNIX OS Updates — one bad boot, by design

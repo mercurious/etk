@@ -166,14 +166,15 @@ node builds; the Mac stages and relays; the rig never faces the internet.
     than pushed up from the Air. Tooling beyond the base image: `parted mtools e2fsprogs
     dosfstools fdisk gdisk rsync file gzip xz-utils squashfs-tools cpio` — the script is
     unprivileged (mtools/mke2fs), so no loop devices or root are needed.
-  · **wl-mirror** (added 2026-08-05) — no repo on the node at all: `build_wl_mirror.sh` pipes
-    `lane_wl_mirror.sh` up over `ssh bash -s`, so the recipe that runs is the one in the etk
-    working tree and there is no second copy to drift. (Recipe lives in etk, not a fork, because
-    upstream is somebody else's repo.) The old script cloned `--depth 1` master and wrote
-    whatever HEAD it landed on into `wl-mirror.commit` — that file **documented** drift and never
-    prevented it; `WLM_REF` now pins the commit and a bogus ref fails at fetch. Gained a
-    `wl-mirror.ldd` contract + rig check it never had. Cloud and Air byte-identical (sha256
-    `53de6e6f…`, 134,088 B).
+  · **wl-mirror** (fork model since 2026-08-07) — `mercurious/wl-mirror-rocknix`, the chiaki
+    pattern: an UNPATCHED build mirror of Ferdi265/wl-mirror whose `rocknix` branch parks docs +
+    the recipe (`scripts/build_wl_mirror.sh`) ABOVE the pinned build ref (`WLM_REF` 428b5079 —
+    the recipe fetches the pin into the container, so branch commits can't change the artifact).
+    Fork exists for source surfacing / GPL self-evidence / upstream-rewrite insurance / patch
+    landing zone; migration proven byte-identical (sha256 `53de6e6f…`, 134,088 B) with the rig
+    NEEDED check green. etk's `build_wl_mirror.sh` is the stager (`--ref <sha>`, `--local`);
+    `wl-mirror.commit` resolves on the fork. (History: recipe was piped from etk as
+    `lane_wl_mirror.sh` before the fork existed.)
   · **Chiaki** (added 2026-08-05) — `~/chiaki-rocknix`, stock `ubuntu:24.04` pinned by digest,
     no persistent container. Recipe lives in the FORK (`scripts/build_chiaki.sh`), so cloud and
     Air run the same file; `etk/tools/rocknix-bin/build_chiaki.sh` is now only a stager
