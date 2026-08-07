@@ -100,6 +100,17 @@ tui_should_activate() {
 tui_goto() { printf '\033[%d;%dH' "$1" "$2"; }
 tui_clear_eol() { printf '\033[K'; }
 
+# tui_rep <count> <glyph> — print glyph count times; SAFE AT ZERO.
+# The bar loops used `for i in $(seq 1 $n)`, but BSD/macOS seq COUNTS DOWN
+# when first > last: `seq 1 0` emits "1 0" — so every bar with zero cells to
+# draw painted extra glyphs and pushed the right border out (the "border bug
+# at 0%" visible on every install since the TUI was born; fixed 2026-08-07).
+# A while-loop, not tr: the glyphs are multibyte UTF-8 and tr maps bytes.
+tui_rep() {
+    local n="$1" g="$2" i=0
+    while [ "$i" -lt "$n" ]; do printf '%s' "$g"; i=$((i+1)); done
+}
+
 tui_draw_header() {
     local title="${TUI_HEADER_TITLE:-ETK INSTALL}"
     local rig="${RIG_SSH#root@}"
@@ -124,10 +135,9 @@ tui_draw_overall() {
     local empty=$(( width - filled ))
     tui_goto $TUI_ROW_OVERALL 1
     printf '  OVERALL    \033[36m'
-    local i
-    for i in $(seq 1 $filled); do printf '▓'; done
+    tui_rep "$filled" '▓'
     printf '\033[2m'
-    for i in $(seq 1 $empty); do printf '░'; done
+    tui_rep "$empty" '░'
     printf '\033[0m  \033[1;33m%3d%%\033[0m' "$pct"
     tui_clear_eol
 }
@@ -150,7 +160,7 @@ tui_draw_step() {
     case "$state" in
         PEND)
             printf '\033[2m'
-            for i in $(seq 1 $TUI_BAR_WIDTH); do printf '░'; done
+            tui_rep "$TUI_BAR_WIDTH" '░'
             printf '\033[0m'
             # 13 visible: 6 spaces + — + 6 spaces
             printf '      \033[2m—\033[0m      '
@@ -159,16 +169,16 @@ tui_draw_step() {
             local filled=$(( pct * TUI_BAR_WIDTH / 100 ))
             local empty=$(( TUI_BAR_WIDTH - filled ))
             printf '\033[36m'
-            for i in $(seq 1 $filled); do printf '█'; done
+            tui_rep "$filled" '█'
             printf '\033[2m'
-            for i in $(seq 1 $empty); do printf '░'; done
+            tui_rep "$empty" '░'
             printf '\033[0m'
             # 13 visible: 4 spaces + %3d (3 cols) + % (1) + 5 spaces
             printf '    \033[1;33m%3d%%\033[0m     ' "$pct"
             ;;
         DONE)
             printf '\033[32m'
-            for i in $(seq 1 $TUI_BAR_WIDTH); do printf '█'; done
+            tui_rep "$TUI_BAR_WIDTH" '█'
             printf '\033[0m'
             # 13 visible: 4 spaces + DONE (4) + 5 spaces
             printf '    \033[1;32mDONE\033[0m     '

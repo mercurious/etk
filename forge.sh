@@ -152,7 +152,7 @@ TUI_STEP_LABELS=(
 # is the build host, and TIER reads FORGE. Local shell vars only; nothing here
 # is exported or written back to etk.conf.
 RIG_SSH="$FORGE_HOST"
-ETK_BUILD_TYPE="FORGE"
+ETK_BUILD_TYPE="MINT"   # tui.sh's TIER field is 4 columns; "FORGE" overflowed it
 . ./tools/tui.sh 2>/dev/null || { echo "FATAL: tools/tui.sh missing"; exit 1; }
 if tui_should_activate; then tui_init; fi
 
