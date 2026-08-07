@@ -157,6 +157,52 @@ else
 fi
 
 echo
+# --------------------------------------------------------------------------
+# DOES THE PINNED ARTIFACT ACTUALLY EXIST?
+# --------------------------------------------------------------------------
+# Every check above validates NAMES and cross-file CONSISTENCY. None of them
+# asked whether the thing being pinned is real. That blind spot shipped three
+# separate defects, all found the same night (2026-08-06):
+#   1. install.sh CERTIFIED_BUILDS pinned etk_turnip_rocknix_26.1.6_gtk_0.6.so,
+#      which 404s on releases/latest — every fresh install silently fail-softed
+#      to stock Turnip. gtk_stack.json agreed with install.sh, so the existing
+#      lockstep check passed them both.
+#   2. build_gtk_image_v2.sh defaulted TURNIP_SO to that same deleted gtk_0.6,
+#      so the image lane would have died at its own input check.
+#   3. …and defaulted KERNEL to -0.3 after the forge moved to etk-cloud.
+# Local existence is a HARD failure. The network probe is advisory: a release
+# is often cut before its assets are uploaded, and the gate must work offline.
+echo "-- pinned artifacts exist --"
+_probe_local() {  # $1=label  $2=path (may be a container path we remap)
+    _p="$2"
+    case "$_p" in
+        /etk/*)         _p="$REPO_ROOT/${_p#/etk/}" ;;
+        /rocknix-gtk/*) _p="$HOME/rocknix-gtk/${_p#/rocknix-gtk/}" ;;
+    esac
+    if [ -f "$_p" ]; then ok "$1: $(basename "$_p")"
+    else bad "$1: MISSING on disk — $_p"; fi
+}
+if [ -f "$REPO_ROOT/os-install/build/build_gtk_image_v2.sh" ]; then
+    for v in KERNEL APPIMAGE TURNIP_SO; do
+        _d=$(sed -n "s/^$v=\"\${$v:-\(.*\)}\"$/\1/p" "$REPO_ROOT/os-install/build/build_gtk_image_v2.sh" | head -1)
+        [ -n "$_d" ] && _probe_local "image lane $v default" "$_d"
+    done
+fi
+for cb in $(sed -n 's/^CERTIFIED_BUILDS="\(.*\)"$/\1/p' "$REPO_ROOT/install.sh" | head -1); do
+    _probe_local "install.sh CERTIFIED_BUILDS" "/etk/drivers/$cb"
+done
+_CERT=$(sed -n 's/^CERT_RPCS3="\(.*\)"$/\1/p' "$REPO_ROOT/install.sh" | head -1)
+if [ -n "$_CERT" ] && command -v curl >/dev/null 2>&1; then
+    _code=$(curl -s -o /dev/null -m 20 -w '%{http_code}' -L \
+        "https://github.com/mercurious/etk/releases/latest/download/$_CERT" 2>/dev/null || echo 000)
+    case "$_code" in
+        200) ok "CERT_RPCS3 resolves on releases/latest (HTTP 200)" ;;
+        000) skip "CERT_RPCS3 reachability: no network" ;;
+        *)   skip "CERT_RPCS3 returns HTTP $_code on releases/latest — expected until this cut publishes" ;;
+    esac
+fi
+
+echo
 if [ "$FAIL" = 0 ]; then
     printf "${c_ok}== release sanity: PASS ==${c_off}\n"
 else
