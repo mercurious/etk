@@ -17,8 +17,8 @@
     "requires_os": "20260801"
   },
   "turnip": {
-    "asset": "etk_turnip_rocknix_26.1.6_gtk_0.6.so",
-    "sha256": "718bddbc04c70e430ee124e83e1e2e090eabc64a32287e7f86504a4fc78506e4"
+    "asset": "etk_turnip_rocknix_26.1.6_gtk_0.7.so",
+    "sha256": "55ce2d5401e590f5ee9dc44996335e6cd6f1f072ab3c6d7907fceb7437b59c4e"
   },
   "rpcs3": {
     "asset": "rpcs3-etk_gtk-edition-0.8.1_v0.0.41-19638-a1deb2921_linux_aarch64.AppImage",
