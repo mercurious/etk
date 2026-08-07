@@ -203,6 +203,38 @@ if [ -n "$_CERT" ] && command -v curl >/dev/null 2>&1; then
 fi
 
 echo
+# --------------------------------------------------------------------------
+# POWERSHELL PORT LOCKSTEP (added 2026-08-07)
+# --------------------------------------------------------------------------
+# The Windows port pulls rig-side heredocs from install.sh at runtime, so its
+# LOGIC cannot drift — but its host-side cert pins are PS-native literals and
+# drifted TWO releases (0.7.5) before anyone noticed: a fresh Windows install
+# 404'd on releases/latest and silently fail-softed to stock. The port is NOT
+# retiring (operator-affirmed 2026-08-07); it must ship the same stack.
+echo "-- PowerShell port pin lockstep --"
+PS1_FILE="$REPO_ROOT/windows_installer/etk-install.ps1"
+if [ -f "$PS1_FILE" ] && [ -f "$REPO_ROOT/install.sh" ]; then
+    I_RP=$(sed -n 's/^CERT_RPCS3="\(.*\)"$/\1/p' "$REPO_ROOT/install.sh" | head -1)
+    I_RPSHA=$(sed -n 's/^CERT_RPCS3_SHA="\(.*\)"$/\1/p' "$REPO_ROOT/install.sh" | head -1)
+    P_RP=$(sed -n 's/^\$certRpcs3[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$PS1_FILE" | head -1)
+    P_RPSHA=$(sed -n 's/^\$certRpcs3Sha[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$PS1_FILE" | head -1)
+    if [ -n "$P_RP" ] && [ "$P_RP" = "$I_RP" ] && [ "$P_RPSHA" = "$I_RPSHA" ]; then
+        ok "PS port CERT_RPCS3 pin matches install.sh"
+    else
+        bad "PS port CERT_RPCS3 pin DRIFTED (ps1: ${P_RP:-none} vs install.sh: $I_RP)"
+    fi
+    I_TN=$(sed -n 's/^CERTIFIED_BUILDS="\(.*\)"$/\1/p' "$REPO_ROOT/install.sh" | head -1 | tr ' ' '\n' | sort)
+    P_TN=$(sed -n 's/.*Name[[:space:]]*=[[:space:]]*"\(etk_turnip[^"]*\)".*/\1/p' "$PS1_FILE" | sort)
+    if [ -n "$P_TN" ] && [ "$I_TN" = "$P_TN" ]; then
+        ok "PS port Turnip catalog matches install.sh CERTIFIED_BUILDS"
+    else
+        bad "PS port Turnip catalog DRIFTED (ps1: $(echo $P_TN) vs install.sh: $(echo $I_TN))"
+    fi
+else
+    skip "windows_installer/etk-install.ps1 not found"
+fi
+
+echo
 if [ "$FAIL" = 0 ]; then
     printf "${c_ok}== release sanity: PASS ==${c_off}\n"
 else

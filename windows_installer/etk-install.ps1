@@ -180,6 +180,7 @@ $etkConf = @(
     "DEFAULT_MODE=`"$DefaultMode`"",
     "ETK_HUD_MODE=`"$EtkHudMode`"",
     "ETK_DP_MIRROR=`"$EtkDpMirror`"",
+    "ETK_DP_AUDIO_S16=`"$EtkDpAudioS16`"",
     "HUD_HEADER_HOLD_S=`"$HudHeaderHold`""
 ) -join "`n"
 Send-Text -Content ($etkConf + "`n") -RemotePath "$EtkRoot/etk.conf"
@@ -291,8 +292,10 @@ Write-Step 6 $TOTAL "STEP 6.5: CUSTOM TURNIP DRIVER CATALOG..."
 # in the field 2026-07-11: this script still pinned gtk_0.2 while the v0.7.0
 # release ships gtk_0.4 and the rig's etk.conf already selected 0.4).
 $certified = @(
-    @{ Name = "etk_turnip_rocknix_26.1.3_gtk_0.4.so"
-       Sha  = "6b9c50bf993c10d32941177e7b15868714ef64da7a3bbf28022f8f2fb745045f" }
+    @{ Name = "etk_turnip_rocknix_26.1.6_gtk_0.7.so"
+       Sha  = "8a16efa627e5c22fb155e16b4b8b7834cfef5b383c307f8cc23f668f7e3b8a14" }
+    @{ Name = "etk_turnip_rocknix_26.2.0-rc3_gtk_0.7.so"
+       Sha  = "0041e22968e4c74157eae902138f0d158cf2089b196c4ee0821f1625f5b4a0ac" }
 )
 $driverBase = "https://github.com/mercurious/etk/releases/latest/download"
 $turnipKeep = @("stock")
@@ -366,8 +369,8 @@ else {
 # overwritten. RPCS3REMOTE body verbatim.
 # ==========================================================
 Write-Step 6 $TOTAL "STEP 6.55: RPCS3 GTK EDITION (default emulator)..."
-$certRpcs3    = "rpcs3-etk_gtk-edition-0.7.5_v0.0.41-19544-60c9705a_linux_aarch64.AppImage"  # lockstep with install.sh CERT_RPCS3
-$certRpcs3Sha = "c464771932da20064f0942fc61f22df9d6e67bc52893f319d5d02cde1eaae02d"
+$certRpcs3    = "rpcs3-etk_gtk-edition-0.8.5_v0.0.41-19638-a1deb2921_linux_aarch64.AppImage"  # lockstep with install.sh CERT_RPCS3
+$certRpcs3Sha = "395177a6a7000621721c992ff902a1227a47c43bda417741ca06ba35628d40cc"
 $rpcs3StageSrc = $null
 if ($Rpcs3AppImage -eq "stock") {
     Write-Note "RPCS3: stock ROCKNIX build selected (etk-env.ps1 opt-out)."
@@ -467,6 +470,27 @@ Write-Ok "Panic Black Box read-side deployed (write-side stays operator-armed)."
 $dpBody = Get-Heredoc -Path $InstallSh -Marker "DPMIRRORREMOTE"
 Invoke-RigBash -Script $dpBody | Out-Null
 Write-Ok "DP-mirror daemon deployed (idle until an external DisplayPort links)."
+
+# --- STEP 6.75: DP CAPTURE-AUDIO FORMAT PIN  (install.sh Step 6.75) -----
+# WirePlumber rule pinning the HDMI/DP capture sink to S16LE — the DP port's
+# S24 path loses ~25 dB (see config/wireplumber-dp-s16.conf for the record).
+# Deploy-on-change so routine installs never blip the rig's audio.
+$wpConfLocal = Join-Path $RepoRoot "config\wireplumber-dp-s16.conf"
+$wpConfRig   = "/storage/.config/wireplumber/wireplumber.conf.d/50-etk-dp-audio-s16.conf"
+if (($EtkDpAudioS16 -ne "0") -and (Test-Path -LiteralPath $wpConfLocal)) {
+    $newConf = (Get-Content -LiteralPath $wpConfLocal -Raw)
+    $oldConf = (Invoke-Rig "cat '$wpConfRig' 2>/dev/null") -join "`n"
+    if ($oldConf.Trim() -ne $newConf.Trim()) {
+        Invoke-Rig "mkdir -p /storage/.config/wireplumber/wireplumber.conf.d" | Out-Null
+        Send-Text -Content $newConf -RemotePath $wpConfRig
+        Invoke-Rig "systemctl restart wireplumber 2>/dev/null" | Out-Null
+        Write-Ok "DP capture-audio S16 pin deployed (WirePlumber bounced)."
+    } else {
+        Write-Ok "DP capture-audio S16 pin already current."
+    }
+} else {
+    Invoke-Rig "[ -f '$wpConfRig' ] && { rm -f '$wpConfRig'; systemctl restart wireplumber 2>/dev/null; } || true" | Out-Null
+}
 
 # ==========================================================
 # STEP 7: STAGE III STABILITY HARNESS  (install.sh Step 7)
