@@ -270,6 +270,23 @@ PADDOCK_TOKEN=""
 # Optional override; default is <token-owner>/etk-paddock
 PADDOCK_REPO=""
 
+# --- ETK FORGE (./forge.sh — mint the kit's binaries on etk-cloud) ---
+# The Engineer's counterpart to install.sh: builds every release artifact on
+# the etk-cloud node (or colima with --local), gates it, and STAGES it into
+# this tree for testing — it never touches the rig and never publishes.
+# All knobs optional; defaults reproduce the current staged artifact names.
+# Uncomment to override per release cycle:
+#   FORGE_HOST="etk-cloud"            # ~/.ssh/config alias (IP is EPHEMERAL —
+#                                     # re-read from the Oracle console on stop/start)
+#   FORGE_RPCS3_BASE="a1deb2921"      # upstream base commit the patch applies to
+#   FORGE_RPCS3_PATCH=""              # empty = newest patches/*-dev.patch in the fork
+#   FORGE_RPCS3_ARTIFACT="rpcs3-etk_gtk-edition-0.8.5_v0.0.41-19638-a1deb2921_linux_aarch64.AppImage"
+#   FORGE_TURNIP_VERS="26.1.6 26.2.0-rc3"   # one driver build per version listed
+#   FORGE_TURNIP_GTKVER="0.7"         # fork generation in the staged filename
+#   FORGE_KERNEL_DATE="20260801"      # 8-digit date segment of the kernel name
+#   FORGE_KERNEL_VER="0.3.1"          # digits-and-dots only (law #8, gated)
+#   FORGE_IMAGE_BASEDATE="20260801"   # base ROCKNIX release the image builds on
+
 # --- Bog Profiler (R1+DPAD-Down mid-race; bin/bog_profile.sh) ---
 # Seconds sampled per chord press. 30 = the default deep sample; 15 fits a
 # single track SECTION for lap-mapping stints (e.g. Eiger lock-vs-slush:
