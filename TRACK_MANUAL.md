@@ -153,6 +153,31 @@ node builds; the Mac stages and relays; the rig never faces the internet.
   that re-resolves the bundled libs with system ffmpeg hidden (the rig condition) → a named,
   sized, sha256'd artifact. Recover it from the operator's session or rebuild it from that log
   before the log is rotated away.
+- **aPS3e (Android APK) — added 2026-08-07, and the Mac's Android toolchain is RETIRED with it.**
+  Container `aps3e-ndk`, lane root `~/aps3e-lane` (SDK on the HOST, bind-mounted, so `docker rm`
+  costs a re-provision and not the toolchain). Recipe lives in the FORK per the chiaki doctrine:
+  `scripts/provision_android_toolchain.sh` + `scripts/build_android.sh` on branch `cloud-forge`
+  of mercurious/aps3e; full detail in that repo's `BUILDING.md` and `CLAUDE.md`.
+  **Google ships NO aarch64 Linux NDK** (host tags linux-x86_64 / darwin-x86_64 / windows-x86_64
+  only — and the darwin package is a fat binary with native arm64 slices, so the Air was never
+  emulating; the move was for RAM and unattended runtime). Three pieces come from outside the SDK,
+  each sha256-pinned: NDK **r27d 27.3.13750724** (HomuHomu833/android-ndk-custom — host tag dir is
+  `linux-arm64`, NOT linux-aarch64, plus a linux-x86_64 compat symlink), native aarch64 **aapt2**
+  (AGP's Maven aapt2 is x86_64-only → `exec format error`), and **CMake 3.22.1** aarch64 from
+  Kitware. It is a **custom LLVM build**, so codegen is not Google's — same caveat class as Turnip,
+  and safe ONLY because there is now exactly one builder. Full build ~1 h (1 h 05 m contended);
+  warm incremental ~40 s. **`/Volumes/Extreme SSD/aps3e-build.sparseimage` is retired — do not
+  build there**: a plain non-git tree that worked only because `app/build.gradle` and a vendored
+  `abseil-cpp` had been hand-copied in, so its output maps to no commit, and using it puts a second
+  compiler back in the fleet. Porting exposed four latent defects invisible on macOS/Windows and
+  fatal on Linux (untracked build.gradle; abseil vendored on one branch of eleven; `Loader/ISO.h`
+  case break in both the vendored code and the fork's own glue). **Trap:** ETK work is spread over
+  several branches with no canonical integration branch — a build off the wrong tip passes every
+  gate and still ships wrong (2026-08-07: shipped without the #11912 flicker fix; caught only by
+  the operator at the Daytona start line). Check with `git cherry HEAD origin/<branch>` before
+  building; `--marker` catches native patches only, never Java-side ones. No `forge.sh` lane —
+  deliberately: the standalone script covers the capability, forge would add sequencing only, and
+  aPS3e is marked for retirement. Pathway documented in the fork's `BUILDING.md`.
 - **Four lanes are prepped there**, mirroring the Mac's warm containers:
   · **RPCS3** — `etk-rpcs3-jammy-aarch64:llvm22` (rebuilt natively; static LLVM 22.1.8 verified),
     source at `~/rpcs3`.
@@ -232,7 +257,7 @@ cardless Windows installer — remain **ON HOLD**. **Upstream lane:** #11912 psl
 
 ## 10. QUICK REFERENCE
 
-- **Build hosts:** the Air (colima, all rig contact) · **etk-cloud** = Oracle A1 aarch64, 4c/23 GB, `ssh -i ~/.ssh/etk_rig ubuntu@<IP>` (ephemeral IP — re-read from console; `Host etk-cloud` alias in `~/.ssh/config`), lanes for RPCS3 / Turnip / kernel / chiaki / wl-mirror — see §8.5. - **Repos:** `origin`=github.com/mercurious/etk · sisters: rocknix-gtk / etk-turnip-gtk / etk-rpcs3-gtk · aPS3e fork: mercurious/aps3e · `garage`=private, never to origin · `dossiers/`=private clone, gitignored, citations expected to dangle in public checkouts. - **Rig paths:** `ETK_ROOT=/storage/games-internal/roms/etk` · vault symlink `/storage/.cache/mesa_shader_cache` · RPCS3 configs `/storage/roms/bios/rpcs3/custom_configs/config_<ID>.yml` · saves `.../dev_hdd0/home/00000001/savedata/` · live process = `AppRun.wrapped` (never trust `pgrep -x`; gate on live_stat freshness or cmdline-walk `/proc`). - **Host dirs:** `state/` = Tier-B rig mirror (ledger, configs, saves, screenshots, drained forensics) · `vault/` = host shader vault + `os_profiles/` · `manual_forensics/` = wedge capture sets · build trees at `~/rocknix-gtk`, `~/rpcs3-linux-build`, colima containers. - **Golden diagnostics:** `journalctl -u etk.service` (Sentry) · `dmesg | grep -E 'a6xx|hangcheck|context_keepalive'` (wedges/rescues) · `tail sessions.tsv` (but a wedged row is written BY R3/postmortem — don't look before recovery) · `/proc/PID/environ` (dial ground truth) · `stat -c %s /usr/lib/libvulkan_freedreno.so` (live driver — vulkaninfo lies). - **BusyBox laws:** POSIX only — no `--long-options`, `grep -P`, `find -printf`, `du -h`, `stat --format`; `cp -rn` is a silent no-op AND `tar -xkf` ABORTS at the first existing file rather than skipping it (both cost a live data-loss bug; for a content-addressed merge use plain `tar -xf` and verify the count); awk for float math; foot has `-F` not `-f`.
+- **Build hosts:** the Air (colima, all rig contact) · **etk-cloud** = Oracle A1 aarch64, 4c/23 GB, `ssh -i ~/.ssh/etk_rig ubuntu@<IP>` (ephemeral IP — re-read from console; `Host etk-cloud` alias in `~/.ssh/config`), lanes for RPCS3 / Turnip / kernel / chiaki / wl-mirror / **aPS3e APK** — see §8.5. The Mac's local Android toolchain (`aps3e-build.sparseimage`) is RETIRED as of 2026-08-07 — building there reintroduces a second compiler and the A/B split. - **Repos:** `origin`=github.com/mercurious/etk · sisters: rocknix-gtk / etk-turnip-gtk / etk-rpcs3-gtk · aPS3e fork: mercurious/aps3e · `garage`=private, never to origin · `dossiers/`=private clone, gitignored, citations expected to dangle in public checkouts. - **Rig paths:** `ETK_ROOT=/storage/games-internal/roms/etk` · vault symlink `/storage/.cache/mesa_shader_cache` · RPCS3 configs `/storage/roms/bios/rpcs3/custom_configs/config_<ID>.yml` · saves `.../dev_hdd0/home/00000001/savedata/` · live process = `AppRun.wrapped` (never trust `pgrep -x`; gate on live_stat freshness or cmdline-walk `/proc`). - **Host dirs:** `state/` = Tier-B rig mirror (ledger, configs, saves, screenshots, drained forensics) · `vault/` = host shader vault + `os_profiles/` · `manual_forensics/` = wedge capture sets · build trees at `~/rocknix-gtk`, `~/rpcs3-linux-build`, colima containers. - **Golden diagnostics:** `journalctl -u etk.service` (Sentry) · `dmesg | grep -E 'a6xx|hangcheck|context_keepalive'` (wedges/rescues) · `tail sessions.tsv` (but a wedged row is written BY R3/postmortem — don't look before recovery) · `/proc/PID/environ` (dial ground truth) · `stat -c %s /usr/lib/libvulkan_freedreno.so` (live driver — vulkaninfo lies). - **BusyBox laws:** POSIX only — no `--long-options`, `grep -P`, `find -printf`, `du -h`, `stat --format`; `cp -rn` is a silent no-op AND `tar -xkf` ABORTS at the first existing file rather than skipping it (both cost a live data-loss bug; for a content-addressed merge use plain `tar -xf` and verify the count); awk for float math; foot has `-F` not `-f`.
 
 ---
 
