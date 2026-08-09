@@ -2457,6 +2457,13 @@ rm -f "$BB_OUT_FILE"
 # a DP sink links — and DP only links in the Type-C "normal" orientation (kernel
 # AUX/SBU bug; reverse = no link = no mirror, see project_rocknix_usb_dp_videoout).
 # Toggle with ETK_DP_MIRROR in etk.conf (default on). Long-running; Restart=always.
+# 2026-08-08: the toggle is now real — the comment above promised it but the
+# step deployed unconditionally, so =0 could never take the daemon down and a
+# volatile systemctl stop died at every reboot (found live during the -0.4.x
+# kernel boot arms, where the daemon's pad-heal contaminates plug tests).
+# Kill-switch shape mirrors STEP 6.75.
+ETK_DP_MIRROR="${ETK_DP_MIRROR:-1}"
+if [ "$ETK_DP_MIRROR" = "1" ]; then
 ssh $RIG_SSH "sh -s" > /dev/null 2>&1 <<'DPMIRRORREMOTE'
     mkdir -p /storage/.config/system.d/
 cat << 'SVC' > /storage/.config/system.d/etk-dpmirror.service
@@ -2479,6 +2486,10 @@ SVC
     systemctl is-active --quiet etk-dpmirror.service && echo "DPMIRROR_OK" || echo "DPMIRROR_FAIL"
 DPMIRRORREMOTE
 say "${G}[ETK]${N} DP-mirror daemon deployed (etk-dpmirror.service — idle until a capture display links on DP-1)"
+else
+    ssh $RIG_SSH "systemctl disable --now etk-dpmirror.service >/dev/null 2>&1; rm -f /storage/.config/system.d/etk-dpmirror.service; systemctl daemon-reload" 2>/dev/null
+    say "${G}[ETK]${N} DP-mirror daemon removed (kill-switch ETK_DP_MIRROR=0 — persists across boots)"
+fi
 
 # ==========================================================
 # STEP 6.75: DP CAPTURE-AUDIO FORMAT PIN (WirePlumber S16 rule)
