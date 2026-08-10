@@ -28,6 +28,31 @@ B="$HOME/etk/os-install/ROCKNIX-SM8250.aarch64-$BASEDATE.img.gz"
 for f in "$K" "$A" "$T" "$B"; do
     [ -f "$f" ] || { log "FATAL: missing input $f (stage it — gitignored payloads do not git-pull)"; exit 1; }
 done
+
+# EXISTING IS NOT THE SAME AS CORRECT. This lane used to check only that each
+# input was present, which is how it nearly baked the wrong Vulkan driver on
+# 2026-08-10: the node held a re-minted etk_turnip_rocknix_26.1.6_gtk_0.7.so
+# (a83c2306, 17,136,464 B) while the release had decided to ship the PUBLISHED
+# build of that same name (8a16efa6, 17,136,072 B). Identical filename,
+# different bytes, and a card would have gone out with an uncertified driver
+# inside it. The kernel is the same hazard with sharper teeth — -0.3.1 and
+# -0.4.1 are byte-for-byte the same SIZE, so nothing but a hash separates them.
+# The node is a second machine with its own copies; it drifts. Verify.
+_verify() {  # <label> <path> <expected-sha or empty>
+    [ -n "$3" ] || { log "WARN: no pinned sha for $1 — cannot verify $2"; return 0; }
+    _got=$(sha256sum "$2" | cut -d' ' -f1)
+    [ "$_got" = "$3" ] && { log "verified $1: ${_got%"${_got#????????}"}… matches the manifest"; return 0; }
+    log "FATAL: $1 on this node is NOT the artifact the release pins."
+    log "       node   $_got  ($(stat -c%s "$2") B)  $2"
+    log "       pinned $3"
+    log "       config/gtk_stack.json is the authority. Copy the pinned build up"
+    log "       (scp from the staging host) and re-run — do NOT bake this."
+    exit 1
+}
+_verify kernel "$K" "${KSHA:-}"
+_verify rpcs3  "$A" "${ASHA:-}"
+_verify turnip "$T" "${TSHA:-}"
+
 log "inputs: $KNAME / $ANAME / $TNAME / base-$BASEDATE"
 
 docker exec etk-imgtool bash -lc "

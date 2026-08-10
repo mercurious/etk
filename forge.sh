@@ -212,9 +212,16 @@ _manifest_asset() {  # <key> — the "asset" of gtk_stack.json's <key> block
     sed -n "/\"$1\": {/,/}/p" "$REPO_ROOT/config/gtk_stack.json" \
         | sed -n 's/.*"asset": "\([^"]*\)".*/\1/p' | head -1
 }
+_manifest_sha() {  # <key> — the "sha256" of gtk_stack.json's <key> block
+    sed -n "/\"$1\": {/,/}/p" "$REPO_ROOT/config/gtk_stack.json" \
+        | sed -n 's/.*"sha256": "\([0-9a-f]\{64\}\)".*/\1/p' | head -1
+}
 CERT_KNAME=$(_manifest_asset kernel)
 CERT_ANAME=$(_manifest_asset rpcs3)
 CERT_TNAME=$(_manifest_asset turnip)
+CERT_KSHA=$(_manifest_sha kernel)
+CERT_ASHA=$(_manifest_sha rpcs3)
+CERT_TSHA=$(_manifest_sha turnip)
 if lane_selected image; then
     for _p in "kernel:$CERT_KNAME" "rpcs3:$CERT_ANAME" "turnip:$CERT_TNAME"; do
         [ -n "${_p#*:}" ] || tui_fail "gtk_stack.json has no ${_p%%:*} asset — cannot bake an image"
@@ -391,8 +398,9 @@ lane_env() {  # <lane> -> env assignments for the node-side recipe
         # The three baked names come from the MANIFEST (see the preflight
         # note above), never from the build knobs — an image is a shipped
         # asset and must carry exactly the certified stack.
-        image)  printf 'KNAME=%s ANAME=%s TNAME=%s BASEDATE=%s OUTIMG=%s' \
+        image)  printf 'KNAME=%s ANAME=%s TNAME=%s KSHA=%s ASHA=%s TSHA=%s BASEDATE=%s OUTIMG=%s' \
                     "$CERT_KNAME" "$CERT_ANAME" "$CERT_TNAME" \
+                    "$CERT_KSHA" "$CERT_ASHA" "$CERT_TSHA" \
                     "$FORGE_IMAGE_BASEDATE" "$IMGNAME" ;;
     esac
 }
