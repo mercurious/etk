@@ -2,6 +2,16 @@
 # ==========================================================
 # ETK PHASE 13.6: FLASHER (v14.1.0 - SENTRY STATE FIX + VAULT PUSH)
 # ==========================================================
+# ⚠️ THE OPERATOR RUNS THIS SCRIPT. CLAUDE NEVER DOES.
+# WHY (AI_MANIFEST Law #9, the "deploy" threshold): THE RIG CAN BE BRICKED.
+# This writes a physical device with a read-only root that boots a kernel we
+# replace — it has already been frankenbooted once by an unattended kernel
+# write, and a mid-race install (2026-07-05) cost the operator a race's credits
+# and its telemetry (guard 49a0aa1). A human decides to take that risk and owns
+# the outcome. Claude's job is to prepare the inputs — stage artifacts, set
+# etk.conf knobs, run the host-side gates, write the handoff — then hand off
+# and verify afterward from read-only telemetry.
+# ==========================================================
 # FIX: Sentry PREV_STATE typo ($-sign missing) caused state machine to never fire
 # FIX: Added missing Step 4 vault push (host PC shaders -> rig)
 # FIX: Added --delete to bin/scripts rsync to prevent stale file accumulation

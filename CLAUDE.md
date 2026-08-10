@@ -12,7 +12,9 @@ session by reading, in order:
    sacred scripture** — some specific "laws" have proven unverified (e.g. the autostart/MangoHud
    race), so verify before building on a given one.
 4. **`install.sh`** — the deploy/sync flow (how anything reaches the rig). Rig changes go through
-   `install.sh`, never a one-off `scp` (a reboot/reinstall reverts hand-surgery).
+   `install.sh`, never a one-off `scp` (a reboot/reinstall reverts hand-surgery). **Read it; the
+   OPERATOR runs it — you never do** (bytes-to-atoms, below). Same for `forge.sh`, the build
+   conductor. This says which MECHANISM a change travels through, not whose hand starts it.
 5. **The daemons** in `bin/` (`input_d.py`, `vault_d.sh`, `thermal_d.sh`, `mango_bridge.sh`,
    `recovery.sh`, `session_postmortem.sh`) + `scripts/env.sh` — their **behavior / state model**,
    not just their names. (e.g. `input_d.py` only fires in-game; the Sentry reseeds SHM on state change.)
@@ -27,8 +29,52 @@ session by reading, in order:
      ISN'T in the repo, flag it for the install.sh push list rather than trusting it to persist.
 
 ## Non-negotiables
+- **BYTES-TO-ATOMS — always defer to the humans at the threshold.** Claude works in bytes:
+  the repo, the analysis, the staged candidate. Bytes are cheap and reversible. There are
+  **three moments where our bytes reach real atoms**, and at each one a HUMAN decides,
+  because a human is the only thing that can be accountable for the consequence. You
+  **NEVER** cross these, not once, not to "check" (operator rationale, 2026-08-10):
+  - **`./install.sh`** (or `uninstall.sh`, or the PowerShell port) — **the rig can be bricked.**
+    A human decides to take that risk, and owns it.
+  - **`./forge.sh`** (or a `tools/forge/lane_*.sh`, or a build on `etk-cloud`/the Air) — it runs
+    on **someone else's computer and can trigger an invoice. Money is atoms.**
+  - **publishing** — `gh release create/upload/edit`, moving a tag, `git tag` on a release
+    version (cutting the tag IS the release), or any upload of an artifact to a fetch path —
+    **our bytes land on other humans' machines.** ⚠️ **This threshold is the PRODUCT, not the
+    source.** A `git push` of code to the public `origin/main` in the course of development is
+    **normal and permitted as usual** (operator, 2026-08-10) — it is subject to the trunk
+    protocol below, not to this law. What crosses is the thing a user CONSUMES: the release,
+    the tag, the artifact.
+
+  **`--dry-run` and `--status` are NOT exemptions.** `forge.sh --dry-run` sshes to the build
+  node in preflight; a dry run is still a hand on the control. If the flag is on a
+  bytes-to-atoms tool, the tool is off-limits — read its source instead.
+
+  **What you DO instead:** stage the artifact, set the `etk.conf` knob, run the gates
+  (`tools/*.sh`, `tools/test_*.py` — those are bytes), write the handoff, and **hand off**.
+  Then verify afterward from read-only telemetry. **Still allowed:** read-only `ssh` to rig
+  or build node, `git` on the repo (subject to the trunk protocol below), and every
+  host-side analysis tool.
+
+  **HOW TO HAND OFF — give the operator the one-click prompt (operator-directed 2026-08-10).**
+  Deferring is not stopping and going quiet; it is putting the control **in their hand, ready
+  to press.** End the handoff with the exact command in its own ```bash fenced block (one
+  command, no `$`, no interleaved output) — Claude.app renders a Run button on it, so the
+  operator triggers it in this terminal and we BOTH watch the TUI's progress bars and status
+  live. That is the pit wall: the Driver's hand on the control, the Engineer reading the
+  instruments beside them. Say plainly what the command will do, what to watch for, and what
+  would falsify it. **A handoff without a runnable prompt is an unfinished handoff.**
+
+  **The RATIONALE is the test, not the filenames** — that is what makes this a class. The
+  names age out: `forge.sh` was three days old on 2026-08-10 when Claude ran it three times,
+  having inherited no law because every document named only `install.sh`. So don't ask "is
+  this on the list?" Ask the three questions: **could this brick hardware? could it spend
+  someone's money or consume someone else's machine? could it reach another human's
+  computer?** Any yes = the threshold = a human decides. A tool written tomorrow is covered
+  today. **When unsure whether something crosses, it does — ask.** Full text: `AI_MANIFEST.md`
+  Law #9.
 - **Always-reboot gate** — every tune/config change must survive a COLD boot; reboot is the only honest validation. ROCKNIX reverts non-persistent changes; `/storage` persists, read-only root does not.
-- **Use the kit — including the skills, to their FULL capability** — prefer ETK's own tools (`install.sh` / `uninstall.sh` / `scripts/` / Pitstop TOOLS / `etk_telemetry` / `recovery.sh`) AND the purpose-built **skills** (`cockpit`, etc.) over bespoke manual rig surgery. **This means using a skill's *automation*, not just borrowing its data path.** Concrete miss to never repeat (2026-06-18): for a live multi-crash watch, Claude invoked the `cockpit` skill but hand-rolled per-freeze `ssh`/`grim` grabs and made the operator manually call "freeze" 8+ times — when `cockpit/scripts/rocknix_spotter_loop.sh` ships a **crash-watch loop built for exactly that**. When a task is "watch the rig until X happens," reach for the skill's monitoring loop FIRST (arm it at idle, before launch; have it auto-break + notify). Check the kit/skill's actual capabilities before building the workaround by hand.
+- **Use the kit — including the skills, to their FULL capability** — prefer ETK's own tools (`install.sh` / `uninstall.sh` / `scripts/` / Pitstop TOOLS / `etk_telemetry` / `recovery.sh`) AND the purpose-built **skills** (`cockpit`, etc.) over bespoke manual rig surgery. **"Prefer the kit's tools" is about WHICH MECHANISM the change travels through — it is NOT permission to run one yourself.** For the bytes-to-atoms tools above (`install.sh`, `uninstall.sh`, `forge.sh`) preferring the kit means *preparing that tool's input and handing it to the operator*; running it yourself violates the first non-negotiable. This sentence used to read as an invitation and on 2026-08-10 it was taken as one. **This means using a skill's *automation*, not just borrowing its data path.** Concrete miss to never repeat (2026-06-18): for a live multi-crash watch, Claude invoked the `cockpit` skill but hand-rolled per-freeze `ssh`/`grim` grabs and made the operator manually call "freeze" 8+ times — when `cockpit/scripts/rocknix_spotter_loop.sh` ships a **crash-watch loop built for exactly that**. When a task is "watch the rig until X happens," reach for the skill's monitoring loop FIRST (arm it at idle, before launch; have it auto-break + notify). Check the kit/skill's actual capabilities before building the workaround by hand.
 - **Validate before integrate** — prove speculative tuning on a disposable on-rig harness, cold-booted, before touching locked-down core (`install.sh`, daemons, telemetry schema, the R3 panic path).
 - **Verdict from the operator's screen, mechanism from the log** — don't crown a fix from one run or a mid-process read; the noise floor on this title is huge (GT5P ~77–2886 s). Rule out our own code before blaming hardware (bad cable/card).
 

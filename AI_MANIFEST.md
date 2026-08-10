@@ -13,9 +13,76 @@ A custom Rocknix middleware rig to enable PS3 Emulation on ARM64 Retrogaming Han
 4. **AGNOSTIC IDENTITY:** The `TARGET_ID` must always be dynamic. It is sniffed from the active RPCS3 process via `pgrep` and `PARAM.SFO`.
 5. **NO GNU-ISMS:** Rocknix uses **BusyBox**. Assume GNU-specific flags (`--long-options`, `grep -P`, `find -printf`) will fail. Use POSIX-compliant syntax only.
 6. **NEVER REBOOT THE RIG REMOTELY:** The operator is physically at the rig (the Driver; the host AI is the Engineer). Do NOT `systemctl reboot` / `reboot` over ssh, nor trigger any host-driven power-cycle of the device. When a cold boot is genuinely required (driver-build swap to load, clearing a GPU wedge, any always-reboot-gate validation), do the host-side prep, then ASK the operator to reboot on-device (or via the Pitstop DRIVER-tab REBOOT row) and WAIT for the rig to return. Read-only telemetry/spotter over ssh is fine — the prohibition is on rebooting and other disruptive power actions.
-7. **USE THE KIT TO DEPLOY** Don't try to `scp` files to the rig, or build your own scripts. Always provision `install.sh` instead which is used by the operator to deploy new builds to the rig in every instance. It returns the rig to specification each installation.
+7. **USE THE KIT TO DEPLOY** Don't try to `scp` files to the rig, or build your own scripts. Always provision `install.sh` instead which is used by the operator to deploy new builds to the rig in every instance. ⚠️ **"Provision" means PREPARE, not RUN — see Law #9.** This law's imperative ("Always provision `install.sh`") was read on 2026-08-10 as licence to execute it; it never was. You ready install.sh's inputs; the operator runs it. It returns the rig to specification each installation.
    **HARNESS vs TOOLING (clarified 2026-07-10, operator-directed):** "validate before integrate" licenses disposable ON-RIG state for **tuning VALUES** (a dial setting, a threshold, a config probe) — it does NOT license disposable **TOOLING**. Any script that watches, measures, toggles, or captures is a TOOL and enters through the kit from its first run: file in the repo, added to install.sh's push list, driven from an existing surface (Pitstop tab / cockpit skill / daemon hook), attributed in the ledger. A `/tmp` hand-push is acceptable ONLY as a single-shot probe within one session — it is wiped by every reboot (the Manage-Shaders trap; live re-proof 2026-07-10: a /tmp crash-catch script was lost to two cold boots and hand-re-pushed three times before this rule). If a "temporary" script is worth running twice, it is a tool; put it in the kit.
 8. **KEEP ARTIFACT FILENAMES CLEAN** Don't add the latest feature being tested to a fork artifact name, just a new (sub)version number. This filename cruft ends up getting shipped when we don't restrict it. The main artifacts have naming conventions, stick to them. **RELEASE GATE:** run `tools/release_sanity.sh` at every cut — it enforces a version-only kernel name (`KERNEL.rocknix-gtk-<date>-<n.n>`, digits/dots only) and scans the shipping config (`etk.conf` KERNEL_IMAGE, the `os-install` build default, `drivers/`, `install.sh` CERTs) for feature-word cruft. Live miss it exists to stop: `-audiofix0` shipped in the published v0.7.0 kernel (renamed `-0.2` for the next build; the published asset stays `-audiofix0` so its fetch/links don't break).
+9. **BYTES-TO-ATOMS: ALWAYS DEFER TO THE HUMANS AT THE THRESHOLD.** Written in Law #6's shape,
+   because it is Law #6's principle generalized past the reboot button. The Engineer works in
+   **bytes** — repo, analysis, staged candidate, gate output — which are cheap, private and
+   reversible. There are **exactly three moments where our bytes reach real atoms**, and each
+   one is irreversible in a way bytes are not. At each, a **human** decides — not because the
+   human reasons better about it, but because **a human is the only thing that can be
+   accountable for the consequence.** (Operator rationale, 2026-08-10.)
+
+   **THE THREE THRESHOLDS — the reason is the law; the filenames are only today's examples:**
+   - **Deploy — `./install.sh`, `./uninstall.sh`, `windows_installer/etk-install.ps1`.**
+     *Why:* **the rig can be bricked.** This writes a physical device that the operator holds,
+     that boots from a read-only root, and that has already been frankenbooted once by an
+     unattended kernel write. Let a human decide to take that risk and be accountable for it.
+   - **Mint — `./forge.sh`, `tools/forge/lane_*.sh`, `tools/rocknix-bin/build_*.sh`, any build
+     on `etk-cloud` or in a colima container.** *Why:* it runs on **someone else's computer**
+     and can **trigger an invoice. Money is atoms.** The A1 node is free-tier until it isn't;
+     consuming a stranger's compute on our behalf is a spending decision, and spending is a
+     human's to make.
+   - **Publish — `gh release create|upload|edit|delete`, moving a tag, `git tag` on a release
+     version (cutting the tag IS the release), any upload to a fetch path.** *Why:* **our bytes
+     go to other humans' atoms** — they land on machines we do not own, belonging to people who
+     did not review them, and cannot be recalled once fetched.
+     ⚠️ **SCOPE — the PRODUCT, not the SOURCE (operator, 2026-08-10).** Pushing code to the
+     public `origin/main` during development is **normal and permitted as usual**; it is
+     governed by the trunk protocol (commit+push pre-authorized for **operator-validated**
+     changes), NOT by this law. The threshold is what a user CONSUMES AS THE PRODUCT — the
+     release, the tag, the downloadable artifact. Do not over-read this bullet into a freeze on
+     ordinary development pushes; that would break the "done-bar is pushed, not committed" rule
+     that exists because parked local work is how the 0.5.0 chords were lost.
+
+   **THE TEST FOR A TOOL THAT DOES NOT EXIST YET.** Do not ask "is it on the list." Ask:
+   **could this brick hardware? could it spend someone's money or consume someone else's
+   machine? could it reach another human's computer?** Any yes = threshold = hand it to the
+   operator. This is what makes the law survive its own examples.
+
+   **THE HANDOFF IS PART OF THE LAW, NOT AN AFTERTHOUGHT (operator-directed 2026-08-10).**
+   Deferring means putting the control **in the operator's hand ready to press** — not
+   stopping and going quiet, which just moves the work onto them. Close every handoff with the
+   exact command in its own ` ```bash ` fenced block (ONE command, no `$` prompt, no output
+   interleaved): Claude.app puts a **Run button** on such blocks, so the operator fires it in
+   the shared terminal and BOTH of us watch the TUI's progress bars, step states and datalog
+   live. This is the protocol's correct UI/UX shape in this IDE — **the pit wall**: the
+   Driver's hand on the control, the Engineer reading the instruments next to them. State what
+   the command does, what to watch, and what would falsify it. A handoff with no runnable
+   prompt is an unfinished handoff, and a law that only says "don't" without saying "here,
+   press this" will keep getting crossed.
+
+   **`--dry-run`, `--status` and `--check` are NOT exemptions on these tools.** `forge.sh
+   --dry-run` opens ssh to the build node during preflight; a dry run is a hand on the control.
+   Read the source instead — that is bytes.
+
+   **STILL ALLOWED (the carve-out matters as much as the prohibition):** read-only `ssh` to the
+   rig or build node; every host-side gate and analysis tool (`tools/release_sanity.sh`,
+   `tools/test_*.py`, `tools/etk_dyno.py`, `tools/sync_game_configs.sh`); staging an artifact
+   into `drivers/`, `emulators/`, `~/rocknix-gtk/artifacts/`; editing `etk.conf` knobs; and
+   `git` on the repo under the trunk protocol. Preparing a bytes-to-atoms tool's inputs is the
+   whole job — running it is not part of it.
+
+   **WHY THIS IS A CLASS, NOT A LIST.** The incident that set it (2026-08-10): every document
+   in the kit named `install.sh` and only `install.sh`. `forge.sh` had existed for three days,
+   was described in its own header as the thing that "NEVER contacts the rig and NEVER
+   publishes" — which read as *reassurance that forge was the safe one* — and Claude ran it
+   three times, twice as `--dry-run` and once for real, before the operator stopped it. Nothing
+   was built and the rig was never touched, but the build node was reached on all three. A law
+   that enumerates yesterday's filenames does not gate tomorrow's tool. **A new tool that
+   deploys, mints, or publishes is covered the day it is written, before anyone amends this
+   file. When unsure whether a command crosses into atoms: it does. Ask.**
 
 ## ROCKNIX ARCHITECTURE (THE BOOT CHAIN)
 1. **THE REBOOT WIPE:** Rocknix vaporizes `/dev/shm` on every reboot. Background processes must rebuild `$SHM_DIR` instantly upon execution.

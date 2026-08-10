@@ -2,6 +2,20 @@
 # ==========================================================
 # ETK FORGE — mint the kit's binaries on etk-cloud
 # ==========================================================
+# ⚠️ THE OPERATOR RUNS THIS SCRIPT. CLAUDE NEVER DOES — including `--dry-run`,
+# whose preflight opens ssh to the build node.
+# WHY (AI_MANIFEST Law #9, the "mint" threshold): this runs on SOMEONE ELSE'S
+# COMPUTER and can TRIGGER AN INVOICE. Money is atoms. The A1 node is
+# free-tier until it isn't, and spending a stranger's compute on our behalf is
+# a human's decision to make and be accountable for — not a cheap, reversible
+# byte operation. Claude's job is to prepare the inputs — stage artifacts, set
+# the FORGE_* knobs, reconcile the pins with gtk_stack.json, run the host-side
+# gates — and then hand off. Read this file; don't run it.
+# (2026-08-10: the "NEVER contacts the rig" line below describes forge's
+# contract TOWARD THE RIG. It was misread as "forge is the safe one to run,"
+# and forge was run three times before the operator stopped it. It is not a
+# safety statement about who may invoke this script.)
+#
 # The Engineer's counterpart to install.sh: install.sh deploys the kit to the
 # rig; forge.sh mints the artifacts install.sh deploys. Build -> gate -> sha ->
 # stage to this tree. It NEVER contacts the rig and NEVER publishes — staging
