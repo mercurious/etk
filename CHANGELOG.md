@@ -97,6 +97,22 @@ quietly poisoning every rate the project computes.
 - **RPCS3 GTK Edition 0.8.5**, Turnip `26.1.6_gtk_0.7` + `26.2.0-rc3_gtk_0.7`
   unchanged.
 
+### Also in this release (landed after 0.8.4 shipped)
+- **`forge.sh`** — the etk-cloud build conductor. Six lanes, detached builds that
+  survive a dropped ssh, fingerprint-based skipping, and machine-readable status.
+  See `TRACK_MANUAL.md` §8.6 for the operating guide and use cases.
+- **DP capture audio fixed at its mechanism.** The DisplayPort sink negotiated
+  S24_LE and lost ~25 dB — the "had to add +1000% gain in OBS" bug. A WirePlumber
+  rule pins the capture sink to S16_LE; inert during normal speaker use.
+  Kill-switch `ETK_DP_AUDIO_S16=0`.
+- **Pad self-heal on DP unplug.** Unplugging the external display used to wedge
+  the pad (an InputPlumber + EmulationStation double wedge) and cost a reboot.
+  Now recovers in place. Default on; `ETK_DP_MIRROR=0` removes the daemon.
+- **`wl-mirror` moved to the fork model** (`mercurious/wl-mirror-rocknix`), the
+  same pattern as chiaki: docs and recipe above a pinned build ref.
+- **`SECURITY.md`** and a re-synced PowerShell port, whose cert pins are now
+  gated in lockstep with `install.sh` — they had drifted two releases.
+
 ### Known limitations
 - **Kernel panics are up, and this release does not fix them.** Per hour of
   racing the rate went 2.1 → 2.7 → **9.7 per 10 h** across June, July and
@@ -110,6 +126,12 @@ quietly poisoning every rate the project computes.
   the arms carrying the shipping-adjacent core show ~2.7/10 h against ~18/10 h
   for an older one. That is a hypothesis for a controlled test, **not a
   verdict** — the arms differ in title mix and were never controlled.
+- **A title that hangs only on EXIT reads as unstable.** SoulCalibur V plays and
+  then wedges when you quit, so every session ends on an R3 recovery and the
+  ledger scores it 10% clean. The rows are correct; the inference is not.
+  `config/game_status.tsv` now carries a `hangs-on-quit` flag and the charts
+  stripe that segment, but the ledger still cannot tell the two apart on its
+  own — it takes an operator's eyes.
 - **`config_RXSTR3179.yml`** on the rig is a golden seed against a filename tag
   that never resolved to a serial, and `config_IDLE.yml` is the id resolver's
   own sentinel written as a game key. Neither is a tune; both are skipped by
