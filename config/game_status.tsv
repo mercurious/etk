@@ -25,22 +25,32 @@
 #   regression  — worked before, broken now
 #   none        — does not boot
 #
+# FOURTH COLUMN = FLAGS (optional, comma-separated). More human intel the
+# ledger cannot derive:
+#   hangs-on-quit  — the title PLAYS, and only wedges when you try to exit the
+#                    emulator. Every such session ends on an R3, so the ledger
+#                    reads it as a recovery and the title looks unstable. Charts
+#                    render that segment STRIPED so it reads as "would not
+#                    quit", not "crashed". Rows that ALSO carry a GPU fault stay
+#                    solid — the flag annotates the exit hang, it does not erase
+#                    fault evidence.
+#
 # Keyed on SERIAL. Titles are the wiki's own naming and may differ from the
 # rig's launcher filenames (see the notes at the foot of this file).
-# serial	status	title
+# serial	status	title	flags
 NPEA90002	playable	Gran Turismo HD Concept
 NPEA00050	playable	Gran Turismo Prologue Spec III
 NPUA80075	playable	Gran Turismo Prologue Spec II
-NPEA00502	playable	Gran Turismo 6
+NPEA00502	playable	Gran Turismo 6 (digital EU)
 NPUB31790	playable	Grand Theft Auto: San Andreas
 BCUS98158	playable	Gran Turismo 5 Prologue Spec II (disc ISO)
-BCUS98296	playable	Gran Turismo 6
+BCUS98296	playable	Gran Turismo 6 (disc US)
 NPUA80105	playable	WipEout HD
 NPUA80499	playable	Motorstorm 3D Rift
 NPUB30151	playable	After Burner Climax
 NPUB30899	playable	Tekken Tag Tournament 2
 NPUB30625	playable	Virtua Fighter 5 Final Showdown
-NPUB31195	playable	SoulCalibur V
+NPUB31195	playable	SoulCalibur V	hangs-on-quit
 NPUB31698	playable	Metal Slug 3
 NPUB31245	playable	Armored Core: Verdict Day
 BCUS98114	in-game	Gran Turismo 5
@@ -64,9 +74,14 @@ NPUB30789	none	Need for Speed: Most Wanted
 #
 # NAMING DISCREPANCIES vs the rig's launcher filenames — worth an operator
 # pass, NOT auto-corrected here (the wiki is authoritative for naming):
-#   NPEA00502  wiki "Gran Turismo 6"        · TRACK_MANUAL §1 lists this serial
-#              in the GT5P family (NPEA00050/NPUA80075/NPEA00502) and the
-#              CHANGELOG discusses it as Spec II. One of the two is wrong.
+#   NPEA00502  RESOLVED 2026-08-10 against ps3.aldostools.org/titleid.html (the
+#              definitive index, operator-cited): NPEA00502 IS Gran Turismo 6,
+#              so the WIKI WAS RIGHT and TRACK_MANUAL §1 IS WRONG -- it lists
+#              this serial inside the "GT5P family (NPEA00050/NPUA80075/
+#              NPEA00502)". Two distinct GT6 releases are in play: NPEA00502
+#              (digital EU) and BCUS98296 (disc US, the operator's own HEN rip
+#              of a house disc). Earlier PKG US + regional variants were also
+#              installed historically, which is how the confusion started.
 #   NPUA80075  wiki "…Prologue Spec II"     · rig launcher "Gran Turismo 5 Prologue"
 #   BCUS98158  wiki "…Spec II (disc ISO)"   · rig launcher "Gran Turismo 5 Prologue"
 #   NPUA80105  two launchers on the rig for one serial ("WipEout® HD.psn" and

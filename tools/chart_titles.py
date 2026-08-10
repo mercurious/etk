@@ -40,6 +40,7 @@ one refusing to close. Pass --status to widen, or --status any for everything.
 """
 import argparse
 import os
+import statistics as st
 import sys
 from collections import defaultdict
 
@@ -84,7 +85,7 @@ def main():
     ap.add_argument("--top", type=int, default=22)
     a = ap.parse_args()
 
-    status, wiki_name = {}, {}
+    status, wiki_name, flags = {}, {}, {}
     if os.path.exists(a.status_file):
         for line in open(a.status_file):
             if line.startswith("#") or not line.strip():
@@ -94,6 +95,8 @@ def main():
                 status[p[0].strip()] = p[1].strip()
                 if len(p) >= 3:
                     wiki_name[p[0].strip()] = p[2].strip()
+                if len(p) >= 4 and p[3].strip():
+                    flags[p[0].strip()] = set(f.strip() for f in p[3].split(","))
     elif a.status != "any":
         sys.exit(f"no {a.status_file} — playability is operator intel, not "
                  "derivable from the ledger; pass --status any to override")
@@ -109,6 +112,7 @@ def main():
     names.update(wiki_name)
 
     per = defaultdict(lambda: defaultdict(int))
+    perf = defaultdict(lambda: defaultdict(list))
     tot = defaultdict(int)
     for line in open(a.ledger):
         p = line.rstrip("\n").split("\t")
@@ -122,6 +126,15 @@ def main():
             continue
         per[p[3]][classify(p[4], p[9] or "")] += 1
         tot[p[3]] += 1
+        # fps_med (col 17) and ft_jitter_ms (col 23) for the in-bar readout.
+        for k, i in (("fps", 16), ("jit", 22)):
+            if i < len(p) and p[i] not in ("", "-"):
+                try:
+                    v = float(p[i])
+                except ValueError:
+                    continue
+                if v > 0:
+                    perf[p[3]][k].append(v)
 
     # Drop what the operator has not called playable. Report the drop rather
     # than performing it silently — a title vanishing from a stability chart
@@ -154,14 +167,44 @@ def main():
     ax.set_facecolor(BG)
 
     labels = []
+    any_hatched = False
     for i, sid in enumerate(top):
         left = 0.0
         n = tot[sid]
+        # A `hangs-on-quit` title gets its R3 segment STRIPED. Only that
+        # segment: rows that also carried a GPU fault stay solid, so the
+        # operator's intel annotates the exit hang without erasing the
+        # evidence that something else went wrong during play.
+        quit_hang = "hangs-on-quit" in flags.get(sid, ())
         for key, colour, _ in SEG:
             v = per[sid].get(key, 0)
-            if v:
-                ax.barh(i, 100.0 * v / n, left=left, color=colour, height=0.68, zorder=3)
-                left += 100.0 * v / n
+            if not v:
+                continue
+            hatch = "///" if (quit_hang and key == "R3") else None
+            if hatch:
+                any_hatched = True
+            ax.barh(i, 100.0 * v / n, left=left, color=colour, height=0.68,
+                    hatch=hatch, edgecolor="#ffffff" if hatch else "none",
+                    linewidth=0, zorder=3)
+            left += 100.0 * v / n
+
+        # fps / frame-time jitter, white and left-aligned INSIDE the bar.
+        # Medians, per manual §6.4 — labelled `med` so it never reads as a
+        # mean. Placed on the clean (blue) segment where there is one; when a
+        # title has almost no clean share there is no dark ground to sit on,
+        # so it moves outside in grey rather than becoming white-on-orange.
+        fv, jv = perf[sid].get("fps"), perf[sid].get("jit")
+        if fv:
+            txt = f"{st.median(fv):.1f} fps"
+            if jv:
+                txt += f"  ±{st.median(jv):.1f} ms"
+            clean_pct = 100.0 * per[sid].get("CLEAN", 0) / n
+            if clean_pct >= 16:
+                ax.text(1.4, i, txt, va="center", ha="left", fontsize=9,
+                        color="#ffffff", fontweight="bold", zorder=5)
+            else:
+                ax.text(101.2, i, txt, va="center", ha="left", fontsize=9,
+                        color="#555555", zorder=5)
         nm = names.get(sid, sid)
         if len(nm) > 34:
             nm = nm[:33] + "…"
@@ -170,6 +213,7 @@ def main():
     ax.set_yticks(range(len(top)))
     ax.set_yticklabels(labels, fontsize=10)
     ax.set_xlim(0, 100)
+    ax.margins(x=0)
     ax.set_xlabel("share of that title's scored sessions (%)", color="#444")
     ax.xaxis.grid(True, color="#d8d8d8", linewidth=0.8)
     ax.set_axisbelow(True)
@@ -182,14 +226,17 @@ def main():
              fontsize=18, fontweight="bold", color="#111")
     fig.text(0.063, 0.917,
              "PLAYABLE titles only (config/game_status.tsv)  ·  scored sessions in brackets  ·  "
-             "aborted and sub-60 s runs excluded  ·  orange without red = played, then would not quit",
+             "aborted and sub-60 s runs excluded  ·  white figures are median fps and frame-time jitter",
              fontsize=11, color="#666")
 
-    ax.legend(handles=[Patch(facecolor=c, label=l) for _, c, l in SEG],
-              loc="lower center", bbox_to_anchor=(0.5, -0.13), ncol=5,
-              frameon=False, fontsize=10)
+    handles = [Patch(facecolor=c, label=l) for _, c, l in SEG]
+    if any_hatched:
+        handles.append(Patch(facecolor="#f4a03d", hatch="///", edgecolor="#ffffff",
+                             label="hangs on QUIT — plays, will not exit"))
+    ax.legend(handles=handles, loc="lower center", bbox_to_anchor=(0.5, -0.205),
+              ncol=3 if any_hatched else 5, frameon=False, fontsize=10)
 
-    fig.subplots_adjust(left=0.28, right=0.97, top=0.87, bottom=0.14)
+    fig.subplots_adjust(left=0.28, right=0.90, top=0.87, bottom=0.20)
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
     fig.savefig(a.out, facecolor=BG)
     print(f"wrote {a.out} ({len(top)} titles)")
