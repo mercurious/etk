@@ -219,7 +219,7 @@ node builds; the Mac stages and relays; the rig never faces the internet.
   the explicit `CC=gcc-15`. Reproducing an environment elsewhere is also how three latent bugs
   surfaced in one afternoon (that gcc-14 default; a wrong kernel tarball sha256 in BUILDING.md;
   the Pitstop installer's title-id assumption).
-- **WHO RUNS THE FORGE: the operator. Always.** `forge.sh` is the Engineer's counterpart to
+- **WHO RUNS THE FORGE: the operator. Always.** (Full operating guide: **§8.6**.) `forge.sh` is the Engineer's counterpart to
   `install.sh` and it sits on the SAME side of the bytes-to-atoms line (Law #9) — it mints the
   binaries a release ships. Claude's job on this whole section is to prepare: stage inputs, set
   the `FORGE_*` knobs in `etk.conf`, reconcile the pins with `config/gtk_stack.json`, run the
@@ -241,6 +241,98 @@ node builds; the Mac stages and relays; the rig never faces the internet.
 - **Artifact flow:** build on etk-cloud → stream the finished artifact to the Air
   (`docker run … cat … | ssh`) → Air stages it per §8 → operator runs `install.sh`. Game dumps and
   rig-derived assets are the operator's own data; only what a build needs goes up.
+
+---
+
+## 8.6 THE FORGE (`forge.sh`) — how the fleet is actually driven
+
+§8.5 is *where* artifacts are made. This is *how*, *when*, and *what can go wrong*.
+
+**⚠️ THE OPERATOR RUNS IT. ALWAYS.** `forge.sh` is the "mint" threshold of the
+bytes-to-atoms law (AI_MANIFEST #9) — it runs on someone else's computer and can trigger
+an invoice. `--dry-run` is **not** an exemption: preflight opens ssh to the node. Claude's
+job is to prepare the inputs (stage artifacts, set `FORGE_*` knobs, reconcile the pins with
+`config/gtk_stack.json`, run the host-side gates) and hand off with the runnable command.
+
+**What it is:** a conductor, not a second `install.sh`. Lane logic lives in the fork repos
+and `tools/forge/lane_*.sh`; `forge.sh` only sequences, polls, verifies and stages. It
+**never contacts the rig** and **never publishes** — staging candidates is the whole
+contract. Heavy builds run DETACHED on the node (`setsid nohup` + rc marker), so a dropped
+ssh cannot kill a 25-minute build and re-running forge **reattaches** rather than restarts.
+
+### The lanes
+
+| Lane | Builds | ~Time | Its own gates |
+|---|---|---|---|
+| `rpcs3` | the emulator AppImage | 25 m | `rpcs3_perf_stat` marker + VERIFY (loads without system ffmpeg) |
+| `turnip` | one `.so` per `MESA_VER` | 5 m ea | unstripped + `ETK-GTK` version-string |
+| `kernel` | the GTK kernel | 15 m | config-drift diff SURFACED; **§7 cold-boot gated** — a cloud kernel is unvalidated until the operator boots it |
+| `chiaki` / `wlmirror` | rig-native helpers | 2 m | delegate to the proven stagers; byte-identical rebuilds must not churn `.buildinfo` |
+| `image` | the flashable SD card | 40 m | **LAST**; input shas + node-kit version + labels + baked-kernel hash (below) |
+
+### Use cases — which lanes to actually run
+
+- **Full release cut:** `./forge.sh` — but in practice almost never, because fresh lanes
+  skip anyway and the kernel lane is the one you least want re-running (see the trap below).
+- **Middleware-only release** (the common 0.8.x case: chords, Pitstop, daemons changed;
+  no fork rebuilt): `./forge.sh image`. The three binaries are already minted and pinned;
+  only the card needs re-baking so it carries the new kit.
+- **Driver A/B:** set `FORGE_TURNIP_VERS` in `etk.conf`, `./forge.sh turnip`. Do **not**
+  let that knob leak into a release — the image lane takes its driver name from
+  `gtk_stack.json`, precisely so an experiment list cannot ship.
+- **After a failed lane:** just re-run. Fresh lanes skip, so a re-run is cheap and only the
+  failed lane rebuilds. A `WORK` row left by a dead forge means re-run to reattach.
+- **Checking state without building:** `./forge.sh --status` (reprints `state/forge/status.tsv`).
+  Prefer this to a dry run — it costs no ssh.
+- **Node is down / IP moved:** `--local` falls back to colima on the Air.
+- **Never for a kernel you already validated.** If `KERNEL.…-0.4.1` exists on both boxes
+  sha-identical and cold-boot proven, running the kernel lane replaces it with a
+  same-named, different-sha, *unvalidated* binary. Deselect the lane.
+
+### Freshness is a fingerprint, and it is only as good as what it hashes
+
+Each lane skips when `fp_compute` matches the stored fingerprint. `--force` overrides.
+This is the forge's sharpest edge: **a lane cannot notice an input its fingerprint does not
+include.** The image fingerprint now covers the three binary shas, the base date, the
+recipe, *and* `kit=<APP_VERSION>@<HEAD>` — that last term was added on 2026-08-10 after it
+cost a release (below).
+
+### The four defects the image lane has been taught (all 2026-08-10, all the same shape)
+
+The pattern in every one: **a name or a path looked right and nothing hashed the content.**
+
+1. **Node-side artifact drift.** The node held a re-minted `…gtk_0.7.so` while the release
+   shipped the *published* build of that same filename. The lane checked only that the file
+   *existed*. → inputs are now sha-verified against `gtk_stack.json` before baking.
+2. **A verify that printed OK without running.** `strings … | grep … | head -1` — `strings`
+   is absent from `etk-imgtool`, and `set -e` only inspects a pipeline's LAST element, so
+   the failure was invisible and the lane still said `ARTIFACT VERIFY OK`. → the baked
+   kernel is now read back out of the FAT partition and **hashed**. A hash was always the
+   right instrument: every kernel in the `-0.4.1.N` ladder prints the same `Linux version
+   7.1.2`, and `-0.3.1`/`-0.4.1` are byte-for-byte the same SIZE.
+3. **The middleware travelled by git, ungated.** `build_gtk_image_v2.sh` rsyncs `$REPO` —
+   *the node's own checkout* — into the card's `$ETK_ROOT`, and renders the boot-identity
+   unit from its `APP_VERSION`. The node sat at 0.8.4, so a 0.8.5 cut **etched a 0.8.4
+   card**: right kernel, right driver, right emulator, wrong kit. Found by the operator
+   reading the boot string on a freshly flashed card. → the lane now asserts the node's
+   `APP_VERSION` *and* `HEAD` match the cut, and refuses to bake otherwise.
+4. **The fingerprint hid the repair.** Because the image fingerprint did not hash the kit,
+   pulling the node to fix (3) changed nothing it could see — so the corrective rebuild
+   **skipped as fresh** and would have produced an identical bad card. Caught only because
+   the run finished implausibly fast and the operator said so. → `kit=` term added.
+
+**The standing lesson:** verify what the card CONTAINS, not what the build was TOLD. Three
+separate gates passed on a card that was a release behind, because each verified a
+different thing than the one that was wrong.
+
+### Reading a run
+
+`state/forge/status.tsv` is machine-readable (`lane state pct runid note`); logs land in
+`state/forge/logs/<runid>/lane_*.log`. A healthy image run says, in order: `node kit:
+APP_VERSION=… HEAD=…` → `verified kernel/rpcs3/turnip … matches the manifest` → the recipe's
+own steps → `artifact FAT label` / `artifact ext4 label` / `artifact kernel sha:` →
+`ARTIFACT VERIFY OK` → the artifact's own sha. **A run that finishes in seconds built
+nothing** — check for `SKIP … fresh` before trusting a fast result.
 
 ---
 
@@ -266,6 +358,7 @@ cardless Windows installer — remain **ON HOLD**. **Upstream lane:** #11912 psl
 
 ## 10. QUICK REFERENCE
 
+- **Forge (§8.6):** `./forge.sh [lanes] [--dry-run|--status|--force|--local|-v]` — OPERATOR RUNS IT (bytes-to-atoms "mint"). Lanes: rpcs3 turnip kernel chiaki wlmirror image. Common case is `./forge.sh image` (middleware-only release). `--status` to read state without ssh. **A run that finishes in seconds built nothing** — look for `SKIP … fresh`. Never re-run the kernel lane on a kernel you already cold-boot validated.
 - **Build hosts:** the Air (colima, all rig contact) · **etk-cloud** = Oracle A1 aarch64, 4c/23 GB, `ssh -i ~/.ssh/etk_rig ubuntu@<IP>` (ephemeral IP — re-read from console; `Host etk-cloud` alias in `~/.ssh/config`), lanes for RPCS3 / Turnip / kernel / chiaki / wl-mirror / **aPS3e APK** — see §8.5. The Mac's local Android toolchain (`aps3e-build.sparseimage`) is RETIRED as of 2026-08-07 — building there reintroduces a second compiler and the A/B split. - **Repos:** `origin`=github.com/mercurious/etk · sisters: rocknix-gtk / etk-turnip-gtk / etk-rpcs3-gtk · aPS3e fork: mercurious/aps3e · `garage`=private, never to origin · `dossiers/`=private clone, gitignored, citations expected to dangle in public checkouts. - **Rig paths:** `ETK_ROOT=/storage/games-internal/roms/etk` · vault symlink `/storage/.cache/mesa_shader_cache` · RPCS3 configs `/storage/roms/bios/rpcs3/custom_configs/config_<ID>.yml` · saves `.../dev_hdd0/home/00000001/savedata/` · live process = `AppRun.wrapped` (never trust `pgrep -x`; gate on live_stat freshness or cmdline-walk `/proc`). - **Host dirs:** `state/` = Tier-B rig mirror (ledger, configs, saves, screenshots, drained forensics) · `vault/` = host shader vault + `os_profiles/` · `manual_forensics/` = wedge capture sets · build trees at `~/rocknix-gtk`, `~/rpcs3-linux-build`, colima containers. - **Golden diagnostics:** `journalctl -u etk.service` (Sentry) · `dmesg | grep -E 'a6xx|hangcheck|context_keepalive'` (wedges/rescues) · `tail sessions.tsv` (but a wedged row is written BY R3/postmortem — don't look before recovery) · `/proc/PID/environ` (dial ground truth) · `stat -c %s /usr/lib/libvulkan_freedreno.so` (live driver — vulkaninfo lies). - **BusyBox laws:** POSIX only — no `--long-options`, `grep -P`, `find -printf`, `du -h`, `stat --format`; `cp -rn` is a silent no-op AND `tar -xkf` ABORTS at the first existing file rather than skipping it (both cost a live data-loss bug; for a content-addressed merge use plain `tar -xf` and verify the count); awk for float math; foot has `-F` not `-f`.
 
 ---
