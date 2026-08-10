@@ -225,8 +225,14 @@ No ETK or GTK features, just a house tuned Android fork. Offers stable but low-f
 - Use an ETK config tuning from [Tested Games](https://github.com/mercurious/etk/wiki/Tested-Games).
 - Try the ETK [Claude Code Cockpit skill](https://github.com/mercurious/etk/wiki/Claude-Cockpit-Skill) for real-time pit-engineering advice, crash forensics, tuning suggestions, track photography analysis and more. Works over USB with any Android device and USB & `ssh` on ROCKNIX.
 
+# Credits
+Support the underlying projects:
+- **[ROCKNIX](https://rocknix.org)** kernel
+- **[RPCS3](https://rpsc3.org)** emulator
+- **[MESA Project](https://mesa3d.org)** freedreno video driver
+
 # Legal Notice
-This project is intended for expert enthusiasts who maintain fair use/legal digital archives of their own games, not copyright infrigement.
+This project is intended for expert enthusiasts who maintain fair use/legal digital archives of their own games, not copyright infringement. No association with Sony or any of its affiliates is implied.
 
 # AI Disclosure
 ETK was originally prototyped with Google Gemini and developed/maintained with Anthropic Claude Code.
