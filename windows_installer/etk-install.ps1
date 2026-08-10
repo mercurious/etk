@@ -293,9 +293,15 @@ Write-Step 6 $TOTAL "STEP 6.5: CUSTOM TURNIP DRIVER CATALOG..."
 # release ships gtk_0.4 and the rig's etk.conf already selected 0.4).
 $certified = @(
     @{ Name = "etk_turnip_rocknix_26.2.0_gtk_0.7.so"
-       Sha  = "8a16efa627e5c22fb155e16b4b8b7834cfef5b383c307f8cc23f668f7e3b8a14" }
+       Sha  = "7ed58c2fccafd114fc47aa11b2e2fa3ae676a8ee0242089c0faf1984a480fcb4" }
     @{ Name = "etk_turnip_rocknix_26.3.0-devel-e40d93a_gtk_0.7.so"
+       Sha  = "6f02dec2e2c12d2dbbf6c92b6ea47909f10ec9a49e53d0a510ebd6a868787968" }
+    @{ Name = "etk_turnip_rocknix_26.2.0-rc3_gtk_0.7.so"
        Sha  = "0041e22968e4c74157eae902138f0d158cf2089b196c4ee0821f1625f5b4a0ac" }
+    @{ Name = "etk_turnip_rocknix_26.1.6_gtk_0.7.so"
+       Sha  = "8a16efa627e5c22fb155e16b4b8b7834cfef5b383c307f8cc23f668f7e3b8a14" }
+    @{ Name = "etk_turnip_rocknix_26.1.3_gtk_0.4.so"
+       Sha  = "6b9c50bf993c10d32941177e7b15868714ef64da7a3bbf28022f8f2fb745045f" }
 )
 $driverBase = "https://github.com/mercurious/etk/releases/latest/download"
 $turnipKeep = @("stock")

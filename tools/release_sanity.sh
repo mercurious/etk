@@ -204,48 +204,62 @@ fi
 
 echo
 # --------------------------------------------------------------------------
-# TURNIP CATALOG POLICY: LATEST STABLE + EXACTLY ONE PRE-RELEASE (2026-08-10)
+# TWO CATALOGS, TWO DIFFERENT RULES (operator, 2026-08-10)
 # --------------------------------------------------------------------------
-# Operator-set shipping policy: every release carries the latest STABLE Turnip
-# as the certified default, plus ONE pre-release the operator can select from
-# the Pitstop DRIVER tab. Two drivers, never three, never one — a second
-# pre-release doubles the vault's Mesa epochs for no test signal, and dropping
-# the pre-release removes the only forward-looking A/B arm the kit has.
+# TURNIP is CUMULATIVE — a user must be able to DOWNGRADE. Each cut adds the
+# latest stable plus one pre-release; nothing is removed. This only works
+# because every listed driver also ships as a release ASSET: install.sh fetches
+# from releases/latest/download, so dropping a driver from the asset set makes
+# it unfetchable for every fresh install, not merely unrecommended. The FIRST
+# entry is the certified default and must equal the manifest's turnip pin —
+# that is what self-update and the flashable card take, so a pre-release
+# sitting there would make devel the default for every new user.
 #
-# Gated because it drifted silently: the kit shipped 26.1.6 + 26.2.0-rc3 for
-# two releases while the forge knob had already moved to 26.2.0 + 26.3.0-devel,
-# and nothing compared the two. The manifest's PRIMARY must be the stable one —
-# it is what a fresh install and the flashable card both get by default, so a
-# pre-release sitting there would make devel the default for every new user.
-echo "-- turnip catalog: latest stable + one pre-release --"
+# RPCS3 CORES are the opposite: capped at TWO, host-side A/B tooling, and never
+# published (install.sh STEP 6.552 — "not a distribution channel"). Exactly one
+# emulator ships, the certified AppImage.
+#
+# Gated because the driver pins drifted for two releases: FORGE_TURNIP_VERS had
+# already moved to the new pair while CERTIFIED_BUILDS, the manifest, the image
+# lane and the PowerShell port all still named the old one, and nothing
+# compared them.
+echo "-- catalogs: turnip cumulative, cores capped at 2 --"
 _CB=$(sed -n 's/^CERTIFIED_BUILDS="\(.*\)"$/\1/p' "$REPO_ROOT/install.sh" | head -1)
-_n=0; _pre=0; _stable=""
-for _d in $_CB; do
-    _n=$((_n + 1))
-    case "$_d" in
-        *-rc[0-9]*|*-devel*|*-beta*|*-alpha*) _pre=$((_pre + 1)) ;;
-        *) _stable="$_d" ;;
-    esac
-done
-if [ "$_n" -eq 2 ] && [ "$_pre" -eq 1 ]; then
-    ok "catalog is 1 stable + 1 pre-release ($_n drivers)"
-else
-    bad "catalog must be exactly 1 stable + 1 pre-release; got $_n driver(s), $_pre pre-release(s): $_CB"
-fi
 _JT=$(sed -n '/"turnip": {/,/}/p' "$REPO_ROOT/config/gtk_stack.json" \
     | sed -n 's/.*"asset": "\([^"]*\)".*/\1/p' | head -1)
-if [ -n "$_stable" ] && [ "$_JT" = "$_stable" ]; then
-    ok "manifest default is the STABLE driver ($_stable)"
-else
-    bad "manifest default must be the stable driver (manifest: ${_JT:-none}, stable: ${_stable:-none})"
-fi
-# Every certified driver must be staged — the manifest only pins the primary,
-# so the sha gate below never covers the pre-release. That hole shipped a
-# re-minted rc3 into the 0.8.5 asset set before it was caught by hand.
+_first=$(printf '%s' "$_CB" | awk '{print $1}')
+_n=0; _pre=0
 for _d in $_CB; do
-    if [ -f "$REPO_ROOT/drivers/$_d" ]; then ok "staged: $_d"
-    else bad "certified driver NOT staged: drivers/$_d"; fi
+    _n=$((_n + 1))
+    case "$_d" in *-rc[0-9]*|*-devel*|*-beta*|*-alpha*) _pre=$((_pre + 1)) ;; esac
 done
+[ "$_n" -ge 2 ] && ok "turnip catalog has $_n entries (cumulative — downgrade path intact)" \
+                || bad "turnip catalog has $_n entry; the catalog is cumulative, older drivers must stay"
+[ "$_pre" -ge 1 ] && ok "catalog carries $_pre pre-release build(s)" \
+                  || bad "catalog carries no pre-release — the forward A/B arm is gone"
+case "$_first" in
+    *-rc[0-9]*|*-devel*|*-beta*|*-alpha*)
+        bad "first entry is a PRE-RELEASE ($_first) — the default must be stable" ;;
+    *)  ok "certified default is a stable build ($_first)" ;;
+esac
+[ "$_JT" = "$_first" ] && ok "manifest turnip pin == the certified default" \
+                       || bad "manifest pin ($_JT) != CERTIFIED_BUILDS[0] ($_first)"
+# Every catalog entry must be staged AND known to driver_sha, or a downgrade
+# fetch either 404s or cannot be verified. The sha gate below only ever covered
+# the manifest's primary — that hole nearly shipped a re-minted rc3.
+for _d in $_CB; do
+    _miss=""
+    [ -f "$REPO_ROOT/drivers/$_d" ] || _miss="not staged"
+    grep -q "    $_d)" "$REPO_ROOT/install.sh" || _miss="${_miss:+$_miss, }no driver_sha arm"
+    [ -z "$_miss" ] && ok "catalog: $_d" || bad "catalog: $_d — $_miss"
+done
+_CORES=$(ls "$REPO_ROOT"/emulators/*.AppImage 2>/dev/null | wc -l | tr -d ' ')
+_CERTAI=$(sed -n 's/^CERT_RPCS3="\(.*\)"$/\1/p' "$REPO_ROOT/install.sh" | head -1)
+if [ "$_CORES" = 2 ]; then ok "rpcs3 core catalog holds 2 builds (A/B cap)"
+elif [ "$_CORES" = 0 ]; then skip "no cores staged locally"
+else bad "rpcs3 core catalog holds $_CORES builds — the cap is 2 (A/B only, never published)"; fi
+[ -f "$REPO_ROOT/emulators/$_CERTAI" ] && ok "certified core is in the catalog" \
+    || skip "certified core not staged locally ($_CERTAI)"
 
 echo
 # --------------------------------------------------------------------------

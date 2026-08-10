@@ -1861,7 +1861,17 @@ ssh $RIG_SSH "mkdir -p /storage/turnip/drivers /storage/.config/system.d/" 2>/de
 # enthusiasts — an "-rcN" in the filename is all the gating a Turnip build
 # needs. Everything here is fetched sha-verified and lands in the DRIVER-tab
 # chooser; the certified build stays the recommended pick.
-CERTIFIED_BUILDS="etk_turnip_rocknix_26.2.0_gtk_0.7.so etk_turnip_rocknix_26.3.0-devel-e40d93a_gtk_0.7.so"
+#
+# THE CATALOG IS CUMULATIVE — A USER MUST BE ABLE TO DOWNGRADE (operator,
+# 2026-08-10). Each cut ADDS the latest stable + one pre-release; it does not
+# replace what came before. That is only possible because every listed driver
+# also ships as a release ASSET: the fetch base is releases/latest/download, so
+# a driver dropped from the asset set becomes unfetchable for every fresh
+# install, not merely unrecommended. FIRST ENTRY IS THE CERTIFIED DEFAULT and
+# must match config/gtk_stack.json's turnip pin (what self-update and the
+# flashable card both take). Contrast the RPCS3 CORES at STEP 6.552: those are
+# capped at two, host-side A/B only, and never published at all.
+CERTIFIED_BUILDS="etk_turnip_rocknix_26.2.0_gtk_0.7.so etk_turnip_rocknix_26.3.0-devel-e40d93a_gtk_0.7.so etk_turnip_rocknix_26.2.0-rc3_gtk_0.7.so etk_turnip_rocknix_26.1.6_gtk_0.7.so etk_turnip_rocknix_26.1.3_gtk_0.4.so"
 DRIVER_RELEASE_BASE="https://github.com/mercurious/etk/releases/latest/download"
 # sha256 of each certified build — a fetched binary is verified against this.
 driver_sha() { case "$1" in

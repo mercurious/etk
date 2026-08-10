@@ -290,35 +290,45 @@ ssh cannot kill a 25-minute build and re-running forge **reattaches** rather tha
   sha-identical and cold-boot proven, running the kernel lane replaces it with a
   same-named, different-sha, *unvalidated* binary. Deselect the lane.
 
-### Turnip catalog policy: latest stable + exactly ONE pre-release
+### Two catalogs, two opposite rules
 
-**Every release ships two drivers** — the latest STABLE Turnip as the certified default,
-plus one pre-release selectable from the Pitstop DRIVER tab. Never three (a second
-pre-release doubles the vault's Mesa epochs for no extra test signal — a new driver
-build-id invalidates every cached pipeline object), never one (the pre-release is the
-kit's only forward-looking A/B arm). **The manifest's primary must be the STABLE one**: it
-is what a fresh install and the flashable card both get by default, so a pre-release
-sitting there would silently make devel the default for every new user.
+**TURNIP is CUMULATIVE — a user must be able to downgrade.** Each cut *adds* the latest
+stable plus one pre-release; nothing is removed. That only works because every listed
+driver also ships as a release **asset**: `install.sh` fetches from
+`releases/latest/download`, so a driver dropped from the asset set becomes *unfetchable for
+every fresh install*, not merely unrecommended. `CERTIFIED_BUILDS[0]` is the certified
+default and must equal the manifest's turnip pin — that is what self-update and the
+flashable card take, so a pre-release sitting there would make devel the default for every
+new user.
 
-Changing the pair means changing FIVE places, and they had drifted for two releases
-(`FORGE_TURNIP_VERS` had already moved to the new pair while everything else still shipped
-the old one, and nothing compared them):
+**RPCS3 CORES are the opposite: capped at TWO, and never published.** `./emulators/*.AppImage`
+is the catalog; `install.sh` STEP 6.552 stages it to the card and Pitstop offers it
+per-title under TUNING → CORE. It is A/B tooling — *"not a distribution channel"* — and
+exactly one emulator ships, the certified AppImage. Two arms is the point: a comparison
+needs a control, and a third is noise.
+
+Changing the driver pair means changing FIVE places, and they had drifted for two releases
+(`FORGE_TURNIP_VERS` had already moved while everything else still named the old pair, and
+nothing compared them):
 
 | Where | What |
 |---|---|
-| `install.sh` `CERTIFIED_BUILDS` | the pair, **stable first** |
-| `install.sh` `driver_sha()` | a sha arm for each — a fetched binary is verified against it |
-| `config/gtk_stack.json` `turnip` | the **stable** one + its sha (self-update reads this) |
-| `os-install/.../build_gtk_image_v2.sh` | `TURNIP_SO` default = the stable one |
-| `windows_installer/etk-install.ps1` | catalog lockstep |
+| `install.sh` `CERTIFIED_BUILDS` | the cumulative list, **certified default first** |
+| `install.sh` `driver_sha()` | an arm per driver — a fetched binary is verified against it |
+| `config/gtk_stack.json` `turnip` | the **default** + its sha (self-update reads this) |
+| `os-install/.../build_gtk_image_v2.sh` | `TURNIP_SO` default = the certified default |
+| `windows_installer/etk-install.ps1` | `$certified` — name AND sha, generated from install.sh |
 
-`release_sanity.sh` gates all of it: the 1-stable+1-pre shape, that the manifest default is
-the stable one, and that **both** are staged — the sha gate only ever covered the manifest's
-primary, which is how a re-minted pre-release nearly shipped unnoticed.
+`release_sanity.sh` gates all of it: cumulative shape, a pre-release present, a *stable*
+default, manifest ↔ catalog agreement, every entry staged **and** carrying a `driver_sha`
+arm, and the core cap. Two traps it now catches: the sha gate only ever covered the
+manifest's primary (a re-minted pre-release nearly shipped unnoticed), and hand-editing the
+PowerShell catalog by name leaves the OLD sha attached — a pairing that fails verification
+on every Windows fetch. Generate that block, never sed it.
 
-**Changing the pair REQUIRES an image rebuild.** The card bakes the certified driver, so a
-catalog move without `./forge.sh image` ships a card whose driver is no longer in the
-catalog it was built from.
+**Changing the certified default REQUIRES an image rebuild.** The card bakes it, so a
+catalog move without `./forge.sh image` ships a card whose driver is not the one its own
+catalog recommends.
 
 ### Freshness is a fingerprint, and it is only as good as what it hashes
 
