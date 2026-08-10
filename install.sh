@@ -1861,10 +1861,12 @@ ssh $RIG_SSH "mkdir -p /storage/turnip/drivers /storage/.config/system.d/" 2>/de
 # enthusiasts — an "-rcN" in the filename is all the gating a Turnip build
 # needs. Everything here is fetched sha-verified and lands in the DRIVER-tab
 # chooser; the certified build stays the recommended pick.
-CERTIFIED_BUILDS="etk_turnip_rocknix_26.1.6_gtk_0.7.so etk_turnip_rocknix_26.2.0-rc3_gtk_0.7.so"
+CERTIFIED_BUILDS="etk_turnip_rocknix_26.2.0_gtk_0.7.so etk_turnip_rocknix_26.3.0-devel-e40d93a_gtk_0.7.so"
 DRIVER_RELEASE_BASE="https://github.com/mercurious/etk/releases/latest/download"
 # sha256 of each certified build — a fetched binary is verified against this.
 driver_sha() { case "$1" in
+    etk_turnip_rocknix_26.2.0_gtk_0.7.so) echo "7ed58c2fccafd114fc47aa11b2e2fa3ae676a8ee0242089c0faf1984a480fcb4" ;;
+    etk_turnip_rocknix_26.3.0-devel-e40d93a_gtk_0.7.so) echo "6f02dec2e2c12d2dbbf6c92b6ea47909f10ec9a49e53d0a510ebd6a868787968" ;;
     etk_turnip_rocknix_26.2.0-rc3_gtk_0.7.so) echo "0041e22968e4c74157eae902138f0d158cf2089b196c4ee0821f1625f5b4a0ac" ;;
     etk_turnip_rocknix_26.2.0-rc3_gtk_0.6.so) echo "96a0dbf8113498ebb7828cdb214c0f444f9a88e8050ab9b78744bdeef8dc588c" ;;
     etk_turnip_rocknix_26.1.6_gtk_0.7.so) echo "8a16efa627e5c22fb155e16b4b8b7834cfef5b383c307f8cc23f668f7e3b8a14" ;;

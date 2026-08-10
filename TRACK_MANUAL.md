@@ -277,9 +277,10 @@ ssh cannot kill a 25-minute build and re-running forge **reattaches** rather tha
 - **Middleware-only release** (the common 0.8.x case: chords, Pitstop, daemons changed;
   no fork rebuilt): `./forge.sh image`. The three binaries are already minted and pinned;
   only the card needs re-baking so it carries the new kit.
-- **Driver A/B:** set `FORGE_TURNIP_VERS` in `etk.conf`, `./forge.sh turnip`. Do **not**
-  let that knob leak into a release — the image lane takes its driver name from
-  `gtk_stack.json`, precisely so an experiment list cannot ship.
+- **Driver A/B:** set `FORGE_TURNIP_VERS` in `etk.conf`, `./forge.sh turnip`. The image
+  lane takes its driver name from `gtk_stack.json`, not from this knob, so an
+  experiment cannot ship by accident — but the two must be RECONCILED when the
+  experiment becomes the shipping pair (see the catalog policy below).
 - **After a failed lane:** just re-run. Fresh lanes skip, so a re-run is cheap and only the
   failed lane rebuilds. A `WORK` row left by a dead forge means re-run to reattach.
 - **Checking state without building:** `./forge.sh --status` (reprints `state/forge/status.tsv`).
@@ -288,6 +289,36 @@ ssh cannot kill a 25-minute build and re-running forge **reattaches** rather tha
 - **Never for a kernel you already validated.** If `KERNEL.…-0.4.1` exists on both boxes
   sha-identical and cold-boot proven, running the kernel lane replaces it with a
   same-named, different-sha, *unvalidated* binary. Deselect the lane.
+
+### Turnip catalog policy: latest stable + exactly ONE pre-release
+
+**Every release ships two drivers** — the latest STABLE Turnip as the certified default,
+plus one pre-release selectable from the Pitstop DRIVER tab. Never three (a second
+pre-release doubles the vault's Mesa epochs for no extra test signal — a new driver
+build-id invalidates every cached pipeline object), never one (the pre-release is the
+kit's only forward-looking A/B arm). **The manifest's primary must be the STABLE one**: it
+is what a fresh install and the flashable card both get by default, so a pre-release
+sitting there would silently make devel the default for every new user.
+
+Changing the pair means changing FIVE places, and they had drifted for two releases
+(`FORGE_TURNIP_VERS` had already moved to the new pair while everything else still shipped
+the old one, and nothing compared them):
+
+| Where | What |
+|---|---|
+| `install.sh` `CERTIFIED_BUILDS` | the pair, **stable first** |
+| `install.sh` `driver_sha()` | a sha arm for each — a fetched binary is verified against it |
+| `config/gtk_stack.json` `turnip` | the **stable** one + its sha (self-update reads this) |
+| `os-install/.../build_gtk_image_v2.sh` | `TURNIP_SO` default = the stable one |
+| `windows_installer/etk-install.ps1` | catalog lockstep |
+
+`release_sanity.sh` gates all of it: the 1-stable+1-pre shape, that the manifest default is
+the stable one, and that **both** are staged — the sha gate only ever covered the manifest's
+primary, which is how a re-minted pre-release nearly shipped unnoticed.
+
+**Changing the pair REQUIRES an image rebuild.** The card bakes the certified driver, so a
+catalog move without `./forge.sh image` ships a card whose driver is no longer in the
+catalog it was built from.
 
 ### Freshness is a fingerprint, and it is only as good as what it hashes
 

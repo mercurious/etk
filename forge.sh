@@ -347,10 +347,18 @@ fp_compute() {  # <lane> -> fingerprint string on stdout
         # 0.8.4 card and then refused to re-bake: the bug hid, and then it hid
         # its own repair. Version AND commit, because one version string spans
         # many commits.
+        # HASH WHAT THE IMAGE BAKES, NOT WHAT THE LANES BUILT. These used to be
+        # the per-lane fingerprint files — the shas of whatever the rpcs3/turnip/
+        # kernel lanes last produced. But since the image lane started taking its
+        # three artifact NAMES from config/gtk_stack.json, the lanes and the
+        # manifest are different things, and the fingerprint was describing the
+        # wrong one: on 2026-08-10 it held turnip 7ed58c2f (26.2.0, the lane's
+        # output) while the card actually baked 8a16efa6 (26.1.6, the manifest's
+        # pin). Changing the manifest would then not move the fingerprint at all,
+        # so the rebuild that the change REQUIRES would skip as fresh — the same
+        # self-concealing failure as the kit= term, one layer down.
         image)  printf 'k=%s a=%s t=%s base=%s script=%s kit=%s@%s' \
-                    "$(cat "$FORGE_STATE/fingerprints/kernel.sha" 2>/dev/null)" \
-                    "$(cat "$FORGE_STATE/fingerprints/rpcs3.sha" 2>/dev/null)" \
-                    "$(cat "$FORGE_STATE/fingerprints/turnip.sha" 2>/dev/null)" \
+                    "$CERT_KSHA" "$CERT_ASHA" "$CERT_TSHA" \
                     "$FORGE_IMAGE_BASEDATE" \
                     "$(sha256_of os-install/build/build_gtk_image_v2.sh)" \
                     "$CERT_VER" "$CERT_HEAD" ;;

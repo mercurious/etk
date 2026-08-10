@@ -204,6 +204,51 @@ fi
 
 echo
 # --------------------------------------------------------------------------
+# TURNIP CATALOG POLICY: LATEST STABLE + EXACTLY ONE PRE-RELEASE (2026-08-10)
+# --------------------------------------------------------------------------
+# Operator-set shipping policy: every release carries the latest STABLE Turnip
+# as the certified default, plus ONE pre-release the operator can select from
+# the Pitstop DRIVER tab. Two drivers, never three, never one — a second
+# pre-release doubles the vault's Mesa epochs for no test signal, and dropping
+# the pre-release removes the only forward-looking A/B arm the kit has.
+#
+# Gated because it drifted silently: the kit shipped 26.1.6 + 26.2.0-rc3 for
+# two releases while the forge knob had already moved to 26.2.0 + 26.3.0-devel,
+# and nothing compared the two. The manifest's PRIMARY must be the stable one —
+# it is what a fresh install and the flashable card both get by default, so a
+# pre-release sitting there would make devel the default for every new user.
+echo "-- turnip catalog: latest stable + one pre-release --"
+_CB=$(sed -n 's/^CERTIFIED_BUILDS="\(.*\)"$/\1/p' "$REPO_ROOT/install.sh" | head -1)
+_n=0; _pre=0; _stable=""
+for _d in $_CB; do
+    _n=$((_n + 1))
+    case "$_d" in
+        *-rc[0-9]*|*-devel*|*-beta*|*-alpha*) _pre=$((_pre + 1)) ;;
+        *) _stable="$_d" ;;
+    esac
+done
+if [ "$_n" -eq 2 ] && [ "$_pre" -eq 1 ]; then
+    ok "catalog is 1 stable + 1 pre-release ($_n drivers)"
+else
+    bad "catalog must be exactly 1 stable + 1 pre-release; got $_n driver(s), $_pre pre-release(s): $_CB"
+fi
+_JT=$(sed -n '/"turnip": {/,/}/p' "$REPO_ROOT/config/gtk_stack.json" \
+    | sed -n 's/.*"asset": "\([^"]*\)".*/\1/p' | head -1)
+if [ -n "$_stable" ] && [ "$_JT" = "$_stable" ]; then
+    ok "manifest default is the STABLE driver ($_stable)"
+else
+    bad "manifest default must be the stable driver (manifest: ${_JT:-none}, stable: ${_stable:-none})"
+fi
+# Every certified driver must be staged — the manifest only pins the primary,
+# so the sha gate below never covers the pre-release. That hole shipped a
+# re-minted rc3 into the 0.8.5 asset set before it was caught by hand.
+for _d in $_CB; do
+    if [ -f "$REPO_ROOT/drivers/$_d" ]; then ok "staged: $_d"
+    else bad "certified driver NOT staged: drivers/$_d"; fi
+done
+
+echo
+# --------------------------------------------------------------------------
 # DOES THE PINNED SHA MATCH THE ARTIFACT ON DISK? (added 2026-08-10)
 # --------------------------------------------------------------------------
 # The 0.8.4 gate learned to ask whether a pinned artifact EXISTS. It never
