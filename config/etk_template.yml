@@ -55,7 +55,7 @@ Core:
   PPU Vector NaN Handling: true
   Performance Report Threshold: 500
   Precise SPU Verification: false
-  Preferred SPU Threads: 3
+  Preferred SPU Threads: 0
   RSX FIFO Fetch Accuracy: Atomic
   SPU Block Size: Safe
   SPU Cache: true
@@ -174,7 +174,7 @@ VFS:
 Video:
   3D Display Enabled: false
   3D Display Mode: Disabled
-  Accurate ZCULL stats: true
+  Accurate ZCULL stats: false
   Allow Host GPU Labels: false
   Anisotropic Filter Override: 0
   Aspect ratio: 16:9
@@ -204,8 +204,8 @@ Video:
   Framebuffer Aliasing Heuristic Bias: Auto
   Handle RSX Memory Tiling: false
   Log shader programs: false
-  MSAA: Auto
-  Minimum Scalable Dimension: 16
+  MSAA: Disabled
+  Minimum Scalable Dimension: 512
   Multithreaded RSX: false
   Output Scaling Mode: Bilinear
   Performance Overlay:

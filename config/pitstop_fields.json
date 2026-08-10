@@ -33,7 +33,7 @@
       "1280x720",
       "854x480",
       "1024x576"
-      ],
+    ],
     "help": "PS3 OUTPUT resolution the game targets (not the render scale above). 1280x720 native is the ETK standard -- GT titles ship 720p modes and the KPI is judged at native. Lower outputs are a compatibility lever, not a speed dial; use Resolution Scale for performance."
   },
   {
@@ -89,7 +89,6 @@
     ],
     "help": "Use Vulkan for Turnip driver support. OpenGL slower but more accurate."
   },
-
   {
     "label": "Audio Renderer Backend",
     "section": "Audio",
@@ -154,7 +153,7 @@
     "min": 0,
     "max": 6,
     "step": 1,
-    "help": "SPU worker pool size. OPERATOR-VALIDATED 2026-07-10: 3 keeps the MENUS springy while racing performance holds (auto/other values make menu navigation sluggish). The audio-only SPURS ladder (guest-side) is a different dial."
+    "help": "SPU worker pool size. SHIPS AT 0 (auto, the RPCS3 default) because the golden seed is a SAFE START, not a tune -- but this is one of the best first dials to reach for. OPERATOR-VALIDATED 2026-07-10: 3 keeps the MENUS springy while racing performance holds (auto/other values make menu navigation sluggish), and it can also get a title through a hang that auto will not. The audio-only SPURS ladder (guest-side) is a different dial."
   },
   {
     "label": "Max SPURS Threads",

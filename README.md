@@ -86,7 +86,7 @@ See [Getting Started](https://github.com/mercurious/etk/#getting-started) to ins
 | Crash Recovery | Safely exit from crash or freeze | `L1` + `R3` to safely recover to ES frontend |
 | ETK Screenshot | Shutter screenshots with the overlay included | `L1` + `L2` together; configurable in ETK Pitstop `TOOLS` |
 | On Device Installations | One-tap, on-device firmware and game installs — they run in the **background**, so you can keep using the Pitstop or go back to your games while they unpack (a game launch pauses the install and it resumes after) | Drop `.pup` in `etk/firmware_drop`, `.pkg` in `etk/pkg_install_drop`, open ETK Pitstop `TOOLS` tab |
-| Golden Tune Seeding | New games (including disc `.iso` copied into `roms/ps3/`) start on the ETK golden tune instead of raw RPCS3 defaults | automatic on next Pitstop open; `ETK_GOLDEN_SEED=0` in `etk.conf` to disable |
+| Golden Tune Seeding | New games (including disc `.iso` copied into `roms/ps3/`) start on the ETK golden tune: RPCS3's own defaults plus the handheld/Adreno settings proven on this class of device. A **safe start, not a finished tune** — per-title dials live in the TUNING tab | automatic on next Pitstop open; `ETK_GOLDEN_SEED=0` in `etk.conf` to disable |
 | ISO Onboarding | Copy a disc `.iso` into `roms/ps3/` and it becomes a real ES game: launcher generated, ETK overlay enabled and tuned | automatic on next Pitstop open; `ETK_ISO_ONBOARD=0` in `etk.conf` to disable |
 | Video Mirroring | Device screen on while USB-DisplayPort-HDMI out active | turn USB plug upside-down to solve video-out issue |
 | Flicker-free Road Surfaces | 5 year emulator old [bug](https://github.com/RPCS3/rpcs3/issues/11912) solved with non-upstreamable patch | perfectly rendered road surfaces |
