@@ -25,6 +25,18 @@ This chart cannot prove which is which on its own — R3 is a human pressing a
 button, and the ledger does not record what they were trying to do at the
 time. It narrows the candidates to the ones worth asking about, and that is
 all it claims.
+
+PLAYABLE-ONLY BY DEFAULT (operator-directed 2026-08-10), and this is not
+cosmetic. The ledger cannot see whether a session was a race or a main menu,
+so an unplayable title charts exactly like a playable one — and a title that
+never leaves its menus can look STABLE, because a menu does not stress the
+GPU. Reading stability across all titles therefore implies a library you can
+play, which is false. `config/game_status.tsv` carries the operator's own
+playability call (mirrored from the wiki) and is the only source of that
+intel. It also cleans up the exit-hang scan: of seven candidates found by
+telemetry alone, FALLOUT 3 is `menus` and Need for Speed: Most Wanted is
+`none` — their R3s are a human giving up on a title that never started, not
+one refusing to close. Pass --status to widen, or --status any for everything.
 """
 import argparse
 import os
@@ -65,16 +77,36 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ledger", default="state/etk_telemetry/sessions.tsv")
     ap.add_argument("--names", default="state/meta/title_names.tsv")
+    ap.add_argument("--status-file", default="config/game_status.tsv")
+    ap.add_argument("--status", default="playable",
+                    help="comma-separated statuses to chart, or 'any'")
     ap.add_argument("--out", default="docs/charts/titles.png")
     ap.add_argument("--top", type=int, default=22)
     a = ap.parse_args()
 
+    status, wiki_name = {}, {}
+    if os.path.exists(a.status_file):
+        for line in open(a.status_file):
+            if line.startswith("#") or not line.strip():
+                continue
+            p = line.rstrip("\n").split("\t")
+            if len(p) >= 2:
+                status[p[0].strip()] = p[1].strip()
+                if len(p) >= 3:
+                    wiki_name[p[0].strip()] = p[2].strip()
+    elif a.status != "any":
+        sys.exit(f"no {a.status_file} — playability is operator intel, not "
+                 "derivable from the ledger; pass --status any to override")
+    want = None if a.status == "any" else set(s.strip() for s in a.status.split(","))
+
+    # The wiki's naming is the operator's own and wins over a launcher filename.
     names = {}
     if os.path.exists(a.names):
         for line in open(a.names):
             p = line.rstrip("\n").split("\t")
             if len(p) >= 2:
                 names.setdefault(p[0].strip(), p[1].strip())
+    names.update(wiki_name)
 
     per = defaultdict(lambda: defaultdict(int))
     tot = defaultdict(int)
@@ -90,6 +122,21 @@ def main():
             continue
         per[p[3]][classify(p[4], p[9] or "")] += 1
         tot[p[3]] += 1
+
+    # Drop what the operator has not called playable. Report the drop rather
+    # than performing it silently — a title vanishing from a stability chart
+    # should be a stated decision, not an absence nobody notices.
+    if want is not None:
+        dropped = sorted(((s, tot[s]) for s in tot if status.get(s) not in want),
+                         key=lambda kv: -kv[1])
+        for s, _ in dropped:
+            del tot[s]
+        if dropped:
+            print(f"excluded {len(dropped)} title(s) not in status={a.status}:")
+            for s, n in dropped[:12]:
+                print(f"    {names.get(s, s):<42} {status.get(s, 'NO STATUS'):<11} N={n}")
+    if not tot:
+        sys.exit("nothing left to chart after the status filter")
 
     top = sorted(tot, key=lambda s: -tot[s])[:a.top]
     top.reverse()   # barh draws bottom-up
@@ -134,8 +181,8 @@ def main():
     fig.text(0.063, 0.955, "How each title ends — not just whether it survived",
              fontsize=18, fontweight="bold", color="#111")
     fig.text(0.063, 0.917,
-             "scored sessions per title in brackets  ·  aborted runs and sub-60 s launches excluded  ·  "
-             "an all-orange bar with no red is the 'plays fine, hangs on exit' fingerprint",
+             "PLAYABLE titles only (config/game_status.tsv)  ·  scored sessions in brackets  ·  "
+             "aborted and sub-60 s runs excluded  ·  orange without red = played, then would not quit",
              fontsize=11, color="#666")
 
     ax.legend(handles=[Patch(facecolor=c, label=l) for _, c, l in SEG],

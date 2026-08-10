@@ -1,0 +1,76 @@
+# ETK — PER-TITLE PLAYABILITY STATUS (operator intel; the wiki mirrors this)
+# =============================================================================
+# THIS IS THE HUMAN LAYER THE LEDGER CANNOT SEE. Telemetry records that a
+# session ran 7 minutes; it cannot tell whether those 7 minutes were a race or
+# a main menu. Only the operator, at the rig, knows which. Without this file a
+# stability chart makes an unplayable title look identical to a playable one —
+# and worse, makes a title that never leaves its menus look STABLE, because a
+# menu does not stress the GPU.
+#
+# It is also the filter that keeps the exit-hang analysis honest. Scanning the
+# ledger for "all losses are R3, no GPU fault" produced seven candidates for
+# "plays fine, hangs on quit" — but FALLOUT 3 is `menus` and Need for Speed:
+# Most Wanted is `none`, so their R3s are a human giving up on a title that
+# never started, not one refusing to close. Only two of the seven survive this
+# filter.
+#
+# SOURCE: github.com/mercurious/etk/wiki/Tested-Games, synced 2026-08-10.
+# The WIKI is the operator's working surface; this file is the machine-readable
+# copy that tools/ reads. If they disagree, the wiki wins — re-sync this file.
+#
+# STATUS VALUES (RPCS3's own compatibility vocabulary):
+#   playable    — completes/plays properly, the only status charts default to
+#   in-game     — gets into gameplay but with significant problems
+#   menus       — boots to menus, never reaches real gameplay
+#   regression  — worked before, broken now
+#   none        — does not boot
+#
+# Keyed on SERIAL. Titles are the wiki's own naming and may differ from the
+# rig's launcher filenames (see the notes at the foot of this file).
+# serial	status	title
+NPEA90002	playable	Gran Turismo HD Concept
+NPEA00050	playable	Gran Turismo Prologue Spec III
+NPUA80075	playable	Gran Turismo Prologue Spec II
+NPEA00502	playable	Gran Turismo 6
+NPUB31790	playable	Grand Theft Auto: San Andreas
+BCUS98158	playable	Gran Turismo 5 Prologue Spec II (disc ISO)
+BCUS98296	playable	Gran Turismo 6
+NPUA80105	playable	WipEout HD
+NPUA80499	playable	Motorstorm 3D Rift
+NPUB30151	playable	After Burner Climax
+NPUB30899	playable	Tekken Tag Tournament 2
+NPUB30625	playable	Virtua Fighter 5 Final Showdown
+NPUB31195	playable	SoulCalibur V
+NPUB31698	playable	Metal Slug 3
+NPUB31245	playable	Armored Core: Verdict Day
+BCUS98114	in-game	Gran Turismo 5
+NPUB30471	in-game	Midnight Club: Los Angeles
+NPUA80275	in-game	Journey
+NPUB30393	in-game	BioShock
+NPUB30704	in-game	GTA: Episodes from Liberty City
+BLUS30019	in-game	EA Sports Fight Night Round 3
+NPUA80637	in-game	God of War: Chains of Olympus
+BCUS98148	in-game	LittleBigPlanet (disc)
+NPUA80491	in-game	God of War II HD
+NPUB30892	menus	SSX
+NPUA80643	menus	Ratchet & Clank
+NPUB30638	menus	Red Dead Redemption (PSN)
+NPUB30521	menus	Need for Speed: Hot Pursuit
+BLUS30185	menus	Fallout 3
+BLUS31156	menus	Grand Theft Auto V
+NPUB30457	regression	Ridge Racer 7
+BLUS30443	none	Demon's Souls
+NPUB30789	none	Need for Speed: Most Wanted
+#
+# NAMING DISCREPANCIES vs the rig's launcher filenames — worth an operator
+# pass, NOT auto-corrected here (the wiki is authoritative for naming):
+#   NPEA00502  wiki "Gran Turismo 6"        · TRACK_MANUAL §1 lists this serial
+#              in the GT5P family (NPEA00050/NPUA80075/NPEA00502) and the
+#              CHANGELOG discusses it as Spec II. One of the two is wrong.
+#   NPUA80075  wiki "…Prologue Spec II"     · rig launcher "Gran Turismo 5 Prologue"
+#   BCUS98158  wiki "…Spec II (disc ISO)"   · rig launcher "Gran Turismo 5 Prologue"
+#   NPUA80105  two launchers on the rig for one serial ("WipEout® HD.psn" and
+#              "Wipeout HD - Full Game.psn") — duplicate ES entry.
+# Serials present on the rig but absent from the wiki table (no status yet):
+#   BLUS30418, NPUA70087, NPUA70095, NPUA80472, NPUA80490, NPUB30040,
+#   NPUB30910, NPUB31250
