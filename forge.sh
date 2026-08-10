@@ -219,6 +219,10 @@ _manifest_sha() {  # <key> — the "sha256" of gtk_stack.json's <key> block
 CERT_KNAME=$(_manifest_asset kernel)
 CERT_ANAME=$(_manifest_asset rpcs3)
 CERT_TNAME=$(_manifest_asset turnip)
+# The middleware is an input too — see lane_image.sh. Pass what the release
+# expects so the lane can refuse a node whose checkout drifted.
+CERT_VER=$(grep -m1 '^APP_VERSION' "$REPO_ROOT/bin/etk_pitstop.py" | cut -d'"' -f2)
+CERT_HEAD=$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo "")
 CERT_KSHA=$(_manifest_sha kernel)
 CERT_ASHA=$(_manifest_sha rpcs3)
 CERT_TSHA=$(_manifest_sha turnip)
@@ -398,9 +402,10 @@ lane_env() {  # <lane> -> env assignments for the node-side recipe
         # The three baked names come from the MANIFEST (see the preflight
         # note above), never from the build knobs — an image is a shipped
         # asset and must carry exactly the certified stack.
-        image)  printf 'KNAME=%s ANAME=%s TNAME=%s KSHA=%s ASHA=%s TSHA=%s BASEDATE=%s OUTIMG=%s' \
+        image)  printf 'KNAME=%s ANAME=%s TNAME=%s KSHA=%s ASHA=%s TSHA=%s EXPECT_VER=%s EXPECT_HEAD=%s BASEDATE=%s OUTIMG=%s' \
                     "$CERT_KNAME" "$CERT_ANAME" "$CERT_TNAME" \
                     "$CERT_KSHA" "$CERT_ASHA" "$CERT_TSHA" \
+                    "$CERT_VER" "$CERT_HEAD" \
                     "$FORGE_IMAGE_BASEDATE" "$IMGNAME" ;;
     esac
 }

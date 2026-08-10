@@ -53,6 +53,35 @@ _verify kernel "$K" "${KSHA:-}"
 _verify rpcs3  "$A" "${ASHA:-}"
 _verify turnip "$T" "${TSHA:-}"
 
+# THE MIDDLEWARE IS AN INPUT TOO, AND IT TRAVELS BY GIT.
+# build_gtk_image_v2.sh rsyncs $REPO (this node's ~/etk checkout) into the
+# card's $ETK_ROOT and renders the boot-identity unit from $REPO's APP_VERSION.
+# So the largest, most-changed part of a release reaches the card through a
+# git clone on a SECOND MACHINE — with, until 2026-08-10, no gate whatsoever.
+# The three binaries were sha-pinned and verified above while the middleware
+# beside them was whatever the node last pulled. It shipped a 0.8.4 card out of
+# a 0.8.5 cut: right kernel, right driver, right emulator, wrong kit, and the
+# operator found it by reading the boot string on a freshly etched card.
+# A stale checkout is not a build failure, so nothing downstream can catch it.
+NODE_VER=$(grep -m1 '^APP_VERSION' "$HOME/etk/bin/etk_pitstop.py" 2>/dev/null | cut -d'"' -f2)
+NODE_HEAD=$(git -C "$HOME/etk" rev-parse --short HEAD 2>/dev/null || echo unknown)
+log "node kit: APP_VERSION=${NODE_VER:-?} HEAD=$NODE_HEAD"
+if [ -n "${EXPECT_VER:-}" ] && [ "$NODE_VER" != "$EXPECT_VER" ]; then
+    log "FATAL: this node's ETK checkout is $NODE_VER but the release is $EXPECT_VER."
+    log "       The card's ENTIRE middleware is rsynced from that checkout, so"
+    log "       baking now ships the wrong kit under the right version's name."
+    log "       Fix on the node, then re-run:"
+    log "         git -C ~/etk fetch origin && git -C ~/etk checkout ${EXPECT_HEAD:-origin/main}"
+    exit 1
+fi
+if [ -n "${EXPECT_HEAD:-}" ] && [ "$NODE_HEAD" != "$EXPECT_HEAD" ]; then
+    log "FATAL: node ETK checkout is at $NODE_HEAD, the release cut is $EXPECT_HEAD."
+    log "       Same version string can hide many commits — the middleware would"
+    log "       be stale even though APP_VERSION matches. Fix on the node:"
+    log "         git -C ~/etk fetch origin && git -C ~/etk checkout $EXPECT_HEAD"
+    exit 1
+fi
+
 log "inputs: $KNAME / $ANAME / $TNAME / base-$BASEDATE"
 
 docker exec etk-imgtool bash -lc "
