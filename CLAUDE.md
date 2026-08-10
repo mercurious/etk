@@ -6,7 +6,13 @@ on the fly (the `pgrep -f` self-match, the Sentry SHM-reseed-on-IDLE, `input_d` 
 in-game-only) because they read on-demand instead of front-loading. Don't. Open every ETK
 session by reading, in order:
 1. **`README.md`** — the public on-ramp + current certified stack (start here, like any user would).
-2. **`TRACK_MANUAL.md`** - the system manual and map with project handbook, your orientation
+2. **`TRACK_MANUAL.md`** - the system manual and map with project handbook, your orientation.
+   **Read §0 OPERATOR LOOPS first** — it is ten lines and it is the only part written from
+   the OPERATOR's side rather than the implementer's. Everything else tells you what a
+   thing IS; §0 tells you what it is FOR and which surface the human actually touches.
+   A change is not done until that surface shows it (2026-08-10: a cumulative driver
+   catalog was landed correctly in four places and the flashed card still offered a
+   one-entry chooser — three image rebuilds).
 3. **`AI_MANIFEST.md`** — the dev/AI **technical layer**: BusyBox/Rocknix laws, the Sentry state
    machine, the SHM map, RPCS3 paths, the two packaging models. This is the deep reference, **not
    sacred scripture** — some specific "laws" have proven unverified (e.g. the autostart/MangoHud
