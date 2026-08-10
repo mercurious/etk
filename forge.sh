@@ -181,6 +181,38 @@ if ! printf '%s' "$FORGE_KERNEL_VER" | grep -Eq '^[0-9]+(\.[0-9]+)*$' \
 fi
 IMGNAME="ROCKNIX-GTK-SM8250.aarch64-${FORGE_IMAGE_BASEDATE}.img"
 
+# --- WHAT THE IMAGE BAKES COMES FROM THE MANIFEST, NOT FROM THE BUILD KNOBS ---
+# The flashable card is a SHIPPED release asset, so its three inputs must be
+# the three artifacts the release certifies — config/gtk_stack.json, which
+# release_sanity already holds in lockstep with install.sh's CERT pins.
+# Previously the image lane derived its driver name from FORGE_TURNIP_VERS,
+# i.e. from the forge's BUILD LIST. That list is an experiment knob: on
+# 2026-08-10 it read "26.2.0 26.3.0-devel-e40d93a" while the certified driver
+# was 26.1.6_gtk_0.7, so a card built that day would have shipped an
+# uncertified Vulkan driver to every SD-card installer — the 0.8.4 image-lane
+# defect from the opposite direction (that one named a driver that no longer
+# existed; this one names one that exists but is not the one we ship).
+# Building a driver and SHIPPING a driver are different decisions; only the
+# manifest gets to make the second one.
+_manifest_asset() {  # <key> — the "asset" of gtk_stack.json's <key> block
+    sed -n "/\"$1\": {/,/}/p" "$REPO_ROOT/config/gtk_stack.json" \
+        | sed -n 's/.*"asset": "\([^"]*\)".*/\1/p' | head -1
+}
+CERT_KNAME=$(_manifest_asset kernel)
+CERT_ANAME=$(_manifest_asset rpcs3)
+CERT_TNAME=$(_manifest_asset turnip)
+if lane_selected image; then
+    for _p in "kernel:$CERT_KNAME" "rpcs3:$CERT_ANAME" "turnip:$CERT_TNAME"; do
+        [ -n "${_p#*:}" ] || tui_fail "gtk_stack.json has no ${_p%%:*} asset — cannot bake an image"
+    done
+    # The card must carry the same kernel the manifest ships. If the forge is
+    # pointed at a different one, that is a decision the operator has to make
+    # explicitly, not a silent divergence discovered after a 40-minute build.
+    if [ "$KNAME" != "$CERT_KNAME" ]; then
+        tui_fail "image lane: forge would bake $KNAME but the manifest ships $CERT_KNAME — reconcile FORGE_KERNEL_VER with config/gtk_stack.json"
+    fi
+fi
+
 # resolve the rpcs3 patch from the committed fork clone (canonical source; the
 # node's untracked copies are never consulted)
 if lane_selected rpcs3; then
@@ -342,9 +374,11 @@ lane_env() {  # <lane> -> env assignments for the node-side recipe
                     "$FORGE_RPCS3_IMAGE" "$FORGE_RPCS3_MARKER" "$FORGE_RPCS3_ARTIFACT" ;;
         turnip) printf 'VERS="%s" GTKVER=%s' "$FORGE_TURNIP_VERS" "$FORGE_TURNIP_GTKVER" ;;
         kernel) printf 'KNAME=%s' "$KNAME" ;;
+        # The three baked names come from the MANIFEST (see the preflight
+        # note above), never from the build knobs — an image is a shipped
+        # asset and must carry exactly the certified stack.
         image)  printf 'KNAME=%s ANAME=%s TNAME=%s BASEDATE=%s OUTIMG=%s' \
-                    "$KNAME" "$FORGE_RPCS3_ARTIFACT" \
-                    "etk_turnip_rocknix_$(echo "$FORGE_TURNIP_VERS" | awk '{print $1}')_gtk_${FORGE_TURNIP_GTKVER}.so" \
+                    "$CERT_KNAME" "$CERT_ANAME" "$CERT_TNAME" \
                     "$FORGE_IMAGE_BASEDATE" "$IMGNAME" ;;
     esac
 }
