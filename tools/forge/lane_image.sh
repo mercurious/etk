@@ -69,7 +69,12 @@ docker exec etk-imgtool bash -lc "
 # --- independent artifact-level verify (the raw spliced image survives in the
 # --- persistent container's /tmp; the recipe's own §6 gates already passed) ---
 log "artifact verify: labels + baked kernel, read back from the image"
-docker exec -i etk-imgtool bash -s <<'VERIFY'
+# -e KSHA: the heredoc is single-quoted (correct — the recipe must not be
+# expanded by the outer shell) and `docker exec` does NOT inherit the host
+# environment, so the expected hash has to be handed in explicitly. Without
+# this the check inside would read an empty KSHA and silently skip itself,
+# which is the exact failure mode this block was just rewritten to kill.
+docker exec -i -e KSHA="${KSHA:-}" etk-imgtool bash -s <<'VERIFY'
 set -eu
 W=/tmp/work2.img
 [ -f "$W" ] || { echo "VERIFY FAIL: $W gone (container restarted mid-lane?)"; exit 1; }
@@ -82,8 +87,27 @@ dd if="$W" of=/tmp/vchk.ext4 bs=1M skip=$(( SOFF / 1048576 )) count=64 status=no
 ELBL=$(dumpe2fs -h /tmp/vchk.ext4 2>/dev/null | awk -F: '/volume name/{gsub(/ /,"",$2);print $2}')
 echo "artifact ext4 label: $ELBL"
 [ "$ELBL" = "GTKSTOR" ] || { echo "VERIFY FAIL: ext4 label != GTKSTOR"; exit 1; }
-mcopy -i "$W@@$OFF" ::/KERNEL.gtktest /tmp/kchk.img 2>/dev/null
-strings /tmp/kchk.img | grep 'Linux version' | head -1
+# READ THE BAKED KERNEL BACK AND HASH IT. The previous line here was
+#   strings /tmp/kchk.img | grep 'Linux version' | head -1
+# which on 2026-08-10 printed `strings: command not found` and the lane still
+# declared ARTIFACT VERIFY OK. Two faults at once: `strings` is not in this
+# container, and `set -e` only inspects the LAST element of a pipeline (`head`,
+# which succeeded), so the failure was masked. The lane advertised "labels +
+# baked kernel" while only the labels were ever checked.
+# A hash is decisive where a version string was only indicative — every kernel
+# in the -0.4.1.N ladder prints the SAME "Linux version 7.1.2" line, so even a
+# working strings check could not have told them apart. sha256sum is present.
+mcopy -i "$W@@$OFF" ::/KERNEL.gtktest /tmp/kchk.img 2>/dev/null \
+    || { echo "VERIFY FAIL: could not read KERNEL.gtktest back out of the image"; exit 1; }
+BAKED=$(sha256sum /tmp/kchk.img | cut -d' ' -f1)
+echo "artifact kernel sha: $BAKED"
+if [ -n "${KSHA:-}" ] && [ "$BAKED" != "$KSHA" ]; then
+    echo "VERIFY FAIL: baked kernel is not the pinned one"
+    echo "  baked  $BAKED"
+    echo "  pinned $KSHA"
+    exit 1
+fi
+[ -n "${KSHA:-}" ] || echo "VERIFY WARN: no KSHA passed — baked kernel unverified"
 rm -f /tmp/kchk.img /tmp/vchk.ext4
 echo "ARTIFACT VERIFY OK"
 VERIFY
