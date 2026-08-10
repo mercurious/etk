@@ -81,6 +81,7 @@ Core:
   Use Accurate DFMA: true
   Use LLVM CPU: ""
   Usleep Time Addend: 0
+  RSX FIFO Accuracy: Fast
 Input/Output:
   Allow move hue set by game: false
   Background input enabled: true
@@ -102,7 +103,7 @@ Input/Output:
   Mouse Debug overlay: false
   Move: "Null"
   Pad handler mode: Single-threaded
-  Pad handler sleep (microseconds): 1000
+  Pad handler sleep (microseconds): 4000
   Paint move spheres: false
   SDL Camera ID: Default
   Show move cursor: false
@@ -200,13 +201,13 @@ Video:
   Force CPU Blit: false
   Force Hardware MSAA Resolve: false
   Force High Precision Z buffer: false
-  Frame limit: Auto
+  Frame limit: PS3 Native
   Framebuffer Aliasing Heuristic Bias: Auto
   Handle RSX Memory Tiling: false
   Log shader programs: false
-  MSAA: Auto
-  Minimum Scalable Dimension: 16
-  Multithreaded RSX: false
+  MSAA: Disabled
+  Minimum Scalable Dimension: 512
+  Multithreaded RSX: true
   Output Scaling Mode: Bilinear
   Performance Overlay:
     Body Background (hex): "#002339FF"
@@ -234,10 +235,10 @@ Video:
   Read Color Buffers: false
   Read Depth Buffer: false
   Record With Overlays: true
-  Relaxed ZCULL Sync: false
+  Relaxed ZCULL Sync: true
   Renderdoc Compatibility Mode: false
   Renderer: Vulkan
-  Resolution: 720x480
+  Resolution: 1280x720
   Resolution Scale: 100
   Screen size in inches: 24
   Second Frame Limit: 0

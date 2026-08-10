@@ -108,7 +108,7 @@ CONFIG_CHANGES_HEADER = "epoch\tgame_id\tfield_label\told_value\tnew_value\n"
 # ALIGNED TO THE RELEASE TAG at every cut (load-bearing since 0.8.0: the
 # TOOLS self-update compares this against the latest GitHub release tag).
 # The DRIVER tab names the actually-bound stack builds.
-APP_VERSION = "0.8.4"
+APP_VERSION = "0.8.5"
 
 # DRIVER tab (Turnip env-var dials). These are NOT RPCS3 config keys — they
 # inject through the proven profile.d path (same mechanism as 098-etk-stage3),
@@ -287,12 +287,20 @@ BG_INSTALL_ENABLED = os.environ.get('ETK_BG_INSTALL', '1').strip() != '0'
 INSTALL_QUEUE_DIR = os.path.join(SHM_DIR, 'install_queue')
 INSTALL_WORKER_PID = os.path.join(SHM_DIR, 'install_worker.pid')
 INSTALL_STAT_FILE = os.path.join(SHM_DIR, 'etk_install_stat')
-# L1-screenshot gating mode, shared with bin/input_d.py (which reads it live
-# on each L1 press). Cycled from the TOOLS tab. See env.sh for semantics.
+# Screenshot-chord gating mode, shared with bin/input_d.py (which reads it
+# live on each chord). Cycled from the TOOLS tab. See env.sh for semantics.
+# The chord itself moved from bare L1 to L1+L2 in 0.8.5 — bare shoulders are
+# controls real games bind, and new-title support kept tripping over it.
 SCREENSHOT_MODE_FILE = os.environ.get(
     'SCREENSHOT_MODE_FILE', f"{TELEMETRY_DIR}/screenshot_mode.txt")
 SCREENSHOT_MODES = ("always", "in-game", "disabled")
 SCREENSHOT_MODE_DEFAULT = "in-game"
+# Bog-sampler chord (R1+DPAD-Down) on/off, same live-read contract. Two
+# states, not three: the sampler either owns the chord or hands it back.
+BOG_CHORD_FILE = os.environ.get(
+    'BOG_CHORD_FILE', f"{TELEMETRY_DIR}/bog_chord.txt")
+BOG_CHORD_STATES = ("enabled", "disabled")
+BOG_CHORD_DEFAULT = "enabled"
 # Crash-signature catalog (id -> summary/explanation/suggested_changes), shared
 # with the Sentry. Backs the TELEMETRY session-detail crash card.
 CRASH_SIG_FILE = os.environ.get("SIGNATURES_FILE", f"{ETK_ROOT}/config/crash_signatures.json")
@@ -2629,20 +2637,23 @@ def handle_telemetry_pad(state, etype, code, val):
 # the most-reached tool (ROADMAP). Every entry is constant-indexed so the order
 # is a one-line edit here with no hardcoded literals in the dispatch below.
 _TOOLS_MENU = ["Manage Shaders", "Install a staged PS3 Package",
-               "Uninstall a Game", "Trigger Calibration", "Screenshot on L1",
-               "Install PS3 Firmware", "Check for ETK Updates"]
+               "Uninstall a Game", "Trigger Calibration", "Screenshot on L1+L2",
+               "Bog Sampler", "Install PS3 Firmware", "Check for ETK Updates"]
 _TOOLS_SHADERS_IDX = 0      # Manage Shaders sub-screen entry
 _TOOLS_INSTALL_IDX = 1      # staged-PKG installer
 _TOOLS_UNINSTALL_IDX = 2    # game uninstaller
 _TOOLS_TRIGCAL_IDX = 3      # L2/R2 trigger deadzone calibration (H7)
-# In-place toggle item (label gets ": <mode>" appended at draw).
+# In-place toggle items (label gets ": <state>" appended at draw). The two
+# chord switches sit together: both exist because an ETK chord can steal a
+# control the game itself binds, and the operator is the one who finds out.
 _TOOLS_SCREENSHOT_IDX = 4
-_TOOLS_FIRMWARE_IDX = 5     # headless PS3 firmware (PS3UPDAT.PUP) installer
-_TOOLS_UPDATE_IDX = 6       # hostless self-update (middleware layer)
+_TOOLS_BOG_IDX = 5          # R1+DPAD-Down bog-profiler chord on/off
+_TOOLS_FIRMWARE_IDX = 6     # headless PS3 firmware (PS3UPDAT.PUP) installer
+_TOOLS_UPDATE_IDX = 7       # hostless self-update (middleware layer)
 
 
 def _read_screenshot_mode():
-    """Current L1-screenshot mode. Absent / unreadable / unrecognized file
+    """Current screenshot-chord mode. Absent / unreadable / unrecognized file
     falls back to the in-game default -- matches input_d.py's reader."""
     try:
         with open(SCREENSHOT_MODE_FILE) as f:
@@ -2664,6 +2675,34 @@ def _cycle_screenshot_mode():
         with open(tmp, "w") as f:
             f.write(nxt + "\n")
         os.replace(tmp, SCREENSHOT_MODE_FILE)
+        return nxt
+    except Exception:
+        return cur
+
+
+def _read_bog_chord_state():
+    """Current bog-sampler chord state. Absent / unreadable / unrecognized
+    falls back to enabled -- matches input_d.py's reader byte for byte."""
+    try:
+        with open(BOG_CHORD_FILE) as f:
+            state = f.read().strip().lower()
+        return state if state in BOG_CHORD_STATES else BOG_CHORD_DEFAULT
+    except Exception:
+        return BOG_CHORD_DEFAULT
+
+
+def _toggle_bog_chord():
+    """Flip enabled <-> disabled and persist atomically (H2 tmp+mv). Returns
+    the new state, or the unchanged one if the write failed, so the status
+    line never claims a change that did not land."""
+    cur = _read_bog_chord_state()
+    nxt = BOG_CHORD_STATES[(BOG_CHORD_STATES.index(cur) + 1) % len(BOG_CHORD_STATES)]
+    try:
+        os.makedirs(os.path.dirname(BOG_CHORD_FILE), exist_ok=True)
+        tmp = BOG_CHORD_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            f.write(nxt + "\n")
+        os.replace(tmp, BOG_CHORD_FILE)
         return nxt
     except Exception:
         return cur
@@ -5409,6 +5448,8 @@ def draw_tools(stdscr, state):
         for i, label in enumerate(_TOOLS_MENU):
             if i == _TOOLS_SCREENSHOT_IDX:
                 label = f"{label}: {_read_screenshot_mode()}"
+            elif i == _TOOLS_BOG_IDX:
+                label = f"{label}: {_read_bog_chord_state()}"
             sel = (i == state.get("tools_cursor", 0))
             put(y, 4, "> " if sel else "  ",
                 curses.color_pair(1) if sel else curses.A_NORMAL)
@@ -5427,8 +5468,15 @@ def draw_tools(stdscr, state):
                 curses.A_DIM)
             put(ty + 1, 6, PKG_STAGING_DIR, curses.A_DIM)
         elif cur == _TOOLS_SCREENSHOT_IDX:
-            put(ty + 1, 4, "Screenshot on L1: always / in-game / disabled "
-                           "(CONFIRM cycles)", curses.A_DIM)
+            put(ty, 4, "Hold L1 + L2 to capture the screen with the overlay.",
+                curses.A_DIM)
+            put(ty + 1, 4, "always / in-game / disabled  (CONFIRM cycles)",
+                curses.A_DIM)
+        elif cur == _TOOLS_BOG_IDX:
+            put(ty, 4, "R1 + DPAD-Down records a 30s performance sample.",
+                curses.A_DIM)
+            put(ty + 1, 4, "Turn it off if a game needs that button combo.",
+                curses.A_DIM)
         elif cur == _TOOLS_FIRMWARE_IDX:
             put(ty, 4, "Firmware drop folder (place PS3UPDAT.PUP):",
                 curses.A_DIM)
@@ -6026,8 +6074,10 @@ def _tools_select(state):
                 state["tools_mode"] = "firmware_confirm"
         elif state.get("tools_cursor", 0) == _TOOLS_UPDATE_IDX:    # Self-update
             state["tools_action"] = ("update_check",)
-        else:                                        # Screenshot-on-L1 toggle
-            state["status"] = f"Screenshot on L1: {_cycle_screenshot_mode()}"
+        elif state.get("tools_cursor", 0) == _TOOLS_BOG_IDX:       # Bog chord
+            state["status"] = f"Bog Sampler: {_toggle_bog_chord()}"
+        else:                                     # Screenshot-chord toggle
+            state["status"] = f"Screenshot on L1+L2: {_cycle_screenshot_mode()}"
 
     elif mode == "install_confirm":
         pkg, raps, _tid = state["tools_pkg"]

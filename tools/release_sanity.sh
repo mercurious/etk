@@ -204,6 +204,80 @@ fi
 
 echo
 # --------------------------------------------------------------------------
+# DOES THE PINNED SHA MATCH THE ARTIFACT ON DISK? (added 2026-08-10)
+# --------------------------------------------------------------------------
+# The 0.8.4 gate learned to ask whether a pinned artifact EXISTS. It never
+# asked whether the pinned sha is the sha of the thing we actually staged —
+# and a filename is not a build. Live miss this exists to stop (found at the
+# 0.8.5 cut): the forge re-minted the RPCS3 core on 2026-08-07 09:09, staged
+# it (80,153,723 B / 9a8a4fd7…) and wrote its .sha256 sidecar, while
+# install.sh, the PowerShell port and gtk_stack.json all kept pinning the
+# build it replaced (80,369,730 B / 395177a6…). Every name check passed;
+# every file existed; the three pins agreed with each other. They were just
+# all one build behind the forge. The kernel is the same hazard with the
+# teeth in: -0.3.1 and -0.4.1 are BOTH exactly 60,246,528 bytes, so size
+# cannot discriminate them — only the hash can.
+echo "-- pinned sha == staged artifact --"
+_sha_of() { shasum -a 256 "$1" 2>/dev/null | cut -d' ' -f1; }
+_check_pin() {   # $1=label  $2=file on disk  $3=pinned sha
+    if [ ! -f "$2" ]; then skip "$1: not staged locally ($(basename "$2"))"; return; fi
+    _got=$(_sha_of "$2")
+    if [ -z "$3" ]; then skip "$1: no sha pinned"
+    elif [ "$_got" = "$3" ]; then ok "$1: pin matches the staged build"
+    else
+        bad "$1: pin is NOT the staged build"
+        printf '        staged %s  (%s B)\n' "$(printf '%s' "$_got" | cut -c1-16)…" "$(wc -c < "$2" | tr -d ' ')"
+        printf '        pinned %s\n' "$(printf '%s' "$3" | cut -c1-16)…"
+    fi
+}
+_J_RP=$(sed -n 's/.*"sha256": "\([0-9a-f]\{64\}\)".*/\1/p' "$REPO_ROOT/config/gtk_stack.json" | sed -n 3p)
+_J_KN=$(sed -n 's/.*"sha256": "\([0-9a-f]\{64\}\)".*/\1/p' "$REPO_ROOT/config/gtk_stack.json" | sed -n 1p)
+_I_RPSHA=$(sed -n 's/^CERT_RPCS3_SHA="\(.*\)"$/\1/p' "$REPO_ROOT/install.sh" | head -1)
+_CERT=$(sed -n 's/^CERT_RPCS3="\(.*\)"$/\1/p' "$REPO_ROOT/install.sh" | head -1)
+_check_pin "install.sh CERT_RPCS3_SHA" "$REPO_ROOT/emulators/$_CERT" "$_I_RPSHA"
+if [ "$_J_RP" = "$_I_RPSHA" ]; then ok "gtk_stack.json rpcs3 sha matches install.sh"
+else bad "gtk_stack.json rpcs3 sha DRIFTED from install.sh CERT_RPCS3_SHA"; fi
+_KASSET=$(sed -n 's/.*"asset": "\(KERNEL\.[^"]*\)".*/\1/p' "$REPO_ROOT/config/gtk_stack.json" | head -1)
+_check_pin "gtk_stack.json kernel sha" "$HOME/rocknix-gtk/artifacts/$_KASSET" "$_J_KN"
+# The image lane bakes the shipped card — it must name the SAME kernel.
+_IMG_KN=$(sed -n 's|^KERNEL="\${KERNEL:-.*/\(KERNEL\.[^}]*\)}"|\1|p' "$REPO_ROOT/os-install/build/build_gtk_image_v2.sh" | head -1)
+if [ -n "$_IMG_KN" ] && [ "$_IMG_KN" = "$_KASSET" ]; then
+    ok "image lane bakes the pinned kernel ($_KASSET)"
+else
+    bad "image lane kernel DRIFTED (image: ${_IMG_KN:-none} vs pinned: $_KASSET)"
+fi
+# forge mints what the manifest ships, or the next cut re-opens this hole.
+_F_KN="KERNEL.rocknix-gtk-$(sed -n 's/^FORGE_KERNEL_DATE="\${FORGE_KERNEL_DATE:-\(.*\)}"$/\1/p' "$REPO_ROOT/forge.sh" | head -1)-$(sed -n 's/^FORGE_KERNEL_VER="\${FORGE_KERNEL_VER:-\(.*\)}"$/\1/p' "$REPO_ROOT/forge.sh" | head -1)"
+if [ "$_F_KN" = "$_KASSET" ]; then ok "forge.sh kernel lane targets the pinned kernel"
+else bad "forge.sh would mint $_F_KN but the manifest ships $_KASSET"; fi
+
+echo
+# --------------------------------------------------------------------------
+# THE GAME-TUNE NOTEBOOK IS CURRENT (added 2026-08-10)
+# --------------------------------------------------------------------------
+# config/config_<ID>.yml is a SHIPPED reference: it is what a fresh clone
+# reads to learn the settled tune for a title. Every tune is authored on the
+# rig in the Pitstop TUNING tab, and install.sh pulled the results only as far
+# as gitignored Tier-B state — so the published notebook drifted a full
+# release cycle behind the rig (24 of 41 titles at the 0.8.5 cut). install.sh
+# now closes that gap on every deploy; this gate makes sure a cut cannot ship
+# without it. Skips itself cleanly on a clone with no rig mirror.
+echo "-- game-tune notebook current --"
+if [ -x "$REPO_ROOT/tools/sync_game_configs.sh" ]; then
+    _sync_out=$("$REPO_ROOT/tools/sync_game_configs.sh" --check 2>&1)
+    _sync_rc=$?
+    if [ "$_sync_rc" = 0 ]; then
+        ok "config/ matches the rig's live tunes ($(printf '%s' "$_sync_out" | sed -n 's/^-- game tunes: \(.*\)$/\1/p'))"
+    else
+        bad "config/ game tunes are STALE vs the rig — run ./tools/sync_game_configs.sh and commit"
+        printf '%s\n' "$_sync_out" | sed -n 's/^/      /p' | grep -E 'drift|new |stale' | head -6
+    fi
+else
+    skip "tools/sync_game_configs.sh not found"
+fi
+
+echo
+# --------------------------------------------------------------------------
 # POWERSHELL PORT LOCKSTEP (added 2026-08-07)
 # --------------------------------------------------------------------------
 # The Windows port pulls rig-side heredocs from install.sh at runtime, so its

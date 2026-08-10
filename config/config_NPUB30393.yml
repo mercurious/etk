@@ -5,22 +5,22 @@ Audio:
   Audio Formats: 0
   Audio Provider: CellAudio
   Convert to 16 bit: false
-  Desired Audio Buffer Duration: 34
+  Desired Audio Buffer Duration: 250
   Disable Sampling Skip: false
   Dump to file: false
   Enable Buffering: true
-  Enable Time Stretching: false
+  Enable Time Stretching: true
   Master Volume: 100
   Microphone Devices: "@@@@@@@@@@@@"
   Microphone Type: "Null"
   Music Handler: Qt
   RSXAudio Avport: HDMI 0
   Renderer: Cubeb
-  Time Stretching Threshold: 75
+  Time Stretching Threshold: 100
 Core:
   Accurate Cache Line Stores: false
   Accurate PPU 128-byte Reservation Op Max Length: 0
-  Accurate RSX reservation access: true
+  Accurate RSX reservation access: false
   Accurate SPU DMA: false
   Accurate SPU Reservations: true
   Allow RSX CPU Preemptions: true
@@ -57,7 +57,7 @@ Core:
   Precise SPU Verification: false
   Preferred SPU Threads: 0
   RSX FIFO Fetch Accuracy: Atomic
-  SPU Block Size: Mega
+  SPU Block Size: Safe
   SPU Cache: true
   SPU Debug: false
   SPU Decoder: Recompiler (LLVM)
@@ -175,7 +175,7 @@ VFS:
 Video:
   3D Display Enabled: false
   3D Display Mode: Disabled
-  Accurate ZCULL stats: false
+  Accurate ZCULL stats: true
   Allow Host GPU Labels: false
   Anisotropic Filter Override: 0
   Aspect ratio: 16:9
@@ -195,10 +195,10 @@ Video:
   Disable Vulkan Memory Allocator: false
   Disable ZCull Occlusion Queries: false
   Driver Recovery Timeout: 1000000
-  Driver Wake-Up Delay: 1
+  Driver Wake-Up Delay: 0
   Enable Frame Skip: false
   FidelityFX CAS Sharpening Intensity: 50
-  Force CPU Blit: false
+  Force CPU Blit: true
   Force Hardware MSAA Resolve: false
   Force High Precision Z buffer: false
   Frame limit: PS3 Native
@@ -207,7 +207,7 @@ Video:
   Log shader programs: false
   MSAA: Disabled
   Minimum Scalable Dimension: 512
-  Multithreaded RSX: true
+  Multithreaded RSX: false
   Output Scaling Mode: Bilinear
   Performance Overlay:
     Body Background (hex): "#002339FF"
@@ -239,7 +239,7 @@ Video:
   Renderdoc Compatibility Mode: false
   Renderer: Vulkan
   Resolution: 1280x720
-  Resolution Scale: 66
+  Resolution Scale: 100
   Screen size in inches: 24
   Second Frame Limit: 0
   Shader Compiler Threads: 0
@@ -250,12 +250,12 @@ Video:
   Shader Mode: Async Recompiler (multi-threaded)
   Shader Precision: Low
   Stretch To Display Area: false
-  Strict Rendering Mode: true
+  Strict Rendering Mode: false
   Strict Texture Flushing: false
   Texture LOD Bias Addend: 0
   Use GPU texture scaling: false
   Use full RGB output range: true
-  VSync Mode: Disabled
+  VSync Mode: Full
   Vblank NTSC Fixup: false
   Vblank Rate: 60
   Vulkan:
@@ -268,3 +268,4 @@ Video:
     VRAM allocation limit (MB): 65536
   Write Color Buffers: true
   Write Depth Buffer: false
+  ZCULL Accuracy: Relaxed

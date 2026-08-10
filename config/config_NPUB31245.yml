@@ -81,6 +81,7 @@ Core:
   Use Accurate DFMA: true
   Use LLVM CPU: ""
   Usleep Time Addend: 0
+  RSX FIFO Accuracy: Fast
 Input/Output:
   Allow move hue set by game: false
   Background input enabled: true
@@ -102,7 +103,7 @@ Input/Output:
   Mouse Debug overlay: false
   Move: "Null"
   Pad handler mode: Single-threaded
-  Pad handler sleep (microseconds): 1000
+  Pad handler sleep (microseconds): 4000
   Paint move spheres: false
   SDL Camera ID: Default
   Show move cursor: false
@@ -204,7 +205,7 @@ Video:
   Framebuffer Aliasing Heuristic Bias: Auto
   Handle RSX Memory Tiling: false
   Log shader programs: false
-  MSAA: Auto
+  MSAA: Disabled
   Minimum Scalable Dimension: 16
   Multithreaded RSX: false
   Output Scaling Mode: Bilinear
@@ -237,7 +238,7 @@ Video:
   Relaxed ZCULL Sync: false
   Renderdoc Compatibility Mode: false
   Renderer: Vulkan
-  Resolution: 720x480
+  Resolution: 1280x720
   Resolution Scale: 100
   Screen size in inches: 24
   Second Frame Limit: 0
@@ -265,5 +266,5 @@ Video:
     Force primitive restart flag: false
     Use Re-BAR for GPU uploads: true
     VRAM allocation limit (MB): 65536
-  Write Color Buffers: false
+  Write Color Buffers: true
   Write Depth Buffer: false

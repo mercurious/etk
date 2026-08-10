@@ -483,14 +483,24 @@ export HUD_STATE_FILE="$TELEMETRY_DIR/hud_state.tsv"
 # both the Sentry and input_d resolve it identically.
 export ETK_HUD_APPLY="$ETK_ROOT/bin/hud_apply.sh"
 
-# L1-screenshot gating mode. One of: always | in-game | disabled.
-#  - always   : L1 fires a screenshot whenever pressed (incl. frontend / Pitstop)
-#  - in-game  : L1 fires only while a PS3 game is resolved (the default)
-#  - disabled : L1 never fires a screenshot, freeing the button for the game
-# Read live by bin/input_d.py on each L1 press; cycled from Pitstop's TOOLS
+# Screenshot-chord gating mode. One of: always | in-game | disabled.
+#  - always   : the chord fires whenever made (incl. frontend / Pitstop)
+#  - in-game  : the chord fires only while a PS3 game is resolved (default)
+#  - disabled : never fires, handing the chord back to the game entirely
+# The chord is L1+L2 as of 0.8.5 (was bare L1): broadening the library past
+# the GT series showed a bare shoulder is a control real titles bind.
+# Read live by bin/input_d.py on each chord; cycled from Pitstop's TOOLS
 # tab (atomic tmp+mv). Absent / unreadable / invalid file = in-game default.
-# Gates ONLY the L1 trigger -- the SELECT+DPAD-Up chord is always live.
+# Gates ONLY the L1+L2 chord -- the SELECT+DPAD-Up chord is always live.
 export SCREENSHOT_MODE_FILE="$TELEMETRY_DIR/screenshot_mode.txt"
+
+# Bog-sampler chord (R1+DPAD-Down) gate. One of: enabled | disabled.
+# Same live-read contract as SCREENSHOT_MODE_FILE, toggled from Pitstop's
+# TOOLS tab. Absent / unreadable / invalid file = enabled (the chord has been
+# the perf lane's entry point since 2026-07-10; defaulting off would retire
+# it silently). Disabling only stops input_d ALSO firing bin/bog_profile.sh —
+# we never EVIOCGRAB, so the buttons reach the game either way.
+export BOG_CHORD_FILE="$TELEMETRY_DIR/bog_chord.txt"
 
 # Minimum session length (seconds) to count as a real attempt. Sessions
 # shorter than this are force-quit/fat-finger aborts: career_aggregate.sh
@@ -498,6 +508,17 @@ export SCREENSHOT_MODE_FILE="$TELEMETRY_DIR/screenshot_mode.txt"
 # CLEAN as ABORTED. A documented policy parameter — tunable here, not
 # hardcoded. Changing it shifts all historical career numbers.
 export TELEMETRY_MIN_SESSION_S=60
+
+# Upper sanity bound (seconds) on a session's computed duration. Beyond this
+# the anchor is a broken clock, not a long race: session_postmortem.sh drops
+# the timing to the honest-unknown path rather than writing the number. The
+# bug this exists for wrote duration_s=1251432772 (39.7 YEARS) into one 2026-08
+# PANIC row from an anchor that read as 1986 — a well-formed row in every other
+# column, so nothing rejected it, and it silently poisoned every RATE and MEAN
+# taken over the ledger (one row made a month of racing total 347,694 hours).
+# Medians were immune, which is why it survived weeks of analysis unnoticed.
+# The longest genuine session on record is 4.0 h; a day is generous headroom.
+export TELEMETRY_MAX_SESSION_S=86400
 
 # Helper: ensure telemetry tree exists; safe to call repeatedly.
 # Shell-only — Python consumers in bin/etk_pitstop.py do their own mkdir.

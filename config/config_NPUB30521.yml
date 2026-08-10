@@ -55,9 +55,9 @@ Core:
   PPU Vector NaN Handling: true
   Performance Report Threshold: 500
   Precise SPU Verification: false
-  Preferred SPU Threads: 3
+  Preferred SPU Threads: 0
   RSX FIFO Fetch Accuracy: Atomic
-  SPU Block Size: Mega
+  SPU Block Size: Safe
   SPU Cache: true
   SPU Debug: false
   SPU Decoder: Recompiler (LLVM)
@@ -72,7 +72,7 @@ Core:
   SPU Wake-Up Delay Thread Mask: 63
   SPU XFloat Accuracy: Approximate
   SPU delay penalty: 3
-  SPU loop detection: true
+  SPU loop detection: false
   Save LLVM logs: false
   Set DAZ and FTZ: false
   Sleep Timers Accuracy: As Host
@@ -81,6 +81,7 @@ Core:
   Use Accurate DFMA: true
   Use LLVM CPU: ""
   Usleep Time Addend: 0
+  RSX FIFO Accuracy: Fast
 Input/Output:
   Allow move hue set by game: false
   Background input enabled: true
@@ -102,7 +103,7 @@ Input/Output:
   Mouse Debug overlay: false
   Move: "Null"
   Pad handler mode: Single-threaded
-  Pad handler sleep (microseconds): 1000
+  Pad handler sleep (microseconds): 4000
   Paint move spheres: false
   SDL Camera ID: Default
   Show move cursor: false
@@ -192,9 +193,9 @@ Video:
   Disable Vertex Cache: false
   Disable Video Output: false
   Disable Vulkan Memory Allocator: false
-  Disable ZCull Occlusion Queries: true
+  Disable ZCull Occlusion Queries: false
   Driver Recovery Timeout: 1000000
-  Driver Wake-Up Delay: 50
+  Driver Wake-Up Delay: 0
   Enable Frame Skip: false
   FidelityFX CAS Sharpening Intensity: 50
   Force CPU Blit: false
@@ -234,11 +235,11 @@ Video:
   Read Color Buffers: false
   Read Depth Buffer: false
   Record With Overlays: true
-  Relaxed ZCULL Sync: false
+  Relaxed ZCULL Sync: true
   Renderdoc Compatibility Mode: false
   Renderer: Vulkan
-  Resolution: 720x480
-  Resolution Scale: 66
+  Resolution: 1280x720
+  Resolution Scale: 100
   Screen size in inches: 24
   Second Frame Limit: 0
   Shader Compiler Threads: 0

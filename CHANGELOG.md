@@ -4,6 +4,117 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ## [Unreleased]
 
+## [0.8.5] - 2026-08-10 — Good Manners Edition
+
+**The kit stopped being a Gran Turismo rig, and its controls had not noticed.**
+For most of the campaign the ETK ran one series on one device, so an ETK chord
+parked on a bare shoulder button cost nothing — the GT titles do not bind it.
+In the week before this release the ledger recorded **35 distinct PS3 titles**,
+up from a steady 6–14, with **66% of sessions outside the GT family** (18%
+before). Every one of those titles has its own idea of what L1 does. This
+release gets the kit's hands off the wheel: the chords that were stealing game
+controls now need a deliberate gesture, or can be switched off outright.
+
+Alongside that, three things were found by looking rather than by failing: the
+published reference tunes had drifted a release behind the rig, the release
+gate could not tell two different kernels apart, and one ledger row had been
+quietly poisoning every rate the project computes.
+
+<img src="https://raw.githubusercontent.com/mercurious/etk/main/docs/charts/library.png" width="720" alt="Bars of distinct PS3 titles raced per week rising from 7 to 35, with an orange line showing the share of sessions outside the Gran Turismo family climbing from near zero to 64 percent." />
+
+### Changed
+- **The screenshot chord moved from bare `L1` to `L1` + `L2`.** A lone shoulder
+  button is a control real games use — handbrake, look-back, shift-down — and
+  it was firing the shutter underneath them. L2 is the *analog* trigger on this
+  pad and it rests **nonzero** after first actuation (~12/255, the H7
+  trigger-cal finding), so the modifier is gated on a hysteresis pair rather
+  than `value > 0`; the naive reading would latch the modifier on after the
+  driver's first brake and turn every later L1 into a shutter press. The
+  `SELECT`+`DPAD-Up` fallback is unchanged and still ungated.
+- **The HUD punchbox (`R1` + `L3`) must now be held**, ~0.4 s, before the
+  overlay cycles. A stick-click with a bumper down is ordinary play; holding
+  both is not. Let go early and nothing happens. The input loop now waits on
+  the pad with a timeout instead of blocking in a read, and arms that timeout
+  *only* while a press is pending — with nothing pending it blocks exactly as
+  before.
+- **`L1` + `R3` recovery is deliberately untouched.** No hold, no queue, no
+  policy gate — the panic path fires on the press, as it always has. The chord
+  test suite asserts this directly so a future convenience cannot erode it.
+
+### Added
+- **TOOLS → Bog Sampler** switches the `R1`+`DPAD-Down` performance sampler on
+  and off. The bog profiler is a forensic instrument; on a title that binds
+  that combination it is pure interference. Sits next to the screenshot toggle,
+  reads live, needs no restart. Default on — it has been the perf lane's entry
+  point since 2026-07-10 and defaulting it off would retire it by stealth.
+- **`tools/test_chords.py`** — the chord map gets a regression suite. It drives
+  the matcher with synthetic evdev frames (no pad, no rig) and covers the
+  analog-latch bug, hysteresis chatter, hold-and-cancel, the Chiaki
+  stand-down, and that the dispatcher actually *consults* each gate — a check
+  added after deleting a gate left the function-level tests entirely green.
+- **`tools/sync_game_configs.sh`** — the per-game reference tunes in `config/`
+  are what a fresh clone reads to learn a title's settled configuration, but
+  every tune is authored on the rig and `install.sh` only ever carried the
+  results as far as gitignored host state. The notebook had frozen on
+  2026-07-24: **24 of 41 titles had drifted**, and 13 more titles the rig runs
+  had no entry at all. A deploy now refreshes it, and the release gate fails a
+  cut whose notebook is stale.
+- **`tools/chart_library.py`** — the first chart generator committed to the
+  repo. The three charts already in `docs/charts/` were rendered by scripts
+  that live in no repository, which is the same defect the 2026-08-05 fleet
+  audit found in four build lanes. A README chart is a shipped artifact.
+
+### Fixed
+- **The release gate could not tell two kernels apart.** `-0.3.1` and `-0.4.1`
+  are both **exactly 60,246,528 bytes**; only the hash distinguishes them. The
+  gate checked that a pinned artifact *exists* but never that its pinned sha is
+  the sha of the build actually staged — so it passed while three of four pins
+  named a kernel built eleven hours before the DisplayPort patch series landed.
+  It now compares every pin against the staged file and its forge sidecar, and
+  checks that the image lane and the forge target the kernel the manifest
+  ships.
+- **The certified RPCS3 pin was one build behind the forge.** The core was
+  re-minted on 2026-08-07 and staged with its sha sidecar, while `install.sh`,
+  `gtk_stack.json` and the PowerShell port all kept pinning the build it
+  replaced. All three agreed with each other, which is exactly why nothing
+  caught it.
+- **One ledger row was poisoning every rate in the project.** A 2026-08 PANIC
+  row carries `duration_s=1251432772` — **39.7 years** — from a session anchor
+  that read as 1986. `session_postmortem.sh` guarded against a *negative*
+  duration but not an absurd one, and the row is well-formed in every other
+  column, so nothing rejected it: it made one month of racing total 347,694
+  hours and drove rescues-per-hour to `0.0`. Medians were immune, which is why
+  it survived weeks of analysis unnoticed. An implausible anchor is now routed
+  to the existing honest-unknown path — timing dropped, row and classification
+  kept. **`START_EPOCH` is deliberately not zeroed**: that would downgrade a
+  genuine kernel panic to `ABORTED` and lose the crash record to fix a number.
+
+### Stack
+- **Kernel `20260801-0.4.1`** replaces `-0.3.1`. Same two core patches —
+  verified by their markers *inside the built image*, not by reading the patch
+  directory — plus five typec/DisplayPort/dpu patches. The withdrawn q6asm
+  24-bit patch is staged in no build tier.
+- **RPCS3 GTK Edition 0.8.5**, Turnip `26.1.6_gtk_0.7` + `26.2.0-rc3_gtk_0.7`
+  unchanged.
+
+### Known limitations
+- **Kernel panics are up, and this release does not fix them.** Per hour of
+  racing the rate went 2.1 → 2.7 → **9.7 per 10 h** across June, July and
+  August. It is *not* the new titles: titles first seen in August panic at
+  9.1/10 h and long-established ones at 9.8/10 h — the rise is fleet-wide.
+  RPCS3's own `peak_ram` does not implicate emulator memory growth (panicking
+  sessions report *lower* peaks than clean ones even at matched duration),
+  but a panic truncates the session before the climb, so that instrument
+  cannot answer the question — which is itself the finding. August was also a
+  dense multi-arm bench period running several non-shipping cores and drivers;
+  the arms carrying the shipping-adjacent core show ~2.7/10 h against ~18/10 h
+  for an older one. That is a hypothesis for a controlled test, **not a
+  verdict** — the arms differ in title mix and were never controlled.
+- **`config_RXSTR3179.yml`** on the rig is a golden seed against a filename tag
+  that never resolved to a serial, and `config_IDLE.yml` is the id resolver's
+  own sentinel written as a game key. Neither is a tune; both are skipped by
+  name-shape and reported rather than silently filtered.
+
 ## [0.8.4] - 2026-08-07 — Cloud Forge Edition
 
 **Every binary in this release was built on a machine that is not the maintainer's

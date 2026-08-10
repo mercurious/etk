@@ -67,9 +67,37 @@ if [ "$START_EPOCH" -eq 0 ] && [ -f "$RPCS3_LOG" ]; then
     START_EPOCH="$MTIME"
 fi
 
+# A NEGATIVE duration was already guarded; an ABSURDLY LARGE one was not, and
+# that is the direction the bug actually took. A single row in the 2026-08
+# ledger carries duration_s=1251432772 -- 39.7 years -- from a PANIC whose
+# anchor read as 1986. Because the readers index positionally and the row is
+# otherwise well-formed (real peak_load, real peak_ram, real fence), nothing
+# rejected it: it sat there poisoning every RATE and every MEAN taken over the
+# ledger. One row made a month of racing total 347,694 hours and drove
+# rescues-per-hour to 0.0. Medians survived it, which is exactly why it went
+# unnoticed for weeks (manual §6.4 scores on medians).
+#
+# An implausible anchor is not a long session, it is a broken clock, so treat
+# it as the SAME honest-unknown the missing-anchor path already produces:
+# duration 0 and ANCHOR_RELIABLE=0 (the TELEMETRY tab dims such rows, R3 and
+# crash-shot sentinels stop being freshness-tested against a start we don't
+# believe, and fence_at_crash is honest-zeroed). The row still carries every
+# metric that IS trustworthy. Ceiling is a full day -- the longest real
+# session ever recorded is 4.0 h, and a >24 h row is far likelier to be a
+# broken anchor than a rig left running with a game up.
+#
+# START_EPOCH is deliberately NOT zeroed. It still feeds the PANIC test below
+# and the dmesg window, and zeroing it would silently DOWNGRADE a genuine
+# kernel panic to CLEAN->ABORTED -- losing the crash record to fix a number.
+# We drop the number we cannot trust, not the classification we can.
 if [ "$START_EPOCH" -gt 0 ]; then
     DURATION=$((NOW - START_EPOCH))
     [ "$DURATION" -lt 0 ] && DURATION=0
+    if [ "$DURATION" -gt "${TELEMETRY_MAX_SESSION_S:-86400}" ]; then
+        echo "[etk] postmortem: implausible session anchor ($START_EPOCH -> ${DURATION}s); timing dropped" >&2
+        DURATION=0
+        ANCHOR_RELIABLE=0
+    fi
 else
     DURATION=0
 fi

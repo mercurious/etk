@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ==========================================================
-# ETK PHASE 10: PYTHON SHIFTER (v10.4.1 - RSX CAPTURE CHORD)
+# ETK PHASE 10: PYTHON SHIFTER (v10.5.0 - GAME-SAFE CHORDS)
 # ==========================================================
 # GEMINI IMMUTABLE RULE:
 # 1. L1 + R3 (BTN_TL 310 held + BTN_THUMBR 318) = RECOVERY PANIC.
@@ -9,7 +9,9 @@
 #    bin/recovery.sh DIRECTLY and detached so the rig stays fully
 #    untethered. Do NOT add a long-press/double-tap guard and do
 #    NOT route this through CMD_QUEUE (queue needs a tethered
-#    consumer). The chord is the only guard.
+#    consumer). The chord is the only guard. THE R3 PATH IS NEVER
+#    DELAYED, NEVER GATED, AND NEVER QUEUED — rules 5 and 6 below
+#    add a hold-delay and a disable switch to OTHER chords only.
 # 2. R1 + L3 (BTN_TR 311 held + BTN_THUMBL 317) = HUD PUNCHBOX CYCLE.
 #    Chord-gated: bare L3 stays with the game. When R1 is held, L3
 #    advances the HUD one stop: top -> bottom -> default -> off ->
@@ -19,6 +21,7 @@
 #    PIT/RACE thermal mode is now thermal_d.sh-internal only
 #    (auto-PIT at RACE_THRESHOLD; auto-recovers to RACE at
 #    RECOVER_THRESHOLD — no reboot, since thermal_d.sh v14).
+#    HELD, NOT TAPPED — see rule 5.
 # 3. SELF-HEAL: The InputPlumber virtual controller may not
 #    exist when the Sentry spawns this at boot. The connect
 #    loop MUST keep re-finding the device; do not collapse it
@@ -45,8 +48,36 @@
 #    operator presses twice more to get back in phase — never
 #    stuck, no state to clean up. All I/O fail-silent so this
 #    can never break the R3 panic path.
+# 5. GAME-SAFE CHORDS (0.8.5, operator-directed): broadening the
+#    game library past the GT series showed the ETK chords stealing
+#    controls that other titles actually bind. Two changes, both
+#    scoped to leave rule 1 alone:
+#    (a) ETK SCREENSHOT moved from BARE L1 to L1 + L2. A bare
+#        shoulder button is a real game control (handbrake, look-back,
+#        shift-down); a shoulder + trigger chord is not. L2 is the
+#        ANALOG axis on this pad (ABS_Z, 0-255) and it RESTS NONZERO
+#        after first actuation (~12/255 — the H7 trigger-cal finding),
+#        so the modifier is gated on a hysteresis pair (L2_ON/L2_OFF),
+#        never on `val > 0` — that would latch the modifier on for the
+#        rest of the session. BTN_TL2 (312) arms it too where the
+#        target emits the digital twin.
+#    (b) The R1+L3 PUNCHBOX must now be HELD for PUNCHBOX_HOLD_S
+#        before it fires. An L3 stick-click while R1 happens to be
+#        held is ordinary play in a lot of games; holding both for
+#        ~0.4 s is not. Released early = cancelled, nothing fires.
+#        The hold needs the read to be able to TIME OUT, which is why
+#        the loop selects on the fd instead of blocking in read().
+#        The timeout is armed ONLY while a punchbox press is pending;
+#        with nothing pending the select blocks exactly as the old
+#        read() did.
+# 6. Chord POLICY (is this chord allowed right now?) is applied at
+#    FIRE time in the dispatcher, never inside the chord state
+#    machine — so the machine stays a pure, testable shape-matcher.
+#    tools/test_chords.py drives it with synthetic evdev frames.
+#    Gates: SCREENSHOT_MODE_FILE (L1+L2), BOG_CHORD_FILE
+#    (R1+DPAD-Down), and the Chiaki in-stream stand-down.
 # ==========================================================
-import struct, os, time, re, glob, socket
+import struct, os, time, re, glob, select, socket
 
 # Absolute fallbacks point to the global tmpfs
 CMD_QUEUE = os.environ.get('CMD_QUEUE', '/dev/shm/etk_shm/etk_cmd_queue')
@@ -69,13 +100,44 @@ HUD_APPLY = os.environ.get(
 SCREENSHOT_MODE_FILE = os.environ.get(
     'SCREENSHOT_MODE_FILE',
     '/storage/games-internal/roms/etk/etk_telemetry/screenshot_mode.txt')
+BOG_CHORD_FILE = os.environ.get(
+    'BOG_CHORD_FILE',
+    '/storage/games-internal/roms/etk/etk_telemetry/bog_chord.txt')
 
-# L1-screenshot gating. 'always' fires on any L1 press, 'in-game' fires only
-# while a PS3 game is resolved, 'disabled' never fires (frees L1 for the game).
+# Screenshot-chord gating (the chord itself is L1+L2 since 0.8.5 — rule 5a).
+# 'always' fires whenever the chord is made, 'in-game' fires only while a PS3
+# game is resolved, 'disabled' never fires (hands the chord back to the game).
 # in-game is the default whenever the mode file is absent / unreadable /
-# unrecognized -- the conservative choice that keeps L1 out of the frontend.
+# unrecognized -- the conservative choice that keeps it out of the frontend.
 SCREENSHOT_MODES = ('always', 'in-game', 'disabled')
 SCREENSHOT_MODE_DEFAULT = 'in-game'
+
+# Bog-sampler chord gating (R1+DPAD-Down), toggled from Pitstop TOOLS. Same
+# shape as the screenshot mode above, two states: the sampler is a forensic
+# instrument, and on a title that binds R1+DPAD it is pure interference.
+# Default enabled — the chord has been the perf lane's entry point since
+# 2026-07-10 and disabling by default would silently retire it.
+BOG_CHORD_STATES = ('enabled', 'disabled')
+BOG_CHORD_DEFAULT = 'enabled'
+
+# --- L2 as a chord modifier (rule 5a) ---
+# L2 is ANALOG on the InputPlumber DS5 target: ABS_Z, 0-255. Trigger cal (H7)
+# established that it rests NONZERO after first actuation (~12/255, kernel
+# FLAT=0) and that the calibrated deadzone lands around 25 — so a `val > 0`
+# test would arm the modifier permanently after the driver's first brake.
+# L2_ON is a deliberate quarter-pull, well clear of that band; L2_OFF is lower
+# so a trigger resting ON the threshold cannot chatter the modifier (and, with
+# L1 held, machine-gun screenshots). Some targets also emit the digital twin
+# BTN_TL2 — honoured directly, it needs no hysteresis.
+BTN_TL2 = 312
+ABS_Z = 2
+L2_ON = 64
+L2_OFF = 40
+
+# --- Punchbox hold-delay (rule 5b) ---
+# How long R1+L3 must be held before the HUD cycles. 0.4 s is above any
+# incidental stick-click but still reads as "press", not "long-press".
+PUNCHBOX_HOLD_S = float(os.environ.get('ETK_PUNCHBOX_HOLD_S', '0.4'))
 
 # HUD toggle pair. bottom-left is the dashboard default — sits down by
 # the physical controls on the Flip 2, below the typical "rear view mirror"
@@ -243,8 +305,8 @@ def _read_screenshot_mode():
     except Exception:
         return SCREENSHOT_MODE_DEFAULT
 
-def _l1_screenshot_allowed():
-    """Gate the L1 trigger by the current mode. 'disabled' never fires;
+def _screenshot_chord_allowed():
+    """Gate the L1+L2 chord by the current mode. 'disabled' never fires;
     'in-game' fires only when a real game id is resolved; 'always' fires
     unconditionally. (The SELECT+DPAD-Up chord is NOT gated -- see loop.)"""
     mode = _read_screenshot_mode()
@@ -253,6 +315,26 @@ def _l1_screenshot_allowed():
     if mode == 'in-game':
         return _read_active_game_id() is not None
     return True  # 'always'
+
+
+def _read_bog_chord_state():
+    """Return the bog-sampler chord state, one of BOG_CHORD_STATES. Re-read
+    on every press (one small file, human-paced) so a Pitstop TOOLS toggle
+    takes effect with no daemon restart -- the screenshot-mode idiom. Any
+    error / unrecognized value falls back to BOG_CHORD_DEFAULT."""
+    try:
+        with open(BOG_CHORD_FILE) as f:
+            state = f.read().strip().lower()
+        return state if state in BOG_CHORD_STATES else BOG_CHORD_DEFAULT
+    except Exception:
+        return BOG_CHORD_DEFAULT
+
+
+def _bog_chord_allowed():
+    """R1+DPAD-Down gate. Disabled hands the chord straight back to the game
+    (we never EVIOCGRAB, so the buttons always passed through anyway -- this
+    only stops us ALSO firing a 30 s perf record over the top of them)."""
+    return _read_bog_chord_state() != 'disabled'
 
 def _read_active_game_id():
     """Returns the active game ID, or None if the rig is idle / unresolved.
@@ -441,97 +523,213 @@ def _chiaki_active():
     by config/etk_chiaki.sh). Chiaki owns R1+L3 (resolution toggle) and
     L1+R3 (codec toggle) in-stream, so the ETK chords that share those
     shapes — punchbox, recovery, and the R1+DPAD RPCS3 tools — stand down.
-    Screenshots (bare L1 / SELECT+DPAD-Up) stay live: shots of a stream are
+    Screenshots (L1+L2 / SELECT+DPAD-Up) stay live: shots of a stream are
     useful and collide with nothing."""
     return os.path.exists(os.environ.get('ETK_CHIAKI_LOCK',
                                          '/dev/shm/etk_shm/chiaki_active'))
 
 
+class Chords:
+    """The chord SHAPE matcher — pure state, no I/O, no spawning (rule 6).
+
+    feed() takes one decoded evdev frame and returns the list of action names
+    it completed; tick() returns the actions a pending TIMED chord completed.
+    The dispatcher in event_loop() applies policy (screenshot mode, bog
+    enable, Chiaki stand-down) and does the firing. Splitting it this way is
+    what lets tools/test_chords.py exercise every chord on the host without a
+    pad — input_d is locked-down core and carries the R3 panic path.
+
+    Actions: 'recovery' 'punchbox' 'screenshot' 'bog' 'rsx' 'vault'
+             'mango_toggle'
+    """
+
+    def __init__(self, hold_s=PUNCHBOX_HOLD_S):
+        self.hold_s = hold_s
+        self.clutch = False    # BTN_SELECT (314) — DPAD clutch modifier
+        self.l1 = False        # BTN_TL  (310) — R3-recovery / screenshot shoulder
+        self.r1 = False        # BTN_TR  (311) — L3-punchbox / DPAD-tool shoulder
+        self.l2 = False        # ABS_Z past L2_ON, or BTN_TL2 — screenshot modifier
+        self.punchbox_at = None  # monotonic deadline while R1+L3 is held
+
+    # -- the L2 modifier: analog with hysteresis, digital straight through --
+    def _set_l2(self, held):
+        """Returns the actions the transition completed. Rising edge with L1
+        already down IS the screenshot chord — either order of the two
+        presses fires it, which is the whole point of a chord."""
+        if held == self.l2:
+            return []
+        self.l2 = held
+        return ['screenshot'] if (held and self.l1) else []
+
+    def feed(self, etype, code, val, now):
+        acts = []
+
+        # --- BUTTON MAPPINGS (EV_KEY) ---
+        if etype == 1:
+            # 310 = BTN_TL (L1) / 311 = BTN_TR (R1): shoulder modifiers.
+            # Tracked as held-state so the stick-clicks (R3/L3) below only
+            # fire ETK actions when chorded — bare R3/L3 stay free for the
+            # game. Mirrors the SELECT `clutch` modifier used for the DPAD.
+            if code == 310:
+                self.l1 = (val == 1)
+                # L1 + L2 = ETK SCREENSHOT (0.8.5, rule 5a). Fires on the
+                # press that COMPLETES the chord; bare L1 no longer does
+                # anything, which is the interference this change removes.
+                if self.l1 and self.l2:
+                    acts.append('screenshot')
+            if code == 311:
+                self.r1 = (val == 1)
+                # R1 is the punchbox's held modifier: letting go of it
+                # mid-hold cancels, same as letting go of L3.
+                if not self.r1:
+                    self.punchbox_at = None
+            if code == BTN_TL2:
+                acts += self._set_l2(val == 1)
+
+            # L1 + R3 = RECOVERY PANIC. Chord-gated so a bare R3 stick-click
+            # in-game never trips recovery. 318 = BTN_THUMBR (R3). Fires on
+            # the press, undelayed and unqueued — immutable rule 1.
+            if code == 318 and val == 1 and self.l1:
+                acts.append('recovery')
+
+            # R1 + L3 = HUD PUNCHBOX cycle. Chord-gated so a bare L3
+            # stick-click stays with the game. 317 = BTN_THUMBL (L3).
+            # Cycles top -> bottom -> default -> off -> repeat. HELD, not
+            # tapped (rule 5b): the press only ARMS a deadline; tick() fires
+            # it once the pair has survived hold_s. Release cancels.
+            if code == 317:
+                if val == 1 and self.r1:
+                    self.punchbox_at = now + self.hold_s
+                elif val == 0:
+                    self.punchbox_at = None
+
+            # 314 = BTN_SELECT (clutch modifier for DPAD)
+            if code == 314:
+                self.clutch = (val == 1)
+
+        # --- AXIS MAPPINGS (EV_ABS) ---
+        elif etype == 3:
+            # L2 analog. Hysteresis pair, never `val > 0` — the DS5 target
+            # rests nonzero after first actuation and would latch (rule 5a).
+            if code == ABS_Z:
+                if val >= L2_ON:
+                    acts += self._set_l2(True)
+                elif val <= L2_OFF:
+                    acts += self._set_l2(False)
+            # InputPlumber maps DPAD to ABS_HAT0X (16) and ABS_HAT0Y (17)
+            elif self.clutch:
+                if code == 16:      # Horizontal Axis
+                    if val == 1:
+                        acts.append('vault')          # Right
+                    elif val == -1:
+                        acts.append('mango_toggle')   # Left
+                elif code == 17:    # Vertical Axis
+                    # Up: ETK SCREENSHOT (silent grim capture incl. MangoHUD).
+                    # Deliberate chord, NOT gated by SCREENSHOT_MODE_FILE -- the
+                    # mode governs only the L1+L2 chord above. Lets an operator
+                    # who set it 'disabled' still grab a shot on demand.
+                    if val == -1:
+                        acts.append('screenshot_forced')
+                    # (SELECT+DPAD-Down stays FREE — and note for future
+                    # chords: SELECT is the in-game CAMERA TOGGLE, so any
+                    # SELECT chord flips the driver's view as collateral.
+                    # Acceptable for rare tool actions (VAULT/mango/shot),
+                    # WRONG for mid-race marks — those go on R1. Operator
+                    # correction 2026-07-10, the rule-4 lesson generalized.)
+
+            # R1 + DPAD chords (rule 4's constraint generalized: R1, never
+            # SELECT, for anything fired mid-race — SELECT is the camera
+            # toggle and would knock the view). In-game only by construction:
+            # this daemon is Sentry-spawned in RUNNING state.
+            #   R1+DPAD-Down = BOG PROFILER (operator-assigned 2026-07-10):
+            #     mark the section start as the pack bogs; bin/bog_profile.sh
+            #     samples 30s from HERE, DDU VAULT segment shows the s-bar,
+            #     mako toast on banked. Debounced in the script. Disableable
+            #     from Pitstop TOOLS since 0.8.5 (rule 5/6).
+            #   R1+DPAD-Up = RSX FRAME CAPTURE / resume toggle (RELOCATED
+            #     from R1+Down 2026-07-10 when the operator assigned Down to
+            #     the bog profiler; same R1 mechanics, rule 4 intact).
+            if self.r1 and code == 17:
+                if val == 1:
+                    acts.append('bog')
+                elif val == -1:
+                    acts.append('rsx')
+
+        return acts
+
+    def next_timeout(self, now):
+        """Seconds until the pending punchbox fires, or None when nothing is
+        pending. None means the caller blocks in select() exactly as the old
+        read() did — the timeout exists only while a chord is being held."""
+        if self.punchbox_at is None:
+            return None
+        return max(0.0, self.punchbox_at - now)
+
+    def tick(self, now):
+        """Fire any pending timed chord whose hold has elapsed."""
+        if self.punchbox_at is not None and now >= self.punchbox_at:
+            self.punchbox_at = None
+            return ['punchbox']
+        return []
+
+
+def _dispatch(acts):
+    """Apply chord POLICY, then fire. Every gate lives here (rule 6) so the
+    state machine above stays a pure shape-matcher. Order is irrelevant —
+    no two actions in one frame contend."""
+    for a in acts:
+        if a == 'recovery':
+            # Rule 1: never gated by anything but the Chiaki stand-down,
+            # which is a genuine chord COLLISION, not a policy.
+            if not _chiaki_active():
+                fire_recovery()
+        elif a == 'punchbox':
+            if not _chiaki_active():
+                cycle_hud_state()
+        elif a == 'screenshot':
+            if _screenshot_chord_allowed():
+                fire_screenshot()
+        elif a == 'screenshot_forced':
+            fire_screenshot()
+        elif a == 'bog':
+            if _bog_chord_allowed() and not _chiaki_active():
+                fire_bog_profile()
+        elif a == 'rsx':
+            if not _chiaki_active():
+                fire_rsx_capture()
+        elif a == 'vault':
+            send_cmd("VAULT")
+        elif a == 'mango_toggle':
+            os.system("pkill -USR1 mangohud")
+
+
 def event_loop(device):
-    clutch = False
-    l1_held = False   # BTN_TL  (310) — shoulder modifier for the R3 recovery chord
-    r1_held = False   # BTN_TR  (311) — shoulder modifier for the L3 HUD chord
-    with open(device, 'rb') as f:
+    """Read frames, hand them to the chord matcher, dispatch what it returns.
+
+    buffering=0 is load-bearing: select() reports readiness of the FD, and a
+    buffered reader can hold a whole event in Python's own buffer that select
+    will never announce. Raw reads keep readiness and data 1:1. evdev always
+    delivers whole events, so a 24-byte read is never short."""
+    chords = Chords()
+    with open(device, 'rb', buffering=0) as f:
         while True:
+            timeout = chords.next_timeout(time.monotonic())
+            ready, _, _ = select.select([f], [], [], timeout)
+            if not ready:
+                # Timed out: the only reason we ever ask for one is a held
+                # chord coming due.
+                _dispatch(chords.tick(time.monotonic()))
+                continue
             data = f.read(EVENT_SIZE)
-            if not data: break
+            if not data:
+                break
             _, _, etype, code, val = struct.unpack(EVENT_FORMAT, data)
-
-            # --- BUTTON MAPPINGS (EV_KEY) ---
-            if etype == 1:
-                # 310 = BTN_TL (L1) / 311 = BTN_TR (R1): shoulder modifiers.
-                # Tracked as held-state so the stick-clicks (R3/L3) below only
-                # fire ETK actions when chorded — bare R3/L3 stay free for the
-                # game. Mirrors the SELECT `clutch` modifier used for the DPAD.
-                if code == 310: l1_held = (val == 1)
-                if code == 311: r1_held = (val == 1)
-
-                # L1 + R3 = RECOVERY PANIC. Chord-gated so a bare R3 stick-click
-                # in-game never trips recovery. 318 = BTN_THUMBR (R3).
-                if code == 318 and val == 1 and l1_held and not _chiaki_active():
-                    fire_recovery()
-
-                # R1 + L3 = HUD PUNCHBOX cycle. Chord-gated so a bare L3
-                # stick-click stays with the game. 317 = BTN_THUMBL (L3).
-                # Cycles top -> bottom -> default -> off -> repeat.
-                if code == 317 and val == 1 and r1_held and not _chiaki_active():
-                    cycle_hud_state()
-
-                # 310 = BTN_TL (L1): ETK SCREENSHOT (in-race recommended).
-                # Single-button trigger so the chord can't pass-through any
-                # in-game side effect (cf. SELECT-clutch chord which fires
-                # GT6's camera toggle alongside the screenshot).
-                #
-                # GATED by SCREENSHOT_MODE_FILE (always / in-game / disabled,
-                # default in-game), cycled from Pitstop's TOOLS tab. We never
-                # EVIOCGRAB, so L1 always passes through to the game regardless
-                # -- 'disabled' simply stops us ALSO firing a screenshot,
-                # genuinely freeing L1 for a game that binds it (e.g. rear-view
-                # camera; on GT5P/GT6 that view doesn't render on Turnip anyway,
-                # see dossiers/etk_gametest_status_sheet.md). The default
-                # 'in-game' suppresses accidental frontend/Pitstop captures.
-                # Only this L1 trigger is gated; the SELECT+DPAD-Up chord below
-                # is a deliberate fallback and always fires.
-                if code == 310 and val == 1 and _l1_screenshot_allowed():
-                    fire_screenshot()
-
-                # 314 = BTN_SELECT (clutch modifier for DPAD)
-                if code == 314: clutch = (val == 1)
-
-            # --- DPAD MAPPINGS (EV_ABS) ---
-            elif etype == 3:
-                # InputPlumber maps DPAD to ABS_HAT0X (16) and ABS_HAT0Y (17)
-                if clutch:
-                    if code == 16: # Horizontal Axis
-                        if val == 1: send_cmd("VAULT") # Right
-                        elif val == -1: os.system("pkill -USR1 mangohud") # Left
-                    elif code == 17: # Vertical Axis
-                        # Up: ETK SCREENSHOT (silent grim capture incl. MangoHUD).
-                        # Deliberate chord, NOT gated by SCREENSHOT_MODE_FILE -- the
-                        # mode governs only the bare-L1 trigger above. Lets an
-                        # operator who set L1 'disabled' still grab a shot on demand.
-                        if val == -1: fire_screenshot()
-                        # (SELECT+DPAD-Down stays FREE — and note for future
-                        # chords: SELECT is the in-game CAMERA TOGGLE, so any
-                        # SELECT chord flips the driver's view as collateral.
-                        # Acceptable for rare tool actions (VAULT/mango/shot),
-                        # WRONG for mid-race marks — those go on R1. Operator
-                        # correction 2026-07-10, the rule-4 lesson generalized.)
-                # R1 + DPAD chords (rule 4's constraint generalized: R1, never
-                # SELECT, for anything fired mid-race — SELECT is the camera
-                # toggle and would knock the view). In-game only by construction:
-                # this daemon is Sentry-spawned in RUNNING state.
-                #   R1+DPAD-Down = BOG PROFILER (operator-assigned 2026-07-10):
-                #     mark the section start as the pack bogs; bin/bog_profile.sh
-                #     samples 30s from HERE, DDU VAULT segment shows the s-bar,
-                #     mako toast on banked. Debounced in the script.
-                #   R1+DPAD-Up = RSX FRAME CAPTURE / resume toggle (RELOCATED
-                #     from R1+Down 2026-07-10 when the operator assigned Down to
-                #     the bog profiler; same R1 mechanics, rule 4 intact).
-                if r1_held and code == 17 and val == 1 and not _chiaki_active():
-                    fire_bog_profile()
-                elif r1_held and code == 17 and val == -1 and not _chiaki_active():
-                    fire_rsx_capture()
+            now = time.monotonic()
+            _dispatch(chords.feed(etype, code, val, now))
+            # A frame can arrive after the hold elapsed but before select
+            # timed out (pad traffic is continuous in-game) — check here too
+            # or a held punchbox would wait on the next quiet moment.
+            _dispatch(chords.tick(now))
 
 if __name__ == "__main__":
     # SELF-HEAL: the virtual controller may not exist yet when the

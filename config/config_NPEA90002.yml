@@ -39,7 +39,6 @@ Core:
   Accurate PPU 128-byte Reservation Op Max Length: 0
   Stub PPU Traps: 0
   Precise SPU Verification: false
-  PPU LLVM Java Mode Handling: true
   PPU Vector NaN Handling: true
   Use Accurate DFMA: true
   PPU Set Saturation Bit: false
@@ -81,9 +80,9 @@ Video:
   Shader Precision: Low
   VSync Mode: Disabled
   Write Color Buffers: false
-  Write Depth Buffer: false
+  Write Depth Buffer: true
   Read Color Buffers: false
-  Read Depth Buffer: false
+  Read Depth Buffer: true
   Handle RSX Memory Tiling: false
   Log shader programs: false
   Debug output: false
@@ -105,7 +104,7 @@ Video:
   Disable Vulkan Memory Allocator: false
   Use full RGB output range: true
   Strict Texture Flushing: false
-  Multithreaded RSX: false
+  Multithreaded RSX: true
   Relaxed ZCULL Sync: true
   Force Hardware MSAA Resolve: false
   3D Display Enabled: false
@@ -151,13 +150,13 @@ Video:
     Frametime graph detail level: All
     Metrics update interval (ms): 350
     Font size (px): 10
-    Position: Top Right
+    Position: Bottom Left
     Font: n023055ms.ttf
     Horizontal Margin (%): 0
     Vertical Margin (%): 0
     Center Horizontally: false
     Center Vertically: false
-    Opacity (%): 70
+    Opacity (%): 5
     Body Color (hex): "#FFE138FF"
     Body Background (hex): "#002339FF"
     Title Color (hex): "#F26C24FF"

@@ -5,18 +5,18 @@ Audio:
   Audio Formats: 0
   Audio Provider: CellAudio
   Convert to 16 bit: false
-  Desired Audio Buffer Duration: 34
+  Desired Audio Buffer Duration: 250
   Disable Sampling Skip: false
   Dump to file: false
   Enable Buffering: true
-  Enable Time Stretching: false
+  Enable Time Stretching: true
   Master Volume: 100
   Microphone Devices: "@@@@@@@@@@@@"
   Microphone Type: "Null"
   Music Handler: Qt
   RSXAudio Avport: HDMI 0
   Renderer: Cubeb
-  Time Stretching Threshold: 75
+  Time Stretching Threshold: 100
 Core:
   Accurate Cache Line Stores: false
   Accurate PPU 128-byte Reservation Op Max Length: 0
@@ -81,6 +81,7 @@ Core:
   Use Accurate DFMA: true
   Use LLVM CPU: ""
   Usleep Time Addend: 0
+  RSX FIFO Accuracy: Fast
 Input/Output:
   Allow move hue set by game: false
   Background input enabled: true
@@ -102,7 +103,7 @@ Input/Output:
   Mouse Debug overlay: false
   Move: "Null"
   Pad handler mode: Single-threaded
-  Pad handler sleep (microseconds): 1000
+  Pad handler sleep (microseconds): 4000
   Paint move spheres: false
   SDL Camera ID: Default
   Show move cursor: false
@@ -174,7 +175,7 @@ VFS:
 Video:
   3D Display Enabled: false
   3D Display Mode: Disabled
-  Accurate ZCULL stats: false
+  Accurate ZCULL stats: true
   Allow Host GPU Labels: false
   Anisotropic Filter Override: 0
   Aspect ratio: 16:9
@@ -194,18 +195,18 @@ Video:
   Disable Vulkan Memory Allocator: false
   Disable ZCull Occlusion Queries: false
   Driver Recovery Timeout: 1000000
-  Driver Wake-Up Delay: 1
+  Driver Wake-Up Delay: 0
   Enable Frame Skip: false
   FidelityFX CAS Sharpening Intensity: 50
   Force CPU Blit: false
   Force Hardware MSAA Resolve: false
   Force High Precision Z buffer: false
-  Frame limit: Auto
+  Frame limit: PS3 Native
   Framebuffer Aliasing Heuristic Bias: Auto
   Handle RSX Memory Tiling: false
   Log shader programs: false
-  MSAA: Auto
-  Minimum Scalable Dimension: 512
+  MSAA: Disabled
+  Minimum Scalable Dimension: 16
   Multithreaded RSX: false
   Output Scaling Mode: Bilinear
   Performance Overlay:
@@ -237,8 +238,8 @@ Video:
   Relaxed ZCULL Sync: false
   Renderdoc Compatibility Mode: false
   Renderer: Vulkan
-  Resolution: 720x480
-  Resolution Scale: 66
+  Resolution: 1280x720
+  Resolution Scale: 100
   Screen size in inches: 24
   Second Frame Limit: 0
   Shader Compiler Threads: 0
@@ -265,5 +266,6 @@ Video:
     Force primitive restart flag: false
     Use Re-BAR for GPU uploads: true
     VRAM allocation limit (MB): 65536
-  Write Color Buffers: false
+  Write Color Buffers: true
   Write Depth Buffer: false
+  ZCULL Accuracy: Relaxed

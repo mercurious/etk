@@ -55,6 +55,10 @@ Every claim above is scored against the ETK telemetry ledger (1,400+ instrumente
 
 *GTK KERS (Kinetic Emulation Recovery System): the in-race profiler found ≈38% of all CPU cycles burning in spins, polls and fault storms — four named thieves, four shipped fixes, same hardware.*
 
+<img src="https://raw.githubusercontent.com/mercurious/etk/main/docs/charts/library.png" width="720" alt="Bars of distinct PS3 titles raced per week rising from 7 to 35, with an orange line showing the share of sessions outside the Gran Turismo family climbing from near zero to 64 percent." />
+
+*The kit was built for one series and the library outgrew it — 35 distinct titles in the peak week, most of them outside Gran Turismo. That is why v0.8.5 moved the ETK button chords off the controls those games use.*
+
 ## Quick Start
 ### Don’t have ROCKNIX?
 It’s easy to try out the kit with a spare SD card and USB card reader, revert back to Android, or standard ROCKNIX anytime.
@@ -78,9 +82,9 @@ See [Getting Started](https://github.com/mercurious/etk/#getting-started) to ins
 | VAULT + PADDOCK | Advanced shader protection and management | overlay gauge `2+ 34.5k 167MB` |
 | Thermal Guard | Automatically protect silicon from overheats | overlay gauge `89°HOT»»»`  |
 | ETK Pitstop App | Native ROCKNIX tools app for onboard telemetry, tuning, tools, and more | native app in ROCKNIX ES Tools carousel |
-| DDU Overlay | Native MangoHUD customized with ETK gauges | `R1` + `L3` to toggle between top, bottom, default, off |
+| DDU Overlay | Native MangoHUD customized with ETK gauges | hold `R1` + `L3` for a moment to cycle top, bottom, default, off |
 | Crash Recovery | Safely exit from crash or freeze | `L1` + `R3` to safely recover to ES frontend |
-| ETK Screenshot | One-finger shutter screenshots with overlay | `L1` configurable in ETK Pitstop |
+| ETK Screenshot | Shutter screenshots with the overlay included | `L1` + `L2` together; configurable in ETK Pitstop `TOOLS` |
 | On Device Installations | One-tap, on-device firmware and game installs — they run in the **background**, so you can keep using the Pitstop or go back to your games while they unpack (a game launch pauses the install and it resumes after) | Drop `.pup` in `etk/firmware_drop`, `.pkg` in `etk/pkg_install_drop`, open ETK Pitstop `TOOLS` tab |
 | Golden Tune Seeding | New games (including disc `.iso` copied into `roms/ps3/`) start on the ETK golden tune instead of raw RPCS3 defaults | automatic on next Pitstop open; `ETK_GOLDEN_SEED=0` in `etk.conf` to disable |
 | ISO Onboarding | Copy a disc `.iso` into `roms/ps3/` and it becomes a real ES game: launcher generated, ETK overlay enabled and tuned | automatic on next Pitstop open; `ETK_ISO_ONBOARD=0` in `etk.conf` to disable |
@@ -102,13 +106,13 @@ See [Getting Started](https://github.com/mercurious/etk/#getting-started) to ins
 | Retroid Pocket | 6 | SM8550 Adreno 740 | (needs new profile + vault) | Not yet supported |
 
 ## ETK System Requirements
-The GTK fork was built from **ROCKNIX official release `20260801`** (the **GTK 0.8.0** stack)
+The GTK fork was built from **ROCKNIX official release `20260801`** (the **GTK 0.8.5** stack)
 | Type | Detail |
 |---|---|
 | Host System | macOS or Linux native, Windows support via img flash, WLS, [PowerShell Port](https://github.com/mercurious/etk/tree/main/windows_installer) |
 | OS | ROCKNIX-GTK |
-| Kernel | rocknix-gtk 7.1.2 (anti-lock + audio-fix patches) |
-| Emulator | RPCS3 **GTK Edition** v0.8.1 |
+| Kernel | rocknix-gtk 7.1.2 `-0.4.1` (anti-lock + audio-fix + DisplayPort patches) |
+| Emulator | RPCS3 **GTK Edition** v0.8.5 |
 | Driver | MESA Turnip 26.1.6 **GTK** |
 
 ## Getting Started

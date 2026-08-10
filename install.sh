@@ -721,6 +721,20 @@ for FDIR in "$TELEMETRY_DIR/crash_forensics" "$TELEMETRY_DIR/forensics"; do
     fi
 done
 ssh $RIG_SSH "ls -t $ETK_ROOT/cores/*.core 2>/dev/null | tail -n +2 | xargs -r rm -f; ls -t /storage/cores/*.core 2>/dev/null | tail -n +2 | xargs -r rm -f" 2>/dev/null
+
+# --- NOTEBOOK REFRESH: Tier-B mirror -> repo config/ (0.8.5) ---
+# The tuned configs just landed in state/custom_configs/, which is gitignored.
+# config/config_<ID>.yml is the COMMITTED reference tune — the only copy a
+# fresh clone or a Paddock subscriber can read — and it was drifting behind
+# the rig by a whole release cycle (24 of 41 titles stale at the 0.8.5 cut,
+# because the only writer of a tune is the operator in the TUNING tab and
+# nothing ever carried the result the last directory home). A deploy is now
+# also a notebook refresh. Host-side and read-only w.r.t. the rig; it stages
+# files in the working tree, it never commits — that stays the operator's.
+if [ -x "./tools/sync_game_configs.sh" ]; then
+    tui_log "Refreshing repo game tunes from the rig mirror"
+    ./tools/sync_game_configs.sh 2>&1 | while IFS= read -r _l; do tui_log "$_l"; done
+fi
 tui_step_done 1
 
 # ==========================================================
@@ -2003,7 +2017,7 @@ rm -f "$TURNIP_OUT_FILE"
 # same doctrine as Turnip: a bind-mount can't hot-swap a binary a running
 # RPCS3 already has open.
 CERT_RPCS3="rpcs3-etk_gtk-edition-0.8.5_v0.0.41-19638-a1deb2921_linux_aarch64.AppImage"
-CERT_RPCS3_SHA="395177a6a7000621721c992ff902a1227a47c43bda417741ca06ba35628d40cc"
+CERT_RPCS3_SHA="9a8a4fd7aec8937d964594cc1be635b88129e768cb97b2f24fc291b92ed3c7ac"
 RPCS3_RELEASE_BASE="https://github.com/mercurious/etk/releases/latest/download"
 ssh $RIG_SSH "mkdir -p /storage/rpcs3 /storage/.config/system.d/" 2>/dev/null
 # Pre-flight: the staging target lives on /storage — the small UFS SYSTEM

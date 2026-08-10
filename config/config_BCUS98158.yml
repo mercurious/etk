@@ -63,6 +63,7 @@ Core:
   Performance Report Threshold: 500
   Enable Performance Report: false
   Assume External Debugger: false
+  RSX FIFO Accuracy: Fast
 VFS:
   Enable /host_root/: false
   Initialize Directories: true
@@ -73,7 +74,7 @@ Video:
   Renderer: Vulkan
   Resolution: 1280x720
   Aspect ratio: 16:9
-  Frame limit: Display
+  Frame limit: PS3 Native
   Second Frame Limit: 0
   MSAA: Disabled
   Shader Mode: Async Recompiler (multi-threaded)
@@ -104,7 +105,7 @@ Video:
   Disable Vulkan Memory Allocator: false
   Use full RGB output range: true
   Strict Texture Flushing: false
-  Multithreaded RSX: false
+  Multithreaded RSX: true
   Relaxed ZCULL Sync: true
   Force Hardware MSAA Resolve: false
   3D Display Enabled: false
@@ -114,7 +115,7 @@ Video:
   Accurate ZCULL stats: false
   Consecutive Frames To Draw: 1
   Consecutive Frames To Skip: 1
-  Resolution Scale: 90
+  Resolution Scale: 100
   Anisotropic Filter Override: 0
   Texture LOD Bias Addend: 0
   Minimum Scalable Dimension: 512

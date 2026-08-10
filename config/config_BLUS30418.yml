@@ -55,7 +55,7 @@ Core:
   PPU Vector NaN Handling: true
   Performance Report Threshold: 500
   Precise SPU Verification: false
-  Preferred SPU Threads: 3
+  Preferred SPU Threads: 0
   RSX FIFO Fetch Accuracy: Atomic
   SPU Block Size: Mega
   SPU Cache: true
@@ -81,6 +81,7 @@ Core:
   Use Accurate DFMA: true
   Use LLVM CPU: ""
   Usleep Time Addend: 0
+  RSX FIFO Accuracy: Fast
 Input/Output:
   Allow move hue set by game: false
   Background input enabled: true
@@ -174,7 +175,7 @@ VFS:
 Video:
   3D Display Enabled: false
   3D Display Mode: Disabled
-  Accurate ZCULL stats: true
+  Accurate ZCULL stats: false
   Allow Host GPU Labels: false
   Anisotropic Filter Override: 0
   Aspect ratio: 16:9
@@ -200,11 +201,11 @@ Video:
   Force CPU Blit: false
   Force Hardware MSAA Resolve: false
   Force High Precision Z buffer: false
-  Frame limit: Auto
+  Frame limit: PS3 Native
   Framebuffer Aliasing Heuristic Bias: Auto
   Handle RSX Memory Tiling: false
   Log shader programs: false
-  MSAA: Auto
+  MSAA: Disabled
   Minimum Scalable Dimension: 16
   Multithreaded RSX: false
   Output Scaling Mode: Bilinear
@@ -234,11 +235,11 @@ Video:
   Read Color Buffers: false
   Read Depth Buffer: false
   Record With Overlays: true
-  Relaxed ZCULL Sync: false
+  Relaxed ZCULL Sync: true
   Renderdoc Compatibility Mode: false
   Renderer: Vulkan
-  Resolution: 720x480
-  Resolution Scale: 100
+  Resolution: 1280x720
+  Resolution Scale: 66
   Screen size in inches: 24
   Second Frame Limit: 0
   Shader Compiler Threads: 0
@@ -254,7 +255,7 @@ Video:
   Texture LOD Bias Addend: 0
   Use GPU texture scaling: false
   Use full RGB output range: true
-  VSync Mode: Disabled
+  VSync Mode: Full
   Vblank NTSC Fixup: false
   Vblank Rate: 60
   Vulkan:
@@ -265,6 +266,6 @@ Video:
     Force primitive restart flag: false
     Use Re-BAR for GPU uploads: true
     VRAM allocation limit (MB): 65536
-  Write Color Buffers: false
+  Write Color Buffers: true
   Write Depth Buffer: false
   ZCULL Accuracy: Relaxed

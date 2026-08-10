@@ -16,11 +16,11 @@ Audio:
   Music Handler: Qt
   RSXAudio Avport: HDMI 0
   Renderer: Cubeb
-  Time Stretching Threshold: 75
+  Time Stretching Threshold: 100
 Core:
   Accurate Cache Line Stores: false
   Accurate PPU 128-byte Reservation Op Max Length: 0
-  Accurate RSX reservation access: true
+  Accurate RSX reservation access: false
   Accurate SPU DMA: false
   Accurate SPU Reservations: true
   Allow RSX CPU Preemptions: true
@@ -55,9 +55,9 @@ Core:
   PPU Vector NaN Handling: true
   Performance Report Threshold: 500
   Precise SPU Verification: false
-  Preferred SPU Threads: 0
+  Preferred SPU Threads: 3
   RSX FIFO Fetch Accuracy: Atomic
-  SPU Block Size: Mega
+  SPU Block Size: Safe
   SPU Cache: true
   SPU Debug: false
   SPU Decoder: Recompiler (LLVM)
@@ -72,7 +72,7 @@ Core:
   SPU Wake-Up Delay Thread Mask: 63
   SPU XFloat Accuracy: Approximate
   SPU delay penalty: 3
-  SPU loop detection: false
+  SPU loop detection: true
   Save LLVM logs: false
   Set DAZ and FTZ: false
   Sleep Timers Accuracy: As Host
@@ -81,7 +81,6 @@ Core:
   Use Accurate DFMA: true
   Use LLVM CPU: ""
   Usleep Time Addend: 0
-  RSX FIFO Accuracy: Fast
 Input/Output:
   Allow move hue set by game: false
   Background input enabled: true
@@ -103,7 +102,7 @@ Input/Output:
   Mouse Debug overlay: false
   Move: "Null"
   Pad handler mode: Single-threaded
-  Pad handler sleep (microseconds): 4000
+  Pad handler sleep (microseconds): 1000
   Paint move spheres: false
   SDL Camera ID: Default
   Show move cursor: false
@@ -195,19 +194,19 @@ Video:
   Disable Vulkan Memory Allocator: false
   Disable ZCull Occlusion Queries: false
   Driver Recovery Timeout: 1000000
-  Driver Wake-Up Delay: 1
+  Driver Wake-Up Delay: 200
   Enable Frame Skip: false
   FidelityFX CAS Sharpening Intensity: 50
   Force CPU Blit: false
   Force Hardware MSAA Resolve: false
   Force High Precision Z buffer: false
-  Frame limit: PS3 Native
+  Frame limit: Auto
   Framebuffer Aliasing Heuristic Bias: Auto
   Handle RSX Memory Tiling: false
   Log shader programs: false
-  MSAA: Disabled
+  MSAA: Auto
   Minimum Scalable Dimension: 512
-  Multithreaded RSX: true
+  Multithreaded RSX: false
   Output Scaling Mode: Bilinear
   Performance Overlay:
     Body Background (hex): "#002339FF"
@@ -235,11 +234,11 @@ Video:
   Read Color Buffers: false
   Read Depth Buffer: false
   Record With Overlays: true
-  Relaxed ZCULL Sync: false
+  Relaxed ZCULL Sync: true
   Renderdoc Compatibility Mode: false
   Renderer: Vulkan
-  Resolution: 1280x720
-  Resolution Scale: 66
+  Resolution: 720x480
+  Resolution Scale: 50
   Screen size in inches: 24
   Second Frame Limit: 0
   Shader Compiler Threads: 0
@@ -247,10 +246,10 @@ Video:
     Allow custom background: true
     Blur effect strength: 0
     Darkening effect strength: 30
-  Shader Mode: Async Recompiler (multi-threaded)
+  Shader Mode: Async Recompiler with Shader Interpreter
   Shader Precision: Low
   Stretch To Display Area: false
-  Strict Rendering Mode: true
+  Strict Rendering Mode: false
   Strict Texture Flushing: false
   Texture LOD Bias Addend: 0
   Use GPU texture scaling: false
@@ -261,10 +260,10 @@ Video:
   Vulkan:
     Adapter: Turnip Adreno (TM) 650
     Asynchronous Queue Scheduler: Safe
-    Asynchronous Texture Streaming: false
+    Asynchronous Texture Streaming: true
     Exclusive Fullscreen Mode: Automatic
     Force primitive restart flag: false
     Use Re-BAR for GPU uploads: true
     VRAM allocation limit (MB): 65536
-  Write Color Buffers: true
+  Write Color Buffers: false
   Write Depth Buffer: false
