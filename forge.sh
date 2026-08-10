@@ -337,12 +337,23 @@ fp_compute() {  # <lane> -> fingerprint string on stdout
                     "$(probe_section IMAGEID | head -1)" ;;
         turnip) printf 'vers=%s gtk=%s tip=%s' "$FORGE_TURNIP_VERS" "$FORGE_TURNIP_GTKVER" "$TURNIP_TIP" ;;
         kernel) printf 'tip=%s name=%s kcc=gcc-15' "$KERNEL_TIP" "$KNAME" ;;
-        image)  printf 'k=%s a=%s t=%s base=%s script=%s' \
+        # kit=%s IS LOAD-BEARING. The image bakes the ETK middleware straight
+        # out of the build node's checkout, but this fingerprint only ever
+        # hashed the three BINARIES, the base date and the recipe. The
+        # middleware was invisible to it — so a card built from a stale node
+        # was declared "fresh", AND the fix for that staleness (pulling the
+        # node) changed nothing the fingerprint could see, so the rebuild that
+        # would have corrected it SKIPPED. That is how a 0.8.5 cut etched a
+        # 0.8.4 card and then refused to re-bake: the bug hid, and then it hid
+        # its own repair. Version AND commit, because one version string spans
+        # many commits.
+        image)  printf 'k=%s a=%s t=%s base=%s script=%s kit=%s@%s' \
                     "$(cat "$FORGE_STATE/fingerprints/kernel.sha" 2>/dev/null)" \
                     "$(cat "$FORGE_STATE/fingerprints/rpcs3.sha" 2>/dev/null)" \
                     "$(cat "$FORGE_STATE/fingerprints/turnip.sha" 2>/dev/null)" \
                     "$FORGE_IMAGE_BASEDATE" \
-                    "$(sha256_of os-install/build/build_gtk_image_v2.sh)" ;;
+                    "$(sha256_of os-install/build/build_gtk_image_v2.sh)" \
+                    "$CERT_VER" "$CERT_HEAD" ;;
         *)      printf 'delegated' ;;   # chiaki/wlmirror pin their own refs
     esac
 }
