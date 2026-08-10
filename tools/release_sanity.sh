@@ -239,6 +239,16 @@ if [ "$_J_RP" = "$_I_RPSHA" ]; then ok "gtk_stack.json rpcs3 sha matches install
 else bad "gtk_stack.json rpcs3 sha DRIFTED from install.sh CERT_RPCS3_SHA"; fi
 _KASSET=$(sed -n 's/.*"asset": "\(KERNEL\.[^"]*\)".*/\1/p' "$REPO_ROOT/config/gtk_stack.json" | head -1)
 _check_pin "gtk_stack.json kernel sha" "$HOME/rocknix-gtk/artifacts/$_KASSET" "$_J_KN"
+# THE DRIVER GETS THE SAME CHECK. Added 2026-08-10 after this gate — written
+# the same day to catch exactly this — shipped covering only rpcs3 and kernel
+# and missed a THIRD stale pin on its first real use: gtk_stack.json pinned
+# 8a16efa6 (17,136,072 B, the .prev and the published asset) while the forge
+# had re-minted a83c2306 (17,136,464 B) into drivers/. A gate that checks two
+# of three artifacts is a gate with a hole in exactly the shape of the bug.
+_J_TN=$(sed -n 's/.*"sha256": "\([0-9a-f]\{64\}\)".*/\1/p' "$REPO_ROOT/config/gtk_stack.json" | sed -n 2p)
+_TASSET=$(sed -n '/"turnip": {/,/}/p' "$REPO_ROOT/config/gtk_stack.json" \
+    | sed -n 's/.*"asset": "\([^"]*\)".*/\1/p' | head -1)
+_check_pin "gtk_stack.json turnip sha" "$REPO_ROOT/drivers/$_TASSET" "$_J_TN"
 # The image lane bakes the shipped card — it must name the SAME kernel.
 _IMG_KN=$(sed -n 's|^KERNEL="\${KERNEL:-.*/\(KERNEL\.[^}]*\)}"|\1|p' "$REPO_ROOT/os-install/build/build_gtk_image_v2.sh" | head -1)
 if [ -n "$_IMG_KN" ] && [ "$_IMG_KN" = "$_KASSET" ]; then
