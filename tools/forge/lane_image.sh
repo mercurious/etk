@@ -53,6 +53,29 @@ _verify kernel "$K" "${KSHA:-}"
 _verify rpcs3  "$A" "${ASHA:-}"
 _verify turnip "$T" "${TSHA:-}"
 
+# THE WHOLE CATALOG GETS BAKED, SO THE WHOLE CATALOG GETS VERIFIED.
+# TCAT is "name:sha name:sha ..." for every CERTIFIED_BUILDS driver. The card's
+# DRIVER tab enumerates what lands in $SEED/turnip/drivers, so shipping only the
+# default left a flashed card with a one-entry chooser — no downgrade path, no
+# pre-release arm. Each driver is checked here because the manifest pins only
+# the primary; the rest are pinned by install.sh's driver_sha().
+TCAT_PATHS=""
+for _e in ${TCAT:-}; do
+    _nm=${_e%%:*}; _sh=${_e##*:}
+    _p="$HOME/etk/drivers/$_nm"
+    [ -f "$_p" ] || { log "FATAL: catalog driver not staged on this node: $_p"; exit 1; }
+    _got=$(sha256sum "$_p" | cut -d' ' -f1)
+    if [ "$_got" != "$_sh" ]; then
+        log "FATAL: catalog driver $_nm does not match its pin."
+        log "       node   $_got"
+        log "       pinned $_sh"
+        exit 1
+    fi
+    log "verified catalog: $_nm"
+    TCAT_PATHS="$TCAT_PATHS /etk/drivers/$_nm"
+done
+[ -n "$TCAT_PATHS" ] || TCAT_PATHS="/etk/drivers/$TNAME"
+
 # THE MIDDLEWARE IS AN INPUT TOO, AND IT TRAVELS BY GIT.
 # build_gtk_image_v2.sh rsyncs $REPO (this node's ~/etk checkout) into the
 # card's $ETK_ROOT and renders the boot-identity unit from $REPO's APP_VERSION.
@@ -89,6 +112,7 @@ docker exec etk-imgtool bash -lc "
     KERNEL=/rocknix-gtk/artifacts/$KNAME \
     APPIMAGE=/etk/emulators/$ANAME \
     TURNIP_SO=/etk/drivers/$TNAME \
+    TURNIP_CATALOG=\"$(echo $TCAT_PATHS)\" \
     HOOK_SCRIPT=/work/build/mount-storage.sh \
     SEED_CONFIG=/work/build/seed_config \
     BOOT_LABEL=ROCKNIX-GTK STOR_LABEL=GTKSTOR \

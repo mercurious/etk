@@ -100,8 +100,28 @@ fi
 # GTK forks staged where install.sh binds them (outside .config → don't block resize)
 mkdir -p "$SEED/rpcs3" "$SEED/turnip/drivers"
 cp "$APPIMAGE" "$SEED/rpcs3/rpcs3-sa.custom"; chmod 755 "$SEED/rpcs3/rpcs3-sa.custom"
-TSO=$(basename "$TURNIP_SO"); cp "$TURNIP_SO" "$SEED/turnip/drivers/$TSO"; chmod 755 "$SEED/turnip/drivers/$TSO"
+# THE CARD MUST CARRY THE WHOLE DRIVER CATALOG, NOT JUST THE DEFAULT.
+# $SEED/turnip/drivers IS what Pitstop's DRIVER tab enumerates (TURNIP_DRIVERS_DIR
+# = /storage/turnip/drivers). This used to copy exactly ONE .so — TURNIP_SO — so a
+# flashed card offered a chooser with a single entry: no downgrade, and the
+# pre-release arm absent entirely. A host install never showed it, because
+# install.sh STEP 6.5 fetches every CERTIFIED_BUILDS driver to the rig; only the
+# hostless card was crippled, and only the operator flashing one would ever see it
+# (found exactly that way, 2026-08-10).
+# TURNIP_CATALOG = space-separated PATHS; TURNIP_SO stays the SELECTED default and
+# must be one of them. Defaults to the single driver so old invocations still work.
+TURNIP_CATALOG="${TURNIP_CATALOG:-$TURNIP_SO}"
+TSO=$(basename "$TURNIP_SO")
+_seen_default=0
+for _drv in $TURNIP_CATALOG; do
+  [ -f "$_drv" ] || die "TURNIP_CATALOG entry missing: $_drv"
+  _b=$(basename "$_drv")
+  cp "$_drv" "$SEED/turnip/drivers/$_b"; chmod 755 "$SEED/turnip/drivers/$_b"
+  [ "$_b" = "$TSO" ] && _seen_default=1
+done
+[ "$_seen_default" = 1 ] || die "TURNIP_SO ($TSO) is not in TURNIP_CATALOG — the card would boot on a driver it does not ship"
 printf '%s\n' "$TSO" > "$SEED/turnip/selected"
+echo "   turnip catalog: $(ls "$SEED/turnip/drivers" | wc -l | tr -d ' ') driver(s), selected=$TSO"
 echo "   seed: $(du -sh "$SEED" | cut -f1)  (NO /storage/.config)"
 
 say "3. build ext4 STORAGE (${STORAGE_MIB} MiB, LABEL=$STOR_LABEL) — fs-resize grows it on 1st boot"

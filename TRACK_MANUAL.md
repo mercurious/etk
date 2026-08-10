@@ -326,9 +326,18 @@ manifest's primary (a re-minted pre-release nearly shipped unnoticed), and hand-
 PowerShell catalog by name leaves the OLD sha attached — a pairing that fails verification
 on every Windows fetch. Generate that block, never sed it.
 
-**Changing the certified default REQUIRES an image rebuild.** The card bakes it, so a
-catalog move without `./forge.sh image` ships a card whose driver is not the one its own
-catalog recommends.
+**The card bakes the WHOLE catalog, not just the default.** `$SEED/turnip/drivers` is
+exactly what Pitstop's DRIVER tab enumerates (`/storage/turnip/drivers`), so the image
+must stage every certified driver and write `selected` = the default. The recipe used to
+copy one `.so`, which gave a flashed card a **one-entry chooser** — no downgrade, no
+pre-release arm. A host install never showed it (STEP 6.5 fetches the whole catalog to
+the rig); only the hostless card was crippled, so only someone flashing one would ever
+see it. `TURNIP_CATALOG` now carries the list, the lane verifies every entry against its
+`driver_sha()` pin, and the image fingerprint includes `cat=` so adding or dropping a
+driver forces a rebuild.
+
+**Any catalog change REQUIRES an image rebuild** — and the node needs every catalog
+driver staged, not just the default.
 
 ### Freshness is a fingerprint, and it is only as good as what it hashes
 

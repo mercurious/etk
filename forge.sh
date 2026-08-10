@@ -223,6 +223,21 @@ CERT_TNAME=$(_manifest_asset turnip)
 # expects so the lane can refuse a node whose checkout drifted.
 CERT_VER=$(grep -m1 '^APP_VERSION' "$REPO_ROOT/bin/etk_pitstop.py" | cut -d'"' -f2)
 CERT_HEAD=$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo "")
+# THE CARD SHIPS THE WHOLE CATALOG. install.sh's CERTIFIED_BUILDS is cumulative
+# so the operator can downgrade from the DRIVER tab, but the image used to bake
+# only the default — a flashed card offered a one-entry chooser with no
+# downgrade and no pre-release arm (found on a cold card, 2026-08-10). Pair each
+# certified driver with its driver_sha() pin and hand the lot to the lane, which
+# verifies every one before baking. Derived from install.sh, never re-listed
+# here: two lists of drivers is how they drift.
+CERT_TCAT=$(awk '
+    /^CERTIFIED_BUILDS="/ { gsub(/^CERTIFIED_BUILDS="|"$/,""); n=split($0,a," "); next }
+    /^    etk_turnip_.*\) echo "/ {
+        name=$1; sub(/\)$/,"",name)
+        match($0, /"[0-9a-f]{64}"/); sha=substr($0,RSTART+1,64); m[name]=sha
+    }
+    END { for (i=1;i<=n;i++) if (a[i] in m) printf "%s:%s ", a[i], m[a[i]] }
+' "$REPO_ROOT/install.sh")
 CERT_KSHA=$(_manifest_sha kernel)
 CERT_ASHA=$(_manifest_sha rpcs3)
 CERT_TSHA=$(_manifest_sha turnip)
@@ -361,7 +376,11 @@ fp_compute() {  # <lane> -> fingerprint string on stdout
                     "$CERT_KSHA" "$CERT_ASHA" "$CERT_TSHA" \
                     "$FORGE_IMAGE_BASEDATE" \
                     "$(sha256_of os-install/build/build_gtk_image_v2.sh)" \
-                    "$CERT_VER" "$CERT_HEAD" ;;
+                    "$CERT_VER" "$CERT_HEAD"
+                # cat= : the catalog is baked onto the card, so adding or
+                # dropping a driver MUST force a rebuild. Without this the
+                # fix for the one-entry chooser would itself skip as fresh.
+                printf ' cat=%s' "$CERT_TCAT" ;;
         *)      printf 'delegated' ;;   # chiaki/wlmirror pin their own refs
     esac
 }
@@ -421,9 +440,9 @@ lane_env() {  # <lane> -> env assignments for the node-side recipe
         # The three baked names come from the MANIFEST (see the preflight
         # note above), never from the build knobs — an image is a shipped
         # asset and must carry exactly the certified stack.
-        image)  printf 'KNAME=%s ANAME=%s TNAME=%s KSHA=%s ASHA=%s TSHA=%s EXPECT_VER=%s EXPECT_HEAD=%s BASEDATE=%s OUTIMG=%s' \
+        image)  printf 'KNAME=%s ANAME=%s TNAME=%s KSHA=%s ASHA=%s TSHA=%s TCAT="%s" EXPECT_VER=%s EXPECT_HEAD=%s BASEDATE=%s OUTIMG=%s' \
                     "$CERT_KNAME" "$CERT_ANAME" "$CERT_TNAME" \
-                    "$CERT_KSHA" "$CERT_ASHA" "$CERT_TSHA" \
+                    "$CERT_KSHA" "$CERT_ASHA" "$CERT_TSHA" "$CERT_TCAT" \
                     "$CERT_VER" "$CERT_HEAD" \
                     "$FORGE_IMAGE_BASEDATE" "$IMGNAME" ;;
     esac
