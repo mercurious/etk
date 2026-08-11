@@ -58,6 +58,7 @@ elif [ "$HANGRD_CAPTURE" = 1 ]; then
 fi
 echo "[spotter] armed @ uptime ${MARK}s — a6xx-fault + live_stat-stale(${STALE_TICKS}x) + core/log. dur=${DUR}s int=${INT}s. LAUNCH NOW."
 endt=$(( MARK + DUR )); seen=0; prev=""; stale=0; crash=""; graceful=""
+lprev=$(wc -c < "$LOG" 2>/dev/null || echo 0)   # log-fatal delta baseline: don't rescan pre-arm history
 while [ "$(awk '{print int($1)}' /proc/uptime)" -lt "$endt" ]; do
   pid=$(pgrep -f rpcs3 | head -1)   # RSS display only (best-effort; do NOT use for liveness)
   rss=$(awk '/VmRSS/{printf "%d",$2/1024}' /proc/"$pid"/status 2>/dev/null)
@@ -69,6 +70,17 @@ while [ "$(awk '{print int($1)}' /proc/uptime)" -lt "$endt" ]; do
   fl=$(dmesg | grep -E "a6xx_irq.*gpu fault ring" | tail -1)
   fts=$(echo "$fl" | sed -n 's/^\[ *\([0-9]*\).*/\1/p')
   [ -n "$fts" ] && [ "$fts" -gt "$MARK" ] && crash="ADRENO status=$(echo "$fl" | sed -n 's/.*status \([0-9A-Fa-f]*\).*/\1/p')"
+  # 1b. NO-FAULT forward-progress stall (SSX NPUB30892 class, 2026-08-11): hangcheck lockup with
+  #     NO a6xx fault line — keepalive absorbs it (the game may keep limping, live_stat stays
+  #     fresh, so the SILENT gate never trips either), but hangrd has already fired on the first
+  #     recover, so break and finalize the capture. The faultinfo sidecar will be SPARSE for this
+  #     class (hangcheck lines carry completed/submitted fence only, no ib1/ib2) — decode is
+  #     structural; the .rd itself still holds the parked submit.
+  if [ -z "$crash" ]; then
+    hl=$(dmesg | grep -E "hangcheck detected gpu lockup" | tail -1)
+    hts=$(echo "$hl" | sed -n 's/^\[ *\([0-9]*\).*/\1/p')
+    if [ -n "$hts" ] && [ "$hts" -gt "$MARK" ]; then crash="ADRENO-NOFAULT (hangcheck, keepalive-absorbed)"; fl="$hl"; fi
+  fi
   # 2. live_stat freshness (silent freeze / process death)
   if ingame "$etk"; then seen=1; [ "$etk" = "$prev" ] && stale=$((stale+1)) || stale=0
   else [ "$seen" = 1 ] && stale=$((stale+1)); fi
@@ -82,7 +94,21 @@ while [ "$(awk '{print int($1)}' /proc/uptime)" -lt "$endt" ]; do
   fi
   # 3. core dump / RPCS3.log fatal (SPU/segfault class)
   [ "$(ls "$CORES" 2>/dev/null | wc -l)" -gt "$base" ] && crash="${crash:+$crash; }NEW CORE"
-  tail -8 "$LOG" 2>/dev/null | grep -qiE "Segfault|fatal error|Thread terminated" && crash="${crash:+$crash; }RPCS3 FATAL"
+  # RPCS3.log fatal — scan the BYTE DELTA since last tick, not a fixed tail window. RPCS3's Log
+  # Writer flushes in chunks, so a fatal can land already buried under the ~17-line syscall-stats
+  # block within one flush; tail -8 missed a live rsx::thread fatal exactly this way (SSX,
+  # 2026-08-11). A size DROP means the log was truncated by a relaunch — rescan from 0.
+  lsz=$(wc -c < "$LOG" 2>/dev/null || echo 0)
+  # A size DROP = the log was rotated/replaced by a relaunch. Re-baseline WITHOUT scanning the
+  # new content this tick: scanning from 0 right after rotation re-fired on the PREVIOUS
+  # session's fatal during R3/relaunch churn (live miss, SSX 2026-08-11). New-session fatals
+  # land as fresh deltas on later ticks and are still caught.
+  [ "$lsz" -lt "${lprev:-0}" ] && lprev="$lsz"
+  if [ "$lsz" -gt "${lprev:-0}" ]; then
+    tail -c +"$((lprev+1))" "$LOG" 2>/dev/null | grep -qiE "Segfault|fatal error|Thread terminated" \
+      && crash="${crash:+$crash; }RPCS3 FATAL"
+    lprev=$lsz
+  fi
   printf '%s | GPU %s°C %sMHz | CPUp %s°C %sMHz | free %sMB rpcs3 %sMB | bat %s°C | etk[%s]%s\n' \
     "$(date +%H:%M:%S)" "$(zt 15)" "${gpuf:-?}" "$(zt 10)" "${cpf:-?}" "$free" "${rss:-?}" "$(zt 25)" "$etk" "${crash:+  *** $crash ***}"
   [ -n "$crash" ] && break
