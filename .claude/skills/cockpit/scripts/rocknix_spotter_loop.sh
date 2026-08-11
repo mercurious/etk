@@ -112,7 +112,10 @@ while [ "$(awk '{print int($1)}' /proc/uptime)" -lt "$endt" ]; do
   # land as fresh deltas on later ticks and are still caught.
   [ "$lsz" -lt "${lprev:-0}" ] && lprev="$lsz"
   if [ "$lsz" -gt "${lprev:-0}" ]; then
-    tail -c +"$((lprev+1))" "$LOG" 2>/dev/null | grep -qiE "Segfault|fatal error|Thread terminated" \
+    # Pattern precision: bare "fatal error" matches the startup CONFIG DUMP line
+    # "Show fatal error hints: false" and false-fired on a healthy launch (2026-08-11).
+    # Match the actual crash shapes only.
+    tail -c +"$((lprev+1))" "$LOG" 2>/dev/null | grep -qiE "Segfault|SIGSEGV|Thread terminated due to fatal error" \
       && crash="${crash:+$crash; }RPCS3 FATAL"
     lprev=$lsz
   fi
