@@ -59,6 +59,12 @@ fi
 echo "[spotter] armed @ uptime ${MARK}s — a6xx-fault + live_stat-stale(${STALE_TICKS}x) + core/log. dur=${DUR}s int=${INT}s. LAUNCH NOW."
 endt=$(( MARK + DUR )); seen=0; prev=""; stale=0; crash=""; graceful=""
 lprev=$(wc -c < "$LOG" 2>/dev/null || echo 0)   # log-fatal delta baseline: don't rescan pre-arm history
+# Arm-time live_stat snapshot: a PREVIOUS session's frozen/lingering DDU string looks in-game and
+# would seed seen=1 immediately, then fire a phantom SILENT four unchanged ticks later (bit three
+# arms in a row on the SSX campaign, 2026-08-11 — armed over the corpse of the prior wedge each
+# time). Nothing counts until the string has MOVED past this snapshot: fresh telemetry from a real
+# launch always changes it within a tick or two.
+ARMVAL=$(cat "$SHM" 2>/dev/null)
 while [ "$(awk '{print int($1)}' /proc/uptime)" -lt "$endt" ]; do
   pid=$(pgrep -f rpcs3 | head -1)   # RSS display only (best-effort; do NOT use for liveness)
   rss=$(awk '/VmRSS/{printf "%d",$2/1024}' /proc/"$pid"/status 2>/dev/null)
@@ -82,7 +88,8 @@ while [ "$(awk '{print int($1)}' /proc/uptime)" -lt "$endt" ]; do
     if [ -n "$hts" ] && [ "$hts" -gt "$MARK" ]; then crash="ADRENO-NOFAULT (hangcheck, keepalive-absorbed)"; fl="$hl"; fi
   fi
   # 2. live_stat freshness (silent freeze / process death)
-  if ingame "$etk"; then seen=1; [ "$etk" = "$prev" ] && stale=$((stale+1)) || stale=0
+  if ingame "$etk" && { [ "$seen" = 1 ] || [ "$etk" != "$ARMVAL" ]; }; then
+    seen=1; [ "$etk" = "$prev" ] && stale=$((stale+1)) || stale=0
   else [ "$seen" = 1 ] && stale=$((stale+1)); fi
   prev="$etk"
   # SILENT gate: a stale live_stat is only a freeze if the emulator is STILL ALIVE. If it's GONE,
