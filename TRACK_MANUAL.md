@@ -296,6 +296,28 @@ an invoice. `--dry-run` is **not** an exemption: preflight opens ssh to the node
 job is to prepare the inputs (stage artifacts, set `FORGE_*` knobs, reconcile the pins with
 `config/gtk_stack.json`, run the host-side gates) and hand off with the runnable command.
 
+### WHERE A CHANGE MUST LAND — read this FIRST (added 2026-08-11, after a patch landed one layer too low)
+
+Every lane builds from a **canonical committed input**, not from whatever tree you just
+edited — and each lane's fingerprint hashes exactly that input, so a change in the wrong
+layer produces `SKIP … fresh`, *correctly*. The 2026-08-11 case: a new RPCS3 net was
+applied to the node's `~/rpcs3` working tree; the lane does `reset --hard` + re-applies the
+committed patch, so the edit was invisible to the fingerprint AND would have been wiped at
+build time. The forge wasn't wrong — the patch was in the wrong place.
+
+| Lane | Canonical input (what the build actually uses) | Land your change HERE | Edits that are INVISIBLE/wiped |
+|---|---|---|---|
+| `rpcs3` | pinned base (`FORGE_RPCS3_BASE`) + **newest `patches/*-dev.patch` in the Air's `~/etk-rpcs3-gtk` checkout** (lane resets hard, then applies it) | a new **cumulative** `*-dev.patch` (version-only name, law #8), committed+pushed to the fork; generate it as `git diff` from a node tree at base+patches, reverse-check it | node `~/rpcs3` working tree |
+| `turnip` | prepared `/work/mesa-<V>` trees in the node's container (base tag + fork patches as commits; `tu_etk_gears.h` is the generation tripwire) | fork patches via `prepare-fork-branch` into each `mesa-<V>` tree; bump `FORGE_TURNIP_VERS`/`GTKVER` | ad-hoc container edits outside the prepared trees |
+| `kernel` | node `~/rocknix-gtk` checkout at its tip (`build_712.sh`, KCC=gcc-15 enforced) | commit+push to rocknix-gtk, pull on node | — (but see: never re-run over a validated kernel) |
+| `chiaki`/`wlmirror` | **pinned refs** in the fork repos (recipes live in the forks; cloud builds published commits only) | fork commit, then bump the pin the stager passes | unpushed fork commits |
+| `image` | `config/gtk_stack.json` pins + the node's `~/etk` checkout at `APP_VERSION`+`HEAD` + `TURNIP_CATALOG` | the manifest + the five-places catalog table (§8.6 below); push etk `main` and pull the node | a stale node kit (now refused, not silently baked) |
+
+**The test before any forge handoff:** name the lane's canonical input, and confirm your
+change is IN it (committed, pushed, pulled where the lane reads it). If the answer involves
+the phrase "working tree", it isn't landed. A `SKIP … fresh` after a change you believe you
+made is this table telling you it never saw the change.
+
 **What it is:** a conductor, not a second `install.sh`. Lane logic lives in the fork repos
 and `tools/forge/lane_*.sh`; `forge.sh` only sequences, polls, verifies and stages. It
 **never contacts the rig** and **never publishes** — staging candidates is the whole
