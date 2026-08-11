@@ -2439,7 +2439,13 @@ ssh $RIG_SSH "sh -s" > "$BB_OUT_FILE" 2>&1 << 'BLACKBOXREMOTE'
 cat << 'SVC' > /storage/.config/system.d/etk-blackbox.service
 [Unit]
 Description=ETK Panic Black Box (pstore harvest + kmsg flight recorder)
-After=local-fs.target systemd-modules-load.service
+# After= must include etk-sd-rebind: the recorder writes under /storage/games-internal, which
+# the rebind mounts AFTER local-fs on this rig. Racing it means the log is created in the
+# UNDERLYING sda25 directory and silently shadowed by the mount — the fd keeps writing into a
+# file nothing can see, and the panic lead-up is lost (cost 5 boots of forensics, 2026-08-11;
+# recovered from the underlay via a bind-mount peek). Ordering against a unit that does not
+# exist on a given rig is harmless — systemd ignores unknown units in After=.
+After=local-fs.target systemd-modules-load.service rocknix-automount.service etk-sd-rebind.service
 
 [Service]
 Type=simple
