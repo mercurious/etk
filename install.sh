@@ -3,7 +3,7 @@
 # ETK PHASE 13.6: FLASHER (v14.1.0 - SENTRY STATE FIX + VAULT PUSH)
 # ==========================================================
 # ⚠️ THE OPERATOR RUNS THIS SCRIPT. CLAUDE NEVER DOES.
-# WHY (AI_MANIFEST Law #9, the "deploy" threshold): THE RIG CAN BE BRICKED.
+# WHY (TRACK_MANUAL §1.1, Law #9, the "deploy" threshold): THE RIG CAN BE BRICKED.
 # This writes a physical device with a read-only root that boots a kernel we
 # replace — it has already been frankenbooted once by an unattended kernel
 # write, and a mid-race install (2026-07-05) cost the operator a race's credits
@@ -197,7 +197,7 @@ fi
 # baseline (and the driver's race) are the casualties. Refuse to
 # proceed while the emulator is running; finish or exit the game,
 # then re-run. The bracketed pgrep pattern defeats the
-# ssh-cmdline self-match (the AI_MANIFEST `pgrep -f` trap).
+# ssh-cmdline self-match (the `pgrep -f` trap, TRACK_MANUAL §Q).
 # ==========================================================
 if ssh $RIG_SSH 'pgrep -f "AppRun.wrappe[d]|rpcs3-s[a]" >/dev/null 2>&1'; then
     echo -e "${R}>>> A game session is RUNNING on the rig — install refused.${N}"
@@ -1065,7 +1065,7 @@ echo "0"    > "$SHM_DIR/vault_count"
 # SHADER PIPELINE: cache -> vault symlink establishment
 # ----------------------------------------------------------
 # Regression context: the /storage/.cache/mesa_shader_cache ->
-# $VAULT_DIR symlink (AI_MANIFEST "SYMLINK SANCTITY") was
+# $VAULT_DIR symlink (TRACK_MANUAL §2.4, symlink sanctity) was
 # dropped in commit 8ad9ecf when install.sh became the
 # event-driven boot-persistent Sentry. Without it, MESA Turnip
 # writes shaders to a real cache dir that vault_d.sh never

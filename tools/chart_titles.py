@@ -189,7 +189,7 @@ def main():
             left += 100.0 * v / n
 
         # fps / frame-time jitter, white and left-aligned INSIDE the bar.
-        # Medians, per manual §6.4 — labelled `med` so it never reads as a
+        # Medians, per manual §B.2 — labelled `med` so it never reads as a
         # mean. Placed on the clean (blue) segment where there is one; when a
         # title has almost no clean share there is no dark ground to sit on,
         # so it moves outside in grey rather than becoming white-on-orange.

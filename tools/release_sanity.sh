@@ -2,7 +2,7 @@
 # ==========================================================================
 # tools/release_sanity.sh — ETK release sanity gates (run at every cut)
 # --------------------------------------------------------------------------
-# CHECK: artifact filenames are VERSION-ONLY (AI_MANIFEST law #8).
+# CHECK: artifact filenames are VERSION-ONLY (TRACK_MANUAL §C.4, law #8).
 #   Feature-name cruft (`-audiofix0`, `-kgsl-parity0`, `-p0hook`, `-fiforesync`)
 #   is a compulsive tendency that keeps slipping through and gets SHIPPED to the
 #   end user (live miss: `KERNEL.rocknix-gtk-20260706-audiofix0` in v0.7.0). This

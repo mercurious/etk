@@ -75,7 +75,7 @@ fi
 # rejected it: it sat there poisoning every RATE and every MEAN taken over the
 # ledger. One row made a month of racing total 347,694 hours and drove
 # rescues-per-hour to 0.0. Medians survived it, which is exactly why it went
-# unnoticed for weeks (manual §6.4 scores on medians).
+# unnoticed for weeks (manual §B.2 scores on medians).
 #
 # An implausible anchor is not a long session, it is a broken clock, so treat
 # it as the SAME honest-unknown the missing-anchor path already produces:
@@ -746,7 +746,7 @@ fi
 # PipeWire dummy sink) must be excludable from audio A/B. CARD-PRESENCE-ONLY
 # since 2026-07-07: the SM8250 probe race is fixed in the GTK kernel and the
 # audio watchdog (which wrote the old "revived" sub-state via audio_boot.txt)
-# is retired — see AI_MANIFEST "ROCKNIX AUDIO STACK". Precedence: dummy
+# is retired — see TRACK_MANUAL §2.4 (the audio precedent). Precedence: dummy
 # (session fact — RPCS3 bound auto_null; device-init lines live in the log
 # HEAD, and a full grep of a 100MB+ log would blow the <2s budget, hence
 # head -c) > nocard (no ALSA card at post-mortem) > ok.

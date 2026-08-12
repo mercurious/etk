@@ -29,7 +29,7 @@ ingame(){ case "$1" in ""|*WAIT*|*IDLE*|*LOADING*|*SHDRS*) return 1;; *) return 
 # emulator-alive probe (gates the SILENT class): a real silent freeze has the emulator process
 # STILL ALIVE with a frozen live_stat; a graceful exit/abort has it GONE (but live_stat lingers at
 # its last value). cmdline-verified /proc walk — NOT `pgrep -f` (self-matches this wrapper shell,
-# AI_MANIFEST §RUNTIME PROCESS) and NOT `pgrep -x AppRun.wrapped` (observed seen=0 for a whole live
+# TRACK_MANUAL §Q, AppRun.wrapped) and NOT `pgrep -x AppRun.wrapped` (observed seen=0 for a whole live
 # run on this build). cmdline is NUL-separated; read it per /proc PROC-discovery law. Skip self ($$).
 emu_alive(){
   for c in /proc/[0-9]*/cmdline; do

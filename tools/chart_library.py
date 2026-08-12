@@ -12,11 +12,11 @@ games actually use.
 
 WHY THE GENERATOR IS COMMITTED. The three charts already in docs/charts/ were
 rendered by scripts that live in no repository — the same defect the 2026-08-05
-build-fleet audit found in four build lanes (`AI_MANIFEST` / manual §8.5: a
+build-fleet audit found in four build lanes (manual §A.1: a
 recipe for a shipped artifact that exists on exactly one laptop). A README
 chart IS a shipped artifact. This one can be re-run by anyone with the ledger.
 
-LEDGER METHOD (manual §6.4) is applied here as everywhere: ABORTED rows and
+LEDGER METHOD (manual §B.2) is applied here as everywhere: ABORTED rows and
 sub-60 s runs are dropped, and rows whose duration is physically impossible
 are quarantined and REPORTED, never silently included — one PANIC row in the
 2026-08 ledger carries duration_s=1251432772 (39.7 years) from an unguarded

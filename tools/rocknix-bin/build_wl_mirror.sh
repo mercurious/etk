@@ -15,7 +15,7 @@
 # the landing zone if a patch is ever needed.
 #
 # Default lane: build on **etk-cloud** (Oracle A1 aarch64, native docker) and
-# stream the artifact back — see TRACK_MANUAL §8.5. The Air stays the staging
+# stream the artifact back — see TRACK_MANUAL §A.1. The Air stays the staging
 # host and the ONLY node that ever touches the rig.
 #
 #   ./build_wl_mirror.sh                 # cloud build of the pinned ref

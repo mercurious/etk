@@ -10,7 +10,7 @@ tune links resolve because `tools/sync_game_configs.sh` carries the rig's live
 `custom_configs/` into `config/` and the release gate fails a stale notebook —
 before that, a wiki link would have pointed at a tune nobody was running.
 
-LEDGER METHOD (manual §6.4), applied so the wiki cannot overstate:
+LEDGER METHOD (manual §B.2), applied so the wiki cannot overstate:
   * ABORTED rows and sub-60 s runs dropped
   * impossible durations quarantined and REPORTED (one 2026-08 PANIC row
     carries 39.7 years from a broken session anchor)

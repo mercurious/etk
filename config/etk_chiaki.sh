@@ -8,7 +8,7 @@
 # console chooser, gamepad pairing wizard) -> stream the chosen console
 # -> back to the menu when the stream ends -> EXIT returns to ES.
 #
-# SWAY DOCTRINE (AI_MANIFEST): sway is a tiling compositor. While the
+# SWAY DOCTRINE (TRACK_MANUAL §A.3): sway is a tiling compositor. While the
 # stream runs, a WATCHDOG loop re-asserts fullscreen on the chiaki
 # window every 2s ('fullscreen enable' is idempotent) — a one-shot
 # assert proved racy (operator-reported split-screen, 20260730).

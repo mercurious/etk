@@ -28,7 +28,7 @@ TURNIP_SO="${TURNIP_SO:-/etk/drivers/etk_turnip_rocknix_26.2.0_gtk_0.7.so}"
 REPO="${REPO:-/etk}"
 HOOK_SCRIPT="${HOOK_SCRIPT:-}"              # optional: bake /flash/mount-storage.sh (hostless hook)
 SEED_CONFIG="${SEED_CONFIG:-}"             # optional: stage $ETK_ROOT/.seed_config (hook installs it on boot 2)
-# NAMING (AI_MANIFEST law #8): pass OUT_IMG with a VERSION number (…-v3.img), never a
+# NAMING (TRACK_MANUAL §C.4, law #8): pass OUT_IMG with a VERSION number (…-v3.img), never a
 # feature name (…-p0hook.img) — feature names are cruft the end user must clean up at release.
 OUT_IMG="${OUT_IMG:-/work/ROCKNIX-GTK-SM8250.aarch64-20260801.img}"
 STORAGE_MIB="${STORAGE_MIB:-256}"          # small; fs-resize grows to full card
@@ -38,7 +38,7 @@ STORAGE_MIB="${STORAGE_MIB:-256}"          # small; fs-resize grows to full card
 #     p1 = ROCKNIX-GTK        p2 = GTKSTOR
 # i.e. the distributable uses the UNIQUE labels, not these. The comment that
 # stood here claimed the opposite ("STANDARD labels = the distributable") and was
-# wrong for at least two releases — the same stale line TRACK_MANUAL §8 flags
+# wrong for at least two releases — the same stale line TRACK_MANUAL §A.2 flags
 # with "do not trust this line; recover the labels by decompressing the image".
 # The shipped invocation is in FLASH_AND_TEST.md and overrides all four:
 #   HOOK_SCRIPT=/work/build/mount-storage.sh SEED_CONFIG=/work/build/seed_config \

@@ -166,7 +166,7 @@ resolve_game_id() {
             [ -n "$sfo" ] && id=$(strings "$sfo" 2>/dev/null | grep -oE '[A-Z]{4}[0-9]{5}' | head -n 1)
         fi
     fi
-    # Disc/ISO titles (the .pkg/.iso format axis — AI_MANIFEST): the live
+    # Disc/ISO titles (the .pkg/.iso format axis — TRACK_MANUAL §B.3): the live
     # cmdline is a bare .iso path. Unless the filename carries the serial,
     # BOTH scans above come up empty — there is no on-filesystem PARAM.SFO
     # to rip (it lives inside the image). Two ISO lanes, filename first:

@@ -515,7 +515,9 @@ knobs, writes the handoff, verifies afterward from read-only telemetry.
   the three artifacts into `ROCKNIX-GTK-SM8250.aarch64-<date>.img.gz`. Since 0.8.0 the
   shipped image is the **v4 hostless lane** — UNIQUE labels `ROCKNIX-GTK`/`GTKSTOR` (safe
   beside an internal ROCKNIX, NOT an install.sh target), hostless two-phase hook via
-  `/flash/mount-storage.sh`, `.seed_config` staged.
+  `/flash/mount-storage.sh`, `.seed_config` staged. Recover a previous image's labels by
+  decompressing it before rebuilding — do not trust prose about which labels ship (a
+  stale "standard labels" line stood for two releases after it stopped being true).
 
 ### A.3 The UI layer (Pitstop, notifications, HUD, installs)
 

@@ -4,7 +4,7 @@
 # ==========================================================
 # ⚠️ THE OPERATOR RUNS THIS SCRIPT. CLAUDE NEVER DOES — including `--dry-run`,
 # whose preflight opens ssh to the build node.
-# WHY (AI_MANIFEST Law #9, the "mint" threshold): this runs on SOMEONE ELSE'S
+# WHY (TRACK_MANUAL §1.1, Law #9, the "mint" threshold): this runs on SOMEONE ELSE'S
 # COMPUTER and can TRIGGER AN INVOICE. Money is atoms. The A1 node is
 # free-tier until it isn't, and spending a stranger's compute on our behalf is
 # a human's decision to make and be accountable for — not a cheap, reversible

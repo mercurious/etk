@@ -3,7 +3,7 @@
 # ETK PROBE: autostart ↔ MangoHud "race condition" — empirical test
 # ============================================================
 # Host-side dev tool. Queries the rig over SSH and produces an
-# empirical artifact testing the AI_MANIFEST claim:
+# empirical artifact testing the (retired) AI_MANIFEST claim, now TRACK_MANUAL §F:
 #
 #   "Do NOT use /storage/.config/autostart.sh ... it is tied to the
 #    Wayland/EmulationStation UI load sequence and causes race
@@ -18,7 +18,7 @@
 #
 # Read-only on the rig. No reboot required: systemd already recorded
 # the boot ordering. Re-runnable; writes a timestamped artifact under log/.
-# Remote snippets are BusyBox/POSIX-safe (AI_MANIFEST law #5).
+# Remote snippets are BusyBox/POSIX-safe (TRACK_MANUAL §Q BusyBox laws).
 # ============================================================
 set -u
 

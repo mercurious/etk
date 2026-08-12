@@ -449,7 +449,7 @@ def diff_profiles(base, cur):
                  "entire scripts/profiles/<SOC>.sh",
                  "baseline is from a different SoC — compare against the right pin")
     _diff_scalar(out, base, cur, "os.version", "INFO",
-                 "version strings (README / AI_MANIFEST / env.sh recal comment)",
+                 "version strings (README / TRACK_MANUAL / env.sh recal comment)",
                  "reconcile the pinned version strings to this nightly")
     _diff_scalar(out, base, cur, "os.build_id", "INFO",
                  "build identity (git SHA)",

@@ -5645,7 +5645,7 @@ def draw_tools(stdscr, state):
 # gauge stays live through analog event storms. SAVE writes ONLY Player 1's
 # threshold lines via the H2 tmp+os.replace idiom, verifies by re-read, and
 # is guarded by _rpcs3_running() at WRITE time (RPCS3 rewrites its config on
-# exit — a save made while it runs silently vanishes; AI_MANIFEST law).
+# exit — a save made while it runs silently vanishes; TRACK_MANUAL §Q law).
 
 _TRIGCAL_ROWS = ("l2", "l2top", "r2", "r2top", "auto", "save")  # cursor order
 _TRIGCAL_MARGIN = 13   # AUTO = live rest + margin (12+13=25 = the 06-16 fix)

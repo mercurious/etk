@@ -6,7 +6,7 @@
 #   TU_DEBUG=noconstcheck  lets GT5/GT6 blast past the
 #   menu -> track shader-compile bottleneck on first run,
 #   BEFORE committing to the locked-down install.sh/Sentry
-#   integration (AI_MANIFEST IMMUTABLE LAWS).
+#   integration (TRACK_MANUAL §1).
 #
 # BLAST RADIUS: writes ONLY to
 #   /storage/.config/profile.d/099-etk-boost   (writable, regenerated each boot)
