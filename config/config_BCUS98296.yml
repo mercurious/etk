@@ -46,8 +46,6 @@ Core:
   PPU Calling History: false
   PPU Debug: false
   PPU Decoder: Recompiler (LLVM)
-  PPU LLVM Greedy Mode: false
-  PPU LLVM Java Mode Handling: true
   PPU Profiler: false
   PPU Set FPCC Bits: false
   PPU Set Saturation Bit: false
@@ -81,7 +79,6 @@ Core:
   Use Accurate DFMA: true
   Use LLVM CPU: ""
   Usleep Time Addend: 0
-  RSX FIFO Accuracy: Fast
 Input/Output:
   Allow move hue set by game: false
   Background input enabled: true
@@ -263,9 +260,7 @@ Video:
     Asynchronous Queue Scheduler: Fast
     Asynchronous Texture Streaming: false
     Exclusive Fullscreen Mode: Automatic
-    Force primitive restart flag: false
     Use Re-BAR for GPU uploads: true
     VRAM allocation limit (MB): 65536
   Write Color Buffers: false
   Write Depth Buffer: false
-  ZCULL Accuracy: Relaxed

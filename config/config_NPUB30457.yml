@@ -46,8 +46,6 @@ Core:
   PPU Calling History: false
   PPU Debug: false
   PPU Decoder: Recompiler (LLVM)
-  PPU LLVM Greedy Mode: false
-  PPU LLVM Java Mode Handling: true
   PPU Profiler: false
   PPU Set FPCC Bits: false
   PPU Set Saturation Bit: false
@@ -81,7 +79,6 @@ Core:
   Use Accurate DFMA: true
   Use LLVM CPU: ""
   Usleep Time Addend: 0
-  RSX FIFO Accuracy: Fast
 Input/Output:
   Allow move hue set by game: false
   Background input enabled: true
@@ -175,7 +172,7 @@ VFS:
 Video:
   3D Display Enabled: false
   3D Display Mode: Disabled
-  Accurate ZCULL stats: false
+  Accurate ZCULL stats: true
   Allow Host GPU Labels: false
   Anisotropic Filter Override: 0
   Aspect ratio: 16:9
@@ -207,14 +204,14 @@ Video:
   Log shader programs: false
   MSAA: Disabled
   Minimum Scalable Dimension: 512
-  Multithreaded RSX: true
+  Multithreaded RSX: false
   Output Scaling Mode: Bilinear
   Performance Overlay:
     Body Background (hex): "#002339FF"
     Body Color (hex): "#FFE138FF"
     Center Horizontally: false
     Center Vertically: false
-    Detail level: Medium
+    Detail level: High
     Enable Framerate Graph: false
     Enable Frametime Graph: false
     Enabled: false
@@ -227,7 +224,7 @@ Video:
     Horizontal Margin (%): 4
     Metrics update interval (ms): 350
     Opacity (%): 70
-    Position: Top Left
+    Position: Bottom Right
     Title Background (hex): "#00000000"
     Title Color (hex): "#F26C24FF"
     Use Window Space: false
@@ -235,10 +232,10 @@ Video:
   Read Color Buffers: false
   Read Depth Buffer: false
   Record With Overlays: true
-  Relaxed ZCULL Sync: true
+  Relaxed ZCULL Sync: false
   Renderdoc Compatibility Mode: false
   Renderer: Vulkan
-  Resolution: 1280x720
+  Resolution: 1920x1080
   Resolution Scale: 100
   Screen size in inches: 24
   Second Frame Limit: 0
@@ -255,7 +252,7 @@ Video:
   Texture LOD Bias Addend: 0
   Use GPU texture scaling: false
   Use full RGB output range: true
-  VSync Mode: Disabled
+  VSync Mode: Full
   Vblank NTSC Fixup: false
   Vblank Rate: 60
   Vulkan:
@@ -263,7 +260,6 @@ Video:
     Asynchronous Queue Scheduler: Safe
     Asynchronous Texture Streaming: false
     Exclusive Fullscreen Mode: Automatic
-    Force primitive restart flag: false
     Use Re-BAR for GPU uploads: true
     VRAM allocation limit (MB): 65536
   Write Color Buffers: false

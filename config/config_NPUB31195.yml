@@ -6,7 +6,6 @@ Core:
   Save LLVM logs: false
   Use LLVM CPU: ""
   Max LLVM Compile Threads: 0
-  PPU LLVM Greedy Mode: false
   LLVM Precompilation: true
   Thread Scheduler Mode: Operating System
   Set DAZ and FTZ: false
@@ -132,7 +131,6 @@ Video:
   FidelityFX CAS Sharpening Intensity: 50
   Vulkan:
     Adapter: Turnip Adreno (TM) 650
-    Force primitive restart flag: false
     Exclusive Fullscreen Mode: Automatic
     Asynchronous Texture Streaming: false
     Asynchronous Queue Scheduler: Safe
@@ -165,11 +163,6 @@ Video:
     Allow custom background: true
     Darkening effect strength: 30
     Blur effect strength: 0
-  Custom Anaglyph Matrices:
-    Matrix Left:
-      {}
-    Matrix Right:
-      {}
 Audio:
   Renderer: Cubeb
   Audio Provider: CellAudio

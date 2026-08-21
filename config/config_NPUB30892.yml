@@ -46,8 +46,6 @@ Core:
   PPU Calling History: false
   PPU Debug: false
   PPU Decoder: Recompiler (LLVM)
-  PPU LLVM Greedy Mode: false
-  PPU LLVM Java Mode Handling: true
   PPU Profiler: false
   PPU Set FPCC Bits: false
   PPU Set Saturation Bit: false
@@ -55,7 +53,7 @@ Core:
   PPU Vector NaN Handling: true
   Performance Report Threshold: 500
   Precise SPU Verification: false
-  Preferred SPU Threads: 3
+  Preferred SPU Threads: 0
   RSX FIFO Fetch Accuracy: Atomic
   SPU Block Size: Safe
   SPU Cache: true
@@ -81,7 +79,6 @@ Core:
   Use Accurate DFMA: true
   Use LLVM CPU: ""
   Usleep Time Addend: 0
-  RSX FIFO Accuracy: Fast
 Input/Output:
   Allow move hue set by game: false
   Background input enabled: true
@@ -175,7 +172,7 @@ VFS:
 Video:
   3D Display Enabled: false
   3D Display Mode: Disabled
-  Accurate ZCULL stats: false
+  Accurate ZCULL stats: true
   Allow Host GPU Labels: false
   Anisotropic Filter Override: 0
   Aspect ratio: 16:9
@@ -201,13 +198,13 @@ Video:
   Force CPU Blit: false
   Force Hardware MSAA Resolve: false
   Force High Precision Z buffer: false
-  Frame limit: PS3 Native
+  Frame limit: Auto
   Framebuffer Aliasing Heuristic Bias: Auto
   Handle RSX Memory Tiling: false
   Log shader programs: false
   MSAA: Disabled
   Minimum Scalable Dimension: 512
-  Multithreaded RSX: true
+  Multithreaded RSX: false
   Output Scaling Mode: Bilinear
   Performance Overlay:
     Body Background (hex): "#002339FF"
@@ -235,11 +232,11 @@ Video:
   Read Color Buffers: false
   Read Depth Buffer: false
   Record With Overlays: true
-  Relaxed ZCULL Sync: true
+  Relaxed ZCULL Sync: false
   Renderdoc Compatibility Mode: false
   Renderer: Vulkan
   Resolution: 1280x720
-  Resolution Scale: 66
+  Resolution Scale: 100
   Screen size in inches: 24
   Second Frame Limit: 0
   Shader Compiler Threads: 0
@@ -263,8 +260,7 @@ Video:
     Asynchronous Queue Scheduler: Safe
     Asynchronous Texture Streaming: false
     Exclusive Fullscreen Mode: Automatic
-    Force primitive restart flag: false
     Use Re-BAR for GPU uploads: true
     VRAM allocation limit (MB): 65536
-  Write Color Buffers: false
+  Write Color Buffers: true
   Write Depth Buffer: false
