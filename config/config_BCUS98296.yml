@@ -238,7 +238,7 @@ Video:
   Relaxed ZCULL Sync: false
   Renderdoc Compatibility Mode: false
   Renderer: Vulkan
-  Resolution: 1280x720
+  Resolution: 720x480
   Resolution Scale: 100
   Screen size in inches: 24
   Second Frame Limit: 0

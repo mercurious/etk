@@ -39,7 +39,6 @@ Core:
   Accurate PPU 128-byte Reservation Op Max Length: 0
   Stub PPU Traps: 0
   Precise SPU Verification: false
-  PPU LLVM Java Mode Handling: true
   PPU Vector NaN Handling: true
   Use Accurate DFMA: true
   PPU Set Saturation Bit: false
@@ -63,7 +62,6 @@ Core:
   Performance Report Threshold: 500
   Enable Performance Report: false
   Assume External Debugger: false
-  RSX FIFO Accuracy: Fast
 VFS:
   Enable /host_root/: false
   Initialize Directories: true
@@ -157,7 +155,7 @@ Video:
     Vertical Margin (%): 0
     Center Horizontally: false
     Center Vertically: false
-    Opacity (%): 5
+    Opacity (%): 1
     Body Color (hex): "#FFE138FF"
     Body Background (hex): "#002339FF"
     Title Color (hex): "#F26C24FF"

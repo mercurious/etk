@@ -71,7 +71,7 @@ VFS:
   Empty /dev_hdd0/tmp/: true
 Video:
   Renderer: Vulkan
-  Resolution: 1280x720
+  Resolution: 1920x1080
   Aspect ratio: 16:9
   Frame limit: PS3 Native
   Second Frame Limit: 0
@@ -105,7 +105,7 @@ Video:
   Use full RGB output range: true
   Strict Texture Flushing: false
   Multithreaded RSX: false
-  Relaxed ZCULL Sync: false
+  Relaxed ZCULL Sync: true
   Force Hardware MSAA Resolve: false
   3D Display Enabled: false
   3D Display Mode: Disabled
@@ -136,7 +136,7 @@ Video:
     Force primitive restart flag: false
     Exclusive Fullscreen Mode: Automatic
     Asynchronous Texture Streaming: false
-    Asynchronous Queue Scheduler: Safe
+    Asynchronous Queue Scheduler: Fast
     VRAM allocation limit (MB): 65536
     Use Re-BAR for GPU uploads: true
   Performance Overlay:
@@ -156,7 +156,7 @@ Video:
     Vertical Margin (%): 0
     Center Horizontally: false
     Center Vertically: false
-    Opacity (%): 2
+    Opacity (%): 0
     Body Color (hex): "#FFE138FF"
     Body Background (hex): "#002339FF"
     Title Color (hex): "#F26C24FF"
