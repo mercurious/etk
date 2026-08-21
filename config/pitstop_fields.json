@@ -30,11 +30,11 @@
     "yaml_key": "  Resolution",
     "type": "enum",
     "options": [
+      "1920x1080",
       "1280x720",
-      "854x480",
-      "1024x576"
+      "720x480"
     ],
-    "help": "PS3 OUTPUT resolution the game targets (not the render scale above). 1280x720 native is the ETK standard -- GT titles ship 720p modes and the KPI is judged at native. Lower outputs are a compatibility lever, not a speed dial; use Resolution Scale for performance."
+    "help": "PS3 OUTPUT resolution the game targets (not the render scale above). 1280x720 native is recommended default; use Resolution Scale for performance."
   },
   {
     "label": "Frame Limit",
@@ -52,7 +52,7 @@
       "PS3 Native",
       "Infinite"
     ],
-    "help": "Frame-delivery cap. Off lets the game run free (the historical ETK setting). Largely UNEXPLORED here: a cap can steady frametime and heat at the cost of top-end fps. If you test one, judge by frametime jitter and PERFECT%, not average fps."
+    "help": "Frame-delivery cap."
   },
   {
     "label": "Antialiasing",
@@ -75,7 +75,7 @@
       "Adaptive",
       "Full"
     ],
-    "help": "Syncs frame presentation to the panel refresh. An UNEXPLORED dial with an early positive signal: the GT5P disc ISO runs Full and seems smoother (unvalidated, N small). Worth an A/B -- judge by frametime jitter/PERFECT%, and expect it to pace, not add, fps."
+    "help": "Syncs frame presentation to the panel refresh."
   },
   {
     "label": "Video Renderer",
