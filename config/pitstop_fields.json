@@ -491,18 +491,5 @@
     "yaml_key": "  Disable FIFO Reordering",
     "type": "bool",
     "help": "Stops the RSX reordering FIFO commands for speed -- the other half of the Yakuza-class fix (pair with RSX FIFO Fetch Accuracy on the Core tab). Costs performance; a per-title lever, never a global default."
-  },
-  {
-    "label": "Shader Precision",
-    "section": "Video",
-    "yaml_key": "  Shader Precision",
-    "type": "enum",
-    "options": [
-      "Auto",
-      "Ultra",
-      "High",
-      "Low"
-    ],
-    "help": "GPU shader precision preset; High is the core default. Low is the biggest single GPU-cost lever ARMSX3 never surfaced -- the candidate dial for the R&C / Midnight Club class of GPU-bound titles. Watch for visual artifacts: judge by fps AND correctness, and keep it per-title."
   }
 ]
