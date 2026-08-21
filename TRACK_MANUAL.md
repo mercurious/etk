@@ -862,7 +862,9 @@ MangoHud as the teardown murderer · "Android survives" as a solution (diagnosti
 non-Latin-1 HUD glyphs · mako image rendering · attract-mode trials for crash classes ·
 SRM-on-disc for the ISO stutter · "mako has no progress widget" (it does — §A.3) · "no
 headless install" (`--no-gui` ≠ `--headless`) · zfunc theory for road flicker (retracted;
-console renders black too).
+console renders black too) · FIFO fetch-accuracy/reordering combos for RR7 (2026-08-21:
+every rung worse than stock Atomic, menus unreachable — the fault is not FIFO ordering;
+the PPU-decoder interpreter A/B is the indicated probe when RR7's turn comes).
 
 ---
 

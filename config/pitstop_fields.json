@@ -339,7 +339,7 @@
       "Ordered & Atomic",
       "PS3"
     ],
-    "help": "How strictly RSX FIFO fetches replay the guest's command order. Atomic is the 0.9.0 default. 'Ordered & Atomic' is the heavy end -- it is what fixed Yakuza-class FIFO desyncs upstream (paired there with Disable FIFO Reordering on the Video tab). UNEXPLORED on our titles: try on FIFO-suspect strugglers and judge by survives/RECOVERY count, not fps."
+    "help": "How strictly RSX FIFO fetches replay the guest's command order. Atomic is the 0.9.0 default. 'Ordered & Atomic' is the heavy end -- it is what fixed Yakuza-class FIFO desyncs upstream (paired there with Disable FIFO Reordering on the Video tab). Judge by survives/RECOVERY count, not fps. FALSIFIED for RR7 (2026-08-21, §F): every non-default rung made it worse, menus unreachable -- do not re-try there."
   },
   {
     "label": "SPU Res. Busy-Wait (master)",
@@ -490,6 +490,6 @@
     "section": "Video",
     "yaml_key": "  Disable FIFO Reordering",
     "type": "bool",
-    "help": "Stops the RSX reordering FIFO commands for speed -- the other half of the Yakuza-class fix (pair with RSX FIFO Fetch Accuracy on the Core tab). Costs performance; a per-title lever, never a global default."
+    "help": "Stops the RSX reordering FIFO commands for speed -- the other half of the Yakuza-class fix (pair with RSX FIFO Fetch Accuracy on the Core tab). Costs performance; a per-title lever, never a global default. FALSIFIED for RR7 in combination testing (2026-08-21, §F)."
   }
 ]
