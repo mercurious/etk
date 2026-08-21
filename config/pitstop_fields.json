@@ -329,6 +329,66 @@
     "help": "How strictly RPCS3 syncs its own emulated command-queue reads. Fast (current default) races the FIFO harder; Ordered & Atomic is what RPCS3's own error message recommends after a 'Dead FIFO commands queue' fatal (confirmed live 2026-07-01, ~35min into a session, distinct from the a6xx GPU-hang class -- RSXThread.cpp:2792 recover_fifo()). Trades CPU overhead for not racing the FIFO in the first place. Pair with Driver Wake-Up Delay."
   },
   {
+    "label": "RSX FIFO Fetch Accuracy",
+    "section": "Core",
+    "yaml_key": "  RSX FIFO Fetch Accuracy",
+    "type": "enum",
+    "options": [
+      "Fast",
+      "Atomic",
+      "Ordered & Atomic",
+      "PS3"
+    ],
+    "help": "How strictly RSX FIFO fetches replay the guest's command order. Atomic is the 0.9.0 default. 'Ordered & Atomic' is the heavy end -- it is what fixed Yakuza-class FIFO desyncs upstream (paired there with Disable FIFO Reordering on the Video tab). UNEXPLORED on our titles: try on FIFO-suspect strugglers and judge by survives/RECOVERY count, not fps."
+  },
+  {
+    "label": "SPU Res. Busy-Wait (master)",
+    "section": "Core",
+    "yaml_key": "  SPU Reservation Busy Waiting Enabled",
+    "type": "bool",
+    "help": "MASTER SWITCH -- the Percentage dial below is DEAD while this is OFF. Busy-waits on SPU reservations instead of yielding: trades a hot core for reservation latency. Applies live (no relaunch)."
+  },
+  {
+    "label": "SPU Res. Busy-Wait %",
+    "section": "Core",
+    "yaml_key": "  SPU Reservation Busy Waiting Percentage 1",
+    "type": "int",
+    "min": 0,
+    "max": 100,
+    "step": 5,
+    "help": "Portion of reservation waits that spin hot (the rest yield). Read ONLY while the master switch above is ON. 100 = always spin. Applies live. Judge by jitter/PERFECT% and temps -- spin buys latency at watt cost. NB the core's key name really ends in '1'."
+  },
+  {
+    "label": "SPU GETLLAR Busy-Wait %",
+    "section": "Core",
+    "yaml_key": "  SPU GETLLAR Busy Waiting Percentage",
+    "type": "int",
+    "min": 0,
+    "max": 100,
+    "step": 5,
+    "help": "Same spin-vs-yield trade for the GETLLAR path. The 0.9.0 core carries upstream's livelock caps, so spinning is bounded either way. Applies live. UNEXPLORED here."
+  },
+  {
+    "label": "SPU Wake-Up Delay (us)",
+    "section": "Core",
+    "yaml_key": "  SPU Wake-Up Delay",
+    "type": "int",
+    "min": 0,
+    "max": 3000,
+    "step": 50,
+    "help": "Microseconds an SPU thread pauses before waking on signal -- the SPU-side sibling of Driver Wake-Up Delay (whose 20us fixed Yakuza upstream). 0 = off. Applies live; a small value can calm scheduler thrash on busy scenes. UNEXPLORED."
+  },
+  {
+    "label": "SPU Delay Penalty (ms)",
+    "section": "Core",
+    "yaml_key": "  SPU delay penalty",
+    "type": "int",
+    "min": 0,
+    "max": 16,
+    "step": 1,
+    "help": "Milliseconds a thread blocks when no virtual SPU core is free. Core default 3. Raising trades responsiveness for less contention. UNEXPLORED here; judge by jitter, not average fps."
+  },
+  {
     "label": "Relaxed ZCULL Sync",
     "section": "Video",
     "yaml_key": "  Relaxed ZCULL Sync",
@@ -424,5 +484,25 @@
     "max": 1000,
     "step": 10,
     "help": "How often the Perf Overlay refreshes its numbers (RPCS3 default 350ms). Lower = twitchier read of a transient pack spike; higher = calmer average. Does not affect the frametime graph resolution."
+  },
+  {
+    "label": "Disable FIFO Reordering",
+    "section": "Video",
+    "yaml_key": "  Disable FIFO Reordering",
+    "type": "bool",
+    "help": "Stops the RSX reordering FIFO commands for speed -- the other half of the Yakuza-class fix (pair with RSX FIFO Fetch Accuracy on the Core tab). Costs performance; a per-title lever, never a global default."
+  },
+  {
+    "label": "Shader Precision",
+    "section": "Video",
+    "yaml_key": "  Shader Precision",
+    "type": "enum",
+    "options": [
+      "Auto",
+      "Ultra",
+      "High",
+      "Low"
+    ],
+    "help": "GPU shader precision preset; High is the core default. Low is the biggest single GPU-cost lever ARMSX3 never surfaced -- the candidate dial for the R&C / Midnight Club class of GPU-bound titles. Watch for visual artifacts: judge by fps AND correctness, and keep it per-title."
   }
 ]
