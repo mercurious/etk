@@ -213,6 +213,14 @@ Support the underlying projects:
 - **[RPCS3](https://rpsc3.org)** emulator
 - **[MESA Project](https://mesa3d.org)** freedreno video driver
 
+# Building
+You can build all the components of the kit yourself using the sibling repositories.
+- [ROCKNIX-GTK](https://github.com/mercurious/rocknix-gtk)
+- [RPCS3-GTK](https://github.com/mercurious/etk-rpcs3-gtk)
+- [TURNIP-GTK](https://github.com/mercurious/etk-turnip-gtk)
+- [CHIAKI-ROCKNIX](https://github.com/mercurious/chiaki-rocknix)
+- [WL-MIRROR-ROCKNIX](https://github.com/mercurious/wl-mirror-rocknix)
+
 # Legal Notice
 This project is intended for expert enthusiasts who maintain fair use/legal digital archives of their own games, not copyright infringement. No association with Sony or any of its affiliates is implied.
 
