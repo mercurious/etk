@@ -215,7 +215,7 @@ Support the underlying projects:
 
 # Building
 You can build all the components of the kit yourself using the sibling repositories.
-- [ROCKNIX-GTK](https://github.com/mercurious/rocknix-gtk) kernal
+- [ROCKNIX-GTK](https://github.com/mercurious/rocknix-gtk) kernel
 - [RPCS3-GTK](https://github.com/mercurious/etk-rpcs3-gtk) emulator
 - [TURNIP-GTK](https://github.com/mercurious/etk-turnip-gtk) freedreno video driver
 - [CHIAKI-ROCKNIX](https://github.com/mercurious/chiaki-rocknix) remoteplay client
