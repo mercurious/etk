@@ -1,5 +1,5 @@
 # The Emulation Tuning Kit - GTK Edition
-The **Gran Turismo Kit** (GTK) is a specialty installation for your **Retroid Pocket Flip2 SM8250** (or [sibling device](https://github.com/mercurious/etk/#handheld-system-support)) built on patched forks of [ROCKNIX](https://github.com/mercurious/rocknix-gtk) (OS/kernel), [RCPS3](https://github.com/mercurious/etk-rpcs3-gtk) (PS3 emulator) and [MESA Turnip](https://github.com/mercurious/etk-turnip-gtk) (Adreno Vulkan video driver) integrated with a custom middleware (the **ETK**), and all of it is **specifically tuned** for the **Gran Turismo series only**. GT HD Concept, GT 5 Prologue Spec II and Spec III, and GT6 are supported. GT5 remains *pending*. Other game support is *incidental* at best. The GTK installs easy. Either flash an SD Card and boot into ROCKNIX or run an installer script from your Mac or PC if you already have it.
+The **Gran Turismo Kit** (GTK) is a specialty installation for your **Retroid Pocket Flip2 SM8250** (or [sibling device](https://github.com/mercurious/etk/#handheld-system-support)) built on patched forks of [ROCKNIX](https://github.com/mercurious/rocknix-gtk) (OS/kernel), [RCPS3](https://github.com/mercurious/etk-rpcs3-gtk) (PS3 emulator) and [MESA Turnip](https://github.com/mercurious/etk-turnip-gtk) (Adreno Vulkan video driver) integrated with a custom middleware (the **ETK**), and all of it is **specifically tuned** for the **Gran Turismo series only**. GT HD Concept, GT 5 Prologue Spec II and Spec III, and GT6 are supported. GT5 remains *pending*. Other game support is *emergent* demonstrating promise of the project. The GTK installs easy. Either flash an SD Card and boot into ROCKNIX or run an installer script from your Mac or PC if you already have it.
 
 <img src="https://raw.githubusercontent.com/mercurious/etk/main/docs/screenshots/etk_NPUA80075_20260526_132550.png" width="640"
      alt="GT5P Suzuka chase cam, blue Nissan Skyline GT-R approaching a sweeping corner, mini-map visible, position 12 of 12 lap 2 of 3." />
@@ -133,8 +133,7 @@ irm https://raw.githubusercontent.com/mercurious/etk/main/windows_installer/get-
 
 ## Kit Map (File Layout)
 
-A fresh map of the garage. Entries marked *(local)* are operator-side lanes,
-gitignored by design — they dangle in a public clone and that's intentional.
+A map of the garage. Entries marked *(local)* are operator-side lanes, gitignored by design because they dangle in a public clone.
 
 ```
 etk/
@@ -188,36 +187,15 @@ etk/
 └── log/                        # sample probe output
 ```
 
-The companion repos: [chiaki-rocknix](https://github.com/mercurious/chiaki-rocknix)
-(Remote Play client), [etk-rpcs3-gtk](https://github.com/mercurious/etk-rpcs3-gtk),
-[etk-turnip-gtk](https://github.com/mercurious/etk-turnip-gtk),
-[rocknix-gtk](https://github.com/mercurious/rocknix-gtk) and
-[wl-mirror-rocknix](https://github.com/mercurious/wl-mirror-rocknix) (screen
-mirror for DP capture; unpatched build mirror at a pinned ref) — the forks the
-kit deploys.
+The companion repos: [chiaki-rocknix](https://github.com/mercurious/chiaki-rocknix) (Remote Play client), [etk-rpcs3-gtk](https://github.com/mercurious/etk-rpcs3-gtk), [etk-turnip-gtk](https://github.com/mercurious/etk-turnip-gtk), [rocknix-gtk](https://github.com/mercurious/rocknix-gtk) and [wl-mirror-rocknix](https://github.com/mercurious/wl-mirror-rocknix) (screen mirror for DP capture; unpatched build mirror at a pinned ref) document all the forks the kit deploys.
 
-## ROCKNIX OS Updates — one bad boot, by design
-A kernel and its OS are a matched pair: the OS image carries all the drivers
-(WiFi, sound, storage) keyed to one exact kernel. The kit's one deep
-modification is that your rig boots **our** kernel — that's where the
-ANTI-LOCK crash net and the audio-boot fix live. The ROCKNIX updater doesn't
-know we exist: it drops its new kernel into the slot the rig booted from
-(ours) and resets the boot menu to factory. So the **first boot after a
-ROCKNIX update comes up with no WiFi and no sound. This is expected.**
+## Notes on ROCKNIX OS Updates
+A kernel and its OS are a matched pair: the OS image carries all the drivers (WiFi, sound, storage) keyed to one exact kernel. The kit's one deep modification is that your rig boots **our** kernel where the
+ANTI-LOCK crash net and the audio-boot fix live. The ROCKNIX updater doesn't know we exist: it drops its new kernel into the slot the rig booted from (ours) and resets the boot menu to factory. So the **first boot after a ROCKNIX update comes up with no WiFi and no sound. This is expected.** The **ETK OS Guard** (v0.8.3+) repairs it automatically during that same boot — you'll see an on-screen message — and one reboot finishes the job. Don't reflash, don't panic.
 
-The **ETK OS Guard** (v0.8.3+) repairs it automatically during that same
-boot — you'll see an on-screen message — and one reboot finishes the job.
-Don't reflash, don't panic: it's one bad boot, by design.
-
-- **Best order:** update ETK first (Pitstop `TOOLS` → Check for ETK Updates —
-  it now stages the matching GTK kernel ahead of time), then update ROCKNIX,
-  then reboot when the Guard asks. You end up back on the full GTK stack
-  automatically — no computer needed.
-- **Updated ROCKNIX first?** Also fine: the Guard heals to the standard
-  kernel; then run the ETK update (Pitstop or the one-liner) and reboot once
-  more to bring the GTK kernel back.
-- **On v0.8.2 or older?** Update ETK to v0.8.3 **before** taking a ROCKNIX
-  OS update — older kits can't self-repair; recovery needs a computer.
+- **Recommeneded order:** update ETK first (Pitstop `TOOLS` → Check for ETK Updates — it now stages the matching GTK kernel ahead of time), then update ROCKNIX, then reboot when the Guard asks. You end up back on the full GTK stack automatically with no computer needed.
+- **Updated ROCKNIX first?** The Guard heals to the standard kernel; then run the ETK update (Pitstop or the one-liner) and reboot once more to bring the GTK kernel back.
+- **On v0.8.2 or older?** Update ETK to v0.8.3 **before** taking a ROCKNIX OS update because older kits can't self-repair and recovery needs a computer.
 
 ## Removing ETK
 - Use the provided `uninstall.sh` to remove the ETK from your system.
