@@ -25,7 +25,7 @@ set -u
 
 API="https://api.github.com"
 CHIPSET="${PROFILE_SOC:-SM8250}"
-CRED="/storage/roms/etk/config/paddock.json"
+CRED="${PADDOCK_CRED:-/storage/roms/etk/config/paddock.json}"
 VAULT_BASE="/storage/roms/etk/vault/$CHIPSET"
 CFG_DIR="/storage/roms/bios/rpcs3/custom_configs"
 SAVES="/storage/roms/bios/rpcs3/dev_hdd0/home/00000001/savedata"
@@ -155,6 +155,23 @@ restore_saves() {
     return 0
 }
 
+# classify_http <code> — map the auth-preflight HTTP status to the
+# operator-facing failure line ('' = healthy). Pure text so the host tests
+# exercise the mapping without a network. The incident this encodes (found
+# live 2026-08-27): an expired PAT turned every API call into a 401, and
+# cmd_status's silent-'[]' fallback rendered the whole fleet LOCAL-ONLY —
+# a lying surface. "GitHub said no", "the paddock is empty" and "no
+# network" are three different situations and must render as three.
+classify_http() {
+    case "${1:-000}" in
+        200) echo "" ;;
+        401|403) echo "GitHub rejected the paddock token (HTTP $1) — re-link: fresh PAT into etk.conf PADDOCK_TOKEN, then re-run install.sh" ;;
+        404) echo "paddock repo not reachable with this token (renamed? token lacks access?)" ;;
+        000) echo "paddock unreachable (network down?) — remote state unknown" ;;
+        *) echo "paddock API error (HTTP $1)" ;;
+    esac
+}
+
 # Tests source this file with PADDOCK_LIB=1 to exercise the merge/restore
 # helpers above without a credential, a network round-trip, or a live rig.
 # Everything below this line is the online engine.
@@ -169,6 +186,26 @@ HDR="/dev/shm/paddock_hdr.$$"
 printf 'Authorization: Bearer %s\n' "$TOKEN" > "$HDR"
 trap 'rm -rf "$WORK" "$HDR"' EXIT
 gh_api() { curl -fsS -H "@$HDR" -H "Accept: application/vnd.github+json" "$@"; }
+
+# Auth preflight: ONE cheap call before any command, so a failure surfaces
+# as its actual cause (dead token / missing repo / no network) instead of
+# as empty remote state. Also reads GitHub's token-expiration header so a
+# dying token warns while it still works.
+PF_CODE=$(curl -sS -o /dev/null -w '%{http_code}' -D "$WORK/preflight.hdrs" \
+    --connect-timeout 10 -H "@$HDR" -H "Accept: application/vnd.github+json" \
+    "$API/repos/$REPO" 2>/dev/null) || true
+PF_ERR=$(classify_http "$PF_CODE")
+[ -z "$PF_ERR" ] || die "$PF_ERR"
+TOK_EXP=$(tr -d '\r' < "$WORK/preflight.hdrs" 2>/dev/null | \
+    awk -F': ' 'tolower($1)=="github-authentication-token-expiration"{print $2; exit}')
+if [ -n "$TOK_EXP" ]; then
+    EXP_S=$(date -d "${TOK_EXP% UTC}" +%s 2>/dev/null || echo "")
+    NOW_S=$(date +%s)
+    if [ -n "$EXP_S" ] && [ "$EXP_S" -gt "$NOW_S" ]; then
+        DAYS_LEFT=$(( (EXP_S - NOW_S) / 86400 ))
+        [ "$DAYS_LEFT" -lt 14 ] && echo "WARNING: paddock token expires in $DAYS_LEFT day(s) ($TOK_EXP) — mint its successor now"
+    fi
+fi
 
 # --- epoch: read the driver library itself (no log dependency) ---
 MESA_VER=$(strings /usr/lib/libvulkan_freedreno.so | grep -m1 -oE "Mesa [0-9]+\.[0-9]+\.[0-9]+" | awk '{print $2}')
@@ -200,8 +237,12 @@ _fetch_names() {
 }
 
 cmd_status() {
-    # Remote: every release asset across all epochs, newest epoch wins per game
-    gh_api "$API/repos/$REPO/releases?per_page=20" > "$WORK/releases.json" 2>/dev/null || echo '[]' > "$WORK/releases.json"
+    # Remote: every release asset across all epochs, newest epoch wins per game.
+    # The preflight above already proved auth + reachability, so a failure HERE
+    # is loud too — the old silent-'[]' fallback is how a dead token rendered
+    # as LOCAL-ONLY across the board.
+    gh_api "$API/repos/$REPO/releases?per_page=20" > "$WORK/releases.json" 2>/dev/null \
+        || die "release listing failed after a healthy preflight (transient network?) — retry"
     jq -r '.[] | .tag_name as $t | .assets[] | select(.name|endswith(".tar.gz")) | [$t, .name, (.size|tostring)] | @tsv' \
         "$WORK/releases.json" > "$WORK/remote.tsv" 2>/dev/null || : > "$WORK/remote.tsv"
     _fetch_names

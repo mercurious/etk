@@ -372,6 +372,49 @@ try:
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
+print("\n[5] classify_http — the silent-401 lesson (2026-08-27)")
+# The dead-token incident: an expired PAT 401'd every API call, and the old
+# status fallback swallowed it into '[]', rendering the whole fleet as
+# LOCAL-ONLY. The mapping is pure text, so it tests without a network.
+for code, want in [("200", ""), ("401", "rejected the paddock token"),
+                   ("403", "rejected the paddock token"),
+                   ("404", "not reachable with this token"),
+                   ("000", "unreachable"), ("500", "API error")]:
+    rc, out = call("classify_http", code)
+    ok = (out == "" if want == "" else want in out)
+    check(f"HTTP {code} -> {'healthy' if not want else repr(want)}", ok, True)
+
+print("\n[6] a rejected token dies loudly (end-to-end, online engine)")
+# Discriminates against the pre-fix engine: there, `status` under a 401
+# exited 0 and printed LOCAL-ONLY rows. The curl shim answers 401 to the
+# preflight and fails (exit 22, like curl -f) everything else.
+tmp = tempfile.mkdtemp()
+try:
+    shim = os.path.join(tmp, "bin")
+    os.makedirs(shim)
+    with open(os.path.join(shim, "curl"), "w") as f:
+        f.write("#!/usr/bin/env python3\n"
+                "import sys\n"
+                "args = ' '.join(sys.argv)\n"
+                "if '%{http_code}' in args:\n"
+                "    sys.stdout.write('401')\n"
+                "    sys.exit(0)\n"
+                "sys.exit(22)\n")
+    os.chmod(os.path.join(shim, "curl"), 0o755)
+    cred = os.path.join(tmp, "paddock.json")
+    with open(cred, "w") as f:
+        f.write('{"repo":"nobody/etk-paddock","token":"ghp_dead"}')
+    env = dict(os.environ, PATH=shim + os.pathsep + os.environ["PATH"],
+               PADDOCK_CRED=cred)
+    r = subprocess.run(["bash", ENGINE, "status"], env=env,
+                       capture_output=True, text=True, timeout=30)
+    check("status exits non-zero on 401", r.returncode != 0, True)
+    check("stderr names the dead token",
+          "rejected the paddock token" in r.stderr, True)
+    check("no LOCAL-ONLY lie on stdout", "LOCAL-ONLY" not in r.stdout, True)
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+
 print()
 if FAILS:
     print(f"FAILED: {len(FAILS)} check(s) -> {FAILS}")
