@@ -442,6 +442,45 @@ Reading a run: `state/forge/status.tsv` (`lane state pct runid note`); logs in
 `state/forge/logs/<runid>/`. **A run that finishes in seconds built nothing** — check for
 `SKIP … fresh` before trusting a fast result.
 
+#### The mint loop against etk-cloud — recoveries, not surprises (2026-08-27: the 0.9.0.1 mint took FIVE runs)
+
+Every failure was minutes-recoverable once named; the cost was the ~25-min round-trips.
+Walk this list BEFORE handing the operator `./forge.sh rpcs3`:
+
+1. **Base bump? Fetch the node first.** The rpcs3 lane does NO fetch, and the node's
+   remote is named `armsx3`, not origin — `git reset --hard <new-base>` dies on an
+   unknown object. Handoff step 0: `ssh etk-cloud 'git -C ~/rpcs3 fetch armsx3'`.
+2. **Preflight recognizes exactly two tree states** — clean, or incoming-patch-applied.
+   The previous release's resting state (old base + old patch) is neither, so EVERY
+   version bump fails `tree-has-UNKNOWN-changes` with the diff banked. Recovery:
+   byte-compare the banked diff against the published previous patch in the fork's
+   `patches/` (2026-08-27: matched exactly), then the operator clears with
+   `ssh etk-cloud 'git -C ~/rpcs3 reset --hard'`. The same reset is needed whenever the
+   PATCH REVISION changes between failed runs (a failed lane rests at base + the
+   superseded revision); a re-run with an UNCHANGED patch needs none — that resting
+   state is the one preflight recognizes.
+3. **The lane bundles from the Air's fork checkout** — the patch, `package-appimage.sh`
+   AND `verify-markers.sh`, from whatever branch is CHECKED OUT. Preflight asserts the
+   packager but not the gate script (bit 2026-08-27: verify-markers.sh existed only on a
+   stale side branch; the bundle went up one file short and the lane died at install).
+   Before any mint: fork checkout on pushed `main`, both scripts present.
+4. **An ARMSX3 base bump means a fresh Linux-build-fix commit series** — nobody
+   desktop-builds ARMSX3 but us, and the rot surfaces in build-phase order: SCAN (a
+   header that exists nowhere in their repo — their Android releases build from dirty
+   trees), COMPILE (config members declared `#ifdef __ANDROID__`, referenced ungated by
+   desktop TUs), LINK (a desktop stub whose signature drifted from its header). Three
+   pre-mint static sweeps, each of which would have saved a run: resolve every quoted
+   `#include` across new/changed desktop sources; list Android-gated config members and
+   grep desktop TUs for ungated references; diff every `#else` stub signature against
+   its header declaration. Know the sweeps' limit — they prove resolution and
+   declaration, not semantics; **lld's undefined-symbol list is the only exhaustive
+   check**, so a link failure names the complete remaining debt in one shot.
+5. **release_sanity enforces the CORE cap on the host catalog** — it counts
+   `emulators/*.AppImage` (non-recursive) and a fresh mint makes three. Retire the
+   outgoing core into `emulators/retired/` (invisible to the gate AND to install.sh's
+   staging loop; one `mv` reverses it). The certified default is unaffected — it
+   travels by auto-fetch, never by the catalog.
+
 #### Build-loop traps (Stage IV garage learnings)
 
 - **Iterate loop:** if the build dir survives, incremental
@@ -900,7 +939,9 @@ the PPU-decoder interpreter A/B is the indicated probe when RR7's turn comes).
   verify the count) · `awk` for float math (`sh` can't do decimals; `bc` may be absent) ·
   foot has `-F` not `-f`.
 - **Forge:** `./forge.sh [lanes] [--status|--force|--local|-v]` — OPERATOR RUNS IT (§1.1).
-  Common case `./forge.sh image`. A run that finishes in seconds built nothing.
+  Common case `./forge.sh image`. A run that finishes in seconds built nothing. Base-bump
+  mints: node fetch first (`armsx3` remote) + the preflight UNKNOWN-changes reset — walk
+  §A.1's mint-loop list before the handoff.
 
 ---
 
