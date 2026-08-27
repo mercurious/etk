@@ -46,6 +46,8 @@ Core:
   PPU Calling History: false
   PPU Debug: false
   PPU Decoder: Recompiler (LLVM)
+  PPU LLVM Greedy Mode: false
+  PPU LLVM Java Mode Handling: true
   PPU Profiler: false
   PPU Set FPCC Bits: false
   PPU Set Saturation Bit: false
@@ -54,7 +56,7 @@ Core:
   Performance Report Threshold: 500
   Precise SPU Verification: false
   Preferred SPU Threads: 0
-  RSX FIFO Fetch Accuracy: Atomic
+  RSX FIFO Fetch Accuracy: Ordered & Atomic
   SPU Block Size: Safe
   SPU Cache: true
   SPU Debug: false
@@ -79,6 +81,7 @@ Core:
   Use Accurate DFMA: true
   Use LLVM CPU: ""
   Usleep Time Addend: 0
+  RSX FIFO Accuracy: Fast
 Input/Output:
   Allow move hue set by game: false
   Background input enabled: true
@@ -235,7 +238,7 @@ Video:
   Relaxed ZCULL Sync: false
   Renderdoc Compatibility Mode: false
   Renderer: Vulkan
-  Resolution: 1920x1080
+  Resolution: 1280x720
   Resolution Scale: 100
   Screen size in inches: 24
   Second Frame Limit: 0
@@ -252,7 +255,7 @@ Video:
   Texture LOD Bias Addend: 0
   Use GPU texture scaling: false
   Use full RGB output range: true
-  VSync Mode: Full
+  VSync Mode: Disabled
   Vblank NTSC Fixup: false
   Vblank Rate: 60
   Vulkan:
@@ -260,7 +263,9 @@ Video:
     Asynchronous Queue Scheduler: Safe
     Asynchronous Texture Streaming: false
     Exclusive Fullscreen Mode: Automatic
+    Force primitive restart flag: false
     Use Re-BAR for GPU uploads: true
     VRAM allocation limit (MB): 65536
   Write Color Buffers: false
   Write Depth Buffer: false
+  Shader Precision: Low

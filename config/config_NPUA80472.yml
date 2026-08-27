@@ -46,6 +46,8 @@ Core:
   PPU Calling History: false
   PPU Debug: false
   PPU Decoder: Recompiler (LLVM)
+  PPU LLVM Greedy Mode: false
+  PPU LLVM Java Mode Handling: true
   PPU Profiler: false
   PPU Set FPCC Bits: false
   PPU Set Saturation Bit: false
@@ -260,6 +262,7 @@ Video:
     Asynchronous Queue Scheduler: Safe
     Asynchronous Texture Streaming: false
     Exclusive Fullscreen Mode: Automatic
+    Force primitive restart flag: false
     Use Re-BAR for GPU uploads: true
     VRAM allocation limit (MB): 65536
   Write Color Buffers: false

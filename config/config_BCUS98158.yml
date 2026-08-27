@@ -6,6 +6,7 @@ Core:
   Save LLVM logs: false
   Use LLVM CPU: ""
   Max LLVM Compile Threads: 0
+  PPU LLVM Greedy Mode: false
   LLVM Precompilation: true
   Thread Scheduler Mode: Operating System
   Set DAZ and FTZ: false
@@ -26,7 +27,7 @@ Core:
   Accurate Cache Line Stores: false
   Accurate RSX reservation access: false
   PPU Reservation Priority Over SPUs: false
-  RSX FIFO Fetch Accuracy: Atomic
+  RSX FIFO Fetch Accuracy: Fast
   SPU Verification: true
   SPU Cache: true
   SPU Profiler: false
@@ -61,6 +62,7 @@ Core:
   Performance Report Threshold: 500
   Enable Performance Report: false
   Assume External Debugger: false
+  RSX FIFO Accuracy: Fast
 VFS:
   Enable /host_root/: false
   Initialize Directories: true
@@ -69,7 +71,7 @@ VFS:
   Empty /dev_hdd0/tmp/: true
 Video:
   Renderer: Vulkan
-  Resolution: 1280x720
+  Resolution: 1920x1080
   Aspect ratio: 16:9
   Frame limit: PS3 Native
   Second Frame Limit: 0
@@ -94,7 +96,7 @@ Video:
   Disable ZCull Occlusion Queries: false
   Disable Video Output: false
   Disable Vertex Cache: false
-  Disable FIFO Reordering: false
+  Disable FIFO Reordering: true
   Emulate Special Depth Comparison: false
   Enable Frame Skip: false
   Force CPU Blit: false
@@ -102,7 +104,7 @@ Video:
   Disable Vulkan Memory Allocator: false
   Use full RGB output range: true
   Strict Texture Flushing: false
-  Multithreaded RSX: true
+  Multithreaded RSX: false
   Relaxed ZCULL Sync: true
   Force Hardware MSAA Resolve: false
   3D Display Enabled: false
@@ -131,6 +133,7 @@ Video:
   FidelityFX CAS Sharpening Intensity: 50
   Vulkan:
     Adapter: Turnip Adreno (TM) 650
+    Force primitive restart flag: false
     Exclusive Fullscreen Mode: Automatic
     Asynchronous Texture Streaming: false
     Asynchronous Queue Scheduler: Safe
@@ -163,6 +166,12 @@ Video:
     Allow custom background: true
     Darkening effect strength: 30
     Blur effect strength: 0
+  Custom Anaglyph Matrices:
+    Matrix Left:
+      {}
+    Matrix Right:
+      {}
+  Shader Precision: Low
 Audio:
   Renderer: Cubeb
   Audio Provider: CellAudio

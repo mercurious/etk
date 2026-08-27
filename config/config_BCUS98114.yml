@@ -6,6 +6,7 @@ Core:
   Save LLVM logs: false
   Use LLVM CPU: ""
   Max LLVM Compile Threads: 0
+  PPU LLVM Greedy Mode: false
   LLVM Precompilation: true
   Thread Scheduler Mode: Operating System
   Set DAZ and FTZ: false
@@ -16,7 +17,7 @@ Core:
   Disable SPU GETLLAR Spin Optimization: false
   SPU Debug: false
   MFC Debug: false
-  Preferred SPU Threads: 0
+  Preferred SPU Threads: 3
   SPU delay penalty: 3
   SPU loop detection: false
   Max SPURS Threads: 6
@@ -26,7 +27,7 @@ Core:
   Accurate Cache Line Stores: false
   Accurate RSX reservation access: false
   PPU Reservation Priority Over SPUs: false
-  RSX FIFO Fetch Accuracy: "Ordered & Atomic"
+  RSX FIFO Fetch Accuracy: Ordered & Atomic
   SPU Verification: true
   SPU Cache: true
   SPU Profiler: false
@@ -38,6 +39,7 @@ Core:
   Accurate PPU 128-byte Reservation Op Max Length: 0
   Stub PPU Traps: 0
   Precise SPU Verification: false
+  PPU LLVM Java Mode Handling: true
   PPU Vector NaN Handling: true
   Use Accurate DFMA: true
   PPU Set Saturation Bit: false
@@ -61,6 +63,7 @@ Core:
   Performance Report Threshold: 500
   Enable Performance Report: false
   Assume External Debugger: false
+  RSX FIFO Accuracy: Fast
 VFS:
   Enable /host_root/: false
   Initialize Directories: true
@@ -69,9 +72,9 @@ VFS:
   Empty /dev_hdd0/tmp/: true
 Video:
   Renderer: Vulkan
-  Resolution: 1280x720
+  Resolution: 1920x1080
   Aspect ratio: 16:9
-  Frame limit: Display
+  Frame limit: PS3 Native
   Second Frame Limit: 0
   MSAA: Disabled
   Shader Mode: Async Recompiler (multi-threaded)
@@ -102,14 +105,14 @@ Video:
   Disable Vulkan Memory Allocator: false
   Use full RGB output range: true
   Strict Texture Flushing: false
-  Multithreaded RSX: true
-  Relaxed ZCULL Sync: true
+  Multithreaded RSX: false
+  Relaxed ZCULL Sync: false
   Force Hardware MSAA Resolve: false
   3D Display Enabled: false
   3D Display Mode: Disabled
   Screen size in inches: 24
   Debug Program Analyser: false
-  Accurate ZCULL stats: false
+  Accurate ZCULL stats: true
   Consecutive Frames To Draw: 1
   Consecutive Frames To Skip: 1
   Resolution Scale: 100
@@ -131,13 +134,14 @@ Video:
   FidelityFX CAS Sharpening Intensity: 50
   Vulkan:
     Adapter: Turnip Adreno (TM) 650
+    Force primitive restart flag: false
     Exclusive Fullscreen Mode: Automatic
     Asynchronous Texture Streaming: false
     Asynchronous Queue Scheduler: Safe
     VRAM allocation limit (MB): 65536
     Use Re-BAR for GPU uploads: true
   Performance Overlay:
-    Enabled: true
+    Enabled: false
     Enable Framerate Graph: false
     Enable Frametime Graph: false
     Framerate datapoints: 50
@@ -163,6 +167,12 @@ Video:
     Allow custom background: true
     Darkening effect strength: 30
     Blur effect strength: 0
+  Custom Anaglyph Matrices:
+    Matrix Left:
+      {}
+    Matrix Right:
+      {}
+  Shader Precision: Low
 Audio:
   Renderer: Cubeb
   Audio Provider: CellAudio

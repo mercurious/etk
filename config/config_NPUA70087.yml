@@ -1,9 +1,11 @@
 Audio:
+  Audio Buffer: 150
   Audio Channel Layout: Automatic
   Audio Device: "@@@default@@@"
   Audio Format: Stereo
   Audio Formats: 0
   Audio Provider: CellAudio
+  Channels: 2.0
   Convert to 16 bit: false
   Desired Audio Buffer Duration: 150
   Disable Sampling Skip: false
@@ -34,6 +36,7 @@ Core:
   LLVM Precompilation: true
   Libraries Control:
     []
+  Lower SPU Priority: false
   MFC Commands Shuffling In Steps: false
   MFC Commands Shuffling Limit: 0
   MFC Commands Timeout: 0
@@ -46,6 +49,8 @@ Core:
   PPU Calling History: false
   PPU Debug: false
   PPU Decoder: Recompiler (LLVM)
+  PPU LLVM Greedy Mode: false
+  PPU LLVM Java Mode Handling: true
   PPU Profiler: false
   PPU Set FPCC Bits: false
   PPU Set Saturation Bit: false
@@ -227,6 +232,7 @@ Video:
     Title Color (hex): "#F26C24FF"
     Use Window Space: false
     Vertical Margin (%): 7
+  RSX FIFO Accuracy: Ordered
   Read Color Buffers: false
   Read Depth Buffer: false
   Record With Overlays: true
@@ -235,6 +241,7 @@ Video:
   Renderer: Vulkan
   Resolution: 1280x720
   Resolution Scale: 100
+  Resolution Scale Threshold: 512
   Screen size in inches: 24
   Second Frame Limit: 0
   Shader Compiler Threads: 0
@@ -250,7 +257,9 @@ Video:
   Texture LOD Bias Addend: 0
   Use GPU texture scaling: false
   Use full RGB output range: true
+  VSync: false
   VSync Mode: Disabled
+  Vblank Frequency: 60Hz
   Vblank NTSC Fixup: false
   Vblank Rate: 60
   Vulkan:
@@ -258,7 +267,10 @@ Video:
     Asynchronous Queue Scheduler: Safe
     Asynchronous Texture Streaming: false
     Exclusive Fullscreen Mode: Automatic
+    Force primitive restart flag: false
     Use Re-BAR for GPU uploads: true
     VRAM allocation limit (MB): 65536
   Write Color Buffers: false
   Write Depth Buffer: false
+  ZCULL Accuracy: Relaxed
+  Frame Limit: Off
