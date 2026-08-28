@@ -898,8 +898,9 @@ Full procedure: `dossiers/ReleaseRunbook.md`. The order of operations:
 **Two catalogs, two opposite rules:** TURNIP is **CUMULATIVE** — each cut adds, nothing is
 removed, every listed driver ships as a release asset (a dropped asset is unfetchable for
 every fresh install), `CERTIFIED_BUILDS[0]` = certified default = the manifest's pin.
-RPCS3 CORES are the opposite — **capped at TWO, never published** (A/B tooling, not a
-distribution channel). Changing the driver pair means changing **FIVE places** (they had
+RPCS3 CORES are the opposite — **capped at TWO shipping builds, never published** (A/B
+tooling, not a distribution channel); `rpcs3-EXP-*` probes are campaign-transient,
+exempt from the cap and loudly NOTEd by the gate — retire them when the campaign ends. Changing the driver pair means changing **FIVE places** (they had
 drifted for two releases): `install.sh CERTIFIED_BUILDS` · `install.sh driver_sha()` ·
 `config/gtk_stack.json` · the image-build default · the PowerShell `$certified` block
 (**generate it, never sed it** — a hand-edit leaves the old sha attached and fails every

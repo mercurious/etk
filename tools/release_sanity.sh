@@ -281,11 +281,23 @@ for _d in $_CB; do
     grep -q "    $_d)" "$REPO_ROOT/install.sh" || _miss="${_miss:+$_miss, }no driver_sha arm"
     [ -z "$_miss" ] && ok "catalog: $_d" || bad "catalog: $_d — $_miss"
 done
-_CORES=$(ls "$REPO_ROOT"/emulators/*.AppImage 2>/dev/null | wc -l | tr -d ' ')
+# The cap counts SHIPPING-CLASS cores. rpcs3-EXP-* probes are declared
+# experiments (the Aug-06 perturb fleet convention): campaign-transient,
+# never certified, never published — they ride the catalog only to reach
+# TUNING > CORE. Exempt from the cap but NOTEd loudly so a forgotten probe
+# can't squat silently (2026-08-27: the EXP-maskoff mint ended
+# "failed: sanity" purely because the gate had no probe concept).
+_CORES_ALL=$(ls "$REPO_ROOT"/emulators/*.AppImage 2>/dev/null | wc -l | tr -d ' ')
+_CORES_EXP=$(ls "$REPO_ROOT"/emulators/rpcs3-EXP-*.AppImage 2>/dev/null | wc -l | tr -d ' ')
+_CORES=$(( _CORES_ALL - _CORES_EXP ))
+if [ "$_CORES_EXP" -gt 0 ]; then
+    printf "  ${c_warn}NOTE${c_off}: %s probe build(s) in the catalog (campaign-transient — retire after the A/B):\n" "$_CORES_EXP"
+    ls "$REPO_ROOT"/emulators/rpcs3-EXP-*.AppImage 2>/dev/null | while read -r _p; do printf '        %s\n' "$(basename "$_p")"; done
+fi
 _CERTAI=$(sed -n 's/^CERT_RPCS3="\(.*\)"$/\1/p' "$REPO_ROOT/install.sh" | head -1)
-if [ "$_CORES" = 2 ]; then ok "rpcs3 core catalog holds 2 builds (A/B cap)"
+if [ "$_CORES" = 2 ]; then ok "rpcs3 core catalog holds 2 shipping builds (A/B cap)"
 elif [ "$_CORES" = 0 ]; then skip "no cores staged locally"
-else bad "rpcs3 core catalog holds $_CORES builds — the cap is 2 (A/B only, never published)"; fi
+else bad "rpcs3 core catalog holds $_CORES shipping builds — the cap is 2 (A/B only, never published)"; fi
 if [ -f "$REPO_ROOT/emulators/$_CERTAI" ]; then
     ok "certified core is in the catalog"
 elif [ "$_CORES" = 0 ]; then
