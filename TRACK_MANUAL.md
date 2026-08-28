@@ -29,6 +29,7 @@ person using it.
 |---|---|---|
 | trying a new **Turnip** as Mesa ships it | Pitstop **DRIVER** tab | catalog is CUMULATIVE **and present on the device** — installed rig *and* flashed card; cold boot to load; `loaded` is boot-stamped ground truth, `selected` is only intent |
 | **A/B-ing an emulator core** | **TUNING → CORE** | exactly two cores staged, never published; a per-title pin is never pruned |
+| **certifying / swapping the emulator core** | install.sh **NEXT-BOOT BIND** block (STEP 6.553) + the first post-boot ledger row's `core=` | the CERT pin resolves to a REAL source (local catalog copy or published asset — release_sanity gates it); a staging failure NEVER downgrades a staged rig; `loaded=stock` on a custom-expecting rig is a RED headline, not an OK |
 | **tuning a title** | **TUNING** | atomic write + read-back; `tune_tag` reaches the ledger, or the A/B is unattributable |
 | **surviving a wedge** | `L1`+`R3` | fires INSTANTLY — no hold, no gate, no queue, ever |
 | **capturing what just happened** | in-game chords | the chord must not collide with a control the game itself binds |
@@ -478,8 +479,15 @@ Walk this list BEFORE handing the operator `./forge.sh rpcs3`:
 5. **release_sanity enforces the CORE cap on the host catalog** — it counts
    `emulators/*.AppImage` (non-recursive) and a fresh mint makes three. Retire the
    outgoing core into `emulators/retired/` (invisible to the gate AND to install.sh's
-   staging loop; one `mv` reverses it). The certified default is unaffected — it
-   travels by auto-fetch, never by the catalog.
+   staging loop; one `mv` reverses it) — **but NEVER retire the core the CERT pins
+   name.** The certified default's auto-fetch exists only after a release publishes
+   the asset; between a cert-pin bump and its release cut, the local catalog copy is
+   the ONLY source. Retiring it orphans AUTO — 2026-08-27: the next install 404'd,
+   deleted `rpcs3-sa.custom`, and the rig silently ran STOCK all evening (a "0.9.0.1
+   Spec II regression" that dissolved once attributed). Closed the same day:
+   release_sanity FAILs a cert pin with zero sources, install.sh keeps the staged
+   custom through any staging failure, and STEP 6.553 prints the NEXT-BOOT BIND
+   verdict — read it at every install; `loaded=stock` unrequested is the falsifier.
 
 #### Build-loop traps (Stage IV garage learnings)
 
@@ -507,9 +515,20 @@ knobs, writes the handoff, verifies afterward from read-only telemetry.
   bin/scripts deploy → 4 vault PUSH → 5 Pitstop → 6 Sentry heredoc + `etk.service` → 6.4
   kernel (grub twins, snapshot, device guard) → 6.5 Turnip catalog (sha-pinned; never
   prunes the rig's `selected`) → 6.55 RPCS3 AppImage (sha-verified; free-space preflight)
-  → 6.56 env flags → 6.57 watchdog teardown → 6.6 power applier → 6.65 black box (+
-  grub-drift tripwire) → 6.7 DP-mirror → 6.8 Stage III → 6.85 SD rebind (label-based v3)
-  → 7 PADDOCK link.
+  → 6.553 NEXT-BOOT BIND verdict → 6.56 env flags → 6.57 watchdog teardown → 6.6 power
+  applier → 6.65 black box (+ grub-drift tripwire) → 6.7 DP-mirror → 6.8 Stage III →
+  6.85 SD rebind (label-based v3) → 7 PADDOCK link.
+- **The emulator lane's deploy surface is STEP 6.553 NEXT-BOOT BIND** — printed at
+  every install, read from the rig AFTER the bind service restarts (truth, not
+  prediction): what `rpcs3-sa` binds next boot, which certified build, wrapper
+  presence, pin count, rig-copy sha vs the staged source. RED on any stock
+  resolution the operator didn't ask for. The ledger self-announces too:
+  `core=stock` when the bind is stock, `core=<token>?stale` when a session never
+  passed the launch wrapper (2026-08-27: 17 stock sessions stamped `core=0.8.5` by a
+  marker that had rotted five hours earlier; the `r?` stack field was the only
+  tell). "Install validated" for this lane MEANS this block plus the first
+  post-boot row — step exit codes lied once already (`RPCS3_OK loaded=stock`
+  printed green during the nuke).
 - **Persistence vectors — the ONLY things that survive a cold boot:**
   `/storage/.config/system.d/` units (enable by absolute path; **never** `/etc/systemd/`,
   never `mount -o remount,rw /` — read-only root rejects both) · `custom_scripts/` boot
