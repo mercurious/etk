@@ -1577,8 +1577,12 @@ if [ -n "${KERNEL_IMAGE:-}" ] && [ -f "${KERNEL_IMAGE:-}" ]; then
     # cmdline, one grub-pick away). 'quiet loglevel=3' only quiets the console —
     # NO video= change (the DSI black-screen risk is stale-grub, not quiet).
     # Validate the quiet boot on a COLD boot; verbose + stock are the fallbacks.
-    K_CMDLINE="boot=LABEL=ROCKNIX disk=LABEL=STORAGE grub_portable rootwait console=tty0 loglevel=7 panic=30"
-    K_CMDLINE_QUIET="boot=LABEL=ROCKNIX disk=LABEL=STORAGE grub_portable rootwait console=tty0 quiet loglevel=3 panic=30"
+    # 'gpt' mirrors the 20260901 stock cmdline (ROCKNIX 08780192): the KERNEL's
+    # own force-GPT param — scan the backup GPT when the primary is corrupt
+    # (RP Mini V2 recovery-image fallout). Inert on a healthy disk and on 7.1.2;
+    # mirrored unconditionally so the entries match stock on both OS versions.
+    K_CMDLINE="boot=LABEL=ROCKNIX disk=LABEL=STORAGE grub_portable rootwait console=tty0 loglevel=7 panic=30 gpt"
+    K_CMDLINE_QUIET="boot=LABEL=ROCKNIX disk=LABEL=STORAGE grub_portable rootwait console=tty0 quiet loglevel=3 panic=30 gpt"
     if [ "${KERNEL_CONTEXT_KEEPALIVE:-0}" = "1" ]; then
         K_CMDLINE="$K_CMDLINE msm.context_keepalive=1"
         K_CMDLINE_QUIET="$K_CMDLINE_QUIET msm.context_keepalive=1"
@@ -1625,14 +1629,14 @@ printf '%s\n' "$K_MODE"    > /storage/rocknix-gtk/heal/mode
 # /flash/KERNEL, so on a virgin rig this IS the OS-shipped kernel. The managed
 # fallback entry boots it with the verbose forensic console.
 [ -f /flash/KERNEL.etk-stock ] || cp /flash/KERNEL /flash/KERNEL.etk-stock
-K_STOCK_CMDLINE="boot=LABEL=ROCKNIX disk=LABEL=STORAGE grub_portable rootwait console=tty0 loglevel=7 panic=30"
+K_STOCK_CMDLINE="boot=LABEL=ROCKNIX disk=LABEL=STORAGE grub_portable rootwait console=tty0 loglevel=7 panic=30 gpt"
 # SD-card boot cmdlines — LOCKSTEP with os-install/build/build_gtk_image_v2.sh
 # (the card's own grub entries): unique labels ROCKNIX-GTK/GTKSTOR locate the
 # GTK card unambiguously next to the UFS install (the split-brain cure).
 # keepalive is baked unconditionally: these lines only ever boot the GTK card
 # kernel, which always wants it.
-K_SD_CMDLINE="boot=LABEL=ROCKNIX-GTK disk=LABEL=GTKSTOR grub_portable rootwait console=tty0 quiet loglevel=3 panic=30 msm.context_keepalive=1"
-K_SD_CMDLINE_VERBOSE="boot=LABEL=ROCKNIX-GTK disk=LABEL=GTKSTOR grub_portable rootwait console=tty0 loglevel=7 panic=30 msm.context_keepalive=1"
+K_SD_CMDLINE="boot=LABEL=ROCKNIX-GTK disk=LABEL=GTKSTOR grub_portable rootwait console=tty0 quiet loglevel=3 panic=30 msm.context_keepalive=1 gpt"
+K_SD_CMDLINE_VERBOSE="boot=LABEL=ROCKNIX-GTK disk=LABEL=GTKSTOR grub_portable rootwait console=tty0 loglevel=7 panic=30 msm.context_keepalive=1 gpt"
 TS=$(date +%Y%m%d_%H%M%S)
 for CFG in /flash/EFI/BOOT/grub.cfg /flash/boot/grub/grub.cfg; do
     [ -f "$CFG" ] || continue
@@ -1715,6 +1719,22 @@ for CFG in /flash/EFI/BOOT/grub.cfg /flash/boot/grub/grub.cfg; do
         { print }
         END { if (!ins) { while ((getline line < bf) > 0) print line } }
     ' "$CFG.stripped" > "$CFG"
+    # 20260901 grub-generator counter (decided against the LIVE artifact):
+    # the new generator's abl_dev auto-select (fdtdump model match) runs AFTER
+    # load_env and OVERRIDES saved_entry — with the stock match line, default
+    # mode silently dissolves (GTK auto-boot AND the panic=10 crash-reboot
+    # return both land on stock). When the block exists and mode=default,
+    # point the Flip-2 match at our entry (stock stays one menu pick away —
+    # pick-per-boot, no longer sticky; the sticky revert is etk.conf
+    # KERNEL_DEPLOY_MODE=test). Mode=test restores the stock line. No block
+    # (20260801 and earlier) = no-op. Idempotent both directions.
+    if grep -q 'set abl_dev="' "$CFG" 2>/dev/null; then
+        if [ "$K_MODE" = "default" ]; then
+            sed 's/set abl_dev="rpflip2"/set abl_dev="etk-gtk-test"/' "$CFG" > "$CFG.ablfix" && mv "$CFG.ablfix" "$CFG"
+        else
+            sed 's/set abl_dev="etk-gtk-test"/set abl_dev="rpflip2"/' "$CFG" > "$CFG.ablfix" && mv "$CFG.ablfix" "$CFG"
+        fi
+    fi
     rm -f "$CFG.stripped" "$CFG.etkblock"
 done
 # grubenv seeding — ROCKNIX grub auto-boots `saved_entry` with a 2-s menu.
@@ -1737,7 +1757,14 @@ elif grep -q 'saved_entry=etk-gtk-test' /flash/EFI/BOOT/grubenv 2>/dev/null; the
 fi
 sync
 mount -o remount,ro /flash || true
-echo "KERNEL_OK gtktest_sha=$F keepalive=$(grep -qc 'msm.context_keepalive=1' /flash/EFI/BOOT/grub.cfg && echo on || echo off) bootdefault=$([ "$K_MODE" = "default" ] && echo gtk || echo stock)"
+# abl verdict: 'absent' = old grub generator (20260801-), 'etk' = counter
+# applied (auto-select boots our entry), 'stock' = block present but pointing
+# rpflip2 — correct in test mode, RED in default mode (contract dissolved).
+ABL_STATE=absent
+if grep -q 'set abl_dev="' /flash/boot/grub/grub.cfg 2>/dev/null; then
+    if grep -q 'set abl_dev="etk-gtk-test"' /flash/boot/grub/grub.cfg 2>/dev/null; then ABL_STATE=etk; else ABL_STATE=stock; fi
+fi
+echo "KERNEL_OK gtktest_sha=$F keepalive=$(grep -qc 'msm.context_keepalive=1' /flash/EFI/BOOT/grub.cfg && echo on || echo off) bootdefault=$([ "$K_MODE" = "default" ] && echo gtk || echo stock) abl=$ABL_STATE"
 KERNELREMOTE
 )
     if echo "$K_OUT" | grep -q KERNEL_OK; then
@@ -1747,6 +1774,15 @@ KERNELREMOTE
             K_BOOTMSG="AUTO-BOOTS the GTK kernel (2-s menu; stock = one pick away)"
         else
             K_BOOTMSG="default boot stays stock; pick 'ROCKNIX-GTK TEST kernel' at the menu"
+        fi
+        # abl verdict (20260901 grub generator): in default mode an unpatched
+        # abl_dev auto-select means EVERY boot lands on the stock kernel no
+        # matter what saved_entry says — a RED headline, not an OK.
+        K_ABL=$(echo "$K_OUT" | sed -n 's/.*abl=\([a-z]*\).*/\1/p')
+        if [ "$K_BD" = "gtk" ] && [ "$K_ABL" = "stock" ]; then
+            say "${Y}[WARN] RED: grub's abl_dev auto-select is ACTIVE and still points at the STOCK entry — it overrides saved_entry, so despite KERNEL_DEPLOY_MODE=default every boot loads the stock kernel. STEP 6.4's counter did not take; inspect /flash/boot/grub/grub.cfg.${N}"
+        elif [ "$K_ABL" = "etk" ]; then
+            K_BOOTMSG="$K_BOOTMSG; abl auto-select counter applied"
         fi
         if [ "$K_RIG_SHA" = "$K_HOST_SHA" ]; then
             say "${G}[ETK]${N} Custom kernel: $(basename "$KERNEL_IMAGE") already staged; grub entries refreshed (parity=${K_KA:-off}); $K_BOOTMSG."

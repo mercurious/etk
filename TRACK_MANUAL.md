@@ -563,7 +563,14 @@ knobs, writes the handoff, verifies afterward from read-only telemetry.
   ZERO modules. After ANY OS update: verify `/flash` slot contents via
   `strings | grep "Linux version"`, restore `saved_entry`, re-run install.sh with a kernel
   built for the new module tree, and re-arm the black box (`panic=10` grub lines — STEP
-  6.65 warns on drift). In-place updates only — never reflash.
+  6.65 warns on drift). In-place updates only — never reflash. **20260901+:** the
+  regenerated grub.cfg gains an ABL model auto-select (`fdtdump` → `set abl_dev=`) that
+  runs AFTER `load_env` and **overrides `saved_entry`** — left stock in default mode it
+  silently dissolves the GTK auto-boot AND the panic=10 crash-reboot return. STEP 6.4
+  counters it (re-points the Flip-2 match at `etk-gtk-test`, default mode only; verdict
+  field `abl=` in `KERNEL_OK`, RED when it didn't take; `tools/test_grub_abl.sh` is the
+  harness, host + rig-BusyBox legs). The counter re-applies at every install; between an
+  OS update and the next install the failure direction is SAFE (stock boots).
 - **Windows:** the PowerShell port (`windows_installer/`) is ACTIVE, kept in lockstep —
   **not retiring** (re-affirmed 2026-08-07). Rig-side bodies are pulled VERBATIM from
   install.sh heredoc markers at runtime, so daemon logic can't drift; only the PS-native

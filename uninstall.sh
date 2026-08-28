@@ -303,6 +303,10 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
                 /^set fallback=/ {next}
                 {print}
             ' "$CFG" > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"
+            # 20260901 grub generator: restore the stock abl_dev auto-select
+            # target if install.sh's default-mode counter re-pointed it at the
+            # (now removed) GTK entry. No-op on older grub.cfg.
+            sed 's/set abl_dev="etk-gtk-test"/set abl_dev="rpflip2"/' "$CFG" > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"
         done
         for GE in /flash/EFI/BOOT/grubenv /flash/boot/grub/grubenv; do
             if grep -qE 'saved_entry=(etk-gtk-test|etk-sdcard)' "$GE" 2>/dev/null; then

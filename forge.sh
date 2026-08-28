@@ -76,6 +76,10 @@ FORGE_TURNIP_GTKVER="${FORGE_TURNIP_GTKVER:-0.7}"
 FORGE_KERNEL_DATE="${FORGE_KERNEL_DATE:-20260801}"
 FORGE_KERNEL_VER="${FORGE_KERNEL_VER:-0.4.1}"
 FORGE_KERNEL_ARTDIR="${FORGE_KERNEL_ARTDIR:-$HOME/rocknix-gtk/artifacts}"
+# Recipe selector for lane_kernel: 712 = 7.1.2/20260801 (shipping), 72 =
+# 7.2/20260901 rebase (scripts/build_72.sh; staging gated on the migrated
+# rig's ground truth). Allowlisted below so a typo dies host-side.
+FORGE_KERNEL_BUILD="${FORGE_KERNEL_BUILD:-712}"
 FORGE_IMAGE_BASEDATE="${FORGE_IMAGE_BASEDATE:-20260801}"
 FORGE_STALL_WARN_S="${FORGE_STALL_WARN_S:-1200}"
 ETK_VERBOSE="${ETK_VERBOSE:-0}"
@@ -193,6 +197,10 @@ if ! printf '%s' "$FORGE_KERNEL_VER" | grep -Eq '^[0-9]+(\.[0-9]+)*$' \
    || ! printf '%s' "$FORGE_KERNEL_DATE" | grep -Eq '^[0-9]{8}$'; then
     tui_fail "FORGE_KERNEL_DATE/VER must be 8-digit date + digits-and-dots (law #8): got $KNAME"
 fi
+case "$FORGE_KERNEL_BUILD" in
+    712|72) ;;
+    *) tui_fail "FORGE_KERNEL_BUILD must be 712 or 72 (selects scripts/build_<sel>.sh on the node): got '$FORGE_KERNEL_BUILD'" ;;
+esac
 IMGNAME="ROCKNIX-GTK-SM8250.aarch64-${FORGE_IMAGE_BASEDATE}.img"
 
 # --- WHAT THE IMAGE BAKES COMES FROM THE MANIFEST, NOT FROM THE BUILD KNOBS ---
@@ -436,7 +444,7 @@ lane_env() {  # <lane> -> env assignments for the node-side recipe
                     "$FORGE_RPCS3_TREE" "$FORGE_RPCS3_BASE" "$(basename "$FORGE_RPCS3_PATCH")" \
                     "$FORGE_RPCS3_IMAGE" "$FORGE_RPCS3_MARKER" "$FORGE_RPCS3_ARTIFACT" ;;
         turnip) printf 'VERS="%s" GTKVER=%s' "$FORGE_TURNIP_VERS" "$FORGE_TURNIP_GTKVER" ;;
-        kernel) printf 'KNAME=%s' "$KNAME" ;;
+        kernel) printf 'KNAME=%s FORGE_KERNEL_BUILD=%s' "$KNAME" "$FORGE_KERNEL_BUILD" ;;
         # The three baked names come from the MANIFEST (see the preflight
         # note above), never from the build knobs — an image is a shipped
         # asset and must carry exactly the certified stack.
