@@ -342,6 +342,12 @@ export RPCS3_CORE_MAP="$RPCS3_CORES_DIR/core_map.tsv"
 # ledger attributes by — not the binary's baked branch string (the
 # r0.8.0-19638 wart: the branch name didn't move for 0.8.1-dev).
 export ACTIVE_CORE_FILE="$TELEMETRY_DIR/active_core.txt"
+# Bind-state marker written by etk-rpcs3-bind.sh at every boot/install —
+# wrapper | custom | stock. The core tag consults it FIRST: when the bind is
+# stock, no wrapper ran this boot and ACTIVE_CORE_FILE is a corpse (2026-08-27:
+# 17 stock sessions stamped core=0.8.5 off a marker that had rotted at 14:40).
+export RPCS3_LOADED_FILE="/storage/rpcs3/loaded"
+export RPCS3_CERT_SRC_FILE="/storage/rpcs3/rpcs3-sa.custom.src"
 
 # Community patch surface (multigame lane §3 — NOT a new patch system; RPCS3
 # ships the framework, ETK only surfaces it). Pitstop TUNING > PATCH writes
@@ -399,7 +405,32 @@ etk_rpcs3_core_tag() {
     # Which RPCS3 core the session ACTUALLY launched (wrapper-stamped marker;
     # see ACTIVE_CORE_FILE). Absent marker = pre-wrapper rig or stock opt-out
     # = the certified default. Compaction mirrors Pitstop's _core_label.
-    _c=$(head -n1 "$ACTIVE_CORE_FILE" 2>/dev/null | tr -d '\t\r ')
+    #
+    # HONESTY GATES (2026-08-27 stock-bind incident: the wrapper was unbound,
+    # the marker rotted at 14:40, and 17 straight STOCK sessions were stamped
+    # core=0.8.5 — the r? stack field was the only tell):
+    #   loaded=stock  -> core=stock (no wrapper ran; the marker is a corpse)
+    #   loaded=custom -> the .src stamp is the truth (wrapper out of the path)
+    #   loaded=wrapper, marker >120s older than this session's ignition
+    #                 -> token + '?stale' (self-announcing rot; the slack
+    #                    absorbs the normal wrapper-stamp -> Sentry-ignition
+    #                    ordering gap of a few seconds)
+    _loaded=$(head -n1 "${RPCS3_LOADED_FILE:-/storage/rpcs3/loaded}" 2>/dev/null | tr -d '\t\r ')
+    if [ "$_loaded" = "stock" ]; then
+        printf 'core=stock'
+        return
+    fi
+    _stale=""
+    if [ "$_loaded" = "custom" ]; then
+        _c=$(head -n1 "${RPCS3_CERT_SRC_FILE:-/storage/rpcs3/rpcs3-sa.custom.src}" 2>/dev/null | tr -d '\t\r ')
+    else
+        _c=$(head -n1 "$ACTIVE_CORE_FILE" 2>/dev/null | tr -d '\t\r ')
+        _ss="${SHM_DIR:-/dev/shm/etk_shm}/session_start.txt"
+        if [ -n "$_c" ] && [ -f "$_ss" ] && [ -f "$ACTIVE_CORE_FILE" ]; then
+            _d=$(( $(stat -c %Y "$_ss" 2>/dev/null || echo 0) - $(stat -c %Y "$ACTIVE_CORE_FILE" 2>/dev/null || echo 0) ))
+            [ "$_d" -gt 120 ] && _stale="?stale"
+        fi
+    fi
     [ -z "$_c" ] && _c="certified"
     _c=$(printf '%s' "$_c" | sed -e 's/\.AppImage$//' \
                                  -e 's/^rpcs3[-_]*//' \
@@ -407,7 +438,7 @@ etk_rpcs3_core_tag() {
                                  -e 's/^gtk-edition[-_]*//' \
                                  -e 's/_linux_aarch64$//')
     [ -z "$_c" ] && _c="certified"
-    printf 'core=%s' "$_c"
+    printf 'core=%s%s' "$_c" "$_stale"
 }
 
 etk_patches_tag() {

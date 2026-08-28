@@ -93,6 +93,14 @@ if ETKCONF=$(find_local etk.conf); then
         check_kernel_versiononly "etk.conf KERNEL_IMAGE" "$KI"
         [ -f "$KI" ] || skip "etk.conf KERNEL_IMAGE points at a missing file: $KI"
     fi
+    # A dev-override here means this host is NOT installing the certified AUTO
+    # lane — legitimate mid-campaign, wrong posture at a cut. Surface it.
+    RAI=$(grep -E '^[[:space:]]*RPCS3_APPIMAGE=' "$ETKCONF" | tail -1 \
+         | cut -d= -f2- | sed -e 's/"//g' -e "s/'//g" -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+    case "$RAI" in
+        ""|stock) : ;;
+        *) printf "  ${c_warn}NOTE${c_off}: etk.conf RPCS3_APPIMAGE dev-override active (%s) — this host installs THAT build, not the certified AUTO lane; revert to \"\" before cutting\n" "$(basename "$RAI")" ;;
+    esac
 else
     skip "etk.conf not found (ok in CI / fresh clone)"
 fi
@@ -192,13 +200,33 @@ for cb in $(sed -n 's/^CERTIFIED_BUILDS="\(.*\)"$/\1/p' "$REPO_ROOT/install.sh" 
     _probe_local "install.sh CERTIFIED_BUILDS" "/etk/drivers/$cb"
 done
 _CERT=$(sed -n 's/^CERT_RPCS3="\(.*\)"$/\1/p' "$REPO_ROOT/install.sh" | head -1)
+# ZERO-SOURCE GATE (2026-08-27 stock-nuke): install.sh AUTO has exactly two
+# sources for the certified core — the local emulators/ copy, then the
+# releases/latest asset. ef062b5 pinned an artifact that was never published,
+# the 0.9.0.1 mint retired the local copy, and BOTH lanes went dark: the next
+# install deleted rpcs3-sa.custom and the rig silently ran stock all evening.
+# The old shape of this check soft-SKIPPED both conditions ("expected until
+# this cut publishes" / "ok in fresh clone"). On a host whose catalog is
+# populated (= a deploy host, not a fresh clone/CI), a cert pin with no local
+# copy is survivable only if the release actually serves it — so:
+# local miss + non-200 = FAIL; local miss + offline = FAIL (unprovable).
+_CERT_NCORES=$(ls "$REPO_ROOT"/emulators/*.AppImage 2>/dev/null | wc -l | tr -d ' ')
+_CERT_LOCAL=0; [ -n "$_CERT" ] && [ -f "$REPO_ROOT/emulators/$_CERT" ] && _CERT_LOCAL=1
 if [ -n "$_CERT" ] && command -v curl >/dev/null 2>&1; then
     _code=$(curl -s -o /dev/null -m 20 -w '%{http_code}' -L \
         "https://github.com/mercurious/etk/releases/latest/download/$_CERT" 2>/dev/null || echo 000)
     case "$_code" in
         200) ok "CERT_RPCS3 resolves on releases/latest (HTTP 200)" ;;
-        000) skip "CERT_RPCS3 reachability: no network" ;;
-        *)   skip "CERT_RPCS3 returns HTTP $_code on releases/latest — expected until this cut publishes" ;;
+        000) if [ "$_CERT_LOCAL" = 0 ] && [ "$_CERT_NCORES" -gt 0 ]; then
+                 bad "CERT_RPCS3 has NO local copy and network is down — zero provable sources ($_CERT)"
+             else
+                 skip "CERT_RPCS3 reachability: no network (local copy covers installs)"
+             fi ;;
+        *)   if [ "$_CERT_LOCAL" = 0 ] && [ "$_CERT_NCORES" -gt 0 ]; then
+                 bad "CERT_RPCS3: HTTP $_code on releases/latest AND no local copy — install.sh AUTO has ZERO sources (the 2026-08-27 stock-nuke condition)"
+             else
+                 skip "CERT_RPCS3 returns HTTP $_code on releases/latest — expected until this cut publishes (local copy covers installs)"
+             fi ;;
     esac
 fi
 
@@ -258,8 +286,13 @@ _CERTAI=$(sed -n 's/^CERT_RPCS3="\(.*\)"$/\1/p' "$REPO_ROOT/install.sh" | head -
 if [ "$_CORES" = 2 ]; then ok "rpcs3 core catalog holds 2 builds (A/B cap)"
 elif [ "$_CORES" = 0 ]; then skip "no cores staged locally"
 else bad "rpcs3 core catalog holds $_CORES builds — the cap is 2 (A/B only, never published)"; fi
-[ -f "$REPO_ROOT/emulators/$_CERTAI" ] && ok "certified core is in the catalog" \
-    || skip "certified core not staged locally ($_CERTAI)"
+if [ -f "$REPO_ROOT/emulators/$_CERTAI" ]; then
+    ok "certified core is in the catalog"
+elif [ "$_CORES" = 0 ]; then
+    skip "certified core not staged locally ($_CERTAI) — no catalog on this host (fresh clone/CI)"
+else
+    bad "certified core is NOT in the catalog ($_CERTAI) — a populated deploy host must hold the pin it certifies; retiring a core BEFORE the CERT pins move is the 2026-08-27 stock-nuke (the zero-source gate above says whether a release covers it)"
+fi
 
 echo
 # --------------------------------------------------------------------------

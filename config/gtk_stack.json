@@ -21,7 +21,7 @@
     "sha256": "7ed58c2fccafd114fc47aa11b2e2fa3ae676a8ee0242089c0faf1984a480fcb4"
   },
   "rpcs3": {
-    "asset": "rpcs3-etk_gtk-edition-0.9.0_armsx3-f707458b0_linux_aarch64.AppImage",
-    "sha256": "344f7ed2ffd9889e506ce5e59e561195ef35aeb49563596b9bcfc0d64053ec92"
+    "asset": "rpcs3-etk_gtk-edition-0.8.5_v0.0.41-19638-a1deb2921_linux_aarch64.AppImage",
+    "sha256": "0185e2859d12b3bc3523ecdc629bfccf912d4fcec8c2c14772af139f78a67aeb"
   }
 }

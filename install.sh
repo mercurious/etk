@@ -2038,8 +2038,13 @@ rm -f "$TURNIP_OUT_FILE"
 # stock needs no backup: unmounting always recovers it. Reboot-gated by the
 # same doctrine as Turnip: a bind-mount can't hot-swap a binary a running
 # RPCS3 already has open.
-CERT_RPCS3="rpcs3-etk_gtk-edition-0.9.0_armsx3-f707458b0_linux_aarch64.AppImage"
-CERT_RPCS3_SHA="344f7ed2ffd9889e506ce5e59e561195ef35aeb49563596b9bcfc0d64053ec92"
+# 2026-08-27: back to 0.8.5 — ef062b5 certified 0.9.0 ahead of any release
+# asset, then the 0.9.0.1 mint retired the local catalog copy and AUTO was
+# left with ZERO sources (the stock-nuke). The pin moves only when the
+# artifact it names is fetchable or staged — release_sanity now enforces
+# exactly that. 0.9.0.1 stays catalog-only (A/B) until the September gates.
+CERT_RPCS3="rpcs3-etk_gtk-edition-0.8.5_v0.0.41-19638-a1deb2921_linux_aarch64.AppImage"
+CERT_RPCS3_SHA="0185e2859d12b3bc3523ecdc629bfccf912d4fcec8c2c14772af139f78a67aeb"
 RPCS3_RELEASE_BASE="https://github.com/mercurious/etk/releases/latest/download"
 ssh $RIG_SSH "mkdir -p /storage/rpcs3 /storage/.config/system.d/" 2>/dev/null
 # Pre-flight: the staging target lives on /storage — the small UFS SYSTEM
@@ -2056,8 +2061,10 @@ if [ "$STORAGE_FREE_KB" -lt 204800 ]; then
     say "${R}[ETK] Check $ETK_ROOT/cores and /storage/cores for crash cores, then re-run install.${N}"
 fi
 RPCS3_STAGE_SRC=""
+RPCS3_STAGE_MODE="want-custom"   # 'stock' ONLY on the explicit etk.conf opt-out
 case "${RPCS3_APPIMAGE:-}" in
     stock)
+        RPCS3_STAGE_MODE="stock"
         say "${G}[ETK]${N} RPCS3: stock ROCKNIX build selected (etk.conf opt-out)."
         ;;
     "")
@@ -2098,9 +2105,24 @@ if [ -n "$RPCS3_STAGE_SRC" ]; then
     rsync -az "$RPCS3_STAGE_SRC" "$RIG_SSH:/storage/rpcs3/rpcs3-sa.custom" >/dev/null 2>&1 \
         && ssh $RIG_SSH "chmod 755 /storage/rpcs3/rpcs3-sa.custom; printf '%s\n' '$(basename "$RPCS3_STAGE_SRC")' > /storage/rpcs3/rpcs3-sa.custom.src" 2>/dev/null \
         && say "${G}[ETK]${N} Staged RPCS3 build: $(basename "$RPCS3_STAGE_SRC")" \
-        || say "${Y}[ETK]${N} Failed to stage RPCS3 build (rsync error) — stock stays active."
-else
+        || say "${Y}[ETK]${N} Failed to stage RPCS3 build (rsync error) — the previously staged build stays active."
+elif [ "$RPCS3_STAGE_MODE" = "stock" ]; then
+    # Explicit etk.conf opt-out: reverting to stock IS the request.
     ssh $RIG_SSH "rm -f /storage/rpcs3/rpcs3-sa.custom /storage/rpcs3/rpcs3-sa.custom.src" 2>/dev/null
+else
+    # Staging FAILED (fetch 404 / sha refusal / dev path missing). NEVER
+    # downgrade a staged rig on a failure — the rm here used to fire on this
+    # path too, and on 2026-08-27 an AUTO fetch-fail (CERT pin named a retired
+    # core) silently degraded the whole rig to stock RPCS3 for an entire
+    # evening of unattributable sessions. Keep whatever is staged; be loud.
+    PREV_SRC=$(ssh $RIG_SSH "head -n1 /storage/rpcs3/rpcs3-sa.custom.src 2>/dev/null" 2>/dev/null | tr -d '\r')
+    if [ -n "$PREV_SRC" ]; then
+        say "${Y}[ETK]${N} RPCS3 staging FAILED — keeping the previously staged build: $PREV_SRC"
+    else
+        say "${R}[ETK] RPCS3 staging FAILED and NO custom build is staged — the next boot runs STOCK${N}"
+        say "${R}[ETK] ROCKNIX RPCS3: no fork nets, no per-title cores, unattributable ledger rows.${N}"
+        say "${R}[ETK] Fix the CERT pin / etk.conf RPCS3_APPIMAGE and re-run install.${N}"
+    fi
 fi
 
 # --- STEP 6.552: PER-TITLE CORE CATALOG (multigame lane, A/B tooling) ---
@@ -2272,6 +2294,50 @@ else
     say "${Y}[ETK]${N} $(grep -m1 -E 'RPCS3|error|denied' "$RPCS3_OUT_FILE" || echo 'RPCS3 custom-build deploy: no status marker')"
 fi
 rm -f "$RPCS3_OUT_FILE"
+
+# --- STEP 6.553: NEXT-BOOT BIND MANIFEST (the deploy surface — §0) ---
+# 2026-08-27 stock-nuke: an AUTO fetch-fail rm'd rpcs3-sa.custom and this step
+# still printed a green "RPCS3_OK loaded=stock" — the surface existed and read
+# as success; the whole evening ran unattributable stock. This block is the
+# VERDICT, not a status: the bind service restarted above, so 'loaded' is what
+# the next boot binds (read truth, not a prediction). It sha-verifies the rig
+# copy against the staged source (two builds once collided at identical size —
+# only the hash discriminates) and headlines RED any stock resolution the
+# operator didn't ask for.
+BIND_RAW=$(ssh $RIG_SSH "loaded=\$(cat /storage/rpcs3/loaded 2>/dev/null); \
+    src=\$(head -n1 /storage/rpcs3/rpcs3-sa.custom.src 2>/dev/null | tr -d '\r'); \
+    csha=\$(sha256sum /storage/rpcs3/rpcs3-sa.custom 2>/dev/null | cut -d' ' -f1); \
+    wrap=no; [ -x /storage/.config/etk-rpcs3-launch.sh ] && wrap=yes; \
+    pins=\$(awk -F'\t' '!/^#/ && NF>=2 {n++} END {print n+0}' $ETK_ROOT/emulators/core_map.tsv 2>/dev/null); \
+    printf '%s|%s|%s|%s|%s' \"\$loaded\" \"\$src\" \"\$csha\" \"\$wrap\" \"\$pins\"" 2>/dev/null)
+BIND_LOADED=$(printf '%s' "$BIND_RAW" | cut -d'|' -f1)
+BIND_SRC=$(printf '%s' "$BIND_RAW" | cut -d'|' -f2)
+BIND_SHA=$(printf '%s' "$BIND_RAW" | cut -d'|' -f3)
+BIND_WRAP=$(printf '%s' "$BIND_RAW" | cut -d'|' -f4)
+BIND_PINS=$(printf '%s' "$BIND_RAW" | cut -d'|' -f5)
+say "${G}[ETK]${N} NEXT-BOOT BIND: rpcs3-sa -> ${BIND_LOADED:-unknown} | certified: ${BIND_SRC:-none} | wrapper: ${BIND_WRAP:-?} | per-title pins: ${BIND_PINS:-0}"
+if [ "$RPCS3_STAGE_MODE" = "stock" ]; then
+    [ "$BIND_LOADED" = "stock" ] \
+        && say "${G}[ETK]${N} NEXT-BOOT BIND: stock resolution honors the etk.conf opt-out." \
+        || say "${Y}[ETK]${N} NEXT-BOOT BIND: opt-out is 'stock' but the rig still binds '${BIND_LOADED:-unknown}'."
+else
+    case "$BIND_LOADED" in
+        wrapper|custom)
+            if [ -n "$RPCS3_STAGE_SRC" ]; then
+                WANT_SHA=$(sha256_of "$RPCS3_STAGE_SRC")
+                if [ -n "$WANT_SHA" ] && [ "$BIND_SHA" = "$WANT_SHA" ]; then
+                    say "${G}[ETK]${N} NEXT-BOOT BIND: rig copy sha-verified against the staged source."
+                else
+                    say "${R}[ETK] NEXT-BOOT BIND: rig rpcs3-sa.custom sha != the staged source (partial stage / ENOSPC class) — re-run install.${N}"
+                fi
+            fi
+            ;;
+        *)
+            say "${R}[ETK] NEXT-BOOT BIND: the next boot runs STOCK ROCKNIX RPCS3 — no fork nets, no per-title cores, unattributable ledger.${N}"
+            say "${R}[ETK] A custom build was expected (etk.conf RPCS3_APPIMAGE is not 'stock'). Fix the staging failure above and re-run install.${N}"
+            ;;
+    esac
+fi
 
 # --- STEP 6.554: COMMUNITY PATCH FETCH (multigame lane §3) ---
 # NOT a new patch system: RPCS3 ships the framework (the upstream community
