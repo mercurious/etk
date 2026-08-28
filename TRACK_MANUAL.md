@@ -567,24 +567,31 @@ knobs, writes the handoff, verifies afterward from read-only telemetry.
   regenerated grub.cfg gains an ABL model auto-select (`fdtdump` → `set abl_dev=`) that
   runs AFTER `load_env` and **overrides `saved_entry`** — left stock in default mode it
   silently dissolves the GTK auto-boot AND the panic=10 crash-reboot return. STEP 6.4
-  counters it (re-points the Flip-2 match at `etk-gtk-test`, default mode only; verdict
-  field `abl=` in `KERNEL_OK`, RED when it didn't take; `tools/test_grub_abl.sh` is the
-  harness, host + rig-BusyBox legs). The counter re-applies at every install; between an
-  OS update and the next install the failure direction is SAFE (stock boots). **Two live
-  findings from the 2026-08-28 migration harden this further:** (1) **grubenv is INERT
-  on the internal 4Kn ESP under the new grub** (load_env AND save_env no-op; savedefault
-  writes nothing) and fdtdump does not fire on this ABL — so the RELIABLE default-boot
-  mechanism is the generator's own no-saved-entry else-branch, which STEP 6.4 rewrites
-  to `set default=<etk-gtk-test|rpflip2>` by mode (grubenv seeding kept for FATs where
-  env I/O works, e.g. SD cards; verdict field `fallback=`). (2) STEP 6.4 now converges
-  from the **SYSTEM's baked canonical grub.cfg** (`/usr/share/bootloader/boot/grub/`,
-  the exact artifact update.sh deploys) instead of editing the live file — every install
-  heals hand edits and diagnostic states to stock-plus-ETK-deltas; with KERNEL_IMAGE
-  empty and no ETK entries present, a stock-convergence pass (`KERNELCFG_OK
-  base=system fallback=rpflip2`) does the same minus the entries, so a recovered rig is
-  a replica of a real install, kit-owned. Related 4Kn law: any FAT image built for the
-  internal ESP MUST be `mkfs.fat -S 4096` — a 512-sector FAT crashes U-Boot itself
-  (Synchronous Abort loop; fastboot `flash ROCKNIX` is the proven recovery rung).
+  is a moot problem on the 20260901 stack: default resolution is now NUMERIC (below),
+  and the abl block's string default is one of the things it overrides. **The default-
+  boot mechanism, root-caused live 2026-08-28 on the migrated 4Kn internal ESP** — three
+  stock mechanisms all fail here: (a) grubenv `load_env` is unreliable on the internal
+  4096-byte-sector FAT (`saved_entry` did not drive the boot); (b) the generator's abl
+  block DOES fire (`fdtdump` reads the DT model = `Retroid Pocket Flip2`) and runs
+  `set default="${abl_dev}"` — a STRING id — AFTER every other default-setter; (c) a
+  string-id default does NOT resolve on this grub, so it falls to menu **entry 0** (rp5,
+  the first device). Every string fix was clobbered by (b) and/or failed at (c). **The
+  fix: a NUMERIC `set default=<index>` injected AFTER the abl block** (`feature_menuentry_id`
+  line is the anchor) — numeric resolves, last-writer-wins makes it decisive. The index
+  is the 0-based menu position of the target entry (`etk-gtk-test` in default mode —
+  index 0, prepended; `rpflip2` in test/stock) **computed from the built cfg with `n+0`
+  to force numeric (a bare `print n` yields ""for index 0 — a real bug the harness
+  caught)**. Two more STEP 6.4 properties from the same recovery: it converges from the
+  **SYSTEM's baked canonical grub.cfg** (`/usr/share/bootloader/boot/grub/`, exactly what
+  update.sh deploys) rather than editing the live file — every install heals hand edits
+  and diagnostic states to stock-plus-ETK-deltas; and with KERNEL_IMAGE empty + no ETK
+  entries, a stock-convergence pass (`KERNELCFG_OK base=system default_idx=1`) does the
+  same minus the entries, so a recovered rig is a replica of a real install, kit-owned.
+  Verdict fields: `default_idx=`/`default_entry=` in `KERNEL_OK` (RED when a default-mode
+  index doesn't resolve to a `ROCKNIX-GTK` entry). Harness `tools/test_grub_default.sh`
+  (host + rig-BusyBox). **4Kn law:** any FAT image built for the internal ESP MUST be
+  `mkfs.fat -S 4096` — a 512-sector FAT crashes U-Boot itself (Synchronous Abort loop;
+  fastboot `flash ROCKNIX` is the proven recovery rung).
 - **Windows:** the PowerShell port (`windows_installer/`) is ACTIVE, kept in lockstep —
   **not retiring** (re-affirmed 2026-08-07). Rig-side bodies are pulled VERBATIM from
   install.sh heredoc markers at runtime, so daemon logic can't drift; only the PS-native

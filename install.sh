@@ -1727,33 +1727,43 @@ for CFG in /flash/EFI/BOOT/grub.cfg /flash/boot/grub/grub.cfg; do
         { print }
         END { if (!ins) { while ((getline line < bf) > 0) print line } }
     ' "$CFG.stripped" > "$CFG"
-    # 20260901 grub-generator counter (decided against the LIVE artifact):
-    # the new generator's abl_dev auto-select (fdtdump model match) runs AFTER
-    # load_env and OVERRIDES saved_entry — with the stock match line, default
-    # mode silently dissolves (GTK auto-boot AND the panic=10 crash-reboot
-    # return both land on stock). When the block exists and mode=default,
-    # point the Flip-2 match at our entry (stock stays one menu pick away —
-    # pick-per-boot, no longer sticky; the sticky revert is etk.conf
-    # KERNEL_DEPLOY_MODE=test). Mode=test restores the stock line. No block
-    # (20260801 and earlier) = no-op. Idempotent both directions.
-    if grep -q 'set abl_dev="' "$CFG" 2>/dev/null; then
-        if [ "$K_MODE" = "default" ]; then
-            sed 's/set abl_dev="rpflip2"/set abl_dev="etk-gtk-test"/' "$CFG" > "$CFG.ablfix" && mv "$CFG.ablfix" "$CFG"
-        else
-            sed 's/set abl_dev="etk-gtk-test"/set abl_dev="rpflip2"/' "$CFG" > "$CFG.ablfix" && mv "$CFG.ablfix" "$CFG"
-        fi
+    # NUMERIC DEFAULT — the decisive default-boot mechanism (root-caused live
+    # 2026-08-28 on the migrated 4Kn internal ESP; supersedes the abl-counter +
+    # else-branch approaches, which manipulated a path that does not work here).
+    # What we PROVED on the rig:
+    #   * grubenv load_env is unreliable on the internal 4Kn FAT (saved_entry
+    #     did not drive the boot), AND
+    #   * the 20260901 generator's abl block DOES fire (fdtdump reads the model)
+    #     and runs `set default="${abl_dev}"` — a STRING id — AFTER every other
+    #     default-setter, AND
+    #   * a string-id default does NOT resolve on this grub, so grub falls to
+    #     menu entry 0 (rp5). Every string-based fix (saved_entry, abl-counter,
+    #     else-branch) was clobbered by the abl block and/or failed to resolve.
+    # A NUMERIC default resolves. Inject `set default=<index>` AFTER the abl
+    # block (right before the feature_menuentry_id line) so nothing overrides
+    # it; the index is the 0-based position of our target entry among the
+    # menuentries in THIS cfg (etk entries are prepended in default mode, so
+    # the target's index is computed from the built file, never hardcoded).
+    # grubenv seeding below is kept for SD-card FATs where env I/O works.
+    K_TGT_ID="rpflip2"; [ "$K_MODE" = "default" ] && K_TGT_ID="etk-gtk-test"
+    K_IDX=$(awk -v q="'$K_TGT_ID' {" '/^menuentry /{ if (index($0,q)) { print n+0; exit } n++ }' "$CFG")
+    if printf '%s' "$K_IDX" | grep -Eq '^[0-9]+$'; then
+        awk -v idx="$K_IDX" -v tgt="$K_TGT_ID" '
+            /feature_menuentry_id/ && !ins {
+                print "# ETK: pin default NUMERICALLY (string-id defaults do not resolve on";
+                print "# this grub; the abl block above sets one and would fall to entry 0).";
+                print "# index " idx " = the \x27" tgt "\x27 menuentry, computed at install.";
+                print "set default=" idx;
+                print "set timeout=2";
+                print "";
+                ins=1
+            }
+            { print }
+            END { if (!ins) { print "set default=" idx; print "set timeout=2" } }
+        ' "$CFG" > "$CFG.numfix" && mv "$CFG.numfix" "$CFG"
+    else
+        echo "KERNEL_WARN grub-target-not-found id=$K_TGT_ID cfg=$CFG"
     fi
-    # FALLBACK-DEFAULT rewrite (2026-08-28): on the 20260901 stack grubenv is
-    # INERT under the new grub on the internal 4Kn ESP (load_env AND save_env
-    # no-op — savedefault wrote nothing across two manual picks, proven live),
-    # and the abl_dev fdtdump auto-select does not fire on this ABL. The one
-    # reliable default-boot mechanism is the generator's own no-saved-entry
-    # else-branch: point it at our entry (default mode) or the device entry
-    # (test mode) instead of `set timeout=-1` (menu-waits-forever). grubenv
-    # seeding stays as well — env I/O still works on SD-card FATs, and where
-    # it works saved_entry takes precedence over this fallback.
-    K_FB_ID="rpflip2"; [ "$K_MODE" = "default" ] && K_FB_ID="etk-gtk-test"
-    awk -v id="$K_FB_ID" '{ if ($0=="  set timeout=-1") { print "  set default=\"" id "\""; print "  set timeout=2" } else print }' "$CFG" > "$CFG.fbfix" && mv "$CFG.fbfix" "$CFG"
     rm -f "$CFG.stripped" "$CFG.etkblock"
 done
 # grubenv seeding — ROCKNIX grub auto-boots `saved_entry` with a 2-s menu.
@@ -1779,14 +1789,12 @@ mount -o remount,ro /flash || true
 # abl verdict: 'absent' = old grub generator (20260801-), 'etk' = counter
 # applied (auto-select boots our entry), 'stock' = block present but pointing
 # rpflip2 — correct in test mode, RED in default mode (contract dissolved).
-ABL_STATE=absent
-if grep -q 'set abl_dev="' /flash/boot/grub/grub.cfg 2>/dev/null; then
-    if grep -q 'set abl_dev="etk-gtk-test"' /flash/boot/grub/grub.cfg 2>/dev/null; then ABL_STATE=etk; else ABL_STATE=stock; fi
-fi
-FB_STATE=none
-grep -q 'set default="etk-gtk-test"' /flash/boot/grub/grub.cfg 2>/dev/null && FB_STATE=etk-gtk-test
-grep -q 'set default="rpflip2"' /flash/boot/grub/grub.cfg 2>/dev/null && FB_STATE=rpflip2
-echo "KERNEL_OK gtktest_sha=$F keepalive=$(grep -qc 'msm.context_keepalive=1' /flash/EFI/BOOT/grub.cfg && echo on || echo off) bootdefault=$([ "$K_MODE" = "default" ] && echo gtk || echo stock) abl=$ABL_STATE fallback=$FB_STATE"
+# DEFAULT verdict: the numeric index we pinned + which entry it lands on. The
+# menu is only as good as this resolving — read it back from the live cfg
+# (the tail default= wins) and name the entry at that index.
+DEF_IDX=$(grep '^set default=' /flash/boot/grub/grub.cfg 2>/dev/null | tail -1 | sed 's/^set default=//')
+DEF_ENTRY=$(awk -v want="$DEF_IDX" '/^menuentry /{ if (n==want){ match($0,/'"'"'[^'"'"']*'"'"' \{/); print substr($0,RSTART+1,RLENGTH-4); exit } n++ }' /flash/boot/grub/grub.cfg 2>/dev/null)
+echo "KERNEL_OK gtktest_sha=$F keepalive=$(grep -qc 'msm.context_keepalive=1' /flash/EFI/BOOT/grub.cfg && echo on || echo off) bootdefault=$([ "$K_MODE" = "default" ] && echo gtk || echo stock) default_idx=${DEF_IDX:-none} default_entry=${DEF_ENTRY:-?}"
 KERNELREMOTE
 )
     if echo "$K_OUT" | grep -q KERNEL_OK; then
@@ -1797,14 +1805,16 @@ KERNELREMOTE
         else
             K_BOOTMSG="default boot stays stock; pick 'ROCKNIX-GTK TEST kernel' at the menu"
         fi
-        # abl verdict (20260901 grub generator): in default mode an unpatched
-        # abl_dev auto-select means EVERY boot lands on the stock kernel no
-        # matter what saved_entry says — a RED headline, not an OK.
-        K_ABL=$(echo "$K_OUT" | sed -n 's/.*abl=\([a-z]*\).*/\1/p')
-        if [ "$K_BD" = "gtk" ] && [ "$K_ABL" = "stock" ]; then
-            say "${Y}[WARN] RED: grub's abl_dev auto-select is ACTIVE and still points at the STOCK entry — it overrides saved_entry, so despite KERNEL_DEPLOY_MODE=default every boot loads the stock kernel. STEP 6.4's counter did not take; inspect /flash/boot/grub/grub.cfg.${N}"
-        elif [ "$K_ABL" = "etk" ]; then
-            K_BOOTMSG="$K_BOOTMSG; abl auto-select counter applied"
+        # DEFAULT-resolution verdict (root-caused 2026-08-28): the numeric
+        # default must land on the entry the mode intends — the GTK entry in
+        # default mode, a device entry in test mode. A mismatch is a RED
+        # headline (menu will boot the wrong thing / entry 0).
+        K_DIDX=$(echo "$K_OUT" | sed -n 's/.*default_idx=\([^ ]*\).*/\1/p')
+        K_DENT=$(echo "$K_OUT" | sed -n 's/.*default_entry=\(.*\)$/\1/p')
+        if [ "$K_BD" = "gtk" ] && ! printf '%s' "$K_DENT" | grep -q 'ROCKNIX-GTK'; then
+            say "${Y}[WARN] RED: default boot index ($K_DIDX) resolves to '$K_DENT', not a ROCKNIX-GTK entry — the GTK kernel will NOT auto-boot. Inspect /flash/boot/grub/grub.cfg (the tail 'set default=' must be the GTK entry's index).${N}"
+        else
+            K_BOOTMSG="$K_BOOTMSG; default idx=$K_DIDX -> '$K_DENT'"
         fi
         if [ "$K_RIG_SHA" = "$K_HOST_SHA" ]; then
             say "${G}[ETK]${N} Custom kernel: $(basename "$KERNEL_IMAGE") already staged; grub entries refreshed (parity=${K_KA:-off}); $K_BOOTMSG."
@@ -1836,37 +1846,52 @@ else
     # custom kernel staged AND no ETK entries on the rig, install.sh still
     # owns the boot config — converge both twins to the SYSTEM's canonical
     # grub.cfg (the exact artifact update.sh deploys) plus the one kit delta
-    # a stock 20260901 rig needs to boot hands-off: the no-saved-entry
-    # else-branch pointed at the device entry instead of timeout=-1
-    # (grubenv is INERT under the new grub on the internal 4Kn ESP, and the
-    # abl_dev fdtdump auto-select does not fire on this ABL). A rig that
-    # HAS ETK entries is left untouched — the documented "empty = don't
-    # touch the kernel" contract stands for a previously staged deploy.
+    # a stock 20260901 rig needs to boot hands-off: a NUMERIC default pinned
+    # after the abl block, on the device entry (rpflip2). Proven-live root
+    # cause: grubenv load_env is unreliable on the internal 4Kn ESP, the abl
+    # block DOES fire and sets `set default="${abl_dev}"` (a string id), and
+    # string-id defaults do NOT resolve on this grub -> boots menu entry 0.
+    # Numeric resolves; injected last so nothing overrides it; index computed
+    # from the canonical cfg. A rig that HAS ETK entries is left untouched —
+    # the documented "empty = don't touch the kernel" contract stands.
     KCFG_OUT=$(ssh $RIG_SSH "sh -s" 2>&1 << 'KERNELCFGREMOTE'
 set -e
 grep -q "etk-gtk" /flash/boot/grub/grub.cfg 2>/dev/null && { echo "KERNELCFG_SKIP etk-entries-present"; exit 0; }
 [ -f /usr/share/bootloader/boot/grub/grub.cfg ] || { echo "KERNELCFG_SKIP no-canonical-source"; exit 0; }
+IDX=$(awk -v q="'rpflip2' {" '/^menuentry /{ if (index($0,q)) { print n+0; exit } n++ }' /usr/share/bootloader/boot/grub/grub.cfg)
+printf '%s' "$IDX" | grep -Eq '^[0-9]+$' || { echo "KERNELCFG_SKIP no-rpflip2-entry"; exit 0; }
 mount -o remount,rw /flash
 TS=$(date +%Y%m%d_%H%M%S)
 for CFG in /flash/EFI/BOOT/grub.cfg /flash/boot/grub/grub.cfg; do
     [ -f "$CFG" ] || continue
     cp "$CFG" "$CFG.etkbak-$TS"
-    awk '{ if ($0=="  set timeout=-1") { print "  set default=\"rpflip2\""; print "  set timeout=2" } else print }' \
-        /usr/share/bootloader/boot/grub/grub.cfg > "$CFG.new" && mv "$CFG.new" "$CFG"
+    awk -v idx="$IDX" '
+        /feature_menuentry_id/ && !ins {
+            print "# ETK: pin default NUMERICALLY (string-id defaults do not resolve on";
+            print "# this grub; the abl block above sets one and would fall to entry 0).";
+            print "set default=" idx;
+            print "set timeout=2";
+            print "";
+            ins=1
+        }
+        { print }
+        END { if (!ins) { print "set default=" idx; print "set timeout=2" } }
+    ' /usr/share/bootloader/boot/grub/grub.cfg > "$CFG.new" && mv "$CFG.new" "$CFG"
 done
 sync
 mount -o remount,ro /flash || true
-FB=none
-grep -q 'set default="rpflip2"' /flash/boot/grub/grub.cfg && FB=rpflip2
-echo "KERNELCFG_OK base=system fallback=$FB"
+DEF=$(grep '^set default=' /flash/boot/grub/grub.cfg | tail -1 | sed 's/^set default=//')
+echo "KERNELCFG_OK base=system default_idx=$DEF"
 KERNELCFGREMOTE
 )
     if echo "$KCFG_OUT" | grep -q KERNELCFG_OK; then
-        say "${G}[ETK]${N} Boot config converged to canonical stock ($(echo "$KCFG_OUT" | grep -o 'fallback=[a-z0-9-]*') — hands-off boot, kit-owned)."
+        say "${G}[ETK]${N} Boot config converged to canonical stock ($(echo "$KCFG_OUT" | grep -o 'default_idx=[0-9]*') = Flip2 — hands-off boot, kit-owned)."
     elif echo "$KCFG_OUT" | grep -q etk-entries-present; then
         say "${C}[INFO] Boot config untouched (ETK kernel entries present; empty KERNEL_IMAGE leaves a staged deploy alone).${N}"
     elif echo "$KCFG_OUT" | grep -q no-canonical-source; then
         say "${Y}[WARN] Boot config not converged: SYSTEM ships no baked grub.cfg — left as-is.${N}"
+    elif echo "$KCFG_OUT" | grep -q no-rpflip2-entry; then
+        say "${Y}[WARN] Boot config not converged: no rpflip2 entry in the canonical grub.cfg — left as-is.${N}"
     else
         say "${Y}[WARN] Boot-config convergence failed: $(echo "$KCFG_OUT" | tail -1)${N}"
     fi
