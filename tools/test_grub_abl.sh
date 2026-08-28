@@ -42,6 +42,14 @@ GRD_CNT=$(grep -c "grep -q 'set abl_dev=\"' \"\$CFG\"" install.sh)
                   || fail "uninstall.sh abl restore sed MISSING (drifted?)"
 [ "$GRD_CNT" -ge 1 ] && ok "install.sh guards the counter on block presence" \
                      || fail "install.sh block-presence guard MISSING"
+# Fallback-default rewrite (2026-08-28: grubenv INERT on the internal 4Kn ESP
+# under the new grub — the else-branch rewrite is THE default-boot mechanism).
+FB_CORE='if ($0=="  set timeout=-1") { print "  set default=\"" id "\""; print "  set timeout=2" } else print'
+FB_HARD='if ($0=="  set timeout=-1") { print "  set default=\"rpflip2\""; print "  set timeout=2" } else print'
+[ "$(grep -cF "$FB_CORE" install.sh)" = "1" ] && ok "install.sh carries the parameterized fallback rewrite (kernel path)" \
+                                              || fail "install.sh parameterized fallback rewrite MISSING (drifted?)"
+[ "$(grep -cF "$FB_HARD" install.sh)" = "1" ] && ok "install.sh carries the stock-convergence fallback rewrite" \
+                                              || fail "install.sh stock-convergence fallback rewrite MISSING (drifted?)"
 [ "$FAIL" -eq 0 ] || { printf '%d/%d — aborting (transforms unextractable)\n' "$PASS" "$((PASS+FAIL))"; exit 1; }
 
 # --- 2. fixtures ---
@@ -109,11 +117,16 @@ set -u
 apply_def() { $SED_DEF; }
 apply_tst() { $SED_TST; }
 apply_uni() { $SED_UNI; }
+apply_fb()  { awk -v id="\$2" '{ $FB_CORE }' "\$1"; }
 echo '==DEF-OLD=='; apply_def < "\$1/fx_old"
 echo '==DEF-NEW=='; apply_def < "\$1/fx_new"
 echo '==DEF-NEW-TWICE=='; apply_def < "\$1/fx_new" | apply_def
 echo '==TST-AFTER-DEF=='; apply_def < "\$1/fx_new" | apply_tst
 echo '==UNI-AFTER-DEF=='; apply_def < "\$1/fx_new" | apply_uni
+echo '==FB-NEW-ETK=='; apply_fb "\$1/fx_new" etk-gtk-test
+echo '==FB-NEW-DEV=='; apply_fb "\$1/fx_new" rpflip2
+echo '==FB-OLD-DEV=='; apply_fb "\$1/fx_old" rpflip2
+echo '==FB-TWICE=='; apply_fb "\$1/fx_new" rpflip2 > "\$1/fb_once"; apply_fb "\$1/fb_once" rpflip2
 RUNNER
 
 sh "$TD/runner.sh" "$TD" > "$TD/host.out" 2>&1 || fail "host runner errored"
@@ -153,6 +166,26 @@ cmp -s "$TD/tst_out" "$TD/fx_new" && ok "test mode: stock line restored byte-ide
 sec "$TD/host.out" UNI-AFTER-DEF > "$TD/uni_out"
 cmp -s "$TD/uni_out" "$TD/fx_new" && ok "uninstall: stock line restored byte-identically" \
                                   || fail "uninstall: restore is NOT byte-identical"
+# fallback rewrite: default mode -> etk entry; stock/test -> device entry;
+# exactly the else-branch changes; idempotent; safe on the old generator too
+sec "$TD/host.out" FB-NEW-ETK > "$TD/fb_etk"
+grep -q 'set default="etk-gtk-test"' "$TD/fb_etk" && ! grep -q 'set timeout=-1' "$TD/fb_etk" \
+  && ok "fallback: default mode points the else-branch at etk-gtk-test" \
+  || fail "fallback: default-mode rewrite wrong"
+sec "$TD/host.out" FB-NEW-DEV > "$TD/fb_dev"
+grep -q 'set default="rpflip2"' "$TD/fb_dev" && ! grep -q 'set timeout=-1' "$TD/fb_dev" \
+  && ok "fallback: stock/test mode points the else-branch at rpflip2" \
+  || fail "fallback: device-mode rewrite wrong"
+[ "$(diff "$TD/fx_new" "$TD/fb_dev" | grep -c '^[<>]')" = "3" ] \
+  && ok "fallback: exactly the 1-line-to-2-line else-branch change" \
+  || fail "fallback: unexpected diff footprint"
+sec "$TD/host.out" FB-OLD-DEV > "$TD/fb_old"
+grep -q 'set default="rpflip2"' "$TD/fb_old" \
+  && ok "fallback: applies safely on the old-generator artifact" \
+  || fail "fallback: old-generator artifact not handled"
+sec "$TD/host.out" FB-TWICE > "$TD/fb_twice"
+cmp -s "$TD/fb_twice" "$TD/fb_dev" && ok "fallback: idempotent" \
+                                   || fail "fallback: NOT idempotent"
 
 # --- 5. --rig: BusyBox discrimination leg (read-only ssh; /tmp scratch) ---
 if [ "${1:-}" = "--rig" ]; then

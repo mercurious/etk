@@ -1641,17 +1641,25 @@ TS=$(date +%Y%m%d_%H%M%S)
 for CFG in /flash/EFI/BOOT/grub.cfg /flash/boot/grub/grub.cfg; do
     [ -f "$CFG" ] || continue
     cp "$CFG" "$CFG.etkbak-$TS"
-    # Strip any prior etk-managed blocks (primary + verbose + fallback +
-    # sdcard entries, their comment line, and the `set fallback=` global),
-    # then trailing blanks.
-    awk '
-        (index($0,"etk-gtk") || index($0,"etk-fallback") || index($0,"etk-sdcard")) && /menuentry/ {inblk=1; next}
-        inblk && /^}/ {inblk=0; next}
-        inblk {next}
-        /^# etk-sdcard/ {next}
-        /^set fallback=/ {next}
-        {print}
-    ' "$CFG" | awk 'NF{last=NR} {ln[NR]=$0} END{for(i=1;i<=last;i++)print ln[i]}' > "$CFG.stripped"
+    # CANONICAL BASE (2026-08-28 recovery lesson): converge from the SYSTEM's
+    # own baked grub.cfg — the exact artifact update.sh deploys at OS updates —
+    # so every install heals hand edits, diagnostic cmdlines and partial
+    # states back to stock-plus-ETK-deltas. Fallback when the baked copy is
+    # absent: strip the ETK blocks out of the live cfg (the pre-redesign
+    # behavior — prior etk entries, their comment line, `set fallback=`,
+    # trailing blanks).
+    if [ -f /usr/share/bootloader/boot/grub/grub.cfg ]; then
+        cp /usr/share/bootloader/boot/grub/grub.cfg "$CFG.stripped"
+    else
+        awk '
+            (index($0,"etk-gtk") || index($0,"etk-fallback") || index($0,"etk-sdcard")) && /menuentry/ {inblk=1; next}
+            inblk && /^}/ {inblk=0; next}
+            inblk {next}
+            /^# etk-sdcard/ {next}
+            /^set fallback=/ {next}
+            {print}
+        ' "$CFG" | awk 'NF{last=NR} {ln[NR]=$0} END{for(i=1;i<=last;i++)print ln[i]}' > "$CFG.stripped"
+    fi
     # Build the managed entries: primary (QUIET, the default boot), verbose
     # twin, the stock-kernel fallback, then the SD-card dual-mode pair
     # (spike-validated 2026-07-22, v5 protocol; slim grub has NO echo and NO
@@ -1735,6 +1743,17 @@ for CFG in /flash/EFI/BOOT/grub.cfg /flash/boot/grub/grub.cfg; do
             sed 's/set abl_dev="etk-gtk-test"/set abl_dev="rpflip2"/' "$CFG" > "$CFG.ablfix" && mv "$CFG.ablfix" "$CFG"
         fi
     fi
+    # FALLBACK-DEFAULT rewrite (2026-08-28): on the 20260901 stack grubenv is
+    # INERT under the new grub on the internal 4Kn ESP (load_env AND save_env
+    # no-op — savedefault wrote nothing across two manual picks, proven live),
+    # and the abl_dev fdtdump auto-select does not fire on this ABL. The one
+    # reliable default-boot mechanism is the generator's own no-saved-entry
+    # else-branch: point it at our entry (default mode) or the device entry
+    # (test mode) instead of `set timeout=-1` (menu-waits-forever). grubenv
+    # seeding stays as well — env I/O still works on SD-card FATs, and where
+    # it works saved_entry takes precedence over this fallback.
+    K_FB_ID="rpflip2"; [ "$K_MODE" = "default" ] && K_FB_ID="etk-gtk-test"
+    awk -v id="$K_FB_ID" '{ if ($0=="  set timeout=-1") { print "  set default=\"" id "\""; print "  set timeout=2" } else print }' "$CFG" > "$CFG.fbfix" && mv "$CFG.fbfix" "$CFG"
     rm -f "$CFG.stripped" "$CFG.etkblock"
 done
 # grubenv seeding — ROCKNIX grub auto-boots `saved_entry` with a 2-s menu.
@@ -1764,7 +1783,10 @@ ABL_STATE=absent
 if grep -q 'set abl_dev="' /flash/boot/grub/grub.cfg 2>/dev/null; then
     if grep -q 'set abl_dev="etk-gtk-test"' /flash/boot/grub/grub.cfg 2>/dev/null; then ABL_STATE=etk; else ABL_STATE=stock; fi
 fi
-echo "KERNEL_OK gtktest_sha=$F keepalive=$(grep -qc 'msm.context_keepalive=1' /flash/EFI/BOOT/grub.cfg && echo on || echo off) bootdefault=$([ "$K_MODE" = "default" ] && echo gtk || echo stock) abl=$ABL_STATE"
+FB_STATE=none
+grep -q 'set default="etk-gtk-test"' /flash/boot/grub/grub.cfg 2>/dev/null && FB_STATE=etk-gtk-test
+grep -q 'set default="rpflip2"' /flash/boot/grub/grub.cfg 2>/dev/null && FB_STATE=rpflip2
+echo "KERNEL_OK gtktest_sha=$F keepalive=$(grep -qc 'msm.context_keepalive=1' /flash/EFI/BOOT/grub.cfg && echo on || echo off) bootdefault=$([ "$K_MODE" = "default" ] && echo gtk || echo stock) abl=$ABL_STATE fallback=$FB_STATE"
 KERNELREMOTE
 )
     if echo "$K_OUT" | grep -q KERNEL_OK; then
@@ -1810,6 +1832,44 @@ KERNELREMOTE
     fi
 else
     [ -n "${KERNEL_IMAGE:-}" ] && say "${Y}[ETK]${N} KERNEL_IMAGE set but file missing ($KERNEL_IMAGE) — skipping kernel deploy."
+    # STOCK BOOT-CONFIG CONVERGENCE (2026-08-28 recovery lesson): with no
+    # custom kernel staged AND no ETK entries on the rig, install.sh still
+    # owns the boot config — converge both twins to the SYSTEM's canonical
+    # grub.cfg (the exact artifact update.sh deploys) plus the one kit delta
+    # a stock 20260901 rig needs to boot hands-off: the no-saved-entry
+    # else-branch pointed at the device entry instead of timeout=-1
+    # (grubenv is INERT under the new grub on the internal 4Kn ESP, and the
+    # abl_dev fdtdump auto-select does not fire on this ABL). A rig that
+    # HAS ETK entries is left untouched — the documented "empty = don't
+    # touch the kernel" contract stands for a previously staged deploy.
+    KCFG_OUT=$(ssh $RIG_SSH "sh -s" 2>&1 << 'KERNELCFGREMOTE'
+set -e
+grep -q "etk-gtk" /flash/boot/grub/grub.cfg 2>/dev/null && { echo "KERNELCFG_SKIP etk-entries-present"; exit 0; }
+[ -f /usr/share/bootloader/boot/grub/grub.cfg ] || { echo "KERNELCFG_SKIP no-canonical-source"; exit 0; }
+mount -o remount,rw /flash
+TS=$(date +%Y%m%d_%H%M%S)
+for CFG in /flash/EFI/BOOT/grub.cfg /flash/boot/grub/grub.cfg; do
+    [ -f "$CFG" ] || continue
+    cp "$CFG" "$CFG.etkbak-$TS"
+    awk '{ if ($0=="  set timeout=-1") { print "  set default=\"rpflip2\""; print "  set timeout=2" } else print }' \
+        /usr/share/bootloader/boot/grub/grub.cfg > "$CFG.new" && mv "$CFG.new" "$CFG"
+done
+sync
+mount -o remount,ro /flash || true
+FB=none
+grep -q 'set default="rpflip2"' /flash/boot/grub/grub.cfg && FB=rpflip2
+echo "KERNELCFG_OK base=system fallback=$FB"
+KERNELCFGREMOTE
+)
+    if echo "$KCFG_OUT" | grep -q KERNELCFG_OK; then
+        say "${G}[ETK]${N} Boot config converged to canonical stock ($(echo "$KCFG_OUT" | grep -o 'fallback=[a-z0-9-]*') — hands-off boot, kit-owned)."
+    elif echo "$KCFG_OUT" | grep -q etk-entries-present; then
+        say "${C}[INFO] Boot config untouched (ETK kernel entries present; empty KERNEL_IMAGE leaves a staged deploy alone).${N}"
+    elif echo "$KCFG_OUT" | grep -q no-canonical-source; then
+        say "${Y}[WARN] Boot config not converged: SYSTEM ships no baked grub.cfg — left as-is.${N}"
+    else
+        say "${Y}[WARN] Boot-config convergence failed: $(echo "$KCFG_OUT" | tail -1)${N}"
+    fi
 fi
 
 # ==========================================================
@@ -1834,7 +1894,14 @@ ssh $RIG_SSH "sh -s" > "$OSG_OUT_FILE" 2>&1 << 'OSGUARDREMOTE'
 cat << 'SVC' > /storage/.config/system.d/etk-osguard.service
 [Unit]
 Description=ETK OS-update coherence guard (kernel/module-tree self-heal)
-After=local-fs.target
+# After= must include the units that MOUNT the ETK tree: ConditionPathExists
+# is evaluated when the unit starts, and at bare local-fs.target the
+# games-internal path does not exist yet — the guard is silently SKIPPED.
+# This is the same ordering lesson the blackbox unit paid for on 2026-08-11,
+# and it is exactly why osguard never fired during the 2026-08-28 nightly
+# migration frankenboot (recovered by hand via fastboot). Unknown units in
+# After= are ignored harmlessly on rigs that lack them.
+After=local-fs.target rocknix-automount.service etk-sd-rebind.service
 ConditionPathExists=/storage/games-internal/roms/etk/bin/osguard.sh
 
 [Service]

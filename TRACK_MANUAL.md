@@ -570,7 +570,21 @@ knobs, writes the handoff, verifies afterward from read-only telemetry.
   counters it (re-points the Flip-2 match at `etk-gtk-test`, default mode only; verdict
   field `abl=` in `KERNEL_OK`, RED when it didn't take; `tools/test_grub_abl.sh` is the
   harness, host + rig-BusyBox legs). The counter re-applies at every install; between an
-  OS update and the next install the failure direction is SAFE (stock boots).
+  OS update and the next install the failure direction is SAFE (stock boots). **Two live
+  findings from the 2026-08-28 migration harden this further:** (1) **grubenv is INERT
+  on the internal 4Kn ESP under the new grub** (load_env AND save_env no-op; savedefault
+  writes nothing) and fdtdump does not fire on this ABL — so the RELIABLE default-boot
+  mechanism is the generator's own no-saved-entry else-branch, which STEP 6.4 rewrites
+  to `set default=<etk-gtk-test|rpflip2>` by mode (grubenv seeding kept for FATs where
+  env I/O works, e.g. SD cards; verdict field `fallback=`). (2) STEP 6.4 now converges
+  from the **SYSTEM's baked canonical grub.cfg** (`/usr/share/bootloader/boot/grub/`,
+  the exact artifact update.sh deploys) instead of editing the live file — every install
+  heals hand edits and diagnostic states to stock-plus-ETK-deltas; with KERNEL_IMAGE
+  empty and no ETK entries present, a stock-convergence pass (`KERNELCFG_OK
+  base=system fallback=rpflip2`) does the same minus the entries, so a recovered rig is
+  a replica of a real install, kit-owned. Related 4Kn law: any FAT image built for the
+  internal ESP MUST be `mkfs.fat -S 4096` — a 512-sector FAT crashes U-Boot itself
+  (Synchronous Abort loop; fastboot `flash ROCKNIX` is the proven recovery rung).
 - **Windows:** the PowerShell port (`windows_installer/`) is ACTIVE, kept in lockstep —
   **not retiring** (re-affirmed 2026-08-07). Rig-side bodies are pulled VERBATIM from
   install.sh heredoc markers at runtime, so daemon logic can't drift; only the PS-native
