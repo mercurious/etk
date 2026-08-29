@@ -239,14 +239,24 @@ source ./tools/tui.sh 2>/dev/null || true
 # or anything else operator-supplied into this call — tools/test_notify.py
 # enforces that statically.
 # ==========================================================
-ETK_TOAST_ID=""      # live notification id; replaces the card in place, never stacks
+ETK_TOAST_ID=""      # live notification id; replaces the card in place
 ETK_TOAST_SH=""      # resolved rig-side sender path ("-" once we have given up)
 ETK_TOAST_STAGE=""   # last stage announced — the STOPPED verdict's body
 ETK_TOAST_FIRED=0    # 1 once a terminal verdict went out (double-fire guard)
 
+# Backstop for a beacon that precedes a SINGLE bulk transfer with no seam to put
+# another beacon in — a whole-vault rsync, the ~78 MB AppImage fetch, a kernel
+# Image scp. The 45 s default would expire mid-transfer and blank the handheld
+# for minutes, which is the failure this whole surface exists to prevent; an
+# infinite expire would leave an IMMORTAL stale card after a SIGKILL. Ten
+# minutes covers these on a slow link and still self-clears. Everywhere the code
+# has a seam, the answer is another beacon, not a longer window.
+ETK_TOAST_BULK_MS=600000
+
 rig_toast() {
     local pct="$1"
     local stage="$2"
+    local ttl="${3:-45000}"
     ETK_TOAST_STAGE="$stage"
     if [ -z "$ETK_TOAST_SH" ]; then
         # VIRGIN RIG: the first beacon fires before STEP 3 has pushed bin/, so
@@ -270,13 +280,37 @@ rig_toast() {
         fi
     fi
     [ "$ETK_TOAST_SH" = "-" ] && return 0
-    # 45 s timeout is a BACKSTOP, not the card's lifetime: every replace below
-    # refreshes it, so the card lives as long as the install and self-dismisses
-    # within 45 s if the install dies without reaching a verdict.
+    # The timeout is a BACKSTOP so an abandoned card self-dismisses — it is NOT
+    # the card's lifetime. mako honours expire_timeout (the "ETK Progress"
+    # criteria sets no ignore-timeout), so the card survives only as long as the
+    # NEXT beacon lands inside this window. That is why the fat stages below are
+    # subdivided down to their seams and why a seamless bulk transfer arms
+    # $ETK_TOAST_BULK_MS instead. A stage that outruns its window blanks the
+    # handheld, which is the bug this surface exists to prevent.
     local id
-    id=$(ssh $RIG_SSH "ETK_NOTIFY_ID=${ETK_TOAST_ID:-0} sh $ETK_TOAST_SH --progress 'ETK INSTALL' '$stage' $pct 45000" 2>/dev/null) || return 0
+    id=$(ssh $RIG_SSH "ETK_NOTIFY_ID=${ETK_TOAST_ID:-0} sh $ETK_TOAST_SH --progress 'ETK INSTALL' '$stage' $pct $ttl" 2>/dev/null)
+    if [ $? -eq 255 ]; then
+        # 255 is ssh's own "could not reach the host" — not the sender's status.
+        # A rig that fell off USB-net mid-install is the likeliest install
+        # failure there is, and every later beacon AND the exit verdict would
+        # each pay a full TCP connect timeout (~75 s on macOS): minutes of dead
+        # terminal where `exit 1` used to return instantly. Latch the gave-up
+        # sentinel so the whole run stops trying after the first hang.
+        #
+        # Deliberately NOT latched on a nonzero from the sender itself (a bus or
+        # mako hiccup): that costs one fast local round trip, and killing the
+        # card for the rest of the install would trade a UX cost for exactly the
+        # security property this surface is here to hold.
+        ETK_TOAST_SH="-"
+        return 0
+    fi
     case "$id" in
-        ''|*[!0-9]*) ;;              # unusable reply: keep replacing the old id
+        # An unusable reply leaves the previous id in place. If one was never
+        # latched at all, ${ETK_TOAST_ID:-0} stays 0, which Notify reads as
+        # CREATE NEW — so those cards STACK rather than replace. Acceptable (a
+        # visible pile beats a missing card), but it is exactly what an ssh
+        # motd/banner polluting stdout would look like on the handheld.
+        ''|*[!0-9]*) ;;
         *) ETK_TOAST_ID="$id" ;;
     esac
     return 0
@@ -289,9 +323,16 @@ rig_toast() {
 etk_toast_verdict_stopped() {
     [ "$ETK_TOAST_FIRED" = "1" ] && return 0
     ETK_TOAST_FIRED=1
-    [ -n "$ETK_TOAST_ID" ] || return 0
-    ssh $RIG_SSH "sh $ETK_TOAST_SH --close $ETK_TOAST_ID" >/dev/null 2>&1 || true
-    ssh $RIG_SSH "sh $ETK_TOAST_SH 'ETK INSTALL STOPPED' '$ETK_TOAST_STAGE'" >/dev/null 2>&1 || true
+    # Empty  = no beacon ever ran, so there is no card to close.
+    # "-"    = no sender, or the rig stopped answering. Either way an ssh here
+    #          buys nothing and costs a full connect timeout on the way out.
+    case "$ETK_TOAST_SH" in ''|'-') return 0 ;; esac
+    # ONE ssh, not two: on a rig that went away this is the difference between
+    # ~75 s and ~150 s of dead terminal. `--close 0` is a documented no-op in
+    # the sender, so an id that never latched needs no branch here — the verdict
+    # still goes out, which is the point (an operator with no end-state toast
+    # cannot tell a finished install from an abandoned one).
+    ssh $RIG_SSH "sh $ETK_TOAST_SH --close ${ETK_TOAST_ID:-0}; sh $ETK_TOAST_SH 'ETK INSTALL STOPPED' '$ETK_TOAST_STAGE'" >/dev/null 2>&1 || true
     return 0
 }
 
@@ -299,11 +340,23 @@ etk_toast_verdict_stopped() {
 # tools/tui.sh owns `trap tui_cleanup INT TERM EXIT` purely to restore the
 # terminal. So take over EXIT ONLY and do that cleanup here; INT and TERM keep
 # pointing at tui_cleanup, leaving the interrupt path exactly as it was.
+# KNOWN, pre-existing: in TUI mode a Ctrl-C runs tui_cleanup, whose
+# `trap - INT TERM EXIT` disarms this handler, so that one path ends with no
+# verdict and the card clears on its backstop instead. Fixing it means changing
+# tui.sh's cleanup contract, which is out of scope here.
 # NEVER masks the original exit code.
 etk_toast_stopped() {
     local rc=$?
     tui_cleanup 2>/dev/null || true
-    [ "$rc" = "0" ] || etk_toast_verdict_stopped
+    # rc==0 with no COMPLETE verdict behind it is an ANOMALOUS exit, not a
+    # success: in verbose mode nothing traps SIGINT, so a Ctrl-C runs this
+    # handler with $?=0 and the process then exits 130 — the install stops, and
+    # without this the handheld would be told nothing at all. Verified there is
+    # no legitimate exit-0 path between the trap arm and the COMPLETE block:
+    # install.sh's only host-level exits after the arm are two `exit 1`.
+    if [ "$rc" != "0" ] || [ "$ETK_TOAST_FIRED" = "0" ]; then
+        etk_toast_verdict_stopped
+    fi
     ETK_TOAST_FIRED=1
     exit $rc
 }
@@ -765,6 +818,8 @@ fi
 # dereference it so the HOST archives the REAL shaders, not a dangling link
 # pointing at a rig-only path. No-op when the dir is a plain dir (SD rig).
 mkdir -p "./vault/$CHIPSET"
+# One rsync, no seam to subdivide — arm the bulk backstop, not another beacon.
+rig_toast 9 "Pulling shader vault" $ETK_TOAST_BULK_MS || true
 # Tier-A shader PULL (rig -> host harvest). Runs in full + backup modes; the
 # only mode that skips it is 'off' (Private Paddock owns the shader archive).
 if [ "$VAULT_SYNC" = "off" ]; then
@@ -780,6 +835,7 @@ fi
 # --ignore-existing — host must track edits; no --delete — host snapshot is
 # an archive, never pruned). Read-only on the rig: zero SD writes. Skipped
 # per-rule when the rig source is absent (fresh rig, first run).
+rig_toast 10 "Pulling shader vault" || true
 tui_log "Tier-B backup: telemetry, configs, RPCS3 home, screenshots (rig → host)"
 mkdir -p "$HOST_STATE_DIR/etk_telemetry" "$HOST_STATE_DIR/custom_configs" "$HOST_STATE_DIR/rpcs3_home" "$HOST_STATE_DIR/screenshots"
 TIER_B_IDX=0
@@ -793,6 +849,9 @@ for pair in \
     DST="${REST%%|*}"
     NAME="${REST##*|}"
     TIER_B_IDX=$((TIER_B_IDX + 1))
+    # Per-source heartbeat. Four mirrors run here and rpcs3_home alone (saves,
+    # trophies, .rap licenses) can outlast the default backstop on a first run.
+    rig_toast 11 "Pulling shader vault" $ETK_TOAST_BULK_MS || true
     PCT_LO=$(( 70 + (TIER_B_IDX - 1) * 7 ))
     PCT_HI=$(( 70 + TIER_B_IDX * 7 ))
     if ssh $RIG_SSH "[ -d $SRC ]" 2>/dev/null; then
@@ -826,7 +885,13 @@ fi
 # live-gdb doctrine) — pruned to newest 1 here, keep-2 per-crash in the
 # postmortem, boot sweep in 02-etk-coredump.sh.
 mkdir -p "$HOST_STATE_DIR/forensics/crash_forensics" "$HOST_STATE_DIR/forensics/forensics"
+rig_toast 12 "Pulling shader vault" || true
 for FDIR in "$TELEMETRY_DIR/crash_forensics" "$TELEMETRY_DIR/forensics"; do
+    # Per-directory heartbeat: the first run of this offload moves the whole
+    # accumulated backlog (~13 GB), far and away the longest single transfer in
+    # the install. Even the bulk backstop can be outrun here on a slow link —
+    # named in the validation plan rather than papered over with a bigger number.
+    rig_toast 13 "Pulling shader vault" $ETK_TOAST_BULK_MS || true
     FBASE=$(basename "$FDIR")
     if ssh $RIG_SSH "[ -d $FDIR ] && ls $FDIR 2>/dev/null | grep -q ." 2>/dev/null; then
         FSIZE_KB=$(ssh $RIG_SSH "du -k $FDIR 2>/dev/null | tail -1 | awk '{print \$1}'")
@@ -918,7 +983,9 @@ tui_step_done 2
 # internal target — never replace the symlink with a real dir (which would
 # de-internalize the vault). No-op when the dir is a plain dir (SD rig).
 # ==========================================================
-rig_toast 20 "Pushing shader vault" || true
+# Bulk backstop on the STAGE beacon: the push is a single whole-vault rsync
+# that starts three lines below, with no seam to put another beacon in.
+rig_toast 20 "Pushing shader vault" $ETK_TOAST_BULK_MS || true
 tui_step_start 3
 # Tier-A shader PUSH (host -> rig restore). ONLY in full mode. In backup/off the
 # host never pushes shaders back, so a stale host vault can't re-seed the rig
@@ -933,6 +1000,9 @@ else
     say "${Y}[SKIP] No local vault found — nothing to push${N}"
     tui_step_progress 3 100
 fi
+# Push done: re-arm the default backstop so the card is no longer covered by a
+# ten-minute window it no longer needs.
+rig_toast 26 "Pushing shader vault" || true
 
 # --- TIER-B RESTORE: host -> rig (addendum §C, gated) ---
 # OVERWRITE semantics — NOT --update. A just-reinstalled game drops a
@@ -942,6 +1012,7 @@ fi
 # template with the tuned backup, which is the entire point of --restore-state.
 # No --delete: a fresh rig has nothing extra; --delete is pure downside.
 # Inert on default runs (no flag = no host->rig state write).
+rig_toast 28 "Pushing shader vault" || true
 if [ "$RESTORE_STATE" = "1" ]; then
     tui_log "[Tier-B RESTORE] Overwriting rig state with host snapshot"
     for pair in \
@@ -953,6 +1024,9 @@ if [ "$RESTORE_STATE" = "1" ]; then
         REST="${pair#*|}"
         DST="${REST%%|*}"
         NAME="${REST##*|}"
+        # Per-source heartbeat: --restore-state is the one path that pushes the
+        # whole host snapshot back, four bulk rsyncs deep.
+        rig_toast 30 "Pushing shader vault" $ETK_TOAST_BULK_MS || true
         if [ -d "$SRC" ] && [ "$(ls -A "$SRC" 2>/dev/null)" ]; then
             tui_log "Restoring $NAME (host → rig OVERWRITE)"
             if [ "$TUI_ACTIVE" = "1" ]; then
@@ -1700,7 +1774,7 @@ fi
 # Every 6.x beacon sits OUTSIDE its stage's kill-switch `if` on purpose: the
 # card must keep moving whether or not the stage has any work to do. A stage
 # skipped by etk.conf is still a stage the operator watched go past.
-rig_toast 44 "Kernel + boot config" || true
+rig_toast 44 "Kernel + boot config" $ETK_TOAST_BULK_MS || true
 if [ -n "${KERNEL_IMAGE:-}" ] && [ -f "${KERNEL_IMAGE:-}" ]; then
     # portable host sha256 (Linux sha256sum | macOS shasum)
     if command -v sha256sum >/dev/null 2>&1; then
@@ -2124,7 +2198,7 @@ rm -f "$OSG_OUT_FILE"
 # optional etk.conf TURNIP_SO names the DEFAULT pick on a rig that hasn't chosen.
 # §G.5 note: once a fork is bound, the Mesa fingerprint tracks OUR driver, so a
 # nightly's stock-Mesa change is intentionally masked (we want our driver).
-rig_toast 54 "Turnip driver catalog" || true
+rig_toast 54 "Turnip driver catalog" $ETK_TOAST_BULK_MS || true
 ssh $RIG_SSH "mkdir -p /storage/turnip/drivers /storage/.config/system.d/" 2>/dev/null
 # The host drivers/ dir IS the catalog: every .so in it is staged to the rig and
 # offered in the DRIVER tab. Dropping a build into drivers/ is all it takes.
@@ -2346,6 +2420,8 @@ if [ "$STORAGE_FREE_KB" -lt 204800 ]; then
     say "${R}[ETK] /storage has only $((STORAGE_FREE_KB / 1024))MB free — emulator staging WILL fail (needs ~80MB + temp).${N}"
     say "${R}[ETK] Check $ETK_ROOT/cores and /storage/cores for crash cores, then re-run install.${N}"
 fi
+# AUTO mode fetches a ~78 MB AppImage from GitHub below — one curl, no seam.
+rig_toast 62 "RPCS3 core staging" $ETK_TOAST_BULK_MS || true
 RPCS3_STAGE_SRC=""
 RPCS3_STAGE_MODE="want-custom"   # 'stock' ONLY on the explicit etk.conf opt-out
 case "${RPCS3_APPIMAGE:-}" in
@@ -2380,6 +2456,8 @@ case "${RPCS3_APPIMAGE:-}" in
         fi
         ;;
 esac
+# Fetch settled; the ~78 MB push to the rig is the next seamless transfer.
+rig_toast 65 "RPCS3 core staging" $ETK_TOAST_BULK_MS || true
 if [ -n "$RPCS3_STAGE_SRC" ]; then
     # chmod +x BOTH sides regardless of the source file's own mode — an
     # AppImage staged without the exec bit fails as a silent "quits on
@@ -2422,7 +2500,7 @@ fi
 # remains the certified rpcs3-sa.custom staged above. The certified AppImage in
 # emulators/ is itself part of the catalog (it's how a pin gets un-A/B'd
 # without a reinstall). Kill-switch ETK_CORE_SWAP=0 skips catalog + wrapper.
-rig_toast 68 "RPCS3 core staging" || true
+rig_toast 68 "RPCS3 core staging" $ETK_TOAST_BULK_MS || true
 if [ "${ETK_CORE_SWAP:-1}" = "1" ]; then
     ssh $RIG_SSH "mkdir -p $ETK_ROOT/emulators" 2>/dev/null
     CORE_KEEP=""
@@ -3025,7 +3103,7 @@ fi
 # no-op on single-card rigs. NOT restarted at install time (it bind-mounts over
 # live game paths — unsafe mid-session); it re-runs on the next cold boot.
 # ==========================================================
-rig_toast 94 "Support services" || true
+rig_toast 94 "Storage rebind" || true
 tui_log "Writing SD game-tree rebind (label-based, non-stalling)"
 REBIND_OUTPUT_FILE=$(mktemp /tmp/etk_rebind_XXXXXX)
 ssh $RIG_SSH > "$REBIND_OUTPUT_FILE" 2>&1 << 'REMOTE'
@@ -3188,10 +3266,15 @@ fi
 # ==========================================================
 rig_toast 100 "Complete" || true
 ETK_TOAST_FIRED=1
-if [ -n "$ETK_TOAST_ID" ]; then
-    ssh $RIG_SSH "sh $ETK_TOAST_SH --close $ETK_TOAST_ID" >/dev/null 2>&1 || true
-    ssh $RIG_SSH "sh $ETK_TOAST_SH 'ETK INSTALL COMPLETE'" >/dev/null 2>&1 || true
-fi
+# Gated on a resolved SENDER, never on a latched id: an id that failed to latch
+# (an ssh banner on stdout, say) would otherwise cost the operator the one toast
+# that says the install is over. `--close 0` is a no-op in the sender, so the
+# close simply does nothing when there is no card to close. One ssh, same
+# reasoning as the STOPPED path.
+case "$ETK_TOAST_SH" in
+    ''|'-') ;;
+    *) ssh $RIG_SSH "sh $ETK_TOAST_SH --close ${ETK_TOAST_ID:-0}; sh $ETK_TOAST_SH 'ETK INSTALL COMPLETE'" >/dev/null 2>&1 || true ;;
+esac
 
 # Final banner. tui_finish renders the caller-supplied content in both
 # console and verbose modes.
