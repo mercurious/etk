@@ -71,7 +71,7 @@ VFS:
   Empty /dev_hdd0/tmp/: true
 Video:
   Renderer: Vulkan
-  Resolution: 720x480
+  Resolution: 1920x1080
   Aspect ratio: 16:9
   Frame limit: PS3 Native
   Second Frame Limit: 0

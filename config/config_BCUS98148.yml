@@ -81,6 +81,7 @@ Core:
   Use Accurate DFMA: true
   Use LLVM CPU: ""
   Usleep Time Addend: 0
+  RSX FIFO Accuracy: Fast
 Input/Output:
   Allow move hue set by game: false
   Background input enabled: true
