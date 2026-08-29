@@ -27,8 +27,12 @@
 #   the staged GTK kernel matches the running SYSTEM but is not live in
 #   KERNEL.gtktest / grub -> replay the heal bundle rendered by install.sh
 #   STEP 6.4 (kernel copy, pre-rendered grub block, grubenv seed per the
-#   recorded deploy mode), notify "reboot to re-enable". No grub logic is
-#   duplicated here: install.sh renders, osguard replays.
+#   recorded deploy mode) PLUS the numeric default pin recomputed here — the
+#   ONE piece install.sh cannot pre-render, because its index depends on the
+#   healed cfg (string-id defaults don't resolve on the 20260901 generator and
+#   grubenv is inert on the 4Kn internal ESP, so the numeric pin is the only
+#   default mechanism that survives). Otherwise osguard replays what install.sh
+#   rendered; it never re-derives the menuentries.
 #
 # LAWS: NEVER reboots (the operator/driver reboots). Fail-soft: every write
 # is guarded and /flash is remounted ro on all exit paths; a failed heal
@@ -240,6 +244,43 @@ if [ -f "$HEAL/grub.block" ]; then
         fi
     done
 fi
+# NUMERIC DEFAULT PIN (STEP 6.4 parity — the one piece of grub logic that MUST
+# live here too). The banked grub.block carries only menuentries; STEP 6.4's
+# decisive default is a NUMERIC `set default=<idx>` injected AFTER the abl block
+# (string-id defaults do NOT resolve on the 20260901 generator, and grubenv is
+# INERT on the internal 4Kn ESP), and it is NOT part of the banked block. Without
+# re-applying it, a heal leaves the default riding the FRAGILE entry-0 alignment.
+# The index is cfg-dependent so it cannot be pre-rendered — recompute it here and
+# pin the deploy mode's target (etk-gtk-test in default, the device entry in test),
+# idempotently (skip when the tail default already resolves to it). Same transform
+# as install.sh STEP 6.4 (harness tools/test_grub_default.sh covers both).
+DMODE=$(cat "$HEAL/mode" 2>/dev/null)
+PIN_TGT="rpflip2"; [ "$DMODE" = "default" ] && PIN_TGT="etk-gtk-test"
+for CFG in "$FLASH/EFI/BOOT/grub.cfg" "$FLASH/boot/grub/grub.cfg"; do
+    [ -f "$CFG" ] || continue
+    grep -q "'$PIN_TGT' {" "$CFG" 2>/dev/null || continue
+    PIN_IDX=$(awk -v q="'$PIN_TGT' {" '/^menuentry /{ if (index($0,q)) { print n+0; exit } n++ }' "$CFG")
+    printf '%s' "$PIN_IDX" | grep -Eq '^[0-9]+$' || continue
+    [ "$(grep '^set default=' "$CFG" 2>/dev/null | tail -1 | sed 's/^set default=//')" = "$PIN_IDX" ] && continue
+    if [ "$MODE" = "heal" ]; then
+        flash_rw || continue
+        awk -v idx="$PIN_IDX" '
+            /feature_menuentry_id/ && !ins {
+                print "# ETK: pin default NUMERICALLY (osguard heal; string-ids do not";
+                print "# resolve on this grub -- the abl block would fall to entry 0).";
+                print "set default=" idx;
+                print "set timeout=2";
+                print "";
+                ins=1
+            }
+            { print }
+            END { if (!ins) { print "set default=" idx; print "set timeout=2" } }
+        ' "$CFG" > "$CFG.osgpin" && mv "$CFG.osgpin" "$CFG" \
+            && log "DONE: numeric default pin -> $PIN_IDX ($PIN_TGT) in $CFG" && CHANGED=1
+    else
+        log "PLAN: numeric default pin -> $PIN_IDX ($PIN_TGT) in $CFG"; CHANGED=1
+    fi
+done
 if [ "$(cat "$HEAL/mode" 2>/dev/null)" = "default" ] && [ "$CHANGED" = "1" ]; then
     for GE in ${OSG_GRUBENV_LIST:-$FLASH/EFI/BOOT/grubenv $FLASH/boot/grub/grubenv}; do
         [ -f "$GE" ] || continue

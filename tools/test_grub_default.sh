@@ -33,7 +33,10 @@
 #      (module-tree match gate; KERNEL_DEPLOY_MODE fallback = default — 0.9.0);
 #   8. the module-tree guard primitive discriminates a matching release (stay
 #      default/auto-boot) from a mismatch or empty release (force test — a kernel
-#      whose modules can't load must never auto-boot; the 2026-08-01 frankenboot).
+#      whose modules can't load must never auto-boot; the 2026-08-01 frankenboot);
+#   9. osguard Phase B re-applies the SAME numeric default pin as STEP 6.4 (an
+#      OS-update heal must land default==fresh; the banked grub.block carries
+#      menuentries only, so replaying it alone leaves the fragile entry-0 fallback).
 set -u
 cd "$(dirname "$0")/.." || exit 1
 FAIL=0; PASS=0
@@ -239,6 +242,36 @@ guard() { # $1=K_RELEASE -> the K_MODE the guard would leave it at
 [ "$(guard '')" = "test" ] \
   && ok "module guard: empty/unreadable release -> forced test (defensive)" \
   || fail "module guard: empty release not caught"
+
+# --- 10. osguard Phase B numeric-pin heal (STEP 6.4 parity) ---
+# After an OS update the ROCKNIX regen strips the ETK entries AND the numeric
+# pin; osguard Phase B replays the banked grub.block (menuentries) but the pin is
+# NOT in the block (its index is cfg-dependent) — so Phase B must recompute+inject
+# it, or the healed default rides the fragile entry-0 alignment (fatal on the 4Kn
+# internal ESP where grubenv is inert). Anti-drift: the injection + mode->target
+# selection live in osguard.sh. Behavioral: default_built = the post-heal state
+# (entries re-inserted, etk-gtk-test@0, NO pin); the transform is byte-identical
+# to STEP 6.4's (validated on the BusyBox leg above), so the host leg is
+# authoritative for osguard's copy.
+grep -qF 'set default=" idx' bin/osguard.sh \
+  && ok "osguard.sh carries the numeric-pin injection (Phase B heal == STEP 6.4)" \
+  || fail "osguard.sh MISSING the numeric default pin (heal leaves the fragile fallback)"
+grep -qF 'PIN_TGT="rpflip2"; [ "$DMODE" = "default" ] && PIN_TGT="etk-gtk-test"' bin/osguard.sh \
+  && ok "osguard.sh pins the deploy mode's target (default->etk-gtk-test, test->device)" \
+  || fail "osguard.sh mode->target selection MISSING or drifted from STEP 6.4"
+grep -Eq '^set default=[0-9]+' "$TD/default_built" \
+  && fail "fixture bad: default_built already has a numeric pin" \
+  || ok "post-heal fixture has entries but NO numeric pin (the gap Phase B closes)"
+OSG_IDX=$(idx_of "$TD/default_built" etk-gtk-test)
+inject "$TD/default_built" "$OSG_IDX" > "$TD/osg_healed"
+OSG_TAIL=$(grep '^set default=' "$TD/osg_healed" | tail -1 | sed 's/^set default=//')
+OSG_ENT=$(awk -v w="$OSG_TAIL" '/^menuentry /{ if (n==w){ match($0,/'"'"'[^'"'"']*'"'"' \{/); print substr($0,RSTART+1,RLENGTH-4); exit } n++ }' "$TD/osg_healed")
+{ [ "$OSG_TAIL" = "0" ] && [ "$OSG_ENT" = "etk-gtk-test" ]; } \
+  && ok "osguard heal: numeric default 0 resolves to the etk-gtk-test entry" \
+  || fail "osguard heal: tail default=$OSG_TAIL resolves to '$OSG_ENT', not etk-gtk-test@0"
+[ "$OSG_TAIL" = "$OSG_IDX" ] \
+  && ok "osguard heal idempotent: tail default == target index -> re-heal is a no-op" \
+  || fail "osguard heal not idempotent (tail=$OSG_TAIL idx=$OSG_IDX)"
 
 printf '%d/%d passed\n' "$PASS" "$((PASS+FAIL))"
 exit "$FAIL"
