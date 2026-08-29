@@ -8352,12 +8352,23 @@ def _switcher_stick(state, val, now):
     """Fold one right-stick sample into the model.
 
     OUT-OF-RANGE POISON: one sample outside the resolved range disarms the
-    stick for the rest of the process. It is the belt to the absinfo probe's
-    braces — if the kernel would not tell us the range (0-255 fallback) and
-    the pad is really a signed target, its resting jitter crosses zero, and
-    the FIRST negative sample lands here and shuts the selector down before a
-    fake deflection can walk it anywhere. The overlay stays open and
-    dismissible; it just stops accepting stick input.
+    stick for the rest of the process AND ROLLS THE MODEL BACK to the state
+    it opened in. It is the belt to the absinfo probe's braces, for the case
+    where the kernel would not tell us the range (0-255 fallback) and the pad
+    is really a signed target.
+
+    The ROLLBACK is the load-bearing half, and it is here because the earlier
+    version of this comment was false. Disarming alone assumed the poison
+    always arrives first; a signed stick eased slowly out of centre puts
+    IN-BAND samples under a 0-255 reading before an out-of-range one ever
+    lands. The falsifying sequence, from review: [0, 150, 200, 900, 16000] —
+    150 looks centred and ARMS, 200 looks like a real downward deflection and
+    STEPS, and only 900 poisons, by which time the selector has already moved
+    and the release would commit a game nobody chose. Rolling `moved` and
+    `cursor` back makes the invariant true instead of hopeful: after poison
+    the highlight is exactly where it opened, nothing counts as moved, and
+    the release can only be a dismissal. The operator SEES that cancel. The
+    overlay stays open and dismissible; it just stops accepting stick input.
 
     ARMING (fallback only): with no kernel range, the axis does nothing until
     it has been seen CENTRED once, so a pad resting outside our assumed
@@ -8379,6 +8390,8 @@ def _switcher_stick(state, val, now):
         state["stick_disarmed"] = True
         sw["dir"] = None
         sw["repeat_at"] = None
+        sw["moved"] = False
+        sw["cursor"] = sw["open_cursor"]
         _log(f"switcher: ABS_RY sample {val} outside range "
              f"{state.get('stick_range') or _STICK_FALLBACK_RANGE} - "
              "stick disarmed for this session")

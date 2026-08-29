@@ -540,8 +540,20 @@ check("a current game that isn't installed falls back to row 0",
 check("no current game (ETK_NO_TARGET) highlights row 0",
       pit._switcher_state(THREE, None)["cursor"], 0)
 
-# THE POISON GUARD, driven with the reviewer's own scenario: a signed pad on
-# the 0-255 fallback. One negative jitter sample and the stick is done.
+def verdict_of(s, session_live=False):
+    """The verdict _switcher_release would reach for this model. (The release
+    itself is driven end-to-end in [COMMIT]; [WIRED] pins that it assembles
+    these same arguments.)"""
+    sw = s["switcher"]
+    g = sw["games"]
+    return pit.switch_decision(
+        sw["moved"], g[sw["cursor"]][0] if g else None, sw["current"],
+        session_live, index_changed=sw["cursor"] != sw["open_cursor"],
+        current_listed=sw["listed"], n_games=len(g))
+
+
+# THE POISON GUARD: a signed pad on the 0-255 fallback. One out-of-range
+# sample and the stick is done.
 s = st()
 pit._switcher_stick(s, 128, 0.0)          # jitter that LOOKS centred
 pit._switcher_stick(s, -200, 0.05)        # ...then reality
@@ -552,8 +564,41 @@ pit._switcher_tick(s, 99.0)
 check("...permanently: nothing steps afterwards",
       (s["switcher"]["cursor"], s["switcher"]["moved"]), (1, False))
 check("...so the release is a dismissal, not a wrong-game switch",
-      pit.switch_decision(s["switcher"]["moved"], "AAAA00001", "BBBB00002",
-                          False), NOOP)
+      verdict_of(s), NOOP)
+
+# ...AND THE POISON MUST ROLL BACK A STEP THAT ALREADY LANDED. Every case
+# above poisons a CLEAN model, which is exactly the gap that let this
+# through review: disarming alone leaves a step the operator never really
+# made standing, and the release commits it.
+s = st()
+pit._switcher_stick(s, 128, 0.0)          # arm in-band
+pit._switcher_stick(s, 255, 0.1)          # a "deflection" that steps
+check("a step lands before the poison arrives",
+      (s["switcher"]["cursor"], s["switcher"]["moved"]), (2, True))
+pit._switcher_stick(s, 9000, 0.2)         # ...then the sample that exposes it
+check("poison rolls the highlight back to where the menu opened",
+      s["switcher"]["cursor"], s["switcher"]["open_cursor"])
+check("...and un-counts the movement",
+      (s["switcher"]["moved"], s["stick_disarmed"]), (False, True))
+check("...so the release is a dismissal, not a wrong-game switch",
+      verdict_of(s), NOOP)
+
+# THE FALSIFYING SEQUENCE, verbatim from review: an unprobed pad + a signed
+# target + a SLOW downward ease-out. 150 looks centred and arms, 200 looks
+# like a real deflection and steps, and only 900 is out of range -- by which
+# point, before the rollback, the selector had already moved and the release
+# committed a game nobody chose.
+s = st()                                   # unprobed: fallback range, unarmed
+for i, sample in enumerate([0, 150, 200, 900, 16000]):
+    pit._switcher_stick(s, sample, i * 0.05)
+check("slow signed ease-out: highlight is back where it opened",
+      s["switcher"]["cursor"], s["switcher"]["open_cursor"])
+check("...nothing counts as moved", s["switcher"]["moved"], False)
+check("...the stick is disarmed", s["stick_disarmed"], True)
+check("...and the release commits NOTHING", verdict_of(s), NOOP)
+pit._switcher_tick(s, 99.0)
+check("...with no auto-repeat left running", s["switcher"]["cursor"],
+      s["switcher"]["open_cursor"])
 
 # ARMING, the fallback-only second guard: a full deflection before any
 # centred sample is inert.
