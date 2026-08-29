@@ -75,8 +75,10 @@ LOG_PATH = f"{ETK_ROOT}/log/etk_pitstop.log"
 
 # Rocknix's PS3 launchers: each "<Game Name>.psn" file contains the title
 # ID as text, so the directory is a static name<->ID map resolvable even
-# when Pitstop runs idle from the tools menu (no rpcs3 process).
-PS3_ROMS_DIR = "/storage/games-internal/roms/ps3"
+# when Pitstop runs idle from the tools menu (no rpcs3 process). Env-derived
+# like the RPCS3_* constants below so a host-side harness can point it at a
+# fixture tree (env.sh does not export it — the default IS the rig path).
+PS3_ROMS_DIR = os.environ.get('PS3_ROMS_DIR', "/storage/games-internal/roms/ps3")
 # RPCS3's own serial->path registry (rows committed on a title's first boot).
 RPCS3_GAMES_YML = "/storage/.config/rpcs3/games.yml"
 # IRISMAN-style serial tag in a filename: "(BCUS98158)" or "[BLUS-30019]".
@@ -378,6 +380,23 @@ ABS_Z = 2                   # L2 analog trigger, 0-255 on the DS5 target
 ABS_RZ = 5                  # R2 analog trigger, 0-255 on the DS5 target
 BTN_TL = 310                # L1 / LB shoulder
 BTN_TR = 311                # R1 / RB shoulder
+# GAME SWITCHER chord (hold SELECT + right stick). Both codes are the
+# linux/input-event-codes.h standard AND what the rig's own tooling already
+# binds: bin/input_d.py uses 314 as the in-game DPAD clutch modifier
+# ("314 = BTN_SELECT (clutch modifier for DPAD)") and bin/gamepad_probe.py's
+# reference table lists "314 BTN_SELECT" — the two agree, so this is not a
+# guess. NOTE (input_d.py's warning, still true): SELECT is the in-game
+# CAMERA TOGGLE, so holding it while a race is live also flips the driver's
+# view. That collateral is one more reason the switcher refuses mid-session.
+BTN_SELECT = 314            # Select / Share / Create — switcher modifier
+# Right stick vertical. Range convention is the DS5 virtual target's 8-bit
+# unsigned axis (0-255, centre 128) — the SAME convention the trigger axes
+# above use ("0-255 on the DS5 target"), which is how TRIGGER CALIBRATION
+# reads its live gauge. UP is the LOW end (evdev Y axes grow downward).
+# _switcher_stick() only arms after it has seen ONE centred sample, so a
+# future target that reports signed 16-bit axes leaves the selector inert
+# (harmless no-op) instead of latching it to a false full deflection.
+ABS_RY = 4                  # right analog stick, vertical
 #
 # Face buttons — flipped at the InputPlumber DS5 target switch (Rocknix
 # nightly-20260520, "inputplumber: use target ds5"). Pre-20260520 the
@@ -557,17 +576,25 @@ def _find_section_range(lines, section):
 
 # === ID / NAME RESOLUTION ===
 
-def resolve_game_name(target_id):
+def resolve_game_name(target_id, roms_dir=None, games_yml=None):
     """Map a title ID to its human display name: .psn launcher stem first
     (installed PKGs), then ISO/m3u filename stems via their '(SERIAL)' tag
     (disc titles have no .psn), then RPCS3's games.yml path for untagged
     discs that have booted at least once. Falls back to the ID itself so
-    the header is never blank."""
+    the header is never blank.
+
+    roms_dir/games_yml exist so the GAME SWITCHER's list builder can be
+    driven against a fixture tree — same reason _rpcs3_pids takes `procfs`.
+    Both resolve at CALL time (never as default-arg values), so the existing
+    monkeypatch-the-module-global idiom in tools/test_installers.py keeps
+    working."""
+    roms_dir = PS3_ROMS_DIR if roms_dir is None else roms_dir
+    games_yml = RPCS3_GAMES_YML if games_yml is None else games_yml
     iso_stem = None
     try:
-        for entry in sorted(os.listdir(PS3_ROMS_DIR)):
+        for entry in sorted(os.listdir(roms_dir)):
             if entry.endswith(".psn"):
-                with open(os.path.join(PS3_ROMS_DIR, entry), 'r') as f:
+                with open(os.path.join(roms_dir, entry), 'r') as f:
                     if f.read().strip() == target_id:
                         return entry[:-4]
             elif entry.lower().endswith((".iso", ".m3u")) and iso_stem is None:
@@ -579,7 +606,7 @@ def resolve_game_name(target_id):
     if iso_stem:
         return iso_stem
     try:
-        with open(RPCS3_GAMES_YML) as f:
+        with open(games_yml) as f:
             for ln in f:
                 if ln.startswith(target_id + ':'):
                     base = os.path.basename(ln.split(':', 1)[1].strip().strip('"'))
@@ -3502,13 +3529,16 @@ def _deploy_template_config(title_id):
 # a file with no sections — by design). These seeders close that gap for
 # every title, whichever packaging model it arrived by.
 
-def _games_yml_serials():
+def _games_yml_serials(path=None):
     """serial -> ROM path from RPCS3's games.yml (disc/ISO boot
     registrations; installed-PKG titles live under dev_hdd0/game and are
-    not listed here). Empty dict on absence or any parse trouble."""
+    not listed here). Empty dict on absence or any parse trouble.
+
+    `path` resolves at CALL time so the GAME SWITCHER list builder (and its
+    host harness) can read a fixture yml — the _rpcs3_pids(procfs=) pattern."""
     out = {}
     try:
-        with open(RPCS3_GAMES_YML) as f:
+        with open(RPCS3_GAMES_YML if path is None else path) as f:
             for ln in f:
                 if ':' not in ln or ln.lstrip().startswith('#'):
                     continue
@@ -7932,6 +7962,438 @@ def handle_paddock_pad(state, etype, code, val):
     return "continue"
 
 
+# ============================================================
+# === GAME SWITCHER (hold SELECT) ===
+# ============================================================
+# Pitstop binds its target ONCE, at process start: config/etk_pitstop.sh
+# resolves live SHM -> RECENT_ID_FILE and exports TARGET_ID, and every
+# per-game global in this module (CONFIG_PATH, GAME_NAME, the ledger
+# filters, the vault scope) derives from it at import. Until now the only
+# way to re-point Pitstop at another title was to LAUNCH that title and
+# R3-abort it — paying for a UI action with a junk abort row in the session
+# ledger.
+#
+# The chord (operator-decided, 2026-08-29): hold SELECT -> the overlay
+# opens with the current game highlighted -> right stick up/down moves the
+# selector -> RELEASING SELECT commits. Releasing without having touched
+# the stick, or on the game you started on, dismisses. No cancel row, no
+# second button: the held modifier IS the dialog.
+#
+# The commit is a RE-EXEC, not an in-place re-bind. Re-deriving several
+# dozen module-level globals by hand is exactly the kind of half-swap that
+# leaves TUNING writing one game's config under another game's header;
+# execv makes the switch total for the price of one screen flash, and it is
+# the same restart the self-update already performs. Unapplied TUNING edits
+# die in that exec — the switch wins, by operator decision.
+
+# The launcher's own rule (config/etk_pitstop.sh: 4 uppercase letters + 5
+# digits). An ID that fails it would come straight back as ETK_NO_TARGET on
+# the far side of the exec, so it never enters the list.
+_TITLE_ID_RE = re.compile(r'^[A-Z]{4}[0-9]{5}$')
+
+# Tabs the chord is live on. DRIVER/POWER/PADDOCK are excluded: their models
+# are not per-game, so a switch there would be a surprise restart with no
+# visible payoff.
+_SWITCHER_TABS = (CURRENT_TAB_TELEMETRY, CURRENT_TAB_TUNING, CURRENT_TAB_TOOLS)
+
+_SWITCHER_TITLE = "GAME SWITCHER"
+_SWITCHER_HINT = "R-STICK: pick   RELEASE SELECT: go"
+_SWITCHER_EMPTY = "(no games found)"
+
+# Stick handling. Deadzone is 30% of half-travel — well past the resting
+# jitter of a worn stick, and the step is EDGE-triggered on the crossing, so
+# a parked deflection cannot machine-gun the selector. Auto-repeat mirrors a
+# keyboard: a pause, then a steady rate.
+_SWITCHER_DEADZONE = 0.30
+_SWITCHER_REPEAT_FIRST_S = 0.350
+_SWITCHER_REPEAT_S = 0.150
+
+# Decision verbs (pure decision, so the glue below has nothing to argue with).
+SWITCH_NOOP = "NOOP"
+SWITCH_REFUSE_RUNNING = "REFUSE_RUNNING"
+SWITCH_GO = "SWITCH"
+
+
+def list_installed_games(roms_dir=None, games_yml=None):
+    """Every installed PS3 title, as sorted [(id, title)].
+
+    Union of the three sources resolve_game_name() consults, in the SAME
+    precedence order so a game's row here reads exactly like the header it
+    will get after the switch:
+
+      1. .psn launchers   (installed PKGs; file content = ID, stem = title)
+      2. *.iso / *.m3u    (disc titles; '(SERIAL)' tag = ID, stripped stem
+                           = title)
+      3. games.yml        (untagged discs RPCS3 has booted at least once)
+
+    First source to claim an ID wins. IDs are validated against the
+    launcher's own pattern and anything else is dropped — a malformed .psn
+    would otherwise offer the operator a switch that comes back as
+    ETK_NO_TARGET. Title falls back to the bare ID. Each source is
+    individually fail-soft: an unreadable roms dir costs its source, never
+    the menu."""
+    roms_dir = PS3_ROMS_DIR if roms_dir is None else roms_dir
+    games_yml = RPCS3_GAMES_YML if games_yml is None else games_yml
+    found = {}
+
+    def _claim(gid, title):
+        if not gid or not _TITLE_ID_RE.match(gid):
+            return
+        if gid not in found:
+            found[gid] = (title or "").strip() or gid
+
+    # --- 1/2: the roms dir, one listing for both sources. Dotfiles are
+    # skipped for the reason _list_psn_games skips them: a macOS AppleDouble
+    # sibling ('._Game.psn') is not a game.
+    try:
+        entries = sorted(os.listdir(roms_dir))
+    except Exception as e:
+        _log(f"switcher: roms dir unreadable ({e})")
+        entries = []
+    for entry in entries:
+        if entry.startswith('.') or not entry.endswith(".psn"):
+            continue
+        try:
+            with open(os.path.join(roms_dir, entry)) as f:
+                _claim(f.read().strip(), entry[:-4])
+        except Exception:
+            continue
+    for entry in entries:
+        if entry.startswith('.') or not entry.lower().endswith((".iso", ".m3u")):
+            continue
+        m = _ISO_ID_TAG_RE.search(entry)
+        if m:
+            _claim(m.group(1) + m.group(2),
+                   _strip_serial_tag(os.path.splitext(entry)[0]))
+
+    # --- 3: RPCS3's own registry. Titles go back through resolve_game_name
+    # (pointed at the same two fixtures) so the yml path basename is stripped
+    # of its serial tag exactly as the header would strip it.
+    try:
+        for gid in _games_yml_serials(games_yml):
+            _claim(gid, resolve_game_name(gid, roms_dir=roms_dir,
+                                          games_yml=games_yml))
+    except Exception as e:
+        _log(f"switcher: games.yml source failed ({e})")
+
+    # Alphabetical by TITLE (what the operator reads), case-insensitively,
+    # with the ID as a deterministic tie-break.
+    return sorted(found.items(), key=lambda kv: (kv[1].lower(), kv[0]))
+
+
+def switch_decision(moved, highlighted_id, current_id, game_running):
+    """What a SELECT release means. Pure — no I/O, no state.
+
+    NOOP when the stick never moved, when there is nothing to highlight, or
+    when the highlight is still the current game: that IS the cancel, and it
+    is why the menu needs no cancel row.
+
+    REFUSE_RUNNING while a real game session is live, and this one is
+    load-bearing rather than merely tidy: bin/session_postmortem.sh stamps
+    the finished session's ledger row with game_id read from RECENT_ID_FILE
+    at post-mortem time (session_postmortem.sh: GAME_ID=$(cat
+    "$RECENT_ID_FILE")). Re-pointing that anchor mid-session would file the
+    running race under whatever title the operator just picked — a silently
+    mis-attributed row is worse than no row. The gate keeps the ledger
+    honest. (_game_running is the argv[0]-matched, installer-discriminating
+    check; a background install is NOT a session and must not block a
+    switch.)"""
+    if not moved or not highlighted_id or highlighted_id == current_id:
+        return SWITCH_NOOP
+    if game_running:
+        return SWITCH_REFUSE_RUNNING
+    return SWITCH_GO
+
+
+def _write_recent_id(new_id, path=None):
+    """Re-point the persistent last-played anchor, atomically. True on success.
+
+    Format is the Sentry's, byte for byte — install.sh writes it as
+    `echo "$ID_STR" > "$RECENT_ID_FILE"`, i.e. the bare ID plus one newline.
+    Everything downstream (the launcher, the post-mortem, the Sentry's boot
+    pre-seed) strips whitespace, but matching the shipped format means a
+    switched anchor is indistinguishable from an ignition-written one.
+
+    tmp-then-os.replace in the SAME directory (H2's rule): a power cut or
+    panic mid-write must never leave a truncated ID behind, because the
+    launcher would then read it as unresolvable and boot into
+    ETK_NO_TARGET."""
+    path = RECENT_ID_FILE if path is None else path
+    tmp = path + ".tmp"
+    try:
+        d = os.path.dirname(path)
+        if d:
+            os.makedirs(d, exist_ok=True)
+        with open(tmp, "w") as f:
+            f.write(new_id + "\n")
+        os.replace(tmp, path)
+        return True
+    except Exception as e:
+        _log(f"switcher: could not write {path}: {e}")
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        return False
+
+
+def _start_tab(default):
+    """Initial tab for this process, honouring ETK_START_TAB.
+
+    Set only by the switcher's own re-exec, so the operator lands back on
+    the tab they left. POPPED, never merely read: a value left in the
+    environment would be inherited by the NEXT exec (a self-update restart,
+    say) and quietly override the default forever. Anything that is not a
+    live tab id — junk, an out-of-range number, a tab this rig doesn't show
+    (PADDOCK without a credential) — is discarded in favour of `default`."""
+    raw = os.environ.pop('ETK_START_TAB', None)
+    if raw is None:
+        return default
+    try:
+        tab = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return default
+    return tab if tab in [tid for _, tid in TABS] else default
+
+
+def _switcher_state(games, current):
+    """Pure: the overlay model. Opens on the CURRENT game (falling back to
+    the first row when it isn't installed, or in ETK_NO_TARGET where there
+    is no current game at all). dir=None means the stick is UNARMED — see
+    _switcher_stick."""
+    cursor = 0
+    for i, (gid, _t) in enumerate(games):
+        if gid == current:
+            cursor = i
+            break
+    return {"games": games, "cursor": cursor, "current": current,
+            "moved": False, "dir": None, "repeat_at": None}
+
+
+def _switcher_eligible(state):
+    """True when a SELECT press should open the overlay: an eligible tab,
+    nothing already open, and NO sub-screen in front of it. A modal is a
+    conversation the operator is already having — the chord waits its turn."""
+    if state.get("switcher") is not None:
+        return False
+    ct = state.get("current_tab")
+    if ct not in _SWITCHER_TABS:
+        return False
+    if state.get("_preview_proc") is not None:
+        return False
+    if ct == CURRENT_TAB_TOOLS and state.get("tools_mode", "menu") != "menu":
+        return False
+    if ct == CURRENT_TAB_TELEMETRY and \
+            state.get("telemetry_mode", "table") != "table":
+        return False
+    return True
+
+
+def _switcher_open(state):
+    """Scan ONCE, here — the list is a menu-lifetime snapshot, dropped on
+    close, so nothing is added to import or to the frame budget."""
+    state["switcher"] = _switcher_state(
+        list_installed_games(), None if ETK_NO_TARGET else TARGET_ID)
+
+
+def _switcher_step(state, direction):
+    """Move the selector one row, clamped at both ends (no wrap: a wrapping
+    list under a held stick is how you overshoot past the game you wanted)."""
+    sw = state.get("switcher")
+    if not sw or not sw["games"]:
+        return
+    sw["cursor"] = max(0, min(len(sw["games"]) - 1,
+                              sw["cursor"] + direction))
+
+
+def _stick_dir(val, deadzone=_SWITCHER_DEADZONE):
+    """Classify a raw ABS_RY sample: -1 up, +1 down, 0 centred. The pad
+    reports 0-255 with 128 at rest (see the ABS_RY note in the H1 block);
+    UP is the low end, so the sign is negated into screen terms."""
+    norm = (val - 128) / 127.0
+    if norm <= -deadzone:
+        return -1
+    if norm >= deadzone:
+        return 1
+    return 0
+
+
+def _switcher_stick(state, val, now):
+    """Fold one right-stick sample into the model.
+
+    ARMING: the axis does nothing until it has been seen CENTRED once. That
+    is what makes the 0-255 assumption safe — a pad target that reported
+    signed axes would rest at 0, which reads as a full-up deflection under
+    this scale, and an unarmed axis simply never steps (the operator gets a
+    dead selector and a no-op release, not a switch to the wrong game). It
+    is also the literal reading of 'edge-triggered on crossing OUT of the
+    deadzone': you have to be inside it first.
+
+    `moved` is set by the STICK, not by the cursor — an operator who nudges
+    the stick at a one-row list has expressed intent even though nothing
+    could move, and on a fresh rig (ETK_NO_TARGET, one installed game) that
+    is the only way the first bind could ever be committed."""
+    sw = state.get("switcher")
+    if not sw:
+        return
+    d = _stick_dir(val)
+    prev = sw.get("dir")
+    if prev is None:
+        if d == 0:
+            sw["dir"] = 0          # armed
+        return
+    if d == prev:
+        return
+    sw["dir"] = d
+    if d == 0:
+        sw["repeat_at"] = None
+        return
+    sw["moved"] = True
+    _switcher_step(state, d)
+    sw["repeat_at"] = now + _SWITCHER_REPEAT_FIRST_S
+
+
+def _switcher_tick(state, now):
+    """Auto-repeat, driven by the 50ms frame clock. evdev only emits on
+    CHANGE, so a stick held at full deflection is silent — repeat cannot be
+    driven from the event stream."""
+    sw = state.get("switcher")
+    if not sw:
+        return
+    d, at = sw.get("dir"), sw.get("repeat_at")
+    if not d or at is None or now < at:
+        return
+    _switcher_step(state, d)
+    sw["repeat_at"] = now + _SWITCHER_REPEAT_S
+
+
+def _switcher_verdict(state, summary, body=""):
+    """Put a refusal on BOTH surfaces: the mako toast (ES grammar) and the
+    footer, which is the one guaranteed visible under a fullscreen foot."""
+    state["status"] = summary
+    try:
+        _Notifier().post(summary, body, timeout=8000)
+    except Exception:
+        pass
+
+
+def _switcher_apply(new_id, tab_id):
+    """Re-exec Pitstop bound to new_id. NEVER RETURNS on success.
+
+    Mirrors the self-update restart exactly (curses.endwin() then execv of
+    the same interpreter and script) — execv keeps the foot terminal wrapper
+    the launcher put us inside. ETK_NO_TARGET is cleared because we have
+    just resolved a target, and ETK_START_TAB carries the operator back to
+    the tab they were on."""
+    os.environ['TARGET_ID'] = new_id
+    os.environ['ETK_NO_TARGET'] = '0'
+    os.environ['ETK_START_TAB'] = str(tab_id)
+    _log(f"switcher: re-exec bound to {new_id} (tab {tab_id})")
+    try:
+        curses.endwin()
+    except Exception:
+        pass
+    os.execv(sys.executable,
+             [sys.executable, os.path.abspath(__file__)] + sys.argv[1:])
+
+
+def _switcher_release(state):
+    """SELECT came up: decide, then close. The overlay closes on EVERY path,
+    including the failure ones — a menu that stays up after a refusal reads
+    as a frozen app."""
+    sw = state.get("switcher")
+    state["switcher"] = None
+    if not sw:
+        return SWITCH_NOOP
+    games = sw.get("games") or []
+    pick = games[sw["cursor"]][0] if games else None
+    verdict = switch_decision(sw.get("moved"), pick, sw.get("current"),
+                              _game_running())
+    if verdict == SWITCH_REFUSE_RUNNING:
+        _switcher_verdict(state, "GAME RUNNING - exit the race first",
+                          "The switch would mis-file the running session.")
+    elif verdict == SWITCH_GO:
+        if not _write_recent_id(pick):
+            _switcher_verdict(state, "SWITCH FAILED - storage error",
+                              "Could not write the last-played anchor.")
+            return "WRITE_FAILED"
+        _switcher_apply(pick, state.get("current_tab", CURRENT_TAB_TELEMETRY))
+    return verdict
+
+
+def _switcher_layout(h, w, n, content_w=0, cursor=0):
+    """Pure geometry for the overlay: a centred box, and the scroll offset
+    that keeps `cursor` inside it. Chrome is 5 rows (two borders, title,
+    rule, hint), so the list viewport is whatever is left. Sized to fit the
+    documented worst case, a 60x15 grid at foot's size-28 font."""
+    rows = max(1, n)
+    box_h = min(rows + 5, max(5, h - 2))
+    view_h = max(1, box_h - 5)
+    inner = max(len(_SWITCHER_HINT), content_w, len(_SWITCHER_TITLE) + 8)
+    box_w = min(inner + 4, max(12, w - 2))
+    top = 0
+    if rows > view_h:
+        top = min(max(0, cursor - view_h // 2), rows - view_h)
+    return {"y": max(0, (h - box_h) // 2), "x": max(0, (w - box_w) // 2),
+            "h": box_h, "w": box_w, "view_h": view_h, "top": top}
+
+
+def _draw_switcher(stdscr, state):
+    """Paint the overlay. Drawn LAST so it sits over whichever tab is
+    behind it, and every write goes through a put() clipped to BOTH the box
+    and the screen: a curses write that raised here would take the whole app
+    down while the operator is mid-chord."""
+    sw = state.get("switcher")
+    if not sw:
+        return
+    h, w = stdscr.getmaxyx()
+    games = sw.get("games") or []
+    cursor = sw.get("cursor", 0)
+    cur = sw.get("current")
+    rows = [("* " if gid == cur else "  ") + f"{gid}  {title}"
+            for gid, title in games] or ["  " + _SWITCHER_EMPTY]
+    lay = _switcher_layout(h, w, len(rows),
+                           max(len(r) for r in rows), cursor)
+    y0, x0, bh, bw = lay["y"], lay["x"], lay["h"], lay["w"]
+
+    def put(row, col, text, attr=curses.A_NORMAL):
+        if row < 0 or row >= h or col < x0:
+            return
+        room = max(0, min(bw - (col - x0), w - col - 1))
+        if room <= 0:
+            return
+        try:
+            stdscr.addstr(row, col, text[:room], attr)
+        except curses.error:
+            pass
+
+    # Frame + a cleared interior (the tab underneath is already painted).
+    for r in range(y0, y0 + bh):
+        if r in (y0, y0 + bh - 1):
+            put(r, x0, "+" + "-" * max(0, bw - 2) + "+",
+                curses.color_pair(PAIR_TITLE) | curses.A_BOLD)
+        else:
+            put(r, x0, "|" + " " * max(0, bw - 2) + "|")
+    put(y0 + 1, x0 + 2, _SWITCHER_TITLE, curses.A_BOLD)
+    if games:
+        count = f"{cursor + 1}/{len(games)}"
+        put(y0 + 1, max(x0 + 2, x0 + bw - 2 - len(count)), count, curses.A_DIM)
+    put(y0 + 2, x0 + 1, "-" * max(0, bw - 2), curses.A_DIM)
+    for i in range(lay["view_h"]):
+        idx = lay["top"] + i
+        if idx >= len(rows):
+            break
+        sel = bool(games) and idx == cursor
+        put(y0 + 3 + i, x0 + 1, rows[idx].ljust(max(0, bw - 2)),
+            curses.A_REVERSE if sel else
+            (curses.A_NORMAL if games else curses.A_DIM))
+    # On a grid too short for both, the LIST wins: it is the thing the
+    # operator is choosing from, and the chord is already in their hands.
+    if bh >= 6:
+        put(y0 + bh - 2, x0 + 2, _SWITCHER_HINT,
+            curses.color_pair(PAIR_TITLE) | curses.A_BOLD)
+
+
 # === TAB SWITCH ===
 
 def _switch_tab(state, target_tab):
@@ -8001,6 +8463,8 @@ def _draw(stdscr, state):
         draw_tools(stdscr, state)
     _draw_footer(stdscr, h, w, state["current_tab"], state["status"],
                  state.get("tools_mode", "menu"))
+    # GAME SWITCHER overlay LAST — it is modal, so it draws over the tab.
+    _draw_switcher(stdscr, state)
     stdscr.refresh()
 
 
@@ -8094,8 +8558,11 @@ def main(stdscr):
         "matrix": matrix,
         "cursor_idx": 0,
         # Default tab: TOOLS when no game resolved (the install front door,
-        # dossier §3), otherwise TELEMETRY.
-        "current_tab": CURRENT_TAB_TOOLS if ETK_NO_TARGET else CURRENT_TAB_TELEMETRY,
+        # dossier §3), otherwise TELEMETRY. _start_tab lets the GAME SWITCHER's
+        # re-exec land the operator back where they were; absent or invalid, the
+        # ETK_NO_TARGET rule stands exactly as before.
+        "current_tab": _start_tab(
+            CURRENT_TAB_TOOLS if ETK_NO_TARGET else CURRENT_TAB_TELEMETRY),
         # Plain-language footer notice when the sweeps just did work — the
         # operator sees which discs became ES-ready (restart ES / reboot to
         # list them) and which titles picked up the golden tune (detail
@@ -8137,6 +8604,10 @@ def main(stdscr):
         "paddock_index_date": "",
         "paddock_chipset": "",
         "paddock_driver_note": "",
+        # GAME SWITCHER overlay model, or None when closed. Built by
+        # _switcher_open on the SELECT press and dropped on the release, so
+        # the installed-games scan lives exactly as long as the menu does.
+        "switcher": None,
     }
 
     running = True
@@ -8151,9 +8622,15 @@ def main(stdscr):
             ch = -1
 
         if ch != -1:
+            # GAME SWITCHER is a PAD chord and can only be opened by the pad,
+            # so no key needs to reach it. Any key dismisses instead: that
+            # swallows the keystroke (no tab-cycling behind the overlay) AND
+            # leaves a keyboard escape hatch if the pad drops out mid-chord.
+            if state.get("switcher") is not None:
+                state["switcher"] = None
             # Tab switching (keyboard) — intercepted before per-tab dispatch.
             # [/] now CYCLE through the TABS display order (3 tabs).
-            if ch == ord('['):
+            elif ch == ord('['):
                 _cycle_tab(state, -1)
             elif ch == ord(']'):
                 _cycle_tab(state, 1)
@@ -8180,6 +8657,21 @@ def main(stdscr):
                     if _t == EV_ABS and _c in (ABS_Z, ABS_RZ):
                         if state.get("tools_mode") == "trigcal":
                             _trigcal_axis(state, _c, _v)
+                        continue
+                    # GAME SWITCHER modal capture. Folded HERE, exactly like
+                    # the trigger axes above and for the same reason: a stick
+                    # sweep out-runs the 50ms frame clock, and one event per
+                    # frame would leave the selector chasing a queue. Only the
+                    # SELECT RELEASE escapes to the dispatch below; every other
+                    # event (L1/R1, D-pad, buttons) is swallowed here, so
+                    # nothing the operator pressed under the overlay can act
+                    # after it closes.
+                    if state.get("switcher") is not None:
+                        if _t == EV_ABS and _c == ABS_RY:
+                            _switcher_stick(state, _v, time.time())
+                        elif _t == EV_KEY and _c == BTN_SELECT and _v == 0:
+                            data = chunk
+                            break
                         continue
                     data = chunk
                     break
@@ -8214,6 +8706,18 @@ def main(stdscr):
                         state["_preview_proc"] = None
                         _restore_pitstop_window(state.pop("_preview_env", None) or _tools_env())
                     # swallow everything while the preview is on screen
+                # GAME SWITCHER: the release commits (or dismisses) and closes.
+                # Nothing else reaches here — the drain above swallowed it.
+                elif state.get("switcher") is not None:
+                    if etype == EV_KEY and code == BTN_SELECT and val == 0:
+                        _switcher_release(state)
+                # ...and the press opens it, on an eligible tab with no
+                # sub-screen in front. Above the tab cycle so a held SELECT
+                # owns the pad; when it is NOT eligible, SELECT falls through
+                # to per-tab dispatch, which ignores it exactly as before.
+                elif (etype == EV_KEY and val == 1 and code == BTN_SELECT
+                      and _switcher_eligible(state)):
+                    _switcher_open(state)
                 # Tab switching (gamepad) — L1/R1 cycle through the tabs.
                 elif etype == EV_KEY and val == 1 and code == BTN_TL:
                     _cycle_tab(state, -1)
@@ -8223,6 +8727,12 @@ def main(stdscr):
                     verb = _dispatch_pad(state, etype, code, val)
                     if verb in ("quit", "save_exit"):
                         running = False
+
+        # GAME SWITCHER auto-repeat. Driven from the frame clock because
+        # evdev only emits on CHANGE: a stick held at full deflection is
+        # silent, so there is no event stream to repeat from.
+        if state.get("switcher") is not None:
+            _switcher_tick(state, time.time())
 
         # Execute a queued TOOLS long-operation (install / uninstall).
         # Runs here in the main loop so it has stdscr for the 'busy' frame;
