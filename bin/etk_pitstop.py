@@ -4902,10 +4902,14 @@ def _run_uninstall(game, notify):
     game_dirs = {RPCS3_GAME_DIR, _rpcs3_resolved(RPCS3_CFG_GAME_DIR, RPCS3_GAME_DIR)}
     exdata_dirs = {RPCS3_EXDATA_DIR,
                    _rpcs3_resolved(RPCS3_CFG_EXDATA_DIR, RPCS3_EXDATA_DIR)}
-    dir_targets = [os.path.join(g, tid) for g in sorted(game_dirs)] + [
-        os.path.join(RPCS3_RUNTIME_CACHE, tid),
-        os.path.join(RPCS3_HDD1_CACHE, f"{tid}_{tid}"),
-    ]
+    # RPCS3's own caches for this title, resolved by LISTING the roots rather
+    # than by guessing their names. The literal f"{tid}_{tid}" that used to sit
+    # here is the same wrong-path assumption the Shaders & Caches screen was
+    # rebuilt to remove: RPCS3 has keyed these by bare serial and by suffixed
+    # forms across versions, so an uninstall could leave the whole hdd1 cache
+    # of a game it claimed to have removed. One resolver, both callers.
+    dir_targets = [os.path.join(g, tid) for g in sorted(game_dirs)] + \
+        _cache_dirs_for_id(tid)
     file_targets = [game["psn"]]
     for ex in sorted(exdata_dirs):
         try:
@@ -5243,22 +5247,42 @@ def _du_kb(path):
         return 0
 
 
-def _du_mb(path):
-    """Dir size in MB, or None when the size is genuinely UNKNOWN.
+def _du_mb(*paths):
+    """Combined size of `paths` in MB, or None when it is genuinely UNKNOWN.
 
-    An ABSENT path is 0, not unknown: there is nothing there to free, and a "?"
-    would read as "the scan broke" when the truth is "already clean". Only a du
-    that ran and failed (or timed out) yields None -> the screen shows "?" and
-    still offers the action, because sizes here are advisory."""
-    if not os.path.isdir(path):
+    ONE `du -k -s a b c` for the whole set, not one per path: the caller may
+    hold every cache directory of a title, and a du-per-directory turns an
+    advisory number into an unbounded stall behind the spinner (each carries a
+    180 s timeout of its own). BusyBox du takes multiple operands and prints one
+    "<kb>\tpath" line each, so the batch costs exactly one process.
+
+    An ABSENT path contributes 0 and is dropped before the call: there is
+    nothing there to free, and a "?" would read as "the scan broke" when the
+    truth is "already clean". No paths at all is therefore 0, not None. Only a
+    du that ran and failed (or timed out) yields None -> the screen shows "?"
+    and still offers the action, because sizes here are advisory."""
+    live = [p for p in paths if os.path.isdir(p)]
+    if not live:
         return 0
     try:
-        r = subprocess.run(["du", "-k", "-s", path],
+        r = subprocess.run(["du", "-k", "-s"] + live,
                            capture_output=True, text=True, timeout=180)
-        parts = r.stdout.split()
-        if r.returncode != 0 or not parts:
+        if r.returncode != 0:
             return None
-        return int(parts[0]) // 1024
+        total = 0
+        seen = 0
+        for ln in r.stdout.splitlines():
+            parts = ln.split(None, 1)
+            if not parts:
+                continue
+            try:
+                total += int(parts[0])
+                seen += 1
+            except ValueError:
+                continue
+        # A short read means du skipped an operand; the number would understate
+        # the delete, and understating a delete is the one thing it must not do.
+        return total // 1024 if seen == len(live) else None
     except Exception:
         return None
 
@@ -5369,12 +5393,14 @@ def _scan_cache_model(state, _progress=None):
     model at None forever, and the screen then sat on "Scanning..." with no way
     back — a dead screen is worse than a "?" one.
 
-    Cost: THREE subprocesses, not N. The 0.8.6 scan ran `du` once per vaulted
-    game over a tree that has held ~175k files, which is what made the screen
-    read as hung. The vault numbers now come from the ONE vault_sweep porcelain
-    pass we already run (fresh+stale IS the honest shader byte total — it counts
-    shard-tree files and excludes Mesa bookkeeping and du block slack), and `du`
-    is spent only on the two RPCS3 cache roots the headline actions delete.
+    Cost: THREE subprocesses FIXED, whatever the vault holds — one batched `du`
+    for the two cache roots, one batched `du` for the current title's cache
+    directories, one vault_sweep porcelain pass. Worst case is therefore
+    2*180 s + 600 s of timeout, not a per-game multiple of it. The 0.8.6 scan
+    ran `du` once per vaulted game over a tree that has held ~175k files, which
+    is what made the screen read as hung; the vault numbers now come from the
+    porcelain pass we already run (fresh+stale IS the honest shader byte total —
+    it counts shard-tree files and excludes Mesa bookkeeping and du block slack).
 
     `_progress` (injected by _run_with_spinner) drives the on-screen bar; the
     cheap RPCS3-cache legs run FIRST so it moves before the slow vault pass."""
@@ -5395,12 +5421,10 @@ def _scan_cache_model(state, _progress=None):
             model["current_name"] = resolve_game_name(current)
         _prog(0.05)
 
-        model["cache_all_mb"] = _sum_mb(_du_mb(RPCS3_RUNTIME_CACHE),
-                                        _du_mb(RPCS3_HDD1_CACHE))
+        model["cache_all_mb"] = _du_mb(RPCS3_RUNTIME_CACHE, RPCS3_HDD1_CACHE)
         _prog(0.20)
         model["cache_cur_mb"] = (
-            None if not current
-            else _sum_mb(*[_du_mb(d) for d in _cache_dirs_for_id(current)]))
+            None if not current else _du_mb(*_cache_dirs_for_id(current)))
         _prog(0.35)
 
         stale_map, boundary_ok, sweep_reason = _sweep_porcelain()
@@ -5511,32 +5535,64 @@ def _cache_rows(model, width):
 def _cache_note(model):
     """The single advisory line under the vault status, or None.
 
-    A live emulator outranks everything else: it blocks every action here, so
-    the operator should read that before they pick one."""
+    Order is load-bearing. A FAILED SCAN is checked first because a blank model
+    also carries boundary_ok=False, so testing the boundary first reported every
+    broken scan as "sweep unavailable" — a wrong cause, and one that sends the
+    operator to re-run install.sh for a problem install.sh cannot fix. After
+    that a live emulator outranks the rest: it blocks every action here, so the
+    operator should read it before they pick one."""
+    if not model.get("scan_ok"):
+        return "Sizes unavailable - the actions still work."
     if model.get("rpcs3_running"):
         return "RPCS3 is running - actions are blocked."
     if not model.get("boundary_ok"):
         return _CACHE_SWEEP_NOTE.get(model.get("sweep_reason"),
                                      _CACHE_SWEEP_NOTE["error"])
-    if not model.get("scan_ok"):
-        return "Sizes unavailable - the actions still work."
     return None
 
 
-def _cache_status_lines(model):
-    """Pure: the compact vault status. Two lines, hard stop — this screen is
-    about the actions under it, and the 0.8.6 per-game bar graph is exactly what
-    pushed those actions off the bottom of the panel."""
+def _cache_status_lines(model, width, compact=False):
+    """Pure: the vault status, fitted to `width`.
+
+    Takes a width rather than leaning on put()'s clip. A clip turns a six-digit
+    figure into a plausible SMALLER one — "~1048576 MB" arriving as "~10485" is
+    a wrong number the operator cannot tell from a right one, which is worse
+    than dropping the detail. So each line has a ladder: full, then without the
+    parenthetical, then hard-truncated. Every figure carries its MB.
+
+    `compact` folds both totals onto ONE line. The screen needs that when an
+    advisory note is also on the panel: at 60x15 there is room for exactly three
+    lines above the actions, and dropping the all-games total to make space for
+    a note (which is what shipping priorities did) loses a number the operator
+    came here for."""
     cur = model.get("current")
+    n = model.get("n_games", 0)
+    cur_mb = _mb_txt(model.get("vault_cur_mb"))
+    all_mb = _mb_txt(model.get("vault_all_mb"))
+
+    def _fit(full, plain):
+        return full if len(full) <= width else (
+            plain if len(plain) <= width else plain[:max(0, width)])
+
+    if compact:
+        if not cur:
+            return [_fit(f"Vault : no game yet, all games {all_mb}",
+                         f"Vault all games : {all_mb}")]
+        return [_fit(f"Vault : {cur_mb} this game, {all_mb} all games",
+                     f"Vault : {cur_mb} / {all_mb}")]
+
     if cur:
-        first = (f"Vault {cur} : {_mb_txt(model.get('vault_cur_mb'))}"
-                 f"  ({_n_txt(model.get('fresh_cur_mb'))} fresh"
-                 f" + {_n_txt(model.get('stale_cur_mb'))} stale)")
+        first = _fit(
+            f"Vault {cur} : {cur_mb}"
+            f"  ({_n_txt(model.get('fresh_cur_mb'))} MB fresh,"
+            f" {_n_txt(model.get('stale_cur_mb'))} MB stale)",
+            f"Vault {cur} : {cur_mb}")
     else:
-        first = "Vault : no game resolved yet"
-    second = (f"Vault all games : {_mb_txt(model.get('vault_all_mb'))}"
-              f"  ({model.get('n_games', 0)} titles,"
-              f" {_n_txt(model.get('stale_all_mb'))} stale)")
+        first = _fit("Vault : no game resolved yet", "Vault : no game")
+    second = _fit(
+        f"Vault all games : {all_mb}"
+        f"  ({n} titles, {_n_txt(model.get('stale_all_mb'))} MB stale)",
+        f"Vault all games : {all_mb}")
     return [first, second]
 
 
@@ -5547,15 +5603,23 @@ def _cache_confirm(model, op, width):
     and stuttery early laps, and they have to be told that BEFORE the delete.
     The vault sentence is on every clear because "will this eat my banked
     shaders?" is the only question that actually matters here."""
+    # Every line stands ALONE — no sentence runs across two of them, and each
+    # is <= 55 columns (what the 60-wide panel gives a body line). That is what
+    # lets _cache_fit_lines drop a middle line on a short panel and still leave
+    # grammatical, true text behind. Narrower than the rig? _fit hard-clips, so
+    # a 30-column terminal degrades instead of raising.
+    def _fit(s):
+        return _cache_label(s, "", "", width)
+
     if op == "sweep":
         return ("SWEEP STALE VAULT SHADERS - CONFIRM", [
             _cache_label("Scope : all games", "",
                          f"({_mb_txt(model.get('stale_all_mb'))} stale)",
                          width),
-            "Deletes ONLY shaders left stale by the last",
-            "graphics-driver rebuild. Fresh banked shaders",
-            "are kept - replay re-banks anything lost.",
-            "Your RPCS3 caches are not touched."])
+            _fit("Deletes ONLY shaders a driver update left stale."),
+            _fit("Fresh banked shaders are kept."),
+            _fit("Replay re-banks anything lost."),
+            _fit("Your RPCS3 caches are not touched.")])
 
     if op == "clear_all":
         scope = _cache_label(
@@ -5569,10 +5633,30 @@ def _cache_confirm(model, op, width):
         whose = "this game"
     return ("CLEAR RPCS3 CACHES - CONFIRM", [
         scope,
-        "Deletes RPCS3's compiled PPU/SPU and shader cache",
-        f"for {whose}. Next launch rebuilds it: the first",
-        "load is slow and early laps may stutter.",
-        "Your banked ETK shader vault is NOT touched."])
+        _fit(f"Deletes RPCS3's PPU/SPU + shader cache for {whose}."),
+        _fit("Next launch rebuilds it - the first load is slow."),
+        _fit("Early laps may stutter while shaders recompile."),
+        _fit("Your banked ETK shader vault is NOT touched.")])
+
+
+def _cache_fit_lines(lines, room):
+    """Pure: `lines` reduced to `room` rows by dropping from the END OF THE
+    MIDDLE, outward-in.
+
+    The first line (scope + the size being deleted) and the LAST line (the
+    banked-vault promise / the "your RPCS3 caches are untouched" promise) are
+    MANDATED TRUTHS and are the last two things to go. Shedding from the tail —
+    the obvious implementation, and the one that shipped — drops the vault
+    sentence first, i.e. the single question this whole screen exists to answer.
+    Below two rows there is nothing honest left to say, so the head goes last."""
+    if room >= len(lines):
+        return list(lines)
+    if room <= 0:
+        return []
+    if room == 1:
+        return [lines[-1]]                    # the promise outlives the scope
+    keep_middle = room - 2
+    return [lines[0]] + list(lines[1:-1])[:max(0, keep_middle)] + [lines[-1]]
 
 
 def _cache_gate(rpcs3_alive, worker_alive):
@@ -5588,11 +5672,52 @@ def _cache_gate(rpcs3_alive, worker_alive):
     return None
 
 
+def _cache_selectable(state):
+    """How many cache rows the cursor may reach: what the last frame actually
+    DREW, falling back to the full set before the first frame. The draw stamps
+    it because only the draw knows the terminal height; input never sees one."""
+    n = state.get("cache_rows_drawn")
+    if not isinstance(n, int) or n < 1:
+        return len(_CACHE_ROWS)
+    return min(n, len(_CACHE_ROWS))
+
+
 def _cache_gate_live():
     """_cache_gate against the live rig. Never reimplements process matching:
     _rpcs3_pids() (the argv[0] + whole-token law) is the ONE matcher, and it is
     called UNFILTERED so an installer counts."""
     return _cache_gate(bool(_rpcs3_pids()), _worker_alive())
+
+
+def _cache_clear_verdict(op, gid, mb, removed, failed, leftover):
+    """Pure: (ok, [result lines]) for a finished clear.
+
+    A delete that deleted NOTHING is a failure, whatever `du` said beforehand.
+    The live shape of that is a cache root someone has replaced with a symlink:
+    shutil.rmtree refuses it outright, and the shipped code still reported a
+    clean "CACHE CLEARED". So: nothing removed while a target is still standing
+    reads as failure; a partial removal says so on its own line rather than
+    hiding behind an accurate-but-misleading byte count.
+
+    Four lines, because the result screen's band is four rows at 60x15."""
+    scope = "all games" if op == "clear_all" else (gid or "this game")
+    if removed == 0 and leftover:
+        return False, [
+            "Could not clear - see the ETK log.",
+            "",
+            "Nothing was deleted. The cache folder may be a",
+            "link, or read-only."]
+    if failed:
+        return True, [
+            f"PARTLY CLEARED RPCS3 caches ({scope})",
+            f"  freed : {mb} MB in {removed} folder(s)",
+            f"  {failed} folder(s) would not delete - see the ETK log",
+            "  your banked shader vault was not touched"]
+    return True, [
+        f"CLEARED RPCS3 caches ({scope})",
+        f"  freed : {mb} MB in {removed} folder(s)",
+        "  next launch rebuilds them - first load is slow",
+        "  your banked shader vault was not touched"]
 
 
 def _cache_busy_result():
@@ -5619,8 +5744,13 @@ def _cache_layout(top, bottom, n_actions, extras):
     """Pure row assignment for the body band `top`..`bottom`, INCLUSIVE.
 
     `extras` is the optional furniture in DISPLAY order as (key, priority);
-    lower priority survives a short band. The action rows are never shed — they
-    ARE the screen.
+    lower priority survives a short band. Furniture is shed before any action
+    row, so the actions survive down to a band of exactly N rows — h >= 12 for
+    this screen's four, i.e. every geometry the rig can present (the spec floor
+    is 15). Below that the action list IS clipped, and the caller must clamp its
+    cursor to len(actions): a control that is selectable but not drawn is
+    precisely the defect this screen was rebuilt to remove, and it would
+    otherwise reappear one size down.
 
     Why a budget at all: _draw() paints _draw_footer AFTER the tab body, and the
     footer owns h-3 (its rule) and h-2 (its hint). Anything the body flows onto
@@ -5660,15 +5790,21 @@ def _draw_cache_screen(stdscr, state, model, y, h, w):
 
     # Labels start at col 6 and put() clips at w-col-1, so that is the budget.
     rows = _cache_rows(model, max(8, w - 7))
-    status = _cache_status_lines(model)
     note = _cache_note(model)
+    # A note and BOTH status lines do not fit above the actions on the 60x15
+    # panel. Rather than shed one of them (the all-games total is asked for, the
+    # note explains why an action will refuse), fold the two totals onto one
+    # line and keep all three facts on screen.
+    spare = (h - 4) - y + 1 - len(rows)
+    compact = note is not None and spare < 4
+    status = _cache_status_lines(model, max(8, w - 5), compact=compact)
     # Display order, with the priority that decides what a short panel keeps.
-    # Title first, then the CURRENT game's numbers, then the advisory (a live
-    # emulator outranks the all-games total), and only then decoration.
-    extras = [("title", 0), ("rule", 5), ("cur", 1), ("all", 3),
-              ("note", 2), ("gap", 4)]
+    extras = [("title", 0), ("rule", 5), ("cur", 1), ("note", 2),
+              ("all", 3), ("gap", 4)]
     if note is None:
         extras = [e for e in extras if e[0] != "note"]
+    if len(status) < 2:
+        extras = [e for e in extras if e[0] != "all"]
     slot, action_rows = _cache_layout(y, h - 4, len(rows), extras)
 
     if "title" in slot:
@@ -5677,11 +5813,16 @@ def _draw_cache_screen(stdscr, state, model, y, h, w):
         put(slot["rule"], 2, "-" * (w - 4), curses.A_DIM)
     if "cur" in slot:
         put(slot["cur"], 4, status[0], curses.A_DIM)
-    if "all" in slot:
+    if "all" in slot and len(status) > 1:
         put(slot["all"], 4, status[1], curses.A_DIM)
     if "note" in slot and note:
         put(slot["note"], 4, note, curses.color_pair(PAIR_RECOV))
 
+    # How many controls the operator can actually SEE. _tools_move clamps the
+    # cursor to this, so a row shed by a short panel can never be selected —
+    # an invisible-but-selectable control is the defect this screen was rebuilt
+    # to remove, and it would otherwise come straight back one size down.
+    state["cache_rows_drawn"] = len(action_rows)
     cursor = state.get("tools_cursor", 0)
     for i, row in enumerate(action_rows):
         item = rows[i]
@@ -5715,15 +5856,18 @@ def _draw_cache_confirm(stdscr, state, y, h, w):
     # thing that must never be shed is how to say no.
     extras = [("title", 0), ("rule", 3), ("gap", 2)]
     slot, body_rows = _cache_layout(y, h - 5, len(body), extras)
+    # Shed from the middle, not the tail: the last line is the vault promise.
+    body = _cache_fit_lines(body, len(body_rows))
     if "title" in slot:
         put(slot["title"], 2, title, curses.A_BOLD)
     if "rule" in slot:
         put(slot["rule"], 2, "-" * (w - 4), curses.A_DIM)
-    for i, row in enumerate(body_rows):
+    for i, row in enumerate(body_rows[:len(body)]):
         put(row, 4, body[i], curses.A_BOLD if i == 0 else curses.A_NORMAL)
     # Sits under the text it belongs to, but never past the last usable row —
     # on the 60x15 panel that IS h-4, on a taller one it stays with the prose.
-    put(min(h - 4, body_rows[-1] + 2) if body_rows else h - 4, 4,
+    written = body_rows[:len(body)]
+    put(min(h - 4, written[-1] + 2) if written else h - 4, 4,
         "B: Confirm     A: Cancel", curses.color_pair(1) | curses.A_BOLD)
 
 
@@ -5775,16 +5919,26 @@ def _run_cache_op(op, gid, notify):
                 return False, ["No game is resolved, so there is no",
                                "per-game cache to clear."]
             targets = _cache_dirs_for_id(gid)
-        freed = removed = 0
+        freed = removed = failed = 0
         for t in targets:
             if not os.path.isdir(t):
                 continue
-            freed += _du_kb(t)
+            size_kb = _du_kb(t)
             try:
                 shutil.rmtree(t)
-                removed += 1
             except Exception as e:
-                _log(f"clear_cache rmtree {t}: {e}")
+                failed += 1
+                _log(f"{op} rmtree {t}: {e}")
+                continue
+            # Counted only AFTER the delete actually happened. Measuring first
+            # and reporting unconditionally is how a cache root that is a
+            # SYMLINK (rmtree refuses outright) reported "CACHE CLEARED / 0 MB
+            # freed" with every byte still on disk.
+            freed += size_kb
+            removed += 1
+        # Sampled BEFORE the roots go back, or an all-clear would always look
+        # like it left something behind.
+        leftover = [t for t in targets if os.path.isdir(t)]
         if op == "clear_all":
             # Put the two cache ROOTS back, unconditionally — including when
             # they were already absent. RPCS3 would recreate them itself, but
@@ -5794,15 +5948,18 @@ def _run_cache_op(op, gid, notify):
                 try:
                     os.makedirs(t, exist_ok=True)
                 except Exception as e:
-                    _log(f"clear_cache mkdir {t}: {e}")
-        mb = freed // 1024
-        notify.post("CACHE CLEARED",
-                    f"{mb} MB freed - rebuilds on next launch", timeout=10000)
-        return True, [
-            f"CLEARED RPCS3 caches ({'all games' if op == 'clear_all' else gid})",
-            f"  freed : {mb} MB in {removed} folder(s)",
-            "  next launch rebuilds them - first load is slow",
-            "  your banked shader vault was not touched"]
+                    _log(f"{op} mkdir {t}: {e}")
+        ok, lines = _cache_clear_verdict(op, gid, freed // 1024, removed,
+                                         failed, bool(leftover))
+        if ok:
+            notify.post("CACHE CLEARED",
+                        f"{freed // 1024} MB freed - rebuilds on next launch",
+                        timeout=10000)
+        else:
+            notify.post("NOT CLEARED",
+                        "could not remove the cache - see the ETK log",
+                        timeout=10000)
+        return ok, lines
 
     return False, [f"unknown cache op: {op}"]
 
@@ -5950,14 +6107,22 @@ def draw_tools(stdscr, state):
             put(y, 6, f"{i + 1}. {label}",
                 curses.A_REVERSE if sel else curses.A_NORMAL)
             y += 1
-        # On-select help for the entries that need context (install /
-        # screenshot / firmware), ANCHORED to the footer from below
-        # (h-6/h-5, one blank row above the h-3 rule) — never flowed
-        # downward, so it cannot spill beneath the button-label footer
-        # whatever the terminal height.
+        # On-select help for the entries that need context, anchored to the
+        # footer from below (h-6/h-5, one blank row above the h-3 rule).
+        #
+        # min(), NOT max(). max() flowed the band DOWNWARD past its anchor
+        # whenever the menu itself reached that far — with eight entries it
+        # landed on h-3/h-2 at 60x18..60x20 (drawn, then erased by the footer
+        # _draw() paints after us) and entirely off-screen at 60x15. min()
+        # clamps it to the anchor instead; `room` then suppresses the band
+        # outright when the list leaves no space, because two help lines that
+        # overwrite two menu entries are not an improvement on no help lines.
         cur = state.get("tools_cursor", 0)
-        ty = max(y + 1, h - 6)
-        if cur == _TOOLS_CACHE_IDX:
+        ty = min(y + 1, h - 6)
+        room = (ty >= y) and (ty + 1 <= h - 4)
+        if not room:
+            pass
+        elif cur == _TOOLS_CACHE_IDX:
             put(ty, 4, "Free up space: clear RPCS3's rebuildable caches,",
                 curses.A_DIM)
             put(ty + 1, 4, "or sweep shaders a driver update left stale.",
@@ -6498,7 +6663,8 @@ def _tools_move(state, delta):
         if n:
             state["tools_cursor"] = (state.get("tools_cursor", 0) + delta) % n
     elif mode == "cache":
-        state["tools_cursor"] = (state.get("tools_cursor", 0) + delta) % len(_CACHE_ROWS)
+        state["tools_cursor"] = ((state.get("tools_cursor", 0) + delta)
+                                 % _cache_selectable(state))
     elif mode == "trigcal":
         state["tools_cursor"] = (state.get("tools_cursor", 0) + delta) % len(_TRIGCAL_ROWS)
 
@@ -6608,7 +6774,7 @@ def _tools_select(state):
 
     elif mode == "cache":
         model = state.get("cache_model") or _cache_model_blank()
-        idx = state.get("tools_cursor", 0) % len(_CACHE_ROWS)
+        idx = state.get("tools_cursor", 0) % _cache_selectable(state)
         # Width only fits the LABEL, and select reads key/enabled/why — so pass
         # a width wide enough to never truncate rather than plumbing the
         # terminal size into an input handler that has no use for it.

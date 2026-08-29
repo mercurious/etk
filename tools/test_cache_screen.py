@@ -51,6 +51,7 @@ No rig, no terminal, no emulator, no root.
 import curses
 import importlib.util
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -119,8 +120,10 @@ def suite(name):
 
 
 # ==========================================================
-# A fake screen that raises where curses raises: writing outside the window, or
-# past the right edge. Nothing else about curses matters to these functions.
+# A fake screen that raises where curses raises: outside the window, past the
+# right edge, or ON THE BOTTOM-RIGHT CELL -- writing there advances the cursor
+# off the window and real curses returns ERR even though the glyph lands. That
+# last case is why every put() in this file clips at w-col-1 rather than w-col.
 class FakeScr:
     def __init__(self, h, w):
         self.h, self.w, self.writes = h, w, []
@@ -131,7 +134,22 @@ class FakeScr:
     def addstr(self, row, col, text, attr=0):
         if row < 0 or row >= self.h or col < 0 or col + len(text) > self.w:
             raise curses.error("addwstr() returned ERR")
+        if row == self.h - 1 and col + len(text) == self.w:
+            raise curses.error("addwstr() returned ERR")   # bottom-right cell
         self.writes.append((row, col, text))
+
+    # The TOOLS menu draws real chrome; these are the no-op parts of it.
+    def attron(self, a):
+        pass
+
+    def attroff(self, a):
+        pass
+
+    def move(self, r, c):
+        pass
+
+    def clrtoeol(self):
+        pass
 
 
 def geom_model(n_games=8, current="BLUS30000", running=False):
@@ -200,7 +218,7 @@ def _geom():
           [r for r, _, _ in scr.writes if r > 15 - 4], [])
 
     for op in ("clear_cur", "clear_all", "sweep", "clear_cache", "delete_vault"):
-        for h, w in ((15, 60), (22, 60)):
+        for h, w in ((15, 60), (13, 60), (22, 60)):
             scr = FakeScr(h, w)
             _draw_confirm(scr, {"cache_model": geom_model(), "cache_pending": op,
                                 "shaders_model": geom_model(),
@@ -208,6 +226,43 @@ def _geom():
                                 "shaders_scope_all": False}, 5, h, w)
             check(f"confirm {op} {w}x{h}: nothing on the footer rows",
                   [r for r, _, _ in scr.writes if r > h - 4], [])
+            if op in ("clear_cur", "clear_all") and hasattr(pit, "_cache_confirm"):
+                body = [t for r, c, t in scr.writes if c == 4]
+                check_true(f"confirm {op} {w}x{h}: the vault promise survives",
+                           any("vault is NOT touched" in t for t in body),
+                           "shedding from the tail drops the only line that "
+                           "answers the question the operator actually has")
+
+    # THE MENU'S on-select help band. It anchors from the footer, and anchoring
+    # with max() flowed it DOWNWARD onto h-3/h-2 (drawn, then erased) whenever
+    # the 8-item list reached that far -- the same defect class as the graph.
+    # Note: the menu LIST itself still overflows below h=19 (8 fixed rows from
+    # row 8); that is pre-existing and tracked separately, so the strict
+    # whole-screen assertion runs only where the list fits.
+    _HELP_MARKERS = ("Free up space", "Staging drop folder", "Hold L1 + L2",
+                     "always / in-game", "R1 + DPAD-Down", "Turn it off",
+                     "Firmware drop folder", "Checks GitHub", "in place -",
+                     "or sweep shaders")
+    for h, w in ((15, 60), (18, 60), (19, 60), (20, 60), (22, 60), (30, 100)):
+        for cur in range(len(pit._TOOLS_MENU)):
+            scr = FakeScr(h, w)
+            pit.draw_tools(scr, {"tools_mode": "menu", "tools_cursor": cur,
+                                 "gamepad_status": ""})
+            help_rows = [r for r, c, t in scr.writes
+                         if c == 4 and any(m in t for m in _HELP_MARKERS)]
+            check(f"menu help {w}x{h} cur={cur}: never on the footer rows",
+                  [r for r in help_rows if r > h - 4], [])
+            # Menu entries are the "N. label" writes; the install/firmware help
+            # also writes a bare path at col 6, so match the numbering.
+            item_rows = {r for r, c, t in scr.writes
+                         if c == 6 and re.match(r"^\d+\. ", t)}
+            check(f"menu help {w}x{h} cur={cur}: never over a menu entry",
+                  sorted(set(help_rows) & item_rows), [])
+            if h >= 19:                      # the whole list fits; be strict
+                check(f"menu {w}x{h} cur={cur}: nothing lands on the footer rows",
+                      [r for r, _, _ in scr.writes if r > h - 4], [])
+                check(f"menu {w}x{h} cur={cur}: every entry is drawn",
+                      len(item_rows), len(pit._TOOLS_MENU))
 
     if hasattr(pit, "_cache_layout"):
         # The budget itself: furniture is shed, controls never are.
@@ -268,17 +323,23 @@ def _rows():
                all(r["enabled"] for r in rows[:3]))
 
     # A sweep with no engine / no boundary is genuinely unavailable.
+    whys = {}
     for reason in ("no_boundary", "engine", "error"):
         bad = dict(m, boundary_ok=False, sweep_reason=reason)
         r = pit._cache_rows(bad, 60)[2]
+        whys[reason] = tuple(r["why"])
         check(f"sweep unavailable ({reason}): row disabled", r["enabled"], False)
-        check_true(f"sweep unavailable ({reason}): reason-specific help",
-                   bool(r["why"]) and r["why"] != pit._cache_rows(
-                       dict(m, boundary_ok=False, sweep_reason="engine"),
-                       60)[2]["why"] or reason == "engine",
-                   "each reason needs a different operator fix")
+        check_true(f"sweep unavailable ({reason}): explains itself",
+                   bool(r["why"]))
         check_true(f"sweep unavailable ({reason}): clears stay live",
                    all(x["enabled"] for x in pit._cache_rows(bad, 60)[:2]))
+    check("each unavailable reason gives a DIFFERENT fix",
+          len(set(whys.values())), 3)
+    check_true("a missing engine sends the operator to install.sh",
+               any("install.sh" in ln for ln in whys["engine"]))
+    check_true("an absent boundary is NOT reported as a fault",
+               any("Nothing is stale yet" in ln for ln in whys["no_boundary"]),
+               "telling them to reinstall for a problem install.sh cannot fix")
 
     # Narrow panels: clip, never raise, never overflow the budget.
     for width in (80, 60, 53, 40, 24, 12, 6, 1, 0):
@@ -295,20 +356,60 @@ def _rows():
     check("...and the elided label uses its whole budget",
           len(pit._cache_label("Clear RPCS3 caches - ", "A" * 90,
                                "(~120 MB)", 40)), 40)
-    check("status block is two compact lines",
-          len(pit._cache_status_lines(m)), 2)
+    st = pit._cache_status_lines(m, 55)
+    check("status block is two compact lines", len(st), 2)
     check_true("status names the current vault and its split",
-               "NPEA00050" not in pit._cache_status_lines(m)[0]
-               and "512 fresh" in pit._cache_status_lines(m)[0])
-    check_true("status names the all-games total",
-               "1024 MB" in pit._cache_status_lines(m)[1])
+               "BLUS30000" in st[0] and "512 MB fresh" in st[0]
+               and "16 MB stale" in st[0])
+    check_true("status carries units on every figure",
+               st[0].count("MB") >= 3 and "MB" in st[1],
+               "'512 fresh' next to '~528 MB' reads as a second unit")
+    check_true("status names the all-games total and its stale share",
+               "~1024 MB" in st[1] and "468 MB stale" in st[1])
     check_true("no-target status does not invent a vault",
-               "no game resolved" in pit._cache_status_lines(nt)[0])
+               "no game resolved" in pit._cache_status_lines(nt, 55)[0])
+    check("compact status folds both totals onto one line",
+          len(pit._cache_status_lines(m, 55, compact=True)), 1)
+    check_true("compact status still carries BOTH totals",
+               "~528 MB" in pit._cache_status_lines(m, 55, compact=True)[0]
+               and "~1024 MB" in pit._cache_status_lines(m, 55, compact=True)[0])
+    # A CLIP would turn a six-digit figure into a plausible smaller one; the
+    # ladder has to drop the detail instead of corrupting the number.
+    big = dict(m, vault_cur_mb=1048576, vault_all_mb=2097152,
+               fresh_cur_mb=1048560, stale_cur_mb=16)
+    for width in (55, 40, 30, 20, 10, 4, 1, 0):
+        for compact in (False, True):
+            lines = pit._cache_status_lines(big, width, compact=compact)
+            check(f"status width {width} compact={compact}: fits its budget",
+                  [ln for ln in lines if len(ln) > max(width, 0)], [])
+        full = pit._cache_status_lines(big, width)
+        if width >= 30:
+            check_true(f"status width {width}: the total is never truncated",
+                       "~1048576 MB" in full[0] and "~2097152 MB" in full[1],
+                       "a clipped MB figure is a WRONG number, not a short one")
     check_true("every user-facing string is plain ASCII",
                all(s.isascii() for r in pit._cache_rows(m, 60)
                    for s in [r["label"]] + list(r["why"]))
-               and all(s.isascii() for s in pit._cache_status_lines(m)),
+               and all(s.isascii() for s in pit._cache_status_lines(m, 55)),
                "Pitstop never calls locale.setlocale")
+
+    # The note that sits between the status and the actions. Order matters: a
+    # blank model also carries boundary_ok=False, so a boundary-first test
+    # reported every broken scan as "sweep unavailable" -- a wrong cause that
+    # sends the operator to re-run install.sh for something it cannot fix.
+    check("a failed scan names the SCAN, not the sweep",
+          pit._cache_note(pit._cache_model_blank()),
+          "Sizes unavailable - the actions still work.")
+    check("a live emulator outranks a missing boundary",
+          pit._cache_note(dict(m, scan_ok=True, rpcs3_running=True,
+                               boundary_ok=False)),
+          "RPCS3 is running - actions are blocked.")
+    check_true("a good scan with no boundary names the boundary",
+               "Sweep" in pit._cache_note(dict(m, scan_ok=True,
+                                               rpcs3_running=False,
+                                               boundary_ok=False,
+                                               sweep_reason="engine")))
+    check("a healthy model needs no note", pit._cache_note(m), None)
 
 
 # ==========================================================
@@ -344,10 +445,31 @@ def _say():
     unk = dict(m, cache_cur_mb=None)
     check_true("an unknown size still confirms honestly",
                "~? MB" in " ".join(pit._cache_confirm(unk, "clear_cur", 55)[1]))
-    for width in (55, 40, 20, 4):
-        _t, b = pit._cache_confirm(m, "clear_cur", width)
-        check(f"confirm width {width}: first line fits its budget",
-              len(b[0]) <= width, True)
+    for width in (55, 40, 20, 4, 1, 0):
+        for op in ("clear_cur", "clear_all", "sweep"):
+            _t, b = pit._cache_confirm(m, op, width)
+            check(f"confirm {op} width {width}: EVERY line fits its budget",
+                  [ln for ln in b if len(ln) > max(width, 0)], [])
+
+    # Shedding on a panel too short for the whole confirm. The mandated truths
+    # are the scope (line 0) and the promise (last line); dropping from the
+    # tail -- the obvious implementation -- loses the promise first.
+    for op in ("clear_cur", "clear_all", "sweep"):
+        _t, b = pit._cache_confirm(m, op, 55)
+        for room in range(len(b), 0, -1):
+            fit = pit._cache_fit_lines(b, room)
+            check(f"fit {op} room={room}: exactly {room} lines", len(fit), room)
+            check_true(f"fit {op} room={room}: the promise survives",
+                       fit[-1] == b[-1],
+                       "the last line is the only one that answers "
+                       "'will this eat my banked shaders?'")
+            if room >= 2:
+                check(f"fit {op} room={room}: the scope survives", fit[0], b[0])
+            check_true(f"fit {op} room={room}: keeps source order",
+                       [b.index(ln) for ln in fit]
+                       == sorted(b.index(ln) for ln in fit))
+    check("fit below one line yields nothing rather than raising",
+          pit._cache_fit_lines(["a", "b"], 0), [])
 
 
 # ==========================================================
@@ -425,6 +547,13 @@ def _paths():
     def build():
         shutil.rmtree(RUNTIME_CACHE, ignore_errors=True)
         shutil.rmtree(HDD1_CACHE, ignore_errors=True)
+        # The banked vault sits under a DIFFERENT root and must survive both
+        # clears untouched -- that is the promise printed on the confirm.
+        for gid in ("NPEA00050", "BLUS31156"):
+            d = os.path.join(VAULT, gid, "shaders", "a1")
+            os.makedirs(d, exist_ok=True)
+            with open(os.path.join(d, "shader.bin"), "w") as f:
+                f.write("banked" * 512)
         # RPCS3 has keyed these by bare serial and by "<serial>_<suffix>";
         # 'NPEA00050x' is the trap a bare prefix match would fall into.
         for root, names in ((RUNTIME_CACHE, ["NPEA00050", "BLUS31156",
@@ -449,6 +578,20 @@ def _paths():
     check("absent roots do not raise",
           pit._cache_dirs_for_id("NPEA00050",
                                  roots=[os.path.join(FIX, "nope")]), [])
+    # Garbage in the id must never widen the match. These are the shapes a
+    # broken .psn, a hand-edited last_played_id.txt or an empty env can hand us.
+    for junk in ("", ".", "..", "/", "*", "?", "NPEA*", "NPEA0005",
+                 "NPEA00050/../BLUS31156", "../BLUS31156", "BLUS31156\n",
+                 " NPEA00050", "NPEA00050 ", "npea00050",
+                 "\x00", "-", "_"):
+        hit = pit._cache_dirs_for_id(junk)
+        stray = [p for p in hit
+                 if os.path.basename(p) not in ("NPEA00050", "NPEA00050-disc",
+                                                "NPEA00050_NPEA00050")]
+        check(f"gid fuzz {junk!r}: selects no foreign directory", stray, [])
+        check_true(f"gid fuzz {junk!r}: stays inside the roots",
+                   all(os.path.dirname(p) in (RUNTIME_CACHE, HDD1_CACHE)
+                       for p in hit))
 
     class Stub:
         def __init__(self):
@@ -456,6 +599,12 @@ def _paths():
 
         def post(self, s, b="", **kw):
             self.posts.append((s, b))
+
+    # The banked vault is the asset this whole screen promises not to touch.
+    # Pin it: the promise is in the confirm text, so it has to be in the code.
+    vault_before = sorted(
+        os.path.join(dp, f)
+        for dp, _dn, fn in os.walk(VAULT) for f in fn)
 
     n = Stub()
     ok, lines = pit._run_cache_op("clear_cur", "NPEA00050", n)
@@ -479,6 +628,13 @@ def _paths():
     check_true("the result says the vault survived",
                any("vault was not touched" in ln for ln in lines))
 
+    def vault_now():
+        return sorted(os.path.join(dp, f)
+                      for dp, _dn, fn in os.walk(VAULT) for f in fn)
+
+    check("per-game clear left the banked VAULT byte-for-byte intact",
+          vault_now(), vault_before)
+
     n2 = Stub()
     ok, _ = pit._run_cache_op("clear_all", "NPEA00050", n2)
     check("all-games clear succeeds", ok, True)
@@ -488,6 +644,68 @@ def _paths():
     check("all-games clear RECREATED the two roots",
           [os.path.isdir(RUNTIME_CACHE), os.path.isdir(HDD1_CACHE)],
           [True, True])
+    check("all-games clear left the banked VAULT intact too",
+          vault_now(), vault_before)
+
+    # THE FALSE SUCCESS. A cache root replaced by a symlink cannot be rmtree'd
+    # (shutil refuses outright), and measuring `freed` BEFORE the delete then
+    # reporting it unconditionally produced "CACHE CLEARED / 0 MB freed" with
+    # every byte still on disk. A delete that deleted nothing is a failure.
+    build()
+    real = os.path.join(FIX, "elsewhere")
+    os.makedirs(os.path.join(real, "keepme"), exist_ok=True)
+    with open(os.path.join(real, "keepme", "obj"), "w") as f:
+        f.write("x" * 4096)
+    shutil.rmtree(RUNTIME_CACHE, ignore_errors=True)
+    shutil.rmtree(HDD1_CACHE, ignore_errors=True)
+    os.symlink(real, RUNTIME_CACHE)
+    os.symlink(real, HDD1_CACHE)
+    n3 = Stub()
+    ok, lines = pit._run_cache_op("clear_all", "NPEA00050", n3)
+    check("a clear that removed NOTHING reports failure", ok, False)
+    check_true("...and says so in plain language",
+               any("Could not clear" in ln for ln in lines))
+    check_true("...and toasts NOT CLEARED, not CLEARED",
+               any(s == "NOT CLEARED" for s, _ in n3.posts)
+               and not any(s == "CACHE CLEARED" for s, _ in n3.posts))
+    check("...and the symlink target is untouched",
+          os.path.exists(os.path.join(real, "keepme", "obj")), True)
+    os.remove(RUNTIME_CACHE)
+    os.remove(HDD1_CACHE)
+
+    # Partial: one root real, one symlinked. That IS progress, so it succeeds --
+    # but it must not hide the half that would not go.
+    build()
+    shutil.rmtree(HDD1_CACHE, ignore_errors=True)
+    os.symlink(real, HDD1_CACHE)
+    n4 = Stub()
+    ok, lines = pit._run_cache_op("clear_all", "NPEA00050", n4)
+    check("a partial clear still succeeds", ok, True)
+    check_true("...but names the folders that would not delete",
+               any("would not delete" in ln for ln in lines))
+    check_true("...and still keeps the vault promise on screen",
+               any("vault was not touched" in ln for ln in lines))
+    check("...and the real root really was emptied",
+          sorted(os.listdir(RUNTIME_CACHE)), [])
+    os.remove(HDD1_CACHE)
+
+    # The verdict builder on its own, since it is what decides ok/not-ok.
+    check("verdict: nothing removed and something left = failure",
+          pit._cache_clear_verdict("clear_all", None, 0, 0, 2, True)[0], False)
+    check("verdict: nothing removed and nothing left = success",
+          pit._cache_clear_verdict("clear_all", None, 0, 0, 0, False)[0], True)
+    check("verdict: partial = success",
+          pit._cache_clear_verdict("clear_cur", "NPEA00050", 5, 1, 1, True)[0],
+          True)
+    for args in (("clear_all", None, 0, 0, 2, True),
+                 ("clear_all", None, 0, 0, 0, False),
+                 ("clear_cur", "NPEA00050", 5, 1, 1, True),
+                 ("clear_cur", "NPEA00050", 9, 3, 0, False)):
+        v = pit._cache_clear_verdict(*args)[1]
+        check(f"verdict {args[0]}/{args[3]}/{args[4]}: fits the 4-row band",
+              len(v) <= 4, True)
+        check_true(f"verdict {args[0]}/{args[3]}/{args[4]}: plain ASCII",
+                   all(s.isascii() for s in v))
 
     # Nothing cached, no roots at all: sizes read 0 and the action is a no-op,
     # never an exception and never a "?" (there is genuinely nothing there).
@@ -495,10 +713,39 @@ def _paths():
     shutil.rmtree(HDD1_CACHE, ignore_errors=True)
     check("missing cache dirs size as 0, not unknown",
           pit._du_mb(RUNTIME_CACHE), 0)
-    check("a du that cannot run reads as unknown",
+    check("a missing path deeper down is also 0",
           pit._du_mb(os.path.join(FIX, "nope", "deeper")), 0)
+    check("no paths at all is 0", pit._du_mb(), 0)
+    # THE None PATH, actually exercised: du RAN and failed. Substituting a
+    # stub `du` on PATH is the only way to reach it without a broken rig, and
+    # an unreached branch is an untested branch.
+    os.makedirs(RUNTIME_CACHE, exist_ok=True)
+    stub_bin = os.path.join(FIX, "stubbin")
+    os.makedirs(stub_bin, exist_ok=True)
+    real_path = os.environ["PATH"]
+    try:
+        with open(os.path.join(stub_bin, "du"), "w") as f:
+            f.write("#!/bin/sh\necho 'du: cannot read' >&2\nexit 1\n")
+        os.chmod(os.path.join(stub_bin, "du"), 0o755)
+        os.environ["PATH"] = stub_bin + os.pathsep + real_path
+        check("a du that RAN and FAILED reads as unknown",
+              pit._du_mb(RUNTIME_CACHE), None)
+        check("...and _du_kb degrades to 0 rather than raising",
+              pit._du_kb(RUNTIME_CACHE), 0)
+        # A du that returns 0 but skips an operand would UNDERSTATE a delete.
+        with open(os.path.join(stub_bin, "du"), "w") as f:
+            f.write("#!/bin/sh\necho '4\t/one'\nexit 0\n")
+        os.chmod(os.path.join(stub_bin, "du"), 0o755)
+        os.makedirs(HDD1_CACHE, exist_ok=True)
+        check("a short du read is unknown, never a smaller number",
+              pit._du_mb(RUNTIME_CACHE, HDD1_CACHE), None)
+    finally:
+        os.environ["PATH"] = real_path
+        shutil.rmtree(stub_bin, ignore_errors=True)
     check("summing an unknown part yields unknown", pit._sum_mb(1, None, 2), None)
     check("summing known parts adds up", pit._sum_mb(1, 2, 3), 6)
+    shutil.rmtree(RUNTIME_CACHE, ignore_errors=True)
+    shutil.rmtree(HDD1_CACHE, ignore_errors=True)
     ok, _ = pit._run_cache_op("clear_all", "NPEA00050", Stub())
     check("all-games clear on an empty rig still succeeds", ok, True)
     check("...and still leaves the roots in place",
@@ -545,6 +792,95 @@ def _paths():
     check_true("a totally failed scan still draws a usable screen",
                len([1 for _r, c, _t in scr.writes if c == 6]) == 4,
                "a dead screen is worse than a '?' one")
+
+    # A shed row must not stay selectable. Below h=12 the four actions no longer
+    # fit, and a cursor that still cycles mod 4 puts the operator back on an
+    # invisible control -- the exact defect this screen was rebuilt to remove.
+    for h in (15, 12, 11, 10, 9):
+        scr = FakeScr(h, 60)
+        st = {"tools_cursor": 0, "tools_mode": "cache"}
+        pit._draw_cache_screen(scr, st, geom_model(), 5, h, 60)
+        drawn = len([1 for _r, c, _t in scr.writes if c == 6])
+        check(f"h={h}: the cursor can only reach drawn rows",
+              pit._cache_selectable(st), max(1, drawn))
+        seen = set()
+        for _ in range(12):
+            pit._tools_move(st, 1)
+            seen.add(st["tools_cursor"])
+        check(f"h={h}: DPAD never lands past the last drawn row",
+              [c for c in sorted(seen) if c >= max(1, drawn)], [])
+    check("before the first frame the whole set is selectable",
+          pit._cache_selectable({}), len(pit._CACHE_ROWS))
+
+
+# ==========================================================
+@suite("UNINST")
+def _uninst():
+    """uninstall must not leave behind the hdd1 cache the clear now finds"""
+    # DIRECTED SCOPE: _run_uninstall carried the same hardcoded "<id>_<id>"
+    # hdd1 literal the diagnosis condemned, so a removed game kept its whole
+    # hdd1 cache. Same wrong-path bug, same file, sibling path.
+    code = [ln for ln in open(PITSTOP).read().splitlines()
+            if not ln.lstrip().startswith("#")]
+    check("no hardcoded <id>_<id> hdd1 literal survives in the CODE",
+          [ln.strip() for ln in code
+           if 'f"{tid}_{tid}"' in ln or 'f"{gid}_{gid}"' in ln], [])
+    check_true("uninstall resolves its caches through the shared resolver",
+               any("_cache_dirs_for_id(tid)" in ln for ln in code),
+               "one resolver, both callers")
+
+    shutil.rmtree(RUNTIME_CACHE, ignore_errors=True)
+    shutil.rmtree(HDD1_CACHE, ignore_errors=True)
+    roms = os.path.join(FIX, "ps3")
+    games = os.path.join(FIX, "hdd0", "game")
+    os.makedirs(roms, exist_ok=True)
+    for root, names in ((RUNTIME_CACHE, ["BCUS98114", "BLUS31156"]),
+                        (HDD1_CACHE, ["BCUS98114_BCUS98114", "BCUS98114-disc",
+                                      "BLUS31156_BLUS31156"])):
+        for n in names:
+            os.makedirs(os.path.join(root, n), exist_ok=True)
+            with open(os.path.join(root, n, "obj"), "w") as f:
+                f.write("x" * 2048)
+    os.makedirs(os.path.join(games, "BCUS98114"), exist_ok=True)
+    psn = os.path.join(roms, "Test Game.psn")
+    with open(psn, "w") as f:
+        f.write("BCUS98114\n")
+
+    real_dirs = (pit.RPCS3_GAME_DIR, pit.RPCS3_CFG_GAME_DIR,
+                 pit.RPCS3_EXDATA_DIR, pit.RPCS3_CFG_EXDATA_DIR)
+    real_pids, real_reload = pit._rpcs3_pids, pit._es_reload_gamelists
+
+    class Stub:
+        def post(self, *a, **kw):
+            pass
+
+    try:
+        pit.RPCS3_GAME_DIR = pit.RPCS3_CFG_GAME_DIR = games
+        pit.RPCS3_EXDATA_DIR = pit.RPCS3_CFG_EXDATA_DIR = \
+            os.path.join(FIX, "exdata")
+        os.makedirs(pit.RPCS3_EXDATA_DIR, exist_ok=True)
+        pit._rpcs3_pids = lambda installer=None, procfs=None: []
+        pit._es_reload_gamelists = lambda *a, **kw: None
+        ok, _lines = pit._run_uninstall(
+            {"title_id": "BCUS98114", "name": "Test Game", "psn": psn},
+            Stub())
+        check("uninstall succeeds", ok, True)
+        check("uninstall removed EVERY hdd1 cache form of the title",
+              sorted(os.listdir(HDD1_CACHE)), ["BLUS31156_BLUS31156"])
+        check("uninstall removed the runtime cache too",
+              sorted(os.listdir(RUNTIME_CACHE)), ["BLUS31156"])
+        check("uninstall left the other title's caches alone",
+              [os.path.exists(os.path.join(RUNTIME_CACHE, "BLUS31156", "obj")),
+               os.path.exists(os.path.join(HDD1_CACHE, "BLUS31156_BLUS31156",
+                                           "obj"))],
+              [True, True])
+        check("uninstall removed the game and its launcher",
+              [os.path.exists(os.path.join(games, "BCUS98114")),
+               os.path.exists(psn)], [False, False])
+    finally:
+        (pit.RPCS3_GAME_DIR, pit.RPCS3_CFG_GAME_DIR,
+         pit.RPCS3_EXDATA_DIR, pit.RPCS3_CFG_EXDATA_DIR) = real_dirs
+        pit._rpcs3_pids, pit._es_reload_gamelists = real_pids, real_reload
 
 
 print()
