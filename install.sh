@@ -1540,21 +1540,29 @@ fi
 #                            cmdline (KGSL parity; the param auto-arms at boot, no
 #                            manual sysfs poke — the runtime toggle still works on
 #                            top for A/B). Unknown to the stock kernel = ignored.
-#   KERNEL_DEPLOY_MODE       "test" (default) => the TEST entry is pick-per-boot;
-#                            the saved default stays whatever the operator last
-#                            chose (stock device entry on a virgin rig).
-#                            "default" => AUTO-BOOT the GTK TEST entry: the entry
-#                            gains `savedefault` and grubenv `saved_entry` is
-#                            seeded to it, so every unattended reboot loads the
-#                            GTK kernel with a 2-s menu window. FALLBACK: the
-#                            stock device entries stay in the menu (picking one
-#                            re-sticks it via ROCKNIX's own savedefault), and a
-#                            managed 'ROCKNIX-GTK fallback -- stock kernel' entry
-#                            boots the pristine /flash/KERNEL.etk-stock snapshot
-#                            (taken here on first run, before anything touches
-#                            /flash/KERNEL) with the verbose forensic console.
-#                            Reverting to "test" un-seeds saved_entry back to the
-#                            device entry — no hand-grub-edit in either direction.
+#   KERNEL_DEPLOY_MODE       "default" (the fallback since 0.9.0) => AUTO-BOOT the
+#                            GTK entry: a numeric `set default=` pins it (below),
+#                            so every unattended reboot loads the GTK kernel with
+#                            a 2-s menu window. Pointing KERNEL_IMAGE at a built
+#                            kernel IS the intent to run it (client-orientation
+#                            law). SAFE BY CONSTRUCTION: auto-boot is withheld
+#                            (downgraded to "test") unless the rig is the verified
+#                            Flip 2 AND its /usr/lib/modules tree matches the
+#                            Image's release — a kernel/OS mismatch never auto-
+#                            boots to a module-less system.
+#                            "test" => explicit opt-in while validating an
+#                            UNPROVEN kernel: the entry is pick-per-boot and the
+#                            saved default stays the stock device entry (a virgin
+#                            rig's cold-boot recovery gate).
+#                            FALLBACK in default mode: the stock device entries
+#                            stay in the menu (picking one re-sticks it via
+#                            ROCKNIX's own savedefault), and a managed
+#                            'ROCKNIX-GTK fallback -- stock kernel' entry boots the
+#                            pristine /flash/KERNEL.etk-stock snapshot (taken here
+#                            on first run, before anything touches /flash/KERNEL)
+#                            with the verbose forensic console. Reverting to
+#                            "test" un-seeds the auto-boot — no hand-grub-edit
+#                            in either direction.
 # SAFE TEST MODEL (matches the proven standalone --test): the custom kernel is
 # staged as /flash/KERNEL.gtktest under its OWN grub entry; the DEFAULT boot entry
 # still loads the stock /flash/KERNEL, so a bad kernel is one reboot-to-default
@@ -1562,8 +1570,9 @@ fi
 # is REFRESHED every install (strip prior block + trailing blanks, re-append) so a
 # cmdline change takes effect AND an OS-update grub-twin revert is re-applied —
 # same drift-proofing panic=10 gets, but self-healing instead of warn-only.
-# NEVER reboots the rig (operator does that on-device); NEVER edits the default
-# entry. Promotion to the default KERNEL slot is a future KERNEL_DEPLOY_MODE knob.
+# NEVER reboots the rig (operator does that on-device). In default mode the
+# numeric default (below) points the menu at the GTK entry; the device entries
+# are never edited, so recovery is always one grub-pick (or one "test" flip) away.
 if [ -n "${KERNEL_IMAGE:-}" ] && [ -f "${KERNEL_IMAGE:-}" ]; then
     # portable host sha256 (Linux sha256sum | macOS shasum)
     if command -v sha256sum >/dev/null 2>&1; then
@@ -1588,22 +1597,40 @@ if [ -n "${KERNEL_IMAGE:-}" ] && [ -f "${KERNEL_IMAGE:-}" ]; then
         K_CMDLINE_QUIET="$K_CMDLINE_QUIET msm.context_keepalive=1"
     fi
     K_FLIP2_DTB="/boot/grub/sm8250-retroidpocket-flip2.dtb"
-    K_MODE="${KERNEL_DEPLOY_MODE:-test}"
-    # Flip-2 device-guard: KERNEL_DEPLOY_MODE=default AUTO-boots the GTK kernel,
-    # but the GTK Image carries the Flip 2 DTB and is verified only on the Flip 2.
-    # On any other SD865 device (RP5 / Mini / Thor), downgrade to TEST mode — the
-    # GTK kernel stays one grub-pick away and stock remains the default boot — so
-    # an unverified rig never auto-boots an untested kernel. Guard on the
-    # device-tree compatible ('retroidpocket,rpflip2'); all SD865 share 'sm8250'.
+    # Default-mode-by-default (0.9.0): pointing KERNEL_IMAGE at a built kernel IS
+    # the intent to boot it (§2.1 client orientation — expertise ships as the
+    # default). Legacy configs that omit the knob get the intent-honoring default;
+    # "test" stays the explicit opt-in for an unvalidated kernel. The guards below
+    # keep default-by-default SAFE.
+    K_MODE="${KERNEL_DEPLOY_MODE:-default}"
+    # Kernel release string baked in the Image ("Linux version 7.2.0 ...") — the
+    # osguard heal bundle keys Phase B replay on it matching the SYSTEM, AND the
+    # module-tree guard below matches it against the target OS.
+    K_RELEASE=$(strings "$KERNEL_IMAGE" 2>/dev/null | grep -m1 "Linux version " | sed 's/.*Linux version \([^ ]*\).*/\1/')
+    # AUTO-BOOT SAFETY GUARDS (default mode only). Auto-booting the GTK kernel is
+    # withheld — downgraded to TEST so stock stays the default and the GTK entry
+    # is one grub-pick away — unless BOTH hold:
+    #   (a) DEVICE: this is the verified Flip 2. The GTK Image carries the Flip 2
+    #       DTB and is verified only here; other SD865 devices (RP5 / Mini / Thor)
+    #       share 'sm8250' but not 'rpflip2'. Guard on the DT compatible.
+    #   (b) MODULE TREE: the target OS carries /usr/lib/modules/<K_RELEASE>. A
+    #       kernel whose module tree is absent boots to a module-less system — no
+    #       GPU / wifi / input (the 2026-08-01 frankenboot class). This is the
+    #       guard that makes default-by-default safe: a stale KERNEL_IMAGE left
+    #       pointing at last month's build after an OS bump can never AUTO-boot;
+    #       the operator picks it deliberately, or repoints/updates and reinstalls.
+    # Mirrors the self-update path, where osguard gates activation on the same
+    # release==module-tree match (bin/kernel_stage.sh / bin/osguard.sh Phase B).
     if [ "$K_MODE" = "default" ]; then
         if ! ssh $RIG_SSH "tr '\0' '\n' < /sys/firmware/devicetree/base/compatible 2>/dev/null | grep -q rpflip2" 2>/dev/null; then
-            echo "    [GUARD] KERNEL_DEPLOY_MODE=default is Flip-2-only (the only verified device); this rig is not a Flip 2 -> using TEST mode (stock stays default; GTK kernel one grub-pick away)."
+            echo "    [GUARD] default mode is Flip-2-only (the only verified device); this rig is not a Flip 2 -> TEST mode (stock stays default; GTK kernel one grub-pick away)."
+            K_MODE="test"
+        elif [ -z "$K_RELEASE" ] || ! ssh $RIG_SSH "[ -d /usr/lib/modules/$K_RELEASE ]" 2>/dev/null; then
+            K_RIG_MODS=$(ssh $RIG_SSH "ls /usr/lib/modules 2>/dev/null | tr '\n' ' '" 2>/dev/null)
+            echo "    [GUARD] kernel release '${K_RELEASE:-?}' has NO matching module tree on the rig (installed: ${K_RIG_MODS:-none}) -> TEST mode: auto-booting it would load ZERO modules. Update the OS to the build this kernel targets, or point KERNEL_IMAGE at an Image built for the rig's module tree, then reinstall."
             K_MODE="test"
         fi
     fi
-    # Kernel release string baked in the Image ("Linux version 7.1.2 ...") —
-    # the osguard heal bundle keys Phase B replay on it matching the SYSTEM.
-    K_RELEASE=$(strings "$KERNEL_IMAGE" 2>/dev/null | grep -m1 "Linux version " | sed 's/.*Linux version \([^ ]*\).*/\1/')
     # Skip re-staging if the rig already carries this exact Image (idempotent).
     K_RIG_SHA=$(ssh $RIG_SSH "sha256sum /flash/KERNEL.gtktest 2>/dev/null | cut -d' ' -f1" 2>/dev/null)
     scp -q "$KERNEL_IMAGE" "$RIG_SSH:/storage/rocknix-gtk.KERNEL.staging" 2>/dev/null

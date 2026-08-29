@@ -28,7 +28,12 @@
 #   4. the BROKEN state is detectable (canonical cfg has NO numeric default ->
 #      boots entry 0) — a test that can't see the break proves nothing;
 #   5. idempotent under reconvergence (install rebuilds from canonical);
-#   6. rig BusyBox awk produces byte-identical output to host awk.
+#   6. rig BusyBox awk produces byte-identical output to host awk;
+#   7. default-by-default + the auto-boot guards are present in install.sh
+#      (module-tree match gate; KERNEL_DEPLOY_MODE fallback = default — 0.9.0);
+#   8. the module-tree guard primitive discriminates a matching release (stay
+#      default/auto-boot) from a mismatch or empty release (force test — a kernel
+#      whose modules can't load must never auto-boot; the 2026-08-01 frankenboot).
 set -u
 cd "$(dirname "$0")/.." || exit 1
 FAIL=0; PASS=0
@@ -47,6 +52,14 @@ grep -q "awk -v q=\"'\$K_TGT_ID' {\"" install.sh \
 grep -q "awk -v q=\"'rpflip2' {\"" install.sh \
   && ok "install.sh computes the rpflip2 index (stock-convergence path)" \
   || fail "install.sh stock-path index computation MISSING"
+# default-by-default (0.9.0): KERNEL_DEPLOY_MODE fallback flipped test->default.
+grep -qF 'KERNEL_DEPLOY_MODE:-default' install.sh \
+  && ok "install.sh default-mode-by-default (KERNEL_DEPLOY_MODE fallback = default)" \
+  || fail "install.sh KERNEL_DEPLOY_MODE fallback is not 'default' (task-3 drift?)"
+# auto-boot module-tree guard: never auto-boot a kernel whose modules can't load.
+grep -qF '[ -d /usr/lib/modules/$K_RELEASE ]' install.sh \
+  && ok "install.sh module-tree auto-boot guard present (release vs /usr/lib/modules)" \
+  || fail "install.sh module-tree guard MISSING (task-2 drift?)"
 [ "$FAIL" -eq 0 ] || { printf '%d/%d — aborting (mechanism not in install.sh)\n' "$PASS" "$((PASS+FAIL))"; exit 1; }
 
 # --- 2. fixtures ---
@@ -205,6 +218,27 @@ if [ "${1:-}" = "--rig" ]; then
 else
     printf 'note: BusyBox leg skipped (run with --rig for the discrimination pass)\n'
 fi
+
+# --- 9. module-tree guard primitive: the auto-boot gate discriminates ---
+# The decision primitive, mirroring install.sh exactly ([ -z release ] OR absent
+# dir -> force test): a matching release resolves to a present module dir and
+# stays default (auto-boot); a mismatch or empty release forces test (no auto-
+# boot). This is the gate that makes default-by-default safe. 'test -d'/'test -z'
+# are POSIX shell builtins — no host/BusyBox divergence to chase (unlike awk), so
+# the host leg is authoritative here.
+mkdir -p "$TD/modroot/usr/lib/modules/7.2.0"
+guard() { # $1=K_RELEASE -> the K_MODE the guard would leave it at
+  if [ -z "$1" ] || [ ! -d "$TD/modroot/usr/lib/modules/$1" ]; then echo test; else echo default; fi
+}
+[ "$(guard 7.2.0)" = "default" ] \
+  && ok "module guard: matching release (7.2.0 present) -> stays default (auto-boot)" \
+  || fail "module guard: matching release wrongly downgraded to test"
+[ "$(guard 7.1.2)" = "test" ] \
+  && ok "module guard: mismatched release (7.1.2 absent) -> forced test (no frankenboot)" \
+  || fail "module guard: mismatched release NOT caught — would auto-boot module-less"
+[ "$(guard '')" = "test" ] \
+  && ok "module guard: empty/unreadable release -> forced test (defensive)" \
+  || fail "module guard: empty release not caught"
 
 printf '%d/%d passed\n' "$PASS" "$((PASS+FAIL))"
 exit "$FAIL"

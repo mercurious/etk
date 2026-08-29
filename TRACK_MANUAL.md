@@ -592,6 +592,18 @@ knobs, writes the handoff, verifies afterward from read-only telemetry.
   (host + rig-BusyBox). **4Kn law:** any FAT image built for the internal ESP MUST be
   `mkfs.fat -S 4096` — a 512-sector FAT crashes U-Boot itself (Synchronous Abort loop;
   fastboot `flash ROCKNIX` is the proven recovery rung).
+- **Default-boot contract (0.9.0 — `KERNEL_DEPLOY_MODE`):** the fallback is now
+  **`default`**, not `test` — installing a custom kernel IS the intent to boot it (§0/§2.1
+  client orientation: expertise ships as the default). STEP 6.4 withholds auto-boot (silent
+  downgrade to `test` + a `[GUARD]` line) unless the rig is the verified Flip 2 **and**
+  `/usr/lib/modules/<K_RELEASE>` exists on the target — a kernel/OS mismatch (a stale
+  `KERNEL_IMAGE` left pointing at last month's build after an OS bump) can never auto-boot
+  to a module-less system (the 2026-08-01 frankenboot class). `test` stays the explicit
+  opt-in for an unvalidated kernel (the cold-boot gate). This mirrors the self-update lane,
+  where osguard gates activation on the same `release == module-tree` match
+  (`bin/kernel_stage.sh` → `bin/osguard.sh` Phase B). Prime-suspect flip + guard
+  field-validated 2026-08-29 on the internal 4Kn rig (`default_idx=0` → `'ROCKNIX-GTK for
+  Flip 2'`, held across cold boots; module tree `7.2.0` matched, guard stayed permissive).
 - **Windows:** the PowerShell port (`windows_installer/`) is ACTIVE, kept in lockstep —
   **not retiring** (re-affirmed 2026-08-07). Rig-side bodies are pulled VERBATIM from
   install.sh heredoc markers at runtime, so daemon logic can't drift; only the PS-native
