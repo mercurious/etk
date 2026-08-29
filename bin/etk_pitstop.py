@@ -3770,6 +3770,126 @@ def _self_update_check():
     return ("newer", {"tag": tag, "name": rel.get("name") or tag})
 
 
+def _reconcile_unit_file(path, sets):
+    """Ensure each sets[section][key] == value in the systemd unit at `path`,
+    editing in place atomically. Single-valued per key within its section: the
+    first matching key line is rewritten to the desired value and later
+    duplicates of that key are dropped; if the section is present but the key
+    absent, the key is appended under the section header; a section that does
+    not appear is left alone (we never invent sections). Returns (changed, note).
+    Pure and host-testable — no systemctl, no globals, no side effects beyond
+    rewriting `path`."""
+    try:
+        with open(path) as f:
+            src_lines = f.read().split("\n")
+    except OSError:
+        return (False, "absent")
+    desired = {}
+    for sect, kv in (sets or {}).items():
+        for k, v in (kv or {}).items():
+            desired[(sect, k)] = str(v)
+    if not desired:
+        return (False, "noop")
+    applied = set()
+    changed = False
+    out = []
+    cur = None
+    for ln in src_lines:
+        s = ln.strip()
+        if s.startswith("[") and s.endswith("]"):
+            cur = s[1:-1]
+            out.append(ln)
+            continue
+        if cur is not None and "=" in s and not s.startswith("#"):
+            key = s.split("=", 1)[0].strip()
+            tgt = (cur, key)
+            if tgt in desired:
+                if tgt in applied:
+                    # a later duplicate of a key we already set -> drop it
+                    changed = True
+                    continue
+                applied.add(tgt)
+                want = "%s=%s" % (key, desired[tgt])
+                if s != want:
+                    out.append(want)
+                    changed = True
+                else:
+                    out.append(ln)
+                continue
+        out.append(ln)
+    # keys whose section exists but the key was absent -> insert under header
+    missing = [sk for sk in desired if sk not in applied]
+    if missing:
+        rebuilt = []
+        cur = None
+        for ln in out:
+            rebuilt.append(ln)
+            s = ln.strip()
+            if s.startswith("[") and s.endswith("]"):
+                cur = s[1:-1]
+                for (sect, k) in missing:
+                    if sect == cur and (sect, k) not in applied:
+                        rebuilt.append("%s=%s" % (k, desired[(sect, k)]))
+                        applied.add((sect, k))
+                        changed = True
+        out = rebuilt
+        # sections that never appear are left uncreated (caller may log)
+    if not changed:
+        return (False, "current")
+    new = "\n".join(out)
+    tmp = path + ".rec.tmp"
+    with open(tmp, "w") as f:
+        f.write(new)
+    os.replace(tmp, path)
+    return (True, "patched")
+
+
+def _reconcile_units(src, base):
+    """Patch ETK /storage/.config/system.d units to THIS update's manifest
+    (config/unit_reconcile.json, read from the extracted tarball so the rules
+    are the update's own). install.sh writes those units via heredocs; a couch
+    update never re-runs install.sh, so a shipped unit FIX (e.g. the osguard
+    After= ordering fix) would never reach couch-only users without this. Only
+    patches units that already exist (install.sh owns first creation). Fail-soft
+    — any error leaves the middleware update good. Returns summary lines."""
+    lines = []
+    try:
+        man_path = os.path.join(src, "config", "unit_reconcile.json")
+        if not os.path.isfile(man_path):
+            return lines
+        with open(man_path) as f:
+            man = json.load(f) or {}
+        # ETK_UNIT_DIR is a test seam (host suite points it at a temp dir);
+        # the rig always uses the real persistence vector.
+        unit_dir = os.environ.get("ETK_UNIT_DIR", "/storage/.config/system.d")
+        patched = []
+        for u in (man.get("units") or []):
+            name = u.get("name")
+            sets = u.get("set") or {}
+            if not name or not sets:
+                continue
+            upath = os.path.join(unit_dir, name)
+            if not os.path.isfile(upath):
+                continue  # install.sh owns first creation; never invent units
+            try:
+                changed, _note = _reconcile_unit_file(upath, sets)
+            except Exception as e:
+                _log(f"self-update: reconcile {name} failed: {e}")
+                continue
+            if changed:
+                patched.append(name)
+        if patched:
+            if shutil.which("systemctl"):
+                os.system("systemctl daemon-reload >/dev/null 2>&1")
+            _log("self-update: reconciled units: " + ", ".join(patched))
+            lines.append("Units: patched " + ", ".join(patched)
+                         + " (reboot to apply).")
+    except Exception as e:
+        _log(f"self-update: unit reconcile failed: "
+             f"{e.__class__.__name__}: {e}")
+    return lines
+
+
 def _self_update_apply(info):
     """Worker (curses-free): download the release tarball and sync the
     middleware file set into $ETK_ROOT. Returns (ok, lines)."""
@@ -3843,7 +3963,7 @@ def _self_update_apply(info):
                    "MangoHud.conf", "MangoHud.default.conf",
                    "etk_pitstop.sh", "etk_pitstop.svg",
                    "etk_chiaki.sh", "etk_chiaki.svg",
-                   "paddock_repos.json.example")
+                   "paddock_repos.json.example", "unit_reconcile.json")
         os.makedirs(os.path.join(base, "config"), exist_ok=True)
         n = 0
         for name in cfg_set:
@@ -3876,6 +3996,11 @@ def _self_update_apply(info):
                         os.chmod(d_abs, 0o755)
             except Exception as e:
                 _log(f"self-update: {d_abs} refresh failed: {e}")
+        # --- Unit reconcile: carry shipped unit FIXES to couch-only users ---
+        # install.sh writes system.d units via heredocs and a couch update never
+        # re-runs it, so a unit fix (osguard After= ordering) would never land.
+        # Patch existing units to THIS tag's manifest (config/unit_reconcile.json).
+        recon_lines = _reconcile_units(src, base)
         # --- GTK stack: kernel (0.8.3 — self-update goes full-stack) ---
         # "We never ship a GTK without its feature set": a couch update must
         # carry the kernel, not just middleware. The gtk_stack.json manifest
@@ -3960,6 +4085,8 @@ def _self_update_apply(info):
         _log(f"self-update: v{APP_VERSION} -> {tag} OK ({', '.join(synced)})")
         out = [f"Updated to {tag}.", "",
                "Synced: " + ", ".join(synced), ""]
+        if recon_lines:
+            out += recon_lines + [""]
         if stack_lines:
             out += stack_lines + [""]
         out += ["Emulator / driver / Sentry still update via",
