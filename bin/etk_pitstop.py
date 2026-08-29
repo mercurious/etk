@@ -317,9 +317,12 @@ BOG_CHORD_DEFAULT = "enabled"
 CRASH_SIG_FILE = os.environ.get("SIGNATURES_FILE", f"{ETK_ROOT}/config/crash_signatures.json")
 
 
-# === VAULT HYGIENE (Manage Shaders) ===
-# The Manage Shaders screen is a front-end over tools/vault_sweep.sh (the ONE
-# sweep engine) — same single-injector ethos as PADDOCK over paddock_sync.sh.
+# === VAULT HYGIENE (Manage Shaders & Caches) ===
+# The vault half of that screen is a front-end over tools/vault_sweep.sh (the
+# ONE sweep engine) — same single-injector ethos as PADDOCK over
+# paddock_sync.sh. The cache half acts on RPCS3's own roots (RPCS3_HDD1_CACHE /
+# RPCS3_RUNTIME_CACHE, declared with the other installer paths below) and never
+# touches VAULT_BASE.
 VAULT_SWEEP = os.environ.get('VAULT_SWEEP', f"{ETK_ROOT}/tools/vault_sweep.sh")
 # Chipset key for the vault path. env.sh exports CHIPSET; off-rig fall back to
 # the hostname (which IS the SoC on these rigs), then the SM8250 reference.
@@ -2721,13 +2724,15 @@ def handle_telemetry_pad(state, etype, code, val):
 # notifications (dbus-send).
 # ============================================================
 
-# Manage Shaders leads the list now that stability work has made vault hygiene
-# the most-reached tool (ROADMAP). Every entry is constant-indexed so the order
-# is a one-line edit here with no hardcoded literals in the dispatch below.
-_TOOLS_MENU = ["Manage Shaders", "Install a staged PS3 Package",
+# Shaders & Caches leads the list now that stability work has made storage
+# hygiene the most-reached tool (ROADMAP). Every entry is constant-indexed so
+# the order is a one-line edit here with no hardcoded literals in the dispatch
+# below. The label names BOTH assets on purpose: the screen's two headline
+# actions clear RPCS3's caches, which is not what "Manage Shaders" promised.
+_TOOLS_MENU = ["Manage Shaders & Caches", "Install a staged PS3 Package",
                "Uninstall a Game", "Trigger Calibration", "Screenshot on L1+L2",
                "Bog Sampler", "Install PS3 Firmware", "Check for ETK Updates"]
-_TOOLS_SHADERS_IDX = 0      # Manage Shaders sub-screen entry
+_TOOLS_CACHE_IDX = 0        # Manage Shaders & Caches sub-screen entry
 _TOOLS_INSTALL_IDX = 1      # staged-PKG installer
 _TOOLS_UNINSTALL_IDX = 2    # game uninstaller
 _TOOLS_TRIGCAL_IDX = 3      # L2/R2 trigger deadzone calibration (H7)
@@ -5132,19 +5137,71 @@ def _run_install_fw(pup_path, notify, _progress=None):
             pass
 
 
-# === TOOLS TAB — SHADER HYGIENE (Manage Shaders) ===
-# Three escalating, NON-overlapping actions (the symlink makes them distinct):
-#   sweep        -> vault_sweep.sh --apply : deletes only files older than the
-#                   Mesa-rebuild boundary; keeps the live/fresh Turnip cache.
-#   delete_vault -> rm the game's ENTIRE ETK Turnip shader cache (fresh+stale).
-#   clear_cache  -> rm RPCS3's OWN runtime cache (PPU/SPU/ISO), separate from
-#                   the Mesa vault; RPCS3 rebuilds it on next launch.
-# The on-disk cache has no "shader layer" taxonomy (the 256 dirs are hash
-# buckets, filenames are opaque hashes), so the only robust, actionable graph
-# axis is fresh vs stale by Mesa-rebuild generation — exactly what sweep acts on.
+# === TOOLS TAB — MANAGE SHADERS & CACHES (one screen) ===
+# TWO different caches live on this rig and the screen must never blur them:
+#
+#   RPCS3's OWN runtime caches — the emulator's compiled PPU/SPU objects and
+#       its shader/pipeline cache under RPCS3_RUNTIME_CACHE, plus the
+#       game-managed HDD cache under RPCS3_HDD1_CACHE. DISPOSABLE: RPCS3
+#       rebuilds them at the next launch (slow first load, stuttery first laps).
+#   The ETK Turnip shader VAULT — our BANKED asset under VAULT_BASE. A cache
+#       clear NEVER touches it. Its only action here is the stale sweep, which
+#       deletes only what the last Mesa rebuild orphaned (vault_sweep.sh, the
+#       ONE sweep engine — this screen is a front-end, never a second sweeper).
+#
+# WHY THE REBUILD (0.8.6 screen, operator verdict "doesn't render / drifted
+# out"): the body flowed 4 action rows + hints downward while reserving only 8
+# lines from `h`, but _draw() paints _draw_footer AFTER the tab body and the
+# footer owns h-3 (rule) and h-2 (hint). The last usable body row is h-4, so the
+# old layout over-committed by 3-4 rows: on a full vault the Clear-cache row was
+# drawn and then ERASED by the footer every frame, and the "CONFIRM: select"
+# hint fell off the screen entirely. Hence: no graph, explicit labels, and
+# _cache_layout, which sheds decoration rather than overrunning the footer.
+#
+# Everything here is plain ASCII. Pitstop never calls locale.setlocale, so a
+# non-ASCII glyph is encoded against the C locale's ASCII codeset and raises
+# UnicodeEncodeError — which is NOT curses.error and so walks straight through
+# every `except curses.error` in the draw path. The 0.8.6 screen was the only
+# one in the app carrying U+2039/U+2014/U+2026.
 
-# Row order on the Manage Shaders screen (index 0 is the scope toggle).
-_SHADER_ROWS = ("scope", "sweep", "delete_vault", "clear_cache")
+# Cursor order. Two RPCS3-cache clears with EXPLICIT scope in the label (the
+# 0.8.6 scope-toggle row is retired: a mode you have to remember is the wrong
+# control for an irreversible delete), one vault action, then Back.
+_CACHE_ROWS = ("clear_cur", "clear_all", "sweep", "back")
+
+# The refusal, verbatim, for the toast. Kept as a constant because the gate is
+# checked twice (at select, and again inside the op) and both must say it.
+_CACHE_BUSY_MSG = "RPCS3 IS RUNNING - close the game or wait for the install"
+
+# Why Sweep is unavailable. Each needs a DIFFERENT operator fix, so they never
+# collapse into one "no boundary" (conflating them once hid a missing-deploy
+# bug for a release). Kept under ~50 cols: the panel is 60 wide.
+_CACHE_SWEEP_NOTE = {
+    "no_boundary": "Sweep needs a driver-update boundary first.",
+    "engine":      "Sweep engine missing - re-run install.sh.",
+    "error":       "Sweep unavailable - see the ETK log.",
+}
+# The long form, shown when the operator SELECTS an unavailable Sweep. Each
+# reason has a different fix, and "no boundary" is not a fault at all.
+_CACHE_SWEEP_WHY = {
+    "no_boundary": [
+        "Nothing is stale yet.",
+        "",
+        "Shaders only go stale when the graphics driver",
+        "is rebuilt. Sweep becomes available after your",
+        "next ROCKNIX update."],
+    "engine": [
+        "The sweep engine is not on this device.",
+        "",
+        "tools/vault_sweep.sh was not deployed.",
+        "Re-run install.sh from your computer to",
+        "push it, then try again."],
+    "error": [
+        "The sweep engine returned an error.",
+        "",
+        "Check the ETK Pitstop log on the device,",
+        "then re-run install.sh if it persists."],
+}
 
 
 def _vault_game_ids():
@@ -5184,6 +5241,63 @@ def _du_kb(path):
         return int(parts[0]) if r.returncode == 0 and parts else 0
     except Exception:
         return 0
+
+
+def _du_mb(path):
+    """Dir size in MB, or None when the size is genuinely UNKNOWN.
+
+    An ABSENT path is 0, not unknown: there is nothing there to free, and a "?"
+    would read as "the scan broke" when the truth is "already clean". Only a du
+    that ran and failed (or timed out) yields None -> the screen shows "?" and
+    still offers the action, because sizes here are advisory."""
+    if not os.path.isdir(path):
+        return 0
+    try:
+        r = subprocess.run(["du", "-k", "-s", path],
+                           capture_output=True, text=True, timeout=180)
+        parts = r.stdout.split()
+        if r.returncode != 0 or not parts:
+            return None
+        return int(parts[0]) // 1024
+    except Exception:
+        return None
+
+
+def _sum_mb(*vals):
+    """Total of _du_mb results; None if ANY part is unknown. A half-known total
+    printed as a number would understate a delete, so it prints as "?"."""
+    total = 0
+    for v in vals:
+        if v is None:
+            return None
+        total += v
+    return total
+
+
+def _cache_dirs_for_id(gid, roots=None):
+    """Every direct child of the RPCS3 cache roots that belongs to title `gid`.
+
+    RPCS3 has keyed these by the bare serial AND by "<serial>_<suffix>" across
+    versions and packaging models (the 0.8.6 code hardcoded one literal,
+    "<id>_<id>", so a per-game clear could silently free nothing under
+    dev_hdd1). Matching is ANCHORED: the name is the id, or the id followed by a
+    separator — never a bare prefix, so a folder called "NPEA00050x" can never
+    be swept in with NPEA00050. Serials are fixed-width, so two distinct titles
+    cannot alias here."""
+    out = []
+    for root in (roots if roots is not None
+                 else (RPCS3_RUNTIME_CACHE, RPCS3_HDD1_CACHE)):
+        try:
+            names = sorted(os.listdir(root))
+        except OSError:
+            continue                     # root absent = nothing cached yet
+        for name in names:
+            if name != gid and not name.startswith((gid + "_", gid + "-")):
+                continue
+            p = os.path.join(root, name)
+            if os.path.isdir(p):
+                out.append(p)
+    return out
 
 
 def _sweep_porcelain():
@@ -5231,235 +5345,410 @@ def _sweep_porcelain():
         return per, False, "error"
 
 
-def _scan_vault_hygiene(state, _progress=None):
-    """Build the Manage Shaders model: per-game total/fresh/stale sizes + the
-    RPCS3 runtime-cache sizes. Scope-agnostic (reclaim derived per-scope at
-    draw). Slow-ish (du + the dry-run stat pass) so callers draw a busy frame
-    first. Cached in state['shaders_model'] until an action invalidates it.
+def _cache_model_blank(reason="error"):
+    """A model that RENDERS. Every size unknown ("?"), every action still
+    offered: a failed scan must cost the operator information, never controls
+    (fail-soft law). Also the shape contract for _cache_rows / _cache_status_
+    lines / _cache_confirm — keep the two in step or the screen goes blank on a
+    KeyError."""
+    return {
+        "current": None, "current_name": "(no game resolved)",
+        "n_games": 0,
+        "vault_cur_mb": None, "fresh_cur_mb": None, "stale_cur_mb": None,
+        "vault_all_mb": None, "stale_all_mb": None,
+        "cache_cur_mb": None, "cache_all_mb": None,
+        "boundary_ok": False, "sweep_reason": reason,
+        "rpcs3_running": False, "scan_ok": False,
+    }
 
-    `_progress` (optional, injected by _run_with_spinner): a dict whose "frac"
-    this advances 0..1 as the per-game du pass runs, driving the on-screen bar."""
+
+def _scan_cache_model(state, _progress=None):
+    """Build the Shaders & Caches model and stash it in state['cache_model'].
+
+    NEVER raises and never returns None: an exception here used to leave the
+    model at None forever, and the screen then sat on "Scanning..." with no way
+    back — a dead screen is worse than a "?" one.
+
+    Cost: THREE subprocesses, not N. The 0.8.6 scan ran `du` once per vaulted
+    game over a tree that has held ~175k files, which is what made the screen
+    read as hung. The vault numbers now come from the ONE vault_sweep porcelain
+    pass we already run (fresh+stale IS the honest shader byte total — it counts
+    shard-tree files and excludes Mesa bookkeeping and du block slack), and `du`
+    is spent only on the two RPCS3 cache roots the headline actions delete.
+
+    `_progress` (injected by _run_with_spinner) drives the on-screen bar; the
+    cheap RPCS3-cache legs run FIRST so it moves before the slow vault pass."""
     def _prog(f):
         if _progress is not None:
             _progress["frac"] = f
-    game_ids = _vault_game_ids()
-    current = _resolve_current_vault_id(game_ids)
-    _prog(0.05)
-    stale_map, boundary_ok, sweep_reason = _sweep_porcelain()
-    _prog(0.15)
 
-    games = []
-    n_games = len(game_ids) or 1
-    for scan_idx, gid in enumerate(game_ids):
-        # disk_kb = true on-disk footprint (what Delete Vault frees). stale_kb /
-        # fresh_kb = shard-tree shader bytes by generation (what the graph splits
-        # and Sweep frees). disk_kb >= stale_kb+fresh_kb; the gap is Mesa
-        # bookkeeping + block overhead, shown as a dim tail on the bar.
-        disk_kb = _du_kb(os.path.join(VAULT_BASE, gid, "shaders"))
-        st = stale_map.get(gid, {})
-        games.append({
-            "id": gid,
-            "disk_kb": disk_kb,
-            "stale_kb": st.get("stale_kb", 0),
-            "fresh_kb": st.get("fresh_kb", 0),
-            "stale_files": st.get("stale_files", 0),
-        })
-        _prog(0.15 + 0.80 * (scan_idx + 1) / n_games)
-    games.sort(key=lambda g: g["disk_kb"], reverse=True)
+    model = _cache_model_blank()
+    try:
+        game_ids = _vault_game_ids()
+        model["n_games"] = len(game_ids)
+        # ETK_NO_TARGET means the launcher could not resolve a title. There is
+        # no "current game" to clear, and TARGET_ID is only its dummy fallback,
+        # so never let it name a cache directory.
+        current = None if ETK_NO_TARGET else _resolve_current_vault_id(game_ids)
+        model["current"] = current
+        if current:
+            model["current_name"] = resolve_game_name(current)
+        _prog(0.05)
 
-    model = {
-        "games": games,
-        "by_id": {g["id"]: g for g in games},
-        "current": current,
-        "boundary_ok": boundary_ok,
-        "sweep_reason": sweep_reason,
-        "rpcs3_all_mb": _du_kb(RPCS3_RUNTIME_CACHE) // 1024,
-        "rpcs3_cur_mb": _du_kb(os.path.join(RPCS3_RUNTIME_CACHE, current)) // 1024,
-        "rpcs3_running": _rpcs3_running(),
-    }
+        model["cache_all_mb"] = _sum_mb(_du_mb(RPCS3_RUNTIME_CACHE),
+                                        _du_mb(RPCS3_HDD1_CACHE))
+        _prog(0.20)
+        model["cache_cur_mb"] = (
+            None if not current
+            else _sum_mb(*[_du_mb(d) for d in _cache_dirs_for_id(current)]))
+        _prog(0.35)
+
+        stale_map, boundary_ok, sweep_reason = _sweep_porcelain()
+        model["boundary_ok"] = boundary_ok
+        model["sweep_reason"] = sweep_reason
+        if boundary_ok:
+            stale_kb = sum(g.get("stale_kb", 0) for g in stale_map.values())
+            fresh_kb = sum(g.get("fresh_kb", 0) for g in stale_map.values())
+            model["stale_all_mb"] = stale_kb // 1024
+            model["vault_all_mb"] = (stale_kb + fresh_kb) // 1024
+            cur = stale_map.get(current or "", {})
+            if current:
+                model["stale_cur_mb"] = cur.get("stale_kb", 0) // 1024
+                model["fresh_cur_mb"] = cur.get("fresh_kb", 0) // 1024
+                model["vault_cur_mb"] = (cur.get("stale_kb", 0)
+                                         + cur.get("fresh_kb", 0)) // 1024
+        _prog(0.95)
+        model["rpcs3_running"] = _rpcs3_running()
+        model["scan_ok"] = True
+    except Exception as e:                # noqa: BLE001 — a "?" screen, never a dead one
+        _log(f"cache scan failed: {e.__class__.__name__}: {e}")
     _prog(1.0)
-    state["shaders_model"] = model
+    state["cache_model"] = model
     return model
 
 
-def _shader_reclaim(model, scope_all):
-    """Reclaim MB for the three actions under the chosen scope. Sweep frees the
-    stale shard bytes; Delete Vault frees the whole on-disk footprint (disk_kb)."""
-    games = model["games"]
-    if scope_all:
-        return {"sweep_mb": sum(g["stale_kb"] for g in games) // 1024,
-                "vault_mb": sum(g["disk_kb"] for g in games) // 1024,
-                "cache_mb": model["rpcs3_all_mb"]}
-    g = model["by_id"].get(model["current"]) or {"stale_kb": 0, "disk_kb": 0}
-    return {"sweep_mb": g["stale_kb"] // 1024, "vault_mb": g["disk_kb"] // 1024,
-            "cache_mb": model["rpcs3_cur_mb"]}
+# --- pure builders (model dict in -> strings / decisions out) ---------------
+# Everything below is curses-free and side-effect-free on purpose: it is what
+# tools/test_cache_screen.py can exercise on a host with no terminal, no rig
+# and no /proc. The draw functions only place these strings.
+
+def _mb_txt(mb):
+    """'~412 MB', or '~? MB' when the scan could not size it."""
+    return "~? MB" if mb is None else f"~{mb} MB"
 
 
-def _draw_shader_screen(stdscr, state, model, y, h, w):
-    """Manage Shaders: fresh/stale-per-game graph + scope toggle + 3 actions."""
-    def put(row, col, text, attr=curses.A_NORMAL):
-        try:
-            stdscr.addstr(row, col, text[:max(0, w - col - 1)], attr)
-        except curses.error:
-            pass
+def _n_txt(v):
+    return "?" if v is None else str(v)
 
-    scope_all = state.get("shaders_scope_all", False)
-    cur = model["current"]
-    rec = _shader_reclaim(model, scope_all)
-    boundary_ok = model["boundary_ok"]
-    sweep_reason = model.get("sweep_reason", "ok")
-    # Short tag for why Sweep is unavailable — each needs a different operator
-    # fix, so don't collapse them all into "no boundary".
-    _SWEEP_LEGEND = {
-        "no_boundary": "(stale unknown — no boundary)",
-        "engine":      "(sweep engine missing — run install.sh)",
-        "error":       "(sweep unavailable — see logs)",
-    }
-    _SWEEP_NA = {
-        "no_boundary": "n/a (no boundary)",
-        "engine":      "n/a (engine missing — reinstall)",
-        "error":       "n/a (unavailable)",
-    }
-    running = model["rpcs3_running"]
 
-    put(y, 2, "MANAGE SHADERS", curses.A_BOLD); y += 1
-    put(y, 2, "-" * (w - 4), curses.A_DIM); y += 1
+def _cache_label(head, name, tail, width):
+    """'<head><name> <tail>' fitted to `width` columns.
 
-    # --- Graph: per-game bar; length ∝ on-disk footprint, segmented
-    # green=fresh / red=stale / dim=overhead (Mesa bookkeeping + block slack).
-    games = [g for g in model["games"] if g["disk_kb"] > 0]
-    if not games:
-        put(y, 4, "Vault is empty — nothing to clean.", curses.A_DIM); y += 1
+    Only NAME shrinks. `head` says WHICH destructive action this is and `tail`
+    carries the size the operator is deciding on; losing either turns the row
+    into a guess, so a long game title is what gives way — down to '...' before
+    anything else is lost. If head+tail alone overflow (a panel far narrower
+    than any rig), the whole line is hard-clipped rather than raising."""
+    def _join(nm):
+        base = head + nm
+        return f"{base} {tail}" if tail else base
+    full = _join(name)
+    if len(full) <= width:
+        return full
+    fixed = len(head) + (len(tail) + 1 if tail else 0)
+    room = width - fixed
+    if room >= 4 and name:
+        return _join(name[:room - 3] + "...")
+    return full[:max(0, width)]
+
+
+def _cache_rows(model, width):
+    """Pure: the action rows, in _CACHE_ROWS order, fitted to `width`.
+
+    Each row is {key, label, enabled, why}. A disabled row is still drawn and
+    still selectable — selecting it explains itself (`why`) instead of the
+    cursor mysteriously skipping a line."""
+    rows = []
+    cur = model.get("current")
+    if cur:
+        rows.append({
+            "key": "clear_cur", "enabled": True, "why": [],
+            "label": _cache_label(
+                "Clear RPCS3 caches - ", model.get("current_name") or cur,
+                f"({_mb_txt(model.get('cache_cur_mb'))})", width)})
     else:
-        legend = "vault by game  " + (
-            "(green=fresh  red=stale)" if boundary_ok
-            else _SWEEP_LEGEND.get(sweep_reason, "(stale unknown — no boundary)"))
-        put(y, 4, legend, curses.A_DIM); y += 1
-        max_kb = max(g["disk_kb"] for g in games) or 1
-        BARW = 18
-        # Leave room below for the 4 rows + hints (~8 lines).
-        cap = max(1, (h - y) - 8)
-        shown = games[:cap]
-        for g in shown:
-            marker = "›" if g["id"] == cur else " "
-            barw = max(1, int(round(BARW * g["disk_kb"] / max_kb)))
-            col = 4
-            put(y, col, f"{marker}{g['id']:<9}"); col += 11
-            if boundary_ok:
-                fw = int(round(barw * g["fresh_kb"] / g["disk_kb"]))
-                sw = int(round(barw * g["stale_kb"] / g["disk_kb"]))
-                # Floor a nonzero generation to >=1 cell so a small-but-real
-                # slice is never invisible at bar resolution — e.g. 6MB fresh in
-                # a 528MB vault rounds to 0 green cells and reads as "all stale"
-                # when the operator does have fresh shaders to keep.
-                if g["fresh_kb"] > 0 and fw == 0:
-                    fw = 1
-                if g["stale_kb"] > 0 and sw == 0:
-                    sw = 1
-                # Keep within the bar, trimming the larger segment first but
-                # never erasing a nonzero generation below 1 cell.
-                while fw + sw > barw and (fw > 1 or sw > 1):
-                    if fw >= sw and fw > 1:
-                        fw -= 1
-                    elif sw > 1:
-                        sw -= 1
-                    else:
-                        break
-                ow = max(0, barw - fw - sw)            # overhead tail
-                put(y, col, "#" * fw, curses.color_pair(PAIR_CLEAN)); col += fw
-                put(y, col, "#" * sw, curses.color_pair(PAIR_CRASH)); col += sw
-                put(y, col, "#" * ow, curses.A_DIM); col += ow
-            else:
-                put(y, col, "#" * barw, curses.color_pair(PAIR_CONFIG)); col += barw
-            put(y, col, "." * (BARW - barw), curses.A_DIM); col += (BARW - barw) + 1
-            put(y, col, f"{g['disk_kb'] // 1024}MB", curses.A_DIM)
-            y += 1
-        if len(games) > len(shown):
-            rest = games[len(shown):]
-            put(y, 4, f" +{len(rest)} more game(s)  "
-                      f"{sum(g['disk_kb'] for g in rest) // 1024}MB", curses.A_DIM)
-            y += 1
-    y += 1
-
-    # --- Action rows (cursor-selected). Row 0 is the scope toggle.
-    cursor = state.get("tools_cursor", 0)
-    scope_txt = "ALL GAMES" if scope_all else f"Current ({cur})"
-    sweep_txt = (f"Sweep stale shaders       ~{rec['sweep_mb']} MB" if boundary_ok
-                 else "Sweep stale shaders       " + _SWEEP_NA.get(sweep_reason, "n/a (no boundary)"))
-    rows = [
-        f"Scope: {scope_txt}    (CONFIRM toggles)",
-        sweep_txt,
-        f"Delete vault              ~{rec['vault_mb']} MB",
-        f"Clear RPCS3 cache         ~{rec['cache_mb']} MB",
-    ]
-    for i, label in enumerate(rows):
-        sel = (i == cursor)
-        put(y, 4, "> " if sel else "  ",
-            curses.color_pair(1) if sel else curses.A_NORMAL)
-        put(y, 6, label, curses.A_REVERSE if sel else curses.A_NORMAL)
-        y += 1
-    y += 1
-    if running:
-        put(y, 4, "RPCS3 is running — deletes are blocked; numbers are live.",
-            curses.color_pair(PAIR_RECOV)); y += 1
-    put(y, 4, "CONFIRM: select    BACK: menu",
-        curses.color_pair(1) | curses.A_BOLD)
+        rows.append({
+            "key": "clear_cur", "enabled": False,
+            "label": _cache_label("Clear RPCS3 caches - ",
+                                  "(no game resolved)", "", width),
+            "why": ["No PS3 game is resolved right now,",
+                    "so there is no per-game cache to clear.",
+                    "",
+                    "Install or play a game first, or use",
+                    "the ALL games option below."]})
+    rows.append({
+        "key": "clear_all", "enabled": True, "why": [],
+        "label": _cache_label("Clear RPCS3 caches - ", "ALL games",
+                              f"({_mb_txt(model.get('cache_all_mb'))})", width)})
+    if model.get("boundary_ok"):
+        rows.append({
+            "key": "sweep", "enabled": True, "why": [],
+            "label": _cache_label("Sweep stale vault shaders", "",
+                                  f"({_mb_txt(model.get('stale_all_mb'))})",
+                                  width)})
+    else:
+        rows.append({
+            "key": "sweep", "enabled": False,
+            "label": _cache_label("Sweep stale vault shaders", "",
+                                  "(unavailable)", width),
+            "why": _CACHE_SWEEP_WHY.get(
+                model.get("sweep_reason"), _CACHE_SWEEP_WHY["error"])})
+    rows.append({"key": "back", "enabled": True, "why": [],
+                 "label": _cache_label("Back", "", "", width)})
+    return rows
 
 
-def _draw_shader_confirm(stdscr, state, y, h, w):
-    """Per-action confirm for a destructive shader op."""
+def _cache_note(model):
+    """The single advisory line under the vault status, or None.
+
+    A live emulator outranks everything else: it blocks every action here, so
+    the operator should read that before they pick one."""
+    if model.get("rpcs3_running"):
+        return "RPCS3 is running - actions are blocked."
+    if not model.get("boundary_ok"):
+        return _CACHE_SWEEP_NOTE.get(model.get("sweep_reason"),
+                                     _CACHE_SWEEP_NOTE["error"])
+    if not model.get("scan_ok"):
+        return "Sizes unavailable - the actions still work."
+    return None
+
+
+def _cache_status_lines(model):
+    """Pure: the compact vault status. Two lines, hard stop — this screen is
+    about the actions under it, and the 0.8.6 per-game bar graph is exactly what
+    pushed those actions off the bottom of the panel."""
+    cur = model.get("current")
+    if cur:
+        first = (f"Vault {cur} : {_mb_txt(model.get('vault_cur_mb'))}"
+                 f"  ({_n_txt(model.get('fresh_cur_mb'))} fresh"
+                 f" + {_n_txt(model.get('stale_cur_mb'))} stale)")
+    else:
+        first = "Vault : no game resolved yet"
+    second = (f"Vault all games : {_mb_txt(model.get('vault_all_mb'))}"
+              f"  ({model.get('n_games', 0)} titles,"
+              f" {_n_txt(model.get('stale_all_mb'))} stale)")
+    return [first, second]
+
+
+def _cache_confirm(model, op, width):
+    """Pure: (title, [body lines]) for a destructive action's confirm.
+
+    Plain language, and TRUE: both clears cost the operator a slow first load
+    and stuttery early laps, and they have to be told that BEFORE the delete.
+    The vault sentence is on every clear because "will this eat my banked
+    shaders?" is the only question that actually matters here."""
+    if op == "sweep":
+        return ("SWEEP STALE VAULT SHADERS - CONFIRM", [
+            _cache_label("Scope : all games", "",
+                         f"({_mb_txt(model.get('stale_all_mb'))} stale)",
+                         width),
+            "Deletes ONLY shaders left stale by the last",
+            "graphics-driver rebuild. Fresh banked shaders",
+            "are kept - replay re-banks anything lost.",
+            "Your RPCS3 caches are not touched."])
+
+    if op == "clear_all":
+        scope = _cache_label(
+            "Scope : ALL games", "",
+            f"({_mb_txt(model.get('cache_all_mb'))})", width)
+        whose = "every game"
+    else:
+        scope = _cache_label(
+            "Game  : ", model.get("current_name") or model.get("current") or "?",
+            f"({_mb_txt(model.get('cache_cur_mb'))})", width)
+        whose = "this game"
+    return ("CLEAR RPCS3 CACHES - CONFIRM", [
+        scope,
+        "Deletes RPCS3's compiled PPU/SPU and shader cache",
+        f"for {whose}. Next launch rebuilds it: the first",
+        "load is slow and early laps may stutter.",
+        "Your banked ETK shader vault is NOT touched."])
+
+
+def _cache_gate(rpcs3_alive, worker_alive):
+    """Pure: may a destructive op run RIGHT NOW? Returns the refusal, or None.
+
+    ANY RPCS3 counts, game OR installer: a background install writes
+    dev_hdd1/caches, so clearing under it is the same corruption as clearing
+    under a race. The install WORKER counts too — it can sit between emulator
+    launches with a job still queued, a window in which no rpcs3 process exists
+    at all and a naive process check reads "idle"."""
+    if rpcs3_alive or worker_alive:
+        return _CACHE_BUSY_MSG
+    return None
+
+
+def _cache_gate_live():
+    """_cache_gate against the live rig. Never reimplements process matching:
+    _rpcs3_pids() (the argv[0] + whole-token law) is the ONE matcher, and it is
+    called UNFILTERED so an installer counts."""
+    return _cache_gate(bool(_rpcs3_pids()), _worker_alive())
+
+
+def _cache_busy_result():
+    """The on-screen half of a refusal. Wrapped, because _CACHE_BUSY_MSG is
+    56 chars and the panel clips a body line at ~55 — the toast gets it
+    verbatim, the screen gets it readable."""
+    return (False, ["RPCS3 IS RUNNING.",
+                    "",
+                    "Close the game - or wait for the install to",
+                    "finish - then open this screen again."])
+
+
+def _cache_toast(summary, body):
+    """One-shot toast from an input-path refusal (the long-op path carries its
+    own notifier). Best-effort: a dead bus must never cost the operator the
+    on-screen verdict."""
+    try:
+        _Notifier().post(summary, body, timeout=10000)
+    except Exception as e:                # noqa: BLE001 — advisory surface only
+        _log(f"cache toast failed: {e}")
+
+
+def _cache_layout(top, bottom, n_actions, extras):
+    """Pure row assignment for the body band `top`..`bottom`, INCLUSIVE.
+
+    `extras` is the optional furniture in DISPLAY order as (key, priority);
+    lower priority survives a short band. The action rows are never shed — they
+    ARE the screen.
+
+    Why a budget at all: _draw() paints _draw_footer AFTER the tab body, and the
+    footer owns h-3 (its rule) and h-2 (its hint). Anything the body flows onto
+    those rows is drawn and then erased — invisible, but still cursor-selectable,
+    which is how 0.8.6's Clear-cache row became a control the operator could
+    move onto and never see. `bottom` is therefore h-4 and this gives up
+    decoration instead of controls.
+
+    Returns ({key: row}, [action rows]); a key absent from the dict was shed,
+    and the action list is clipped rather than allowed to overrun `bottom`."""
+    avail = bottom - top + 1
+    n_actions = max(0, n_actions)
+    keep = max(0, min(len(extras), avail - n_actions))
+    # Rank by priority, stable on display order, then re-emit in display order.
+    ranked = sorted(range(len(extras)), key=lambda i: (extras[i][1], i))
+    kept = set(ranked[:keep])
+    slot = {}
+    row = top
+    for i, (key, _prio) in enumerate(extras):
+        if i in kept:
+            slot[key] = row
+            row += 1
+    actions = [r for r in range(row, row + n_actions) if r <= bottom]
+    return slot, actions
+
+
+def _draw_cache_screen(stdscr, state, model, y, h, w):
+    """Manage Shaders & Caches: compact vault status + four explicit actions.
+
+    Placement only — every string comes from the pure builders above. The band
+    STOPS at h-4: h-3 and h-2 belong to _draw_footer, which paints after us."""
     def put(row, col, text, attr=curses.A_NORMAL):
         try:
             stdscr.addstr(row, col, text[:max(0, w - col - 1)], attr)
         except curses.error:
             pass
 
-    model = state.get("shaders_model") or {}
-    op = state.get("shaders_pending")
-    scope_all = state.get("shaders_scope_all", False)
-    rec = _shader_reclaim(model, scope_all) if model else \
-        {"sweep_mb": 0, "vault_mb": 0, "cache_mb": 0}
-    scope_txt = "ALL GAMES" if scope_all else model.get("current", "?")
+    # Labels start at col 6 and put() clips at w-col-1, so that is the budget.
+    rows = _cache_rows(model, max(8, w - 7))
+    status = _cache_status_lines(model)
+    note = _cache_note(model)
+    # Display order, with the priority that decides what a short panel keeps.
+    # Title first, then the CURRENT game's numbers, then the advisory (a live
+    # emulator outranks the all-games total), and only then decoration.
+    extras = [("title", 0), ("rule", 5), ("cur", 1), ("all", 3),
+              ("note", 2), ("gap", 4)]
+    if note is None:
+        extras = [e for e in extras if e[0] != "note"]
+    slot, action_rows = _cache_layout(y, h - 4, len(rows), extras)
 
-    meta = {
-        "sweep": ("SWEEP STALE SHADERS", rec["sweep_mb"], [
-            "Deletes only shaders orphaned by the last Mesa rebuild.",
-            "Keeps the live/fresh cache — replay re-banks anything lost."]),
-        "delete_vault": ("DELETE VAULT", rec["vault_mb"], [
-            f"Deletes the ENTIRE Turnip shader cache for {scope_txt}.",
-            "Next launch recompiles from scratch — slow first laps."]),
-        "clear_cache": ("CLEAR RPCS3 CACHE", rec["cache_mb"], [
-            "Clears RPCS3's own PPU/SPU/ISO runtime cache.",
-            "RPCS3 rebuilds it automatically on next launch."]),
-    }
-    title, mb, notes = meta.get(op, ("CONFIRM", 0, []))
+    if "title" in slot:
+        put(slot["title"], 2, "MANAGE SHADERS & CACHES", curses.A_BOLD)
+    if "rule" in slot:
+        put(slot["rule"], 2, "-" * (w - 4), curses.A_DIM)
+    if "cur" in slot:
+        put(slot["cur"], 4, status[0], curses.A_DIM)
+    if "all" in slot:
+        put(slot["all"], 4, status[1], curses.A_DIM)
+    if "note" in slot and note:
+        put(slot["note"], 4, note, curses.color_pair(PAIR_RECOV))
 
-    put(y, 2, title + " - CONFIRM", curses.A_BOLD); y += 1
-    put(y, 2, "-" * (w - 4), curses.A_DIM); y += 2
-    put(y, 4, f"Scope   : {scope_txt}", curses.A_BOLD); y += 1
-    put(y, 4, f"Reclaim : ~{mb} MB"); y += 2
-    for n in notes:
-        put(y, 4, n); y += 1
-    y += 1
-    put(y, 4, "B: Confirm     A: Cancel",
-        curses.color_pair(1) | curses.A_BOLD)
+    cursor = state.get("tools_cursor", 0)
+    for i, row in enumerate(action_rows):
+        item = rows[i]
+        sel = (i == cursor)
+        put(row, 4, "> " if sel else "  ",
+            curses.color_pair(1) if sel else curses.A_NORMAL)
+        if sel:
+            attr = curses.A_REVERSE
+        elif item["enabled"]:
+            attr = curses.A_NORMAL
+        else:
+            attr = curses.A_DIM
+        put(row, 6, item["label"], attr)
 
 
-def _run_shader_op(op, scope_all, gid, notify):
-    """Blocking shader-hygiene op. Returns (ok, [result lines]). Refuses while
-    RPCS3 runs (Mesa cache open / mid-flux mtimes)."""
-    if _rpcs3_running():
-        return False, ["RPCS3 is running - quit the game first, then retry."]
+def _draw_cache_confirm(stdscr, state, y, h, w):
+    """Per-action confirm for a destructive cache/vault op. Same band rules as
+    the screen above: the notes are the truthfulness contract, so they keep
+    their rows and the decoration gives way."""
+    def put(row, col, text, attr=curses.A_NORMAL):
+        try:
+            stdscr.addstr(row, col, text[:max(0, w - col - 1)], attr)
+        except curses.error:
+            pass
+
+    model = state.get("cache_model") or _cache_model_blank()
+    op = state.get("cache_pending")
+    title, body = _cache_confirm(model, op, max(8, w - 5))
+
+    # The button hint is PINNED to the last usable row: on a confirm the one
+    # thing that must never be shed is how to say no.
+    extras = [("title", 0), ("rule", 3), ("gap", 2)]
+    slot, body_rows = _cache_layout(y, h - 5, len(body), extras)
+    if "title" in slot:
+        put(slot["title"], 2, title, curses.A_BOLD)
+    if "rule" in slot:
+        put(slot["rule"], 2, "-" * (w - 4), curses.A_DIM)
+    for i, row in enumerate(body_rows):
+        put(row, 4, body[i], curses.A_BOLD if i == 0 else curses.A_NORMAL)
+    # Sits under the text it belongs to, but never past the last usable row —
+    # on the 60x15 panel that IS h-4, on a taller one it stays with the prose.
+    put(min(h - 4, body_rows[-1] + 2) if body_rows else h - 4, 4,
+        "B: Confirm     A: Cancel", curses.color_pair(1) | curses.A_BOLD)
+
+
+def _run_cache_op(op, gid, notify):
+    """Blocking cache/vault op. Returns (ok, [result lines]).
+
+    Re-checks the gate HERE as well as at select time: the scan-to-confirm
+    window is however long the operator takes to read the confirm, and ES stays
+    live behind Pitstop, so a game can start inside it. Clearing under a live
+    RPCS3 means deleting files it has open (and mid-flux Mesa mtimes)."""
+    busy = _cache_gate_live()
+    if busy:
+        notify.post("NOT CLEARED", busy, timeout=10000)
+        return _cache_busy_result()
 
     if op == "sweep":
-        cmd = ["bash", VAULT_SWEEP, "--apply", "--porcelain"]
-        cmd += ["--all-games"] if scope_all else ["--game", gid]
+        # All-games scope, always: stale is stale on every title, and the 0.8.6
+        # per-scope toggle only ever meant "sweep less of the same corpse".
+        cmd = ["bash", VAULT_SWEEP, "--apply", "--porcelain", "--all-games"]
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
         except Exception as e:
             return False, [f"sweep failed: {e}"]
         if r.returncode != 0:
-            return False, ["vault_sweep error:",
+            return False, ["Sweep engine error:",
                            (r.stderr.strip() or "see etk_pitstop.log")[:200]]
         files = kb = 0
         for ln in r.stdout.splitlines():
@@ -5473,65 +5762,49 @@ def _run_shader_op(op, scope_all, gid, notify):
         notify.post("SHADERS SWEPT",
                     f"{files} files, {mb} MB freed", timeout=10000)
         return True, [
-            f"SWEPT stale shaders ({'all games' if scope_all else gid})",
-            f"  removed : {files} files, {mb} MB freed",
-            "  kept    : the live/fresh Turnip cache",
-            "",
-            "Stale shaders re-accrue after each Mesa rebuild (nightly).",
-            "Re-run this after a Rocknix update."]
+            "SWEPT stale vault shaders (all games)",
+            f"  freed : {mb} MB in {files} files",
+            "  kept  : your fresh, banked shaders",
+            "  re-run after each graphics-driver update"]
 
-    if op == "delete_vault":
-        ids = _vault_game_ids() if scope_all else [gid]
-        freed = removed = 0
-        for g in ids:
-            d = os.path.join(VAULT_BASE, g, "shaders")
-            if os.path.isdir(d):
-                freed += _du_kb(d)
-                try:
-                    shutil.rmtree(d)
-                    os.makedirs(d, exist_ok=True)  # keep mesa symlink target valid
-                    removed += 1
-                except Exception as e:
-                    _log(f"delete_vault rmtree {d}: {e}")
-        mb = freed // 1024
-        notify.post("VAULT DELETED",
-                    f"{mb} MB freed - rebuilds on next launch", timeout=10000)
-        return True, [
-            f"DELETED vault ({'all games' if scope_all else gid})",
-            f"  freed   : {mb} MB across {removed} game(s)",
-            "  note    : next launch recompiles shaders from scratch",
-            "",
-            "Expect slower first laps until the cache rebuilds."]
-
-    if op == "clear_cache":
-        if scope_all:
+    if op in ("clear_cur", "clear_all"):
+        if op == "clear_all":
             targets = [RPCS3_RUNTIME_CACHE, RPCS3_HDD1_CACHE]
         else:
-            targets = [os.path.join(RPCS3_RUNTIME_CACHE, gid),
-                       os.path.join(RPCS3_HDD1_CACHE, f"{gid}_{gid}")]
+            if not gid:
+                return False, ["No game is resolved, so there is no",
+                               "per-game cache to clear."]
+            targets = _cache_dirs_for_id(gid)
         freed = removed = 0
         for t in targets:
-            if os.path.isdir(t):
-                freed += _du_kb(t)
+            if not os.path.isdir(t):
+                continue
+            freed += _du_kb(t)
+            try:
+                shutil.rmtree(t)
+                removed += 1
+            except Exception as e:
+                _log(f"clear_cache rmtree {t}: {e}")
+        if op == "clear_all":
+            # Put the two cache ROOTS back, unconditionally — including when
+            # they were already absent. RPCS3 would recreate them itself, but
+            # an all-clear that ends with the roots present is the same shape
+            # every time, whatever state it started from.
+            for t in targets:
                 try:
-                    shutil.rmtree(t)
-                    # Recreate the two cache ROOTS (all-games) so RPCS3 finds them.
-                    if scope_all:
-                        os.makedirs(t, exist_ok=True)
-                    removed += 1
+                    os.makedirs(t, exist_ok=True)
                 except Exception as e:
-                    _log(f"clear_cache rmtree {t}: {e}")
+                    _log(f"clear_cache mkdir {t}: {e}")
         mb = freed // 1024
         notify.post("CACHE CLEARED",
                     f"{mb} MB freed - rebuilds on next launch", timeout=10000)
         return True, [
-            f"CLEARED RPCS3 runtime cache ({'all games' if scope_all else gid})",
-            f"  freed   : {mb} MB, {removed} dir(s)",
-            "  note    : RPCS3 rebuilds PPU/SPU/ISO cache automatically",
-            "",
-            "This does NOT touch your ETK Turnip shader vault."]
+            f"CLEARED RPCS3 caches ({'all games' if op == 'clear_all' else gid})",
+            f"  freed : {mb} MB in {removed} folder(s)",
+            "  next launch rebuilds them - first load is slow",
+            "  your banked shader vault was not touched"]
 
-    return False, [f"unknown shader op: {op}"]
+    return False, [f"unknown cache op: {op}"]
 
 
 # === TOOLS TAB — DRAW ===
@@ -5684,7 +5957,12 @@ def draw_tools(stdscr, state):
         # whatever the terminal height.
         cur = state.get("tools_cursor", 0)
         ty = max(y + 1, h - 6)
-        if cur == _TOOLS_INSTALL_IDX:
+        if cur == _TOOLS_CACHE_IDX:
+            put(ty, 4, "Free up space: clear RPCS3's rebuildable caches,",
+                curses.A_DIM)
+            put(ty + 1, 4, "or sweep shaders a driver update left stale.",
+                curses.A_DIM)
+        elif cur == _TOOLS_INSTALL_IDX:
             put(ty, 4, "Staging drop folder (place ONE .pkg + its .rap):",
                 curses.A_DIM)
             put(ty + 1, 6, PKG_STAGING_DIR, curses.A_DIM)
@@ -5823,15 +6101,15 @@ def draw_tools(stdscr, state):
             put(y, 4, "B: Restart Pitstop now     A: Later",
                 curses.color_pair(1) | curses.A_BOLD)
 
-    elif mode == "shaders":
-        model = state.get("shaders_model")
-        if not model:
-            put(y, 4, "Scanning shader vault…", curses.A_DIM)
-        else:
-            _draw_shader_screen(stdscr, state, model, y, h, w)
+    elif mode == "cache":
+        # Never "no model, no screen": a scan that failed still renders, with
+        # "?" for every size and all four actions live.
+        _draw_cache_screen(stdscr, state,
+                           state.get("cache_model") or _cache_model_blank(),
+                           y, h, w)
 
-    elif mode == "shaders_confirm":
-        _draw_shader_confirm(stdscr, state, y, h, w)
+    elif mode == "cache_confirm":
+        _draw_cache_confirm(stdscr, state, y, h, w)
 
     elif mode == "trigcal":
         _draw_trigcal_screen(stdscr, state, y, h, w)
@@ -6219,8 +6497,8 @@ def _tools_move(state, delta):
         n = len(state.get("tools_games", []))
         if n:
             state["tools_cursor"] = (state.get("tools_cursor", 0) + delta) % n
-    elif mode == "shaders":
-        state["tools_cursor"] = (state.get("tools_cursor", 0) + delta) % len(_SHADER_ROWS)
+    elif mode == "cache":
+        state["tools_cursor"] = (state.get("tools_cursor", 0) + delta) % len(_CACHE_ROWS)
     elif mode == "trigcal":
         state["tools_cursor"] = (state.get("tools_cursor", 0) + delta) % len(_TRIGCAL_ROWS)
 
@@ -6261,12 +6539,11 @@ def _tools_select(state):
             state["tools_games"] = _list_psn_games()
             state["tools_cursor"] = 0
             state["tools_mode"] = "uninstall_list"
-        elif state.get("tools_cursor", 0) == _TOOLS_SHADERS_IDX:   # Manage Shaders
-            state["tools_mode"] = "shaders"
+        elif state.get("tools_cursor", 0) == _TOOLS_CACHE_IDX:   # Shaders & Caches
+            state["tools_mode"] = "cache"
             state["tools_cursor"] = 0
-            state["shaders_scope_all"] = False
-            state["shaders_model"] = None
-            state["shaders_scan_request"] = True     # main loop scans w/ busy frame
+            state["cache_model"] = None
+            state["cache_scan_request"] = True       # main loop scans w/ busy frame
         elif state.get("tools_cursor", 0) == _TOOLS_TRIGCAL_IDX:   # Trigger Cal
             state["tools_mode"] = "trigcal"
             state["tools_cursor"] = 0
@@ -6329,45 +6606,35 @@ def _tools_select(state):
         g = state["tools_games"][state["tools_cursor"]]
         state["tools_action"] = ("uninstall", g)
 
-    elif mode == "shaders":
-        idx = state.get("tools_cursor", 0)
-        if idx == 0:                                  # toggle scope (no rescan;
-            state["shaders_scope_all"] = not state.get("shaders_scope_all", False)
-        else:                                         # model is scope-agnostic)
-            op = _SHADER_ROWS[idx]
-            model = state.get("shaders_model") or {}
-            if op == "sweep" and not model.get("boundary_ok"):
-                reason = model.get("sweep_reason", "no_boundary")
-                if reason == "engine":
-                    msg = [
-                        "Sweep engine missing on the rig.",
-                        "tools/vault_sweep.sh is not deployed —",
-                        "re-run install.sh from the host to push it."]
-                elif reason == "error":
-                    msg = [
-                        "Sweep engine returned an error.",
-                        "Check the ETK Pitstop log on the rig,",
-                        "then re-run install.sh if needed."]
-                else:
-                    msg = [
-                        "No Mesa-rebuild boundary (vault/.last_mesa.hash).",
-                        "Run install.sh once from the host to seed it,",
-                        "then sweep after the next Rocknix nightly."]
-                state["tools_result"] = (False, msg)
-                state["tools_mode"] = "result"
-            elif model.get("rpcs3_running"):
-                state["tools_result"] = (False, [
-                    "RPCS3 is running.",
-                    "Quit the game first, then retry."])
+    elif mode == "cache":
+        model = state.get("cache_model") or _cache_model_blank()
+        idx = state.get("tools_cursor", 0) % len(_CACHE_ROWS)
+        # Width only fits the LABEL, and select reads key/enabled/why — so pass
+        # a width wide enough to never truncate rather than plumbing the
+        # terminal size into an input handler that has no use for it.
+        row = _cache_rows(model, 200)[idx]
+        if row["key"] == "back":
+            return _tools_back(state)
+        if not row["enabled"]:
+            # A disabled row explains itself rather than the cursor silently
+            # refusing — "nothing happened" is the worst answer a control gives.
+            state["tools_result"] = (False, row["why"])
+            state["tools_mode"] = "result"
+        else:
+            # Gate BEFORE the confirm: a refusal must not wear a destructive
+            # dialog first. The op re-checks it too (the read window is long).
+            busy = _cache_gate_live()
+            if busy:
+                _cache_toast("NOT CLEARED", busy)
+                state["tools_result"] = _cache_busy_result()
                 state["tools_mode"] = "result"
             else:
-                state["shaders_pending"] = op
-                state["tools_mode"] = "shaders_confirm"
+                state["cache_pending"] = row["key"]
+                state["tools_mode"] = "cache_confirm"
 
-    elif mode == "shaders_confirm":
-        state["tools_action"] = ("shader", state.get("shaders_pending"),
-                                 state.get("shaders_scope_all", False),
-                                 (state.get("shaders_model") or {}).get("current"))
+    elif mode == "cache_confirm":
+        state["tools_action"] = ("cache", state.get("cache_pending"),
+                                 (state.get("cache_model") or {}).get("current"))
 
     elif mode == "trigcal":
         m = state.get("trigcal_model") or {}
@@ -6414,11 +6681,11 @@ def _tools_back(state):
         return "quit"
     if mode == "uninstall_confirm":
         state["tools_mode"] = "uninstall_list"
-    elif mode == "shaders_confirm":
-        state["tools_mode"] = "shaders"
-    elif mode == "shaders":
+    elif mode == "cache_confirm":
+        state["tools_mode"] = "cache"
+    elif mode == "cache":
         state["tools_mode"] = "menu"
-        state["tools_cursor"] = _TOOLS_SHADERS_IDX
+        state["tools_cursor"] = _TOOLS_CACHE_IDX
     elif mode == "trigcal":
         state["tools_mode"] = "menu"
         state["tools_cursor"] = _TOOLS_TRIGCAL_IDX
@@ -8937,12 +9204,16 @@ def main(stdscr):
         # Runs here in the main loop so it has stdscr for the 'busy' frame;
         # the op itself blocks (RPCS3 owns the screen during an install)
         # and surfaces live progress through mako notifications.
-        # Manage Shaders: lazy vault scan (du + dry-run stat pass). Runs here so
-        # a busy frame covers the multi-second read.
-        if state.pop("shaders_scan_request", None):
-            _run_with_spinner(stdscr, "Scanning shader vault…",
-                              _scan_vault_hygiene, state,
+        # Shaders & Caches: lazy scan (two du roots + the sweep dry-run pass).
+        # Runs here so a busy frame covers the multi-second read. If the worker
+        # died the model is still filled in, so the screen renders with "?"
+        # sizes instead of sitting on a permanent "Scanning..." with no exit.
+        if state.pop("cache_scan_request", None):
+            _run_with_spinner(stdscr, "Reading vault and caches...",
+                              _scan_cache_model, state,
                               progress={"frac": 0.0})
+            if not state.get("cache_model"):
+                state["cache_model"] = _cache_model_blank()
 
         action = state.pop("tools_action", None)
         if action:
@@ -9001,12 +9272,12 @@ def main(stdscr):
             elif kind == "uninstall":
                 _draw_tools_busy(stdscr, "uninstall")
                 ok, lines = _run_uninstall(action[1], notifier)
-            elif kind == "shader":
+            elif kind == "cache":
                 res = _run_with_spinner(
-                    stdscr, "Cleaning shaders — please wait…",
-                    _run_shader_op, action[1], action[2], action[3], notifier)
-                ok, lines = res if res else (False, ["shader op failed — see log"])
-                state["shaders_model"] = None     # force rescan on re-entry
+                    stdscr, "Clearing - please wait...",
+                    _run_cache_op, action[1], action[2], notifier)
+                ok, lines = res if res else (False, ["cache op failed - see log"])
+                state["cache_model"] = None       # force rescan on re-entry
             elif kind == "update_check":
                 res = _run_with_spinner(
                     stdscr, "Checking GitHub for ETK updates…",
