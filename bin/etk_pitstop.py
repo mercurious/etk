@@ -48,6 +48,7 @@ import select
 import sys
 import json
 import struct
+import fcntl
 import curses
 import time
 import traceback
@@ -103,6 +104,14 @@ SESSIONS_LEDGER = os.environ.get(
     'SESSIONS_LEDGER', f"{TELEMETRY_DIR}/sessions.tsv"
 )
 CAREER_DIR = os.environ.get('CAREER_DIR', f"{TELEMETRY_DIR}/career")
+# The Sentry's session breadcrumb (env.sh SESSION_ANCHOR). Written at ignition
+# (install.sh STEP: "printf ... > $SESSION_ANCHOR") and deleted by
+# session_postmortem.sh ONLY after the ledger row is appended, so its existence
+# brackets exactly the window in which a session's attribution is still
+# undecided. The GAME SWITCHER reads it as its exit-edge gate — see
+# _session_live().
+SESSION_ANCHOR = os.environ.get(
+    'SESSION_ANCHOR', f"{TELEMETRY_DIR}/session_anchor.txt")
 PIT_NOTE_FILE = os.environ.get('PIT_NOTE_FILE', f"{TELEMETRY_DIR}/pit_note.txt")
 CONFIG_CHANGES_HEADER = "epoch\tgame_id\tfield_label\told_value\tnew_value\n"
 
@@ -385,17 +394,24 @@ BTN_TR = 311                # R1 / RB shoulder
 # binds: bin/input_d.py uses 314 as the in-game DPAD clutch modifier
 # ("314 = BTN_SELECT (clutch modifier for DPAD)") and bin/gamepad_probe.py's
 # reference table lists "314 BTN_SELECT" — the two agree, so this is not a
-# guess. NOTE (input_d.py's warning, still true): SELECT is the in-game
-# CAMERA TOGGLE, so holding it while a race is live also flips the driver's
-# view. That collateral is one more reason the switcher refuses mid-session.
+# guess. TWO collateral effects, because we never EVIOCGRAB and SELECT is a
+# control other software already owns:
+#   1. SELECT is the in-game CAMERA TOGGLE (input_d.py's warning), so holding
+#      it while a race is live also flips the driver's view.
+#   2. It arms input_d's own DPAD clutch: SELECT+DPAD-Up is the forced
+#      screenshot. Pitstop swallows the D-pad under the overlay; input_d does
+#      NOT see that swallow, so a stray D-pad Up mid-chord still fires a shot.
+# Both are one more reason the switcher refuses while a session is in flight.
 BTN_SELECT = 314            # Select / Share / Create — switcher modifier
-# Right stick vertical. Range convention is the DS5 virtual target's 8-bit
-# unsigned axis (0-255, centre 128) — the SAME convention the trigger axes
-# above use ("0-255 on the DS5 target"), which is how TRIGGER CALIBRATION
-# reads its live gauge. UP is the LOW end (evdev Y axes grow downward).
-# _switcher_stick() only arms after it has seen ONE centred sample, so a
-# future target that reports signed 16-bit axes leaves the selector inert
-# (harmless no-op) instead of latching it to a false full deflection.
+# Right stick vertical. The RANGE IS PROBED, not assumed: _read_absinfo()
+# asks the kernel via EVIOCGABS at pad open, because assuming was not safe.
+# The DS5 virtual target reports 8-bit unsigned axes (0-255, centre 128 — the
+# same convention as the trigger axes above), but ROCKNIX has already flipped
+# the InputPlumber virtual target once (Xbox -> DS5, nightly-20260520), and a
+# signed 16-bit target rests at 0, which under a 0-255 reading is a FULL-UP
+# deflection: resting jitter alone would then walk the selector to row 0 and
+# commit a game the operator never chose. UP is the LOW end of the axis under
+# either convention (evdev Y axes grow downward).
 ABS_RY = 4                  # right analog stick, vertical
 #
 # Face buttons — flipped at the InputPlumber DS5 target switch (Rocknix
@@ -406,6 +422,51 @@ ABS_RY = 4                  # right analog stick, vertical
 # InputPlumber virtual targets don't always follow physical convention.
 BTN_CONFIRM = 304           # BTN_SOUTH = Cross (X)  = confirm  (DS5 standard)
 BTN_BACK = 305              # BTN_EAST  = Circle (O) = back     (DS5 standard)
+
+# --- Axis calibration (EVIOCGABS) ---
+# The one place the kit asks the pad about itself instead of assuming. Codes
+# above are stable across target swaps; RANGES are not, and the GAME SWITCHER
+# reads an analog axis where a wrong range is not a dead control but a WRONG
+# ACTION (see the ABS_RY note). struct input_absinfo: value, minimum, maximum,
+# fuzz, flat, resolution.
+_ABSINFO_FMT = 'iiiiii'
+_ABSINFO_SIZE = struct.calcsize(_ABSINFO_FMT)
+
+
+def _eviocgabs(axis):
+    """EVIOCGABS(axis) request number, built the way linux/input.h does:
+    _IOR('E', 0x40 + axis, struct input_absinfo). Computed, not hardcoded, so
+    probing a different axis is a call-site change and not a magic number."""
+    return (2 << 30) | (_ABSINFO_SIZE << 16) | (ord('E') << 8) | (0x40 + axis)
+
+
+def _read_absinfo(fd, axis=ABS_RY):
+    """(minimum, maximum) as the KERNEL reports them for this axis, or None.
+
+    None means the pad would not tell us; the caller then falls back to the
+    documented 0-255 and keeps its out-of-range guard armed. Never raises —
+    an ioctl a virtual pad refuses must cost the switcher its calibration,
+    never the app."""
+    if fd is None:
+        return None
+    req = _eviocgabs(axis)
+    # Unsigned first, then its signed twin: the request number has bit 31 set
+    # (_IOC_READ), which older CPython rejects as an int overflow.
+    for r in (req, req - (1 << 32)):
+        try:
+            buf = fcntl.ioctl(fd, r, b'\0' * _ABSINFO_SIZE)
+        except Exception:
+            continue
+        try:
+            _val, lo, hi, _fuzz, _flat, _res = struct.unpack(_ABSINFO_FMT, buf)
+        except Exception:
+            break
+        if hi > lo:
+            _log(f"switcher: ABS_RY absinfo min={lo} max={hi}")
+            return (lo, hi)
+        break                      # a degenerate range is not a calibration
+    _log("switcher: ABS_RY absinfo unavailable - falling back to 0-255")
+    return None
 
 
 # === TAB DISPATCH ===
@@ -3542,10 +3603,13 @@ def _games_yml_serials(path=None):
             for ln in f:
                 if ':' not in ln or ln.lstrip().startswith('#'):
                     continue
-                tid, path = ln.split(':', 1)
-                tid, path = tid.strip(), path.strip().strip('"')
+                # Loop locals are NOT named `path`: that is this function's
+                # own parameter, and shadowing it inside the reader is how a
+                # later edit ends up re-opening a ROM path as the yml.
+                tid, rom = ln.split(':', 1)
+                tid, rom = tid.strip(), rom.strip().strip('"')
                 if re.fullmatch(r'[A-Z]{4}[0-9]{5}', tid):
-                    out[tid] = path
+                    out[tid] = rom
     except FileNotFoundError:
         pass
     except Exception as e:
@@ -7998,6 +8062,7 @@ _SWITCHER_TABS = (CURRENT_TAB_TELEMETRY, CURRENT_TAB_TUNING, CURRENT_TAB_TOOLS)
 
 _SWITCHER_TITLE = "GAME SWITCHER"
 _SWITCHER_HINT = "R-STICK: pick   RELEASE SELECT: go"
+_SWITCHER_DISARMED = "STICK UNREADABLE - release SELECT"
 _SWITCHER_EMPTY = "(no games found)"
 
 # Stick handling. Deadzone is 30% of half-travel — well past the resting
@@ -8007,11 +8072,15 @@ _SWITCHER_EMPTY = "(no games found)"
 _SWITCHER_DEADZONE = 0.30
 _SWITCHER_REPEAT_FIRST_S = 0.350
 _SWITCHER_REPEAT_S = 0.150
+# Used ONLY when EVIOCGABS refuses to answer. Documented, not trusted: every
+# out-of-range sample under this fallback disarms the stick outright.
+_STICK_FALLBACK_RANGE = (0, 255)
 
 # Decision verbs (pure decision, so the glue below has nothing to argue with).
 SWITCH_NOOP = "NOOP"
 SWITCH_REFUSE_RUNNING = "REFUSE_RUNNING"
 SWITCH_GO = "SWITCH"
+SWITCH_WRITE_FAILED = "WRITE_FAILED"
 
 
 def list_installed_games(roms_dir=None, games_yml=None):
@@ -8081,28 +8150,64 @@ def list_installed_games(roms_dir=None, games_yml=None):
     return sorted(found.items(), key=lambda kv: (kv[1].lower(), kv[0]))
 
 
-def switch_decision(moved, highlighted_id, current_id, game_running):
+def switch_decision(moved, highlighted_id, current_id, session_live,
+                    index_changed=False, current_listed=True, n_games=1):
     """What a SELECT release means. Pure — no I/O, no state.
 
     NOOP when the stick never moved, when there is nothing to highlight, or
     when the highlight is still the current game: that IS the cancel, and it
     is why the menu needs no cancel row.
 
-    REFUSE_RUNNING while a real game session is live, and this one is
-    load-bearing rather than merely tidy: bin/session_postmortem.sh stamps
-    the finished session's ledger row with game_id read from RECENT_ID_FILE
-    at post-mortem time (session_postmortem.sh: GAME_ID=$(cat
-    "$RECENT_ID_FILE")). Re-pointing that anchor mid-session would file the
-    running race under whatever title the operator just picked — a silently
-    mis-attributed row is worse than no row. The gate keeps the ledger
-    honest. (_game_running is the argv[0]-matched, installer-discriminating
-    check; a background install is NOT a session and must not block a
-    switch.)"""
+    NOOP also for the GHOST CURRENT hole: TARGET_ID is set but is not in the
+    list (an uninstalled title still anchored, or the NPUA80075 fallback).
+    The overlay then opens on row 0 with NOTHING marked, so a stick nudge that
+    clamps changes nothing on screen — and releasing would commit row 0, a
+    game the operator never saw themselves select. In that state the SELECTION
+    INDEX has to have actually moved. The exception is a one-row list, where
+    the index CANNOT move and the nudge is the only signal there is — the same
+    reasoning that lets a fresh rig (ETK_NO_TARGET) bind its single game.
+
+    REFUSE_RUNNING while a session is still in flight, and this gate is
+    load-bearing rather than tidy. session_postmortem.sh stamps the finished
+    session's ledger row with game_id read from RECENT_ID_FILE (GAME_ID=$(cat
+    "$RECENT_ID_FILE")), so re-pointing that anchor mis-files the race. TWO
+    hazards, not one:
+      MID-SESSION  — the game is running; the row it will eventually get would
+                     name the title the operator just picked.
+      EXIT EDGE    — RPCS3 has exited (so _game_running is already False) but
+                     the Sentry ticks every 2s and the post-mortem runs
+                     probe.sh BEFORE it reads the anchor. For several seconds
+                     the just-finished race is still unattributed, and no
+                     RUNNING tick will follow to heal a rewrite.
+    _session_live() covers both: process check OR the Sentry's session anchor,
+    which exists from ignition until the row is appended. A background install
+    is NOT a session (the argv[0]/installer discrimination) and must not block
+    a switch."""
     if not moved or not highlighted_id or highlighted_id == current_id:
         return SWITCH_NOOP
-    if game_running:
+    if current_id is not None and not current_listed \
+            and not index_changed and n_games > 1:
+        return SWITCH_NOOP
+    if session_live:
         return SWITCH_REFUSE_RUNNING
     return SWITCH_GO
+
+
+def _session_live():
+    """True while a race is running OR its attribution is still undecided.
+
+    The anchor half is the exit-edge guard: session_postmortem.sh deletes
+    $SESSION_ANCHOR only AFTER appending the ledger row, so the file's
+    lifetime is exactly the window in which RECENT_ID_FILE still speaks for a
+    session that has not been filed yet. Absent/unreadable anchor = not live,
+    which is the fail-soft direction for a switcher (worst case we allow a
+    switch on a genuinely idle rig)."""
+    if _game_running():
+        return True
+    try:
+        return os.path.exists(SESSION_ANCHOR)
+    except Exception:
+        return False
 
 
 def _write_recent_id(new_id, path=None):
@@ -8116,8 +8221,11 @@ def _write_recent_id(new_id, path=None):
 
     tmp-then-os.replace in the SAME directory (H2's rule): a power cut or
     panic mid-write must never leave a truncated ID behind, because the
-    launcher would then read it as unresolvable and boot into
-    ETK_NO_TARGET."""
+    launcher would then read it as unresolvable and boot into ETK_NO_TARGET.
+    fsync BEFORE the rename, or the rename can reach the disk ahead of the
+    bytes and the crash window stays open — same reasoning as the Sentry's
+    `sync` after its ignition breadcrumb. Switches are rare; the cost is
+    nil."""
     path = RECENT_ID_FILE if path is None else path
     tmp = path + ".tmp"
     try:
@@ -8126,6 +8234,8 @@ def _write_recent_id(new_id, path=None):
             os.makedirs(d, exist_ok=True)
         with open(tmp, "w") as f:
             f.write(new_id + "\n")
+            f.flush()
+            os.fsync(f.fileno())
         os.replace(tmp, path)
         return True
     except Exception as e:
@@ -8156,18 +8266,26 @@ def _start_tab(default):
     return tab if tab in [tid for _, tid in TABS] else default
 
 
-def _switcher_state(games, current):
+def _switcher_state(games, current, armed=False):
     """Pure: the overlay model. Opens on the CURRENT game (falling back to
     the first row when it isn't installed, or in ETK_NO_TARGET where there
-    is no current game at all). dir=None means the stick is UNARMED — see
-    _switcher_stick."""
+    is no current game at all).
+
+    `armed` is the stick's starting state: True when the pad told us its real
+    axis range (nothing left to be defensive about, and the operator's first
+    flick counts), False when we are on the 0-255 fallback, where dir=None
+    means UNARMED and the first CENTRED sample is what arms it — see
+    _switcher_stick. `open_cursor`/`listed` back the ghost-current rule in
+    switch_decision."""
     cursor = 0
+    listed = False
     for i, (gid, _t) in enumerate(games):
         if gid == current:
-            cursor = i
+            cursor, listed = i, True
             break
     return {"games": games, "cursor": cursor, "current": current,
-            "moved": False, "dir": None, "repeat_at": None}
+            "open_cursor": cursor, "listed": listed,
+            "moved": False, "dir": 0 if armed else None, "repeat_at": None}
 
 
 def _switcher_eligible(state):
@@ -8193,7 +8311,9 @@ def _switcher_open(state):
     """Scan ONCE, here — the list is a menu-lifetime snapshot, dropped on
     close, so nothing is added to import or to the frame budget."""
     state["switcher"] = _switcher_state(
-        list_installed_games(), None if ETK_NO_TARGET else TARGET_ID)
+        list_installed_games(), None if ETK_NO_TARGET else TARGET_ID,
+        armed=bool(state.get("stick_probed")) and
+        not state.get("stick_disarmed"))
 
 
 def _switcher_step(state, direction):
@@ -8206,11 +8326,21 @@ def _switcher_step(state, direction):
                               sw["cursor"] + direction))
 
 
-def _stick_dir(val, deadzone=_SWITCHER_DEADZONE):
-    """Classify a raw ABS_RY sample: -1 up, +1 down, 0 centred. The pad
-    reports 0-255 with 128 at rest (see the ABS_RY note in the H1 block);
-    UP is the low end, so the sign is negated into screen terms."""
-    norm = (val - 128) / 127.0
+def _stick_dir(val, rng=None, deadzone=_SWITCHER_DEADZONE):
+    """Classify one ABS_RY sample against the axis's ACTUAL range: -1 up,
+    +1 down, 0 centred, or None for a sample OUTSIDE the range.
+
+    None is the interesting one. A sample the axis says it cannot produce
+    means the range we are normalising against is wrong, and a wrong range on
+    an analog axis does not give a dead control — it gives a confident wrong
+    action. The caller treats it as poison and stops reading the stick."""
+    lo, hi = rng if rng else _STICK_FALLBACK_RANGE
+    if val < lo or val > hi:
+        return None
+    half = (hi - lo) / 2.0
+    if half <= 0:
+        return 0
+    norm = (val - (lo + half)) / half     # -1.0 (full up) .. +1.0 (full down)
     if norm <= -deadzone:
         return -1
     if norm >= deadzone:
@@ -8221,22 +8351,38 @@ def _stick_dir(val, deadzone=_SWITCHER_DEADZONE):
 def _switcher_stick(state, val, now):
     """Fold one right-stick sample into the model.
 
-    ARMING: the axis does nothing until it has been seen CENTRED once. That
-    is what makes the 0-255 assumption safe — a pad target that reported
-    signed axes would rest at 0, which reads as a full-up deflection under
-    this scale, and an unarmed axis simply never steps (the operator gets a
-    dead selector and a no-op release, not a switch to the wrong game). It
-    is also the literal reading of 'edge-triggered on crossing OUT of the
-    deadzone': you have to be inside it first.
+    OUT-OF-RANGE POISON: one sample outside the resolved range disarms the
+    stick for the rest of the process. It is the belt to the absinfo probe's
+    braces — if the kernel would not tell us the range (0-255 fallback) and
+    the pad is really a signed target, its resting jitter crosses zero, and
+    the FIRST negative sample lands here and shuts the selector down before a
+    fake deflection can walk it anywhere. The overlay stays open and
+    dismissible; it just stops accepting stick input.
+
+    ARMING (fallback only): with no kernel range, the axis does nothing until
+    it has been seen CENTRED once, so a pad resting outside our assumed
+    centre never steps. When absinfo DID answer there is nothing left to be
+    defensive about, so the model opens armed and the operator's first flick
+    counts.
 
     `moved` is set by the STICK, not by the cursor — an operator who nudges
     the stick at a one-row list has expressed intent even though nothing
     could move, and on a fresh rig (ETK_NO_TARGET, one installed game) that
-    is the only way the first bind could ever be committed."""
+    is the only way the first bind could ever be committed. Where the nudge
+    is invisible instead of merely ineffective, switch_decision's
+    ghost-current rule requires the INDEX to have moved as well."""
     sw = state.get("switcher")
-    if not sw:
+    if not sw or state.get("stick_disarmed"):
         return
-    d = _stick_dir(val)
+    d = _stick_dir(val, state.get("stick_range"))
+    if d is None:
+        state["stick_disarmed"] = True
+        sw["dir"] = None
+        sw["repeat_at"] = None
+        _log(f"switcher: ABS_RY sample {val} outside range "
+             f"{state.get('stick_range') or _STICK_FALLBACK_RANGE} - "
+             "stick disarmed for this session")
+        return
     prev = sw.get("dir")
     if prev is None:
         if d == 0:
@@ -8307,8 +8453,10 @@ def _switcher_release(state):
         return SWITCH_NOOP
     games = sw.get("games") or []
     pick = games[sw["cursor"]][0] if games else None
-    verdict = switch_decision(sw.get("moved"), pick, sw.get("current"),
-                              _game_running())
+    verdict = switch_decision(
+        sw.get("moved"), pick, sw.get("current"), _session_live(),
+        index_changed=sw.get("cursor") != sw.get("open_cursor"),
+        current_listed=sw.get("listed", True), n_games=len(games))
     if verdict == SWITCH_REFUSE_RUNNING:
         _switcher_verdict(state, "GAME RUNNING - exit the race first",
                           "The switch would mis-file the running session.")
@@ -8316,9 +8464,28 @@ def _switcher_release(state):
         if not _write_recent_id(pick):
             _switcher_verdict(state, "SWITCH FAILED - storage error",
                               "Could not write the last-played anchor.")
-            return "WRITE_FAILED"
+            return SWITCH_WRITE_FAILED
         _switcher_apply(pick, state.get("current_tab", CURRENT_TAB_TELEMETRY))
     return verdict
+
+
+def _switcher_absorb(state, etype, code, val, now=None):
+    """Modal capture, as one testable rule: True = this event belongs to the
+    overlay and must NOT reach tab dispatch.
+
+    Called from the main loop's bounded drain (the same place trigger axes
+    are folded) so a stick sweep cannot backlog behind the one-event-per-frame
+    budget. EVERYTHING is absorbed except the SELECT RELEASE, which is the one
+    event the loop still has to act on. That includes SELECT's own key-repeat
+    (val==2 on targets that emit it): only the release, val==0, gets out."""
+    if state.get("switcher") is None:
+        return False
+    if etype == EV_ABS and code == ABS_RY:
+        _switcher_stick(state, val, time.time() if now is None else now)
+        return True
+    if etype == EV_KEY and code == BTN_SELECT and val == 0:
+        return False
+    return True
 
 
 def _switcher_layout(h, w, n, content_w=0, cursor=0):
@@ -8384,13 +8551,21 @@ def _draw_switcher(stdscr, state):
         if idx >= len(rows):
             break
         sel = bool(games) and idx == cursor
-        put(y0 + 3 + i, x0 + 1, rows[idx].ljust(max(0, bw - 2)),
+        # TRUNCATE, then pad: ljust alone leaves a long title longer than the
+        # box, and put()'s clip would then paint straight over the right
+        # border (and the tab body beyond it).
+        cell = rows[idx][:max(0, bw - 2)].ljust(max(0, bw - 2))
+        put(y0 + 3 + i, x0 + 1, cell,
             curses.A_REVERSE if sel else
             (curses.A_NORMAL if games else curses.A_DIM))
     # On a grid too short for both, the LIST wins: it is the thing the
     # operator is choosing from, and the chord is already in their hands.
     if bh >= 6:
-        put(y0 + bh - 2, x0 + 2, _SWITCHER_HINT,
+        # A disarmed stick has to SAY so, or a dead selector reads as a hung
+        # app and the operator keeps holding the button.
+        hint = (_SWITCHER_DISARMED if state.get("stick_disarmed")
+                else _SWITCHER_HINT)
+        put(y0 + bh - 2, x0 + 2, hint,
             curses.color_pair(PAIR_TITLE) | curses.A_BOLD)
 
 
@@ -8471,7 +8646,10 @@ def _draw(stdscr, state):
 def _dispatch_kb(state, ch):
     """Route a keyboard event to the active tab's handler. In ETK_NO_TARGET
     mode TUNING/TELEMETRY are inert — only TOOLS receives input (plus a
-    plain 'q' quit) so no config or ledger is ever touched."""
+    plain 'q' quit) so no config or ledger is ever touched. (The GAME
+    SWITCHER chord is not routed here at all: it is a pad-only layer handled
+    above dispatch, and it IS live in no-target mode — binding the first game
+    touches neither config nor ledger.)"""
     ct = state["current_tab"]
     if ct == CURRENT_TAB_TOOLS:
         return handle_tools_kb(state, ch)
@@ -8554,6 +8732,12 @@ def main(stdscr):
     except Exception as e:
         gamepad_status = f"NO PAD ({e})"
 
+    # GAME SWITCHER: ask the pad what its right stick actually reports, ONCE,
+    # here — the axis range is the one pad fact this app cannot afford to
+    # assume (see the ABS_RY note in the H1 block). A refusal is not fatal:
+    # the switcher falls back to 0-255 and keeps its out-of-range guard armed.
+    _stick_range = _read_absinfo(fd, ABS_RY)
+
     state = {
         "matrix": matrix,
         "cursor_idx": 0,
@@ -8608,6 +8792,13 @@ def main(stdscr):
         # _switcher_open on the SELECT press and dropped on the release, so
         # the installed-games scan lives exactly as long as the menu does.
         "switcher": None,
+        # Right-stick calibration, resolved once at pad open. stick_probed
+        # False means we are on the documented fallback and the stick has to
+        # arm on a centred sample first; stick_disarmed latches for the rest
+        # of the process the moment a sample proves the range wrong.
+        "stick_range": _stick_range or _STICK_FALLBACK_RANGE,
+        "stick_probed": _stick_range is not None,
+        "stick_disarmed": False,
     }
 
     running = True
@@ -8661,17 +8852,12 @@ def main(stdscr):
                     # GAME SWITCHER modal capture. Folded HERE, exactly like
                     # the trigger axes above and for the same reason: a stick
                     # sweep out-runs the 50ms frame clock, and one event per
-                    # frame would leave the selector chasing a queue. Only the
-                    # SELECT RELEASE escapes to the dispatch below; every other
-                    # event (L1/R1, D-pad, buttons) is swallowed here, so
-                    # nothing the operator pressed under the overlay can act
-                    # after it closes.
-                    if state.get("switcher") is not None:
-                        if _t == EV_ABS and _c == ABS_RY:
-                            _switcher_stick(state, _v, time.time())
-                        elif _t == EV_KEY and _c == BTN_SELECT and _v == 0:
-                            data = chunk
-                            break
+                    # frame would leave the selector chasing a queue. The rule
+                    # itself lives in _switcher_absorb so it can be tested:
+                    # only the SELECT RELEASE escapes to the dispatch below,
+                    # so nothing the operator pressed under the overlay can
+                    # act after it closes.
+                    if _switcher_absorb(state, _t, _c, _v):
                         continue
                     data = chunk
                     break
