@@ -524,9 +524,8 @@ print("\n[BEACON] install.sh announces itself on the rig's own screen")
 # "the toast usually appears" but four structural guarantees that no future
 # edit can quietly erode:
 #
-#   ALWAYS ON   no env var, no etk.conf knob, no kill-switch may skip a
-#               beacon. A switch is exactly what a silent installer would
-#               flip, so the checks below refuse a gated call site outright.
+#   ALWAYS ON   no env var, no etk.conf knob, no kill-switch may skip a STAGE
+#               beacon. A switch is exactly what a silent installer would flip.
 #   FAIL-SOFT   a beacon may never break or block an install, so every call
 #               site carries `|| true`.
 #   MONOTONIC   the percentages are a static hand-weighted table; out-of-order
@@ -534,6 +533,15 @@ print("\n[BEACON] install.sh announces itself on the rig's own screen")
 #   NO SILENCE  the announcement precedes the first rig mutation, and every
 #               TUI step is announced (the 6.x sub-stages between step 5 and
 #               step 6 are a 1,300-line window with no TUI calls at all).
+#
+# TWO KINDS OF CALL SITE, and the difference is the whole security model:
+#   STAGE beacons are at column 0 — unconditional, one per stage, and the thing
+#   ALWAYS ON actually guarantees: no config can stop a stage announcing itself.
+#   SUB beacons are indented inside a stage's own loop or branch. They are
+#   heartbeats that keep the card inside its expire window during a long stage,
+#   and they are allowed to be skipped — the stage they belong to has already
+#   announced itself unconditionally, which is asserted below. What they may
+#   NOT be is gated on an etk.conf knob, and that is checked for both kinds.
 #
 # WHAT THESE DO NOT PROVE: they are static reads of the source. "Top level"
 # is inferred from column 0 plus the function/heredoc range scan below, which
@@ -545,6 +553,8 @@ print("\n[BEACON] install.sh announces itself on the rig's own screen")
 # a traceback there proves nothing and hides the checks behind it.
 LINES = install_src.split("\n")
 CALLS = [(i + 1, ln) for i, ln in enumerate(LINES) if re.match(r"^\s*rig_toast\s", ln)]
+STAGE = [(n, ln) for n, ln in CALLS if ln.startswith("rig_toast ")]
+SUB = [(n, ln) for n, ln in CALLS if not ln.startswith("rig_toast ")]
 
 
 def _find(pat, default=None):
@@ -561,11 +571,24 @@ check_true("install.sh carries beacons at more than the 8 TUI steps",
            len(CALLS) >= 20, f"{len(CALLS)} call sites")
 
 # --- ALWAYS ON -------------------------------------------------------------
+# EXACT ARITHMETIC, and it is load-bearing: an inline gate written
+# `[ "$KNOB" = 1 ] && rig_toast 68 "..." || true` stops matching the call
+# regex, silently drops OUT of CALLS, and every other check here then passes on
+# a beacon that a config can switch off — a kill-switch on the one feature that
+# must not have one. Counting the raw token closes that hole: definition + call
+# sites and nothing else, so a call that escapes the regex cannot escape the
+# suite. (It also means no comment in install.sh may spell the token.)
+check("every occurrence of the token is the definition or a matched call site",
+      install_src.count("rig_toast"), len(CALLS) + 1)
+
 # Anything indented is inside a block, and a block in this file is opened by
-# `if`/`case`/`while`/`for` — i.e. by a condition that could skip the beacon.
-check_true("every beacon is a bare top-level statement (nothing can gate it)",
-           CALLS and all(ln.startswith("rig_toast ") for _, ln in CALLS),
-           "an indented call site is inside a conditional")
+# `if`/`case`/`while`/`for` — a condition that could skip the beacon. That is
+# forbidden for a stage announcement and expected for a heartbeat.
+check_true("stage beacons outnumber the 8 TUI steps and the 6.x sub-stages",
+           len(STAGE) >= 20, f"{len(STAGE)} stage, {len(SUB)} sub")
+check("every sub-beacon sits inside an already-announced stage",
+      (bool(CALLS), [n for n, _ in SUB if not any(s < n for s, _ in STAGE)]),
+      (True, []))
 
 # A call site inside a function body may simply never be called; one inside a
 # quoted heredoc is dead text shipped to the rig. Both are silent failures.
@@ -655,16 +678,45 @@ check_true("every beacon call site is `|| true`-guarded",
 # --- QUOTING ---------------------------------------------------------------
 # The label crosses into a single-quoted word inside a remote shell command.
 # A label carrying operator or config data would be a remote-execution seam.
-LABELS = [re.match(r'^rig_toast\s+(\d+)\s+"([^"]*)"', ln) for _, ln in CALLS]
-check("every call site is `rig_toast <int> \"<literal>\"`",
+# The optional third word is the expire backstop in ms: an integer literal or
+# the one named constant, never anything that could carry a shell metacharacter.
+CALL_RE = (r'^\s*rig_toast\s+(\d+)\s+"([^"]*)"'
+           r'(?:\s+(\d+|\$ETK_TOAST_BULK_MS))?\s+\|\|\s+true\s*$')
+LABELS = [re.match(CALL_RE, ln) for _, ln in CALLS]
+check("every call site is `rig_toast <int> \"<literal>\" [ms] || true`",
       (bool(CALLS), [ln for m, (_, ln) in zip(LABELS, CALLS) if m is None]),
       (True, []))
+check_true("the bulk backstop is a bare integer constant",
+           re.search(r"^ETK_TOAST_BULK_MS=\d+$", install_src, re.M) is not None)
+# A longer window is the fallback for a transfer with no seam to beacon at, so
+# it must stay the exception. If most sites carry it, the subdivision has been
+# quietly abandoned and the card is riding on timeouts again.
+bulk = [m for m in LABELS if m and m.group(3)]
+check_true("the long backstop is the exception, not the rule",
+           bool(LABELS) and len(bulk) * 2 < len(LABELS),
+           f"{len(bulk)} of {len(LABELS)} sites")
 LBL = [m.group(2) for m in LABELS if m]
 check_true("no label interpolates a variable, command, or quote",
            LBL and not any(re.search(r"[$`'\\]", s) for s in LBL))
 check_true("every label is plain ASCII and <= 40 chars",
            LBL and all(s.isascii() and s.isprintable() and len(s) <= 40
                        for s in LBL))
+
+# Each stage announces itself BEFORE any of its own heartbeats, unconditionally.
+# This is what makes sub-beacons safe to allow: the knob scan alone would miss a
+# stage whose only beacon got wrapped in an `if` on some non-etk.conf variable,
+# but such a beacon is no longer the first of its label at column 0.
+firsts, indented = {}, []
+for m, (n, ln) in zip(LABELS, CALLS):
+    if not m:
+        continue
+    lbl = m.group(2)
+    if lbl not in firsts:
+        firsts[lbl] = n
+        if not ln.startswith("rig_toast "):
+            indented.append((lbl, n))
+check("every stage's FIRST beacon is unconditional (column 0)",
+      (bool(LBL), indented), (True, []))
 
 # --- MONOTONIC -------------------------------------------------------------
 PCTS = [int(m.group(1)) for m in LABELS if m]
@@ -694,22 +746,38 @@ check_true(f"the first beacon precedes tui_init (line {FIRST} vs {TUI_INIT})",
            FIRST is not None and TUI_INIT is not None and FIRST < TUI_INIT,
            "the announcement belongs to no step; it comes before all of them")
 
-# Every TUI step must be announced, or the card goes stale for the length of
-# a whole step (STEP 4's vault push and STEP 6.55's RPCS3 staging are minutes).
+# Every TUI step must carry an unconditional STAGE beacon, or the card goes
+# stale for the length of a whole step.
 STEP_STARTS = [i + 1 for i, ln in enumerate(LINES)
                if re.match(r"^\s*tui_step_start\s", ln)]
 unannounced = [n for n in STEP_STARTS
-               if not any(abs(n - c) <= 2 for c, _ in CALLS)]
-check("every tui_step_start site has a beacon within 2 lines", unannounced, [])
+               if not any(abs(n - c) <= 2 for c, _ in STAGE)]
+check("every tui_step_start site has a stage beacon within 2 lines",
+      unannounced, [])
 
 # The 6.x gap: tui_step_done 5 -> tui_step_start 6 has no TUI calls at all.
 GAP_A = max((i + 1 for i, ln in enumerate(LINES)
              if re.match(r"^\s*tui_step_done 5\s*$", ln)), default=0)
 GAP_B = next((i + 1 for i, ln in enumerate(LINES)
               if re.match(r"^\s*tui_step_start 6\s*$", ln)), 0)
-in_gap = [n for n, _ in CALLS if GAP_A < n < GAP_B]
+in_gap = [n for n, _ in STAGE if GAP_A < n < GAP_B]
 check_true(f"the silent 6.x window (lines {GAP_A}-{GAP_B}) carries beacons",
            len(in_gap) >= 10, f"{len(in_gap)} beacons")
+
+# THE EXPIRE TRAP. The card's expire_timeout is authoritative — the mako
+# "ETK Progress" criteria sets no ignore-timeout — so a stage that runs longer
+# than the window between two beacons does not show a stale card, it shows
+# NOTHING. The stages that transfer bulk data are exactly the ones that outrun
+# the 45 s default, so each must be covered EITHER by more beacons inside it OR
+# by the long backstop on the beacon that opens it. Pin both halves per stage:
+# a future edit that deletes the sub-beacons must also fail this.
+for label in ("Pulling shader vault", "Pushing shader vault",
+              "RPCS3 core staging"):
+    run = [ln for m, (_, ln) in zip(LABELS, CALLS) if m and m.group(2) == label]
+    long_ = [ln for ln in run if "ETK_TOAST_BULK_MS" in ln]
+    check_true(f"the {label!r} stage is subdivided AND long-backstopped",
+               len(run) >= 2 and bool(long_),
+               f"{len(run)} beacons, {len(long_)} with the long backstop")
 
 # --- VERDICTS --------------------------------------------------------------
 TAIL = "\n".join(LINES[CALLS[-1][0] - 1:]) if CALLS else ""
@@ -743,6 +811,42 @@ check("every tui_fail site sends the STOPPED verdict first", uncovered, [])
 # clobber an EXIT trap armed before it. Both arms must be present.
 check("the EXIT trap is armed on both sides of tui_init",
       len(re.findall(r"^trap\s+etk_toast_stopped\s+EXIT", install_src, re.M)), 2)
+
+# An exit of 0 that never posted COMPLETE is an ANOMALOUS exit, not a success:
+# in verbose mode nothing traps SIGINT, so a Ctrl-C runs the EXIT handler with
+# $?=0 and the process then exits 130. Reading that as success leaves the
+# handheld showing a frozen card and no end state at all.
+check_true("an exit-0 that never posted COMPLETE still gets a verdict",
+           re.search(r'\[ "\$rc" != "0" \]\s*\|\|\s*'
+                     r'\[ "\$ETK_TOAST_FIRED" = "0" \]', install_src)
+           is not None,
+           "verbose-mode Ctrl-C reaches the handler with rc=0")
+
+# A rig that fell off USB-net is the likeliest install failure, and each ssh to
+# a vanished host burns a full TCP connect timeout (~75 s on macOS). The give-up
+# sentinel must LATCH on ssh's own 255 so the remaining beacons and the exit
+# verdict stop trying, and every terminal path must honour it.
+check_true("a transport failure latches the give-up sentinel",
+           re.search(r"\[ \$\? -eq 255 \][\s\S]{0,900}?ETK_TOAST_SH=\"-\"",
+                     install_src) is not None,
+           "otherwise a dead rig costs minutes of hung terminal on the way out")
+for path, blob in (("STOPPED", re.search(r"etk_toast_verdict_stopped\(\)\s*\{"
+                                         r"([\s\S]*?)\n\}", install_src)),
+                   ("COMPLETE", re.search(r'rig_toast 100 "Complete"'
+                                          r"([\s\S]*?)\nesac", install_src))):
+    body = blob.group(1) if blob else ""
+    check_true(f"the {path} path skips ssh once the sentinel is latched",
+               re.search(r"case \"\$ETK_TOAST_SH\" in\s*''\|'-'", body)
+               is not None)
+    check_true(f"the {path} path closes and posts in ONE ssh",
+               len(re.findall(r"ssh \$RIG_SSH", body)) == 1,
+               "two calls double the hang on a vanished rig")
+# The close must not gate the verdict: an id that never latched (an ssh banner
+# on stdout would do it) would otherwise cost the operator the end-state toast.
+# `--close 0` is a documented no-op in the sender, so no branch is needed.
+check_true("the verdict is never gated on a latched notification id",
+           "--close ${ETK_TOAST_ID:-0}" in install_src
+           and not re.search(r'\[ -n "\$ETK_TOAST_ID" \]', install_src))
 
 print()
 if FAILS:
