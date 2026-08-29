@@ -21,8 +21,8 @@ set -eu
 # check below, and KERNEL still named -0.3 after the forge moved to etk-cloud.
 # release_sanity.sh only validated the FILENAME FORMAT of these, never that the
 # file exists or is the shipping one; that check is now in the gate too.
-BASE_GZ="${BASE_GZ:-/work/ROCKNIX-SM8250.aarch64-20260801.img.gz}"
-KERNEL="${KERNEL:-/rocknix-gtk/artifacts/KERNEL.rocknix-gtk-20260801-0.4.1}"
+BASE_GZ="${BASE_GZ:-/work/ROCKNIX-SM8250.aarch64-20260827.img.gz}"
+KERNEL="${KERNEL:-/rocknix-gtk/artifacts/KERNEL.rocknix-gtk-20260827-0.5}"
 APPIMAGE="${APPIMAGE:-/etk/emulators/rpcs3-etk_gtk-edition-0.8.5_v0.0.41-19638-a1deb2921_linux_aarch64.AppImage}"
 TURNIP_SO="${TURNIP_SO:-/etk/drivers/etk_turnip_rocknix_26.2.0_gtk_0.7.so}"
 REPO="${REPO:-/etk}"
@@ -158,7 +158,18 @@ menuentry 'ROCKNIX-GTK fallback -- stock kernel' \$menuentry_id_option 'etk-fall
 }
 EOF
 awk 'BEGIN{ins=0} /^menuentry / && !ins{while((getline l < "/tmp/etk_entries2.cfg")>0)print l; close("/tmp/etk_entries2.cfg"); ins=1} {print}' \
-    /tmp/base_grub2.cfg > /tmp/grub2.cfg
+    /tmp/base_grub2.cfg > /tmp/grub2.pre.cfg
+# NUMERIC default pin (2026-08-28, root-caused on the internal 4Kn recovery
+# and shared by any new-generator base): the 20260901-era grub build does NOT
+# resolve string-id defaults (saved_entry / the abl block's `set
+# default="${abl_dev}"`) and falls to menu entry 0. Our ETK primary IS entry 0
+# (prepended above), so pin `set default=0` AFTER every stock default-setter
+# (feature_menuentry_id line is the anchor, same as install.sh STEP 6.4) —
+# deterministic on both grub generations; grubenv seeding below stays for the
+# old-generation bases where env I/O still drives savedefault stickiness.
+awk '/feature_menuentry_id/ && !ins { print "# ETK: pin default NUMERICALLY (entry 0 = ROCKNIX-GTK primary; string-id"; print "# defaults do not resolve on the 20260901-era grub build)."; print "set default=0"; print "set timeout=2"; print ""; ins=1 } { print } END { if (!ins) { print "set default=0"; print "set timeout=2" } }' \
+    /tmp/grub2.pre.cfg > /tmp/grub2.cfg
+grep -q '^set default=0$' /tmp/grub2.cfg || die "numeric default pin failed to land in card grub.cfg"
 MC -o /tmp/grub2.cfg ::/boot/grub/grub.cfg
 mmd -i "$WORK@@$BOOT_OFF" ::/EFI 2>/dev/null || true; mmd -i "$WORK@@$BOOT_OFF" ::/EFI/BOOT 2>/dev/null || true
 MC -o /tmp/grub2.cfg ::/EFI/BOOT/grub.cfg

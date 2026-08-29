@@ -4,7 +4,56 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ## [Unreleased]
 
-## [0.8.5] - 2026-08-10 — Good Manners Edition
+## [0.8.6] - 2026-08-28 — Qualifying Lap Edition
+
+**One month from now the chassis changes; this release is the practice lap.**
+ROCKNIX's September base moves the kernel a whole major version (7.1.2 → 7.2),
+rebuilds the boot menu generator, and re-tunes the GPU's entire operating
+envelope in the device tree. Rather than meet all of that on race day, this
+cut runs the full course early on the public nightly the release will be cut
+from — every brake point at speed: the in-place OS update, the one-bad-boot
+self-heal, the kernel rebase, the boot-config rewrite, and (when it went wrong)
+the recovery ladder all the way down to fastboot. The rig came off the lap
+running the new chassis at full GTK spec. What broke on the way got fixed
+where it belongs — in the kit — so the official monthly lands as a re-run,
+not a first contact.
+
+### Added
+- **7.2 kernel lane** (`rocknix-gtk` `build_72.sh` + `stage_72.sh`, forge
+  `FORGE_KERNEL_BUILD=72`): the GTK kernel rebased onto the 20260901-era
+  base. Patch stack re-verified against real 7.2 sources — the q6afe
+  silent-boot fix and KGSL-parity keepalive carry forward unchanged; one
+  Type-C patch slims to its still-needed half; the DP enable-lock patch
+  retires (upstream removed the lock it bounded). Ships as
+  `KERNEL.rocknix-gtk-20260827-0.5`, validated live on track.
+- **Numeric boot-default pin** (install.sh STEP 6.4 + the image lane): the
+  new base's boot menu cannot resolve name-based default entries and its
+  auto-detect overrides every earlier mechanism — the kit now pins the
+  default by menu position, injected after everything that could override
+  it, on the internal install and the flashable card alike. The install
+  verdict names the resolved entry so a wrong default is a headline, not a
+  surprise.
+- **Stock boot-config convergence**: with no custom kernel staged, install.sh
+  now converges the boot menu to the OS's own canonical config plus the
+  numeric default — a recovered rig is a replica of a real install, owned by
+  the kit instead of hand edits.
+
+### Fixed
+- **The OS-update self-heal actually arms on this rig's layout**: the guard
+  service raced the mount that provides its own script and silently never
+  ran — the exact failure the September update would have needed it for. It
+  now orders after the storage rebinds (the same lesson the black box paid
+  for on 2026-08-11).
+- **4Kn law for internal-disk images**: any boot-partition image for the
+  internal drive must be built with 4096-byte sectors — a 512-byte-sector
+  filesystem crashes the bootloader itself into a reset loop that looks
+  bricked (it isn't: fastboot's `flash ROCKNIX` rung recovers it, now a
+  documented path).
+
+### Changed
+- Kernel manifest pin → `20260827-0.5` (7.2.0, nightly base); flashable image
+  base → the same nightly. Emulator and driver certification pins are
+  deliberately unchanged — this lap tests the track, not new machinery.
 
 **The kit stopped being a Gran Turismo rig, and its controls had not noticed.**
 For most of the campaign the ETK ran one series on one device, so an ETK chord
