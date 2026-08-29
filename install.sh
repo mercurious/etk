@@ -211,6 +211,108 @@ fi
 # Falls back to no-op stubs / passthrough behaviour in verbose / non-tty mode.
 source ./tools/tui.sh 2>/dev/null || true
 
+# ==========================================================
+# RIG INSTALL BEACON (operator-decided 2026-08-29)
+# An ETK install must be impossible to run without the person holding the
+# handheld noticing. From here to the last step the rig's own screen carries
+# an "ETK Progress" card: overall percent and the name of the running stage,
+# and NOTHING else — no paths, no game ids, no host names.
+#
+# ALWAYS ON. There is no env gate, no etk.conf knob and no kill-switch, by
+# design: a switch is exactly what a silent installer would flip, so the only
+# way to install without announcing it is to edit this file. Every other
+# optional surface in this script ships with a kill-switch; this one is the
+# deliberate exception.
+#
+# HONEST ABOUT WHAT IT IS: this is COOPERATIVE ANNOUNCEMENT, not foreign-
+# installer detection. It proves THIS installer announced itself. It cannot
+# see, and makes no claim about, an installer that chose not to.
+#
+# Fail-soft (§1): a beacon may NEVER break or block an install. The body
+# swallows its own failures and every call site is `|| true`-guarded, so a rig
+# with no bus, no mako, or a half-provisioned $ETK_ROOT installs exactly as it
+# did before — just without the card.
+#
+# QUOTING: the label reaches the rig inside a single-quoted word in a remote
+# shell command. Labels are therefore FIXED ASCII literals written at the call
+# sites (<= 40 chars). NEVER interpolate a game id, a path, an etk.conf value
+# or anything else operator-supplied into this call — tools/test_notify.py
+# enforces that statically.
+# ==========================================================
+ETK_TOAST_ID=""      # live notification id; replaces the card in place, never stacks
+ETK_TOAST_SH=""      # resolved rig-side sender path ("-" once we have given up)
+ETK_TOAST_STAGE=""   # last stage announced — the STOPPED verdict's body
+ETK_TOAST_FIRED=0    # 1 once a terminal verdict went out (double-fire guard)
+
+rig_toast() {
+    local pct="$1"
+    local stage="$2"
+    ETK_TOAST_STAGE="$stage"
+    if [ -z "$ETK_TOAST_SH" ]; then
+        # VIRGIN RIG: the first beacon fires before STEP 3 has pushed bin/, so
+        # on a fresh/reflashed rig the sender does not exist yet. Seed one copy
+        # in /tmp and keep using it for the whole run — /tmp survives as long as
+        # the boot, which is longer than any install. Such a rig has no
+        # [app-name="ETK Progress"] mako block either (STEP 1 writes it), so the
+        # card falls back to stock styling; it still shows, which is the point.
+        #
+        # The probe greps for the `--progress` case label rather than testing
+        # for the file, because a rig carrying a sender that PREDATES the
+        # progress form is the same problem as a rig carrying none: the flag
+        # would fall through to the plain-toast path and post a card summarised
+        # "--progress". Pinned by tools/test_notify.py.
+        if ssh $RIG_SSH "grep -q '^--progress)' $ETK_ROOT/bin/etk_notify.sh" >/dev/null 2>&1; then
+            ETK_TOAST_SH="$ETK_ROOT/bin/etk_notify.sh"
+        elif scp -q ./bin/etk_notify.sh "$RIG_SSH:/tmp/etk_notify.sh" >/dev/null 2>&1; then
+            ETK_TOAST_SH="/tmp/etk_notify.sh"
+        else
+            ETK_TOAST_SH="-"
+        fi
+    fi
+    [ "$ETK_TOAST_SH" = "-" ] && return 0
+    # 45 s timeout is a BACKSTOP, not the card's lifetime: every replace below
+    # refreshes it, so the card lives as long as the install and self-dismisses
+    # within 45 s if the install dies without reaching a verdict.
+    local id
+    id=$(ssh $RIG_SSH "ETK_NOTIFY_ID=${ETK_TOAST_ID:-0} sh $ETK_TOAST_SH --progress 'ETK INSTALL' '$stage' $pct 45000" 2>/dev/null) || return 0
+    case "$id" in
+        ''|*[!0-9]*) ;;              # unusable reply: keep replacing the old id
+        *) ETK_TOAST_ID="$id" ;;
+    esac
+    return 0
+}
+
+# The beacon's other half: a card left behind by an install that died mid-flight
+# would go on reporting work that is already over. Close it and say so. Split in
+# two because the verdict has to be reachable from paths that never reach the
+# EXIT trap (see etk_toast_stopped).
+etk_toast_verdict_stopped() {
+    [ "$ETK_TOAST_FIRED" = "1" ] && return 0
+    ETK_TOAST_FIRED=1
+    [ -n "$ETK_TOAST_ID" ] || return 0
+    ssh $RIG_SSH "sh $ETK_TOAST_SH --close $ETK_TOAST_ID" >/dev/null 2>&1 || true
+    ssh $RIG_SSH "sh $ETK_TOAST_SH 'ETK INSTALL STOPPED' '$ETK_TOAST_STAGE'" >/dev/null 2>&1 || true
+    return 0
+}
+
+# install.sh carries no host-side `set -e` and no EXIT trap of its own —
+# tools/tui.sh owns `trap tui_cleanup INT TERM EXIT` purely to restore the
+# terminal. So take over EXIT ONLY and do that cleanup here; INT and TERM keep
+# pointing at tui_cleanup, leaving the interrupt path exactly as it was.
+# NEVER masks the original exit code.
+etk_toast_stopped() {
+    local rc=$?
+    tui_cleanup 2>/dev/null || true
+    [ "$rc" = "0" ] || etk_toast_verdict_stopped
+    ETK_TOAST_FIRED=1
+    exit $rc
+}
+trap etk_toast_stopped EXIT
+
+# THE SECURITY MOMENT: the rig SSH probe above has answered, nothing has been
+# mutated yet, and the handheld says so before the first pkill.
+rig_toast 2 "ETK install starting" || true
+
 # Tier-B host snapshot tree (local to install.sh, mirroring how ./vault
 # is already a literal here). Never auto-deleted (cf. ./vault philosophy).
 HOST_STATE_DIR="./state"
@@ -238,6 +340,11 @@ TOTAL_STEPS=8
 if tui_should_activate; then
     tui_init
 fi
+# tui_init arms `trap tui_cleanup INT TERM EXIT`, which CLOBBERS the EXIT trap
+# armed above. Re-point EXIT at the beacon's verdict handler (which calls
+# tui_cleanup itself, so the terminal is still restored); INT/TERM are left on
+# tui.sh's handler so the interrupt path is unchanged.
+trap etk_toast_stopped EXIT
 
 if [ "$RESTORE_STATE" = "1" ]; then
     if [ "$TUI_ACTIVE" = "1" ]; then
@@ -260,6 +367,7 @@ fi
 # mango_bridge.sh is included because it writes to SHM continuously.
 # The Sentry service itself is left running — it will respawn cleanly.
 # ==========================================================
+rig_toast 4 "Quiescing daemons" || true
 tui_step_start 0
 tui_log "Probing rig SSH and quiescing daemons"
 ssh $RIG_SSH "pkill -f vault_d.sh; pkill -f thermal_d.sh; pkill -f mango_bridge.sh; pkill -f input_d.py" 2>/dev/null
@@ -637,6 +745,7 @@ tui_step_done 0
 # == filename), so a banked .bin is immutable; never overwrite a
 # host copy with a rig copy of the same name.
 # ==========================================================
+rig_toast 8 "Pulling shader vault" || true
 tui_step_start 1
 say "${C}[INFO] Shader sync mode: ${VAULT_SYNC} (full=pull+push, backup=pull-only, off=none)${N}"
 # --- INTERNAL-STORAGE DETECTION (Tier A/B) ---
@@ -752,6 +861,7 @@ tui_step_done 1
 # --delete removes stale files from previous versions so
 # renamed/removed scripts don't linger and cause ghost invocations.
 # ==========================================================
+rig_toast 14 "Deploying daemons" || true
 tui_step_start 2
 tui_rsync 2 0 25 "Pushing /bin daemons" --delete --exclude='*.pyc' --exclude='__pycache__' --exclude='.DS_Store' ./bin/ $RIG_SSH:$ETK_ROOT/bin/
 tui_rsync 2 25 45 "Pushing /scripts (env, profiles, probes)" --delete --exclude='.DS_Store' ./scripts/ $RIG_SSH:$ETK_ROOT/scripts/
@@ -808,6 +918,7 @@ tui_step_done 2
 # internal target — never replace the symlink with a real dir (which would
 # de-internalize the vault). No-op when the dir is a plain dir (SD rig).
 # ==========================================================
+rig_toast 20 "Pushing shader vault" || true
 tui_step_start 3
 # Tier-A shader PUSH (host -> rig restore). ONLY in full mode. In backup/off the
 # host never pushes shaders back, so a stale host vault can't re-seed the rig
@@ -874,6 +985,7 @@ tui_step_done 3
 # intermediate path construction that can silently misfire.
 # Verify immediately and abort loudly if the file didn't land.
 # ==========================================================
+rig_toast 34 "Pitstop interface" || true
 tui_step_start 4
 
 # Python engine and field schema
@@ -940,6 +1052,13 @@ if [ "$LAUNCHER_CHECK" = "OK" ]; then
     say "${G}[OK] Launcher verified and locked to disk${N}"
 else
     if [ "$TUI_ACTIVE" = "1" ]; then
+        # tui_fail exits via tui_cleanup, whose `trap - INT TERM EXIT` disarms
+        # the EXIT trap before the shell ever reaches it (measured, not assumed
+        # — bash clears the handler, so the beacon would go silent on exactly
+        # the stops that matter most). These three tui_fail sites are the only
+        # ones in this file; send the verdict here rather than reach into
+        # tui.sh's cleanup contract.
+        etk_toast_verdict_stopped || true
         tui_fail "Launcher missing or lacks +x permissions"
     else
         echo -e "    ${R}[FAIL] Launcher missing or lacks +x permissions — aborting.${N}"
@@ -980,6 +1099,7 @@ tui_step_done 4
 # both permanently dead. Every install since the sentry was
 # introduced has had this bug.
 # ==========================================================
+rig_toast 38 "Arming sentry" || true
 tui_step_start 5
 tui_log "Writing Sentry script + systemd unit, restarting etk.service"
 
@@ -1512,6 +1632,7 @@ if echo "$SENTRY_OUTPUT" | grep -q SENTRY_OK; then
     tui_step_done 5
 elif echo "$SENTRY_OUTPUT" | grep -q SENTRY_FAIL; then
     if [ "$TUI_ACTIVE" = "1" ]; then
+        etk_toast_verdict_stopped || true
         tui_fail "Sentry failed to start — last lines: $(echo "$SENTRY_OUTPUT" | tail -3 | tr '\n' ' ')"
     else
         echo -e "${R}>>> SENTRY FAILED TO START${N}"
@@ -1520,6 +1641,7 @@ elif echo "$SENTRY_OUTPUT" | grep -q SENTRY_FAIL; then
 else
     # Neither marker appeared — heredoc may have errored before the check
     if [ "$TUI_ACTIVE" = "1" ]; then
+        etk_toast_verdict_stopped || true
         tui_fail "Sentry deploy produced no status marker: $(echo "$SENTRY_OUTPUT" | tail -3 | tr '\n' ' ')"
     else
         echo -e "${Y}>>> WARNING: Sentry status marker missing from remote output${N}"
@@ -1573,6 +1695,12 @@ fi
 # NEVER reboots the rig (operator does that on-device). In default mode the
 # numeric default (below) points the menu at the GTK entry; the device entries
 # are never edited, so recovery is always one grub-pick (or one "test" flip) away.
+# ==========================================================
+
+# Every 6.x beacon sits OUTSIDE its stage's kill-switch `if` on purpose: the
+# card must keep moving whether or not the stage has any work to do. A stage
+# skipped by etk.conf is still a stage the operator watched go past.
+rig_toast 44 "Kernel + boot config" || true
 if [ -n "${KERNEL_IMAGE:-}" ] && [ -f "${KERNEL_IMAGE:-}" ]; then
     # portable host sha256 (Linux sha256sum | macOS shasum)
     if command -v sha256sum >/dev/null 2>&1; then
@@ -1940,6 +2068,7 @@ fi
 # rigs); kill-switch ETK_OS_GUARD=0 in etk.conf. Runs BEFORE the bind
 # services only by accident of ordering — it needs neither; binds are
 # path-based and survive either way.
+rig_toast 50 "Kernel + boot config" || true
 OSG_OUT_FILE=$(mktemp /tmp/etk_osguard_XXXXXX)
 ssh $RIG_SSH "sh -s" > "$OSG_OUT_FILE" 2>&1 << 'OSGUARDREMOTE'
     mkdir -p /storage/.config/system.d/
@@ -1995,6 +2124,7 @@ rm -f "$OSG_OUT_FILE"
 # optional etk.conf TURNIP_SO names the DEFAULT pick on a rig that hasn't chosen.
 # §G.5 note: once a fork is bound, the Mesa fingerprint tracks OUR driver, so a
 # nightly's stock-Mesa change is intentionally masked (we want our driver).
+rig_toast 54 "Turnip driver catalog" || true
 ssh $RIG_SSH "mkdir -p /storage/turnip/drivers /storage/.config/system.d/" 2>/dev/null
 # The host drivers/ dir IS the catalog: every .so in it is staged to the rig and
 # offered in the DRIVER tab. Dropping a build into drivers/ is all it takes.
@@ -2198,6 +2328,7 @@ rm -f "$TURNIP_OUT_FILE"
 # left with ZERO sources (the stock-nuke). The pin moves only when the
 # artifact it names is fetchable or staged — release_sanity now enforces
 # exactly that. 0.9.0.1 stays catalog-only (A/B) until the September gates.
+rig_toast 60 "RPCS3 core staging" || true
 CERT_RPCS3="rpcs3-etk_gtk-edition-0.8.5_v0.0.41-19638-a1deb2921_linux_aarch64.AppImage"
 CERT_RPCS3_SHA="0185e2859d12b3bc3523ecdc629bfccf912d4fcec8c2c14772af139f78a67aeb"
 RPCS3_RELEASE_BASE="https://github.com/mercurious/etk/releases/latest/download"
@@ -2291,6 +2422,7 @@ fi
 # remains the certified rpcs3-sa.custom staged above. The certified AppImage in
 # emulators/ is itself part of the catalog (it's how a pin gets un-A/B'd
 # without a reinstall). Kill-switch ETK_CORE_SWAP=0 skips catalog + wrapper.
+rig_toast 68 "RPCS3 core staging" || true
 if [ "${ETK_CORE_SWAP:-1}" = "1" ]; then
     ssh $RIG_SSH "mkdir -p $ETK_ROOT/emulators" 2>/dev/null
     CORE_KEEP=""
@@ -2459,6 +2591,7 @@ rm -f "$RPCS3_OUT_FILE"
 # copy against the staged source (two builds once collided at identical size —
 # only the hash discriminates) and headlines RED any stock resolution the
 # operator didn't ask for.
+rig_toast 74 "RPCS3 core staging" || true
 BIND_RAW=$(ssh $RIG_SSH "loaded=\$(cat /storage/rpcs3/loaded 2>/dev/null); \
     src=\$(head -n1 /storage/rpcs3/rpcs3-sa.custom.src 2>/dev/null | tr -d '\r'); \
     csha=\$(sha256sum /storage/rpcs3/rpcs3-sa.custom 2>/dev/null | cut -d' ' -f1); \
@@ -2505,6 +2638,7 @@ fi
 # Fail-soft: any fetch/verify failure keeps the existing file. GATED on the
 # RPCS3 config dir existing — creating it early would make start_rpcs3.sh
 # skip its stock-config seed (the STEP 1b lesson). Kill-switch ETK_PATCH_FETCH=0.
+rig_toast 78 "RPCS3 core staging" || true
 if [ "${ETK_PATCH_FETCH:-1}" = "1" ]; then
     if ssh $RIG_SSH "[ -d /storage/.config/rpcs3 ]" 2>/dev/null; then
         RIG_PATCH_SHA=$(ssh $RIG_SSH "sha256sum /storage/.config/rpcs3/patches/patch.yml 2>/dev/null | cut -d' ' -f1")
@@ -2565,6 +2699,7 @@ fi
 # vars). Same injection vector as the Turnip dials (start_rpcs3.sh sources
 # /etc/profile -> profile.d at every game launch); NOT a Turnip dial, so it
 # does not touch active_tune.txt / tune_tag. Empty flag => entry removed.
+rig_toast 82 "Support services" || true
 if [ -n "${RPCS3_ENV_FLAGS:-}" ]; then
     RPCS3_FLAGS_EXPORTS=""
     for kv in $RPCS3_ENV_FLAGS; do
@@ -2607,6 +2742,7 @@ say "${G}[ETK]${N} Audio watchdog retired (SM8250 silent-boot fixed in the GTK k
 # self-skipping pattern as etk-turnip.service. GATED: no profile => unit skips,
 # stock thermal_d governor management is unchanged (zero effect until opted in).
 # The POWER schema (power_profiles.json) is pushed with the other config in STEP 4.
+rig_toast 84 "Support services" || true
 ssh $RIG_SSH "sh -s" > /dev/null 2>&1 <<'POWERREMOTE'
     mkdir -p /storage/.config/system.d/ /storage/etk-power
 cat << 'APPLY' > /storage/.config/etk-power-apply.sh
@@ -2654,6 +2790,7 @@ say "${G}[ETK]${N} POWER applier deployed (etk-power.service — self-skips unti
 # boot validated — install.sh NEVER edits grub. This step only detects DRIFT:
 # module confs present but the live cmdline missing the token means a ROCKNIX
 # update reverted grub.cfg — warn loudly, operator re-runs the armer.
+rig_toast 86 "Support services" || true
 BB_OUT_FILE=$(mktemp /tmp/etk_blackbox_XXXXXX)
 ssh $RIG_SSH "sh -s" > "$BB_OUT_FILE" 2>&1 << 'BLACKBOXREMOTE'
     mkdir -p /storage/.config/system.d/
@@ -2725,6 +2862,7 @@ rm -f "$BB_OUT_FILE"
 # volatile systemctl stop died at every reboot (found live during the -0.4.x
 # kernel boot arms, where the daemon's pad-heal contaminates plug tests).
 # Kill-switch shape mirrors STEP 6.75.
+rig_toast 88 "Support services" || true
 ETK_DP_MIRROR="${ETK_DP_MIRROR:-1}"
 if [ "$ETK_DP_MIRROR" = "1" ]; then
 ssh $RIG_SSH "sh -s" > /dev/null 2>&1 <<'DPMIRRORREMOTE'
@@ -2795,6 +2933,7 @@ fi
 #      it. Silent-class crashes (no log signature, no dmesg trace)
 #      are undiagnosable without a core; this is the capture path.
 # ==========================================================
+rig_toast 90 "Stability harness" || true
 tui_step_start 6
 tui_log "Arming Stage III harness (Mesa cache cap + coredump capture)"
 # Temp-file capture (not $(...) command substitution) for the same reason as
@@ -2886,6 +3025,7 @@ fi
 # no-op on single-card rigs. NOT restarted at install time (it bind-mounts over
 # live game paths — unsafe mid-session); it re-runs on the next cold boot.
 # ==========================================================
+rig_toast 94 "Support services" || true
 tui_log "Writing SD game-tree rebind (label-based, non-stalling)"
 REBIND_OUTPUT_FILE=$(mktemp /tmp/etk_rebind_XXXXXX)
 ssh $RIG_SSH > "$REBIND_OUTPUT_FILE" 2>&1 << 'REMOTE'
@@ -2976,6 +3116,7 @@ fi
 # Empty-repo lesson: a release tag needs a commit, so a freshly created
 # repo MUST be seeded with a README before any push can work.
 # ==========================================================
+rig_toast 96 "Paddock link" || true
 tui_step_start 7
 GH_API="https://api.github.com"
 if [ -z "${PADDOCK_TOKEN:-}" ]; then
@@ -3035,6 +3176,21 @@ else
     rm -f "$PADDOCK_HDR"
     tui_step_progress 7 100
     tui_step_done 7
+fi
+
+# ==========================================================
+# BEACON: the COMPLETE verdict. Full bar, then the card goes — a progress card
+# left to fade keeps reporting work that is already over — then one line on the
+# ETK verdict surface so the handheld shows an unambiguous end state. Setting
+# ETK_TOAST_FIRED here also disarms the STOPPED path for good, so no exit
+# status produced downstream (tui_finish, the shell's own teardown) can
+# contradict a successful install.
+# ==========================================================
+rig_toast 100 "Complete" || true
+ETK_TOAST_FIRED=1
+if [ -n "$ETK_TOAST_ID" ]; then
+    ssh $RIG_SSH "sh $ETK_TOAST_SH --close $ETK_TOAST_ID" >/dev/null 2>&1 || true
+    ssh $RIG_SSH "sh $ETK_TOAST_SH 'ETK INSTALL COMPLETE'" >/dev/null 2>&1 || true
 fi
 
 # Final banner. tui_finish renders the caller-supplied content in both
