@@ -32,6 +32,16 @@ suite here.
              id reuse, dismissal, and — most important — that a broken
              notification path degrades instead of raising into an install.
 
+  [BEACON]   install.sh's own "ETK INSTALL" progress card, which exists so an
+             install cannot run without the person holding the handheld
+             noticing. That makes it a security surface, and the structural
+             properties are what matter: ALWAYS ON (no env var, no etk.conf
+             knob, no kill-switch may skip a beacon), fail-soft, a monotonic
+             percent table ending at 100, an announcement that precedes the
+             first rig mutation, and terminal verdicts on both exits. Static
+             reads of install.sh — they cannot prove the rig rendered
+             anything, which is the operator's screen to check.
+
 No rig, no bus, no network, no root. BusyBox parity for the awk was verified
 separately against busybox:1.36; the constructs used are POSIX-basic.
 """
@@ -504,6 +514,235 @@ check_true("the post before muting goes out", "string:BEFORE" in flat)
 check("a muted notifier drops the post", "string:SUPPRESSED" in flat, False)
 check_true("posts resume after unmute", "string:AFTER" in flat)
 pit.subprocess.run = _real_run
+
+# ==========================================================
+print("\n[BEACON] install.sh announces itself on the rig's own screen")
+# ==========================================================
+# An ETK install must be impossible to run without the person holding the
+# handheld noticing: install.sh drives an "ETK INSTALL" progress card on the
+# rig for the whole run. That is a SECURITY property, so what it needs is not
+# "the toast usually appears" but four structural guarantees that no future
+# edit can quietly erode:
+#
+#   ALWAYS ON   no env var, no etk.conf knob, no kill-switch may skip a
+#               beacon. A switch is exactly what a silent installer would
+#               flip, so the checks below refuse a gated call site outright.
+#   FAIL-SOFT   a beacon may never break or block an install, so every call
+#               site carries `|| true`.
+#   MONOTONIC   the percentages are a static hand-weighted table; out-of-order
+#               or non-terminating values make the card lie.
+#   NO SILENCE  the announcement precedes the first rig mutation, and every
+#               TUI step is announced (the 6.x sub-stages between step 5 and
+#               step 6 are a 1,300-line window with no TUI calls at all).
+#
+# WHAT THESE DO NOT PROVE: they are static reads of the source. "Top level"
+# is inferred from column 0 plus the function/heredoc range scan below, which
+# holds because this file indents every nested block; they cannot prove the
+# rig actually rendered anything. That is the operator's screen to verify.
+#
+# EVERY check below is written to FAIL, not raise, when the feature is absent
+# — the suite is run against a deliberately broken copy via ETK_REPO_ROOT, and
+# a traceback there proves nothing and hides the checks behind it.
+LINES = install_src.split("\n")
+CALLS = [(i + 1, ln) for i, ln in enumerate(LINES) if re.match(r"^\s*rig_toast\s", ln)]
+
+
+def _find(pat, default=None):
+    """First 1-based line matching `pat`, or `default` — never raises."""
+    for i, ln in enumerate(LINES):
+        if re.match(pat, ln):
+            return i + 1
+    return default
+
+
+check_true("rig_toast is defined in install.sh",
+           bool(re.search(r"^rig_toast\(\)\s*\{", install_src, re.M)))
+check_true("install.sh carries beacons at more than the 8 TUI steps",
+           len(CALLS) >= 20, f"{len(CALLS)} call sites")
+
+# --- ALWAYS ON -------------------------------------------------------------
+# Anything indented is inside a block, and a block in this file is opened by
+# `if`/`case`/`while`/`for` — i.e. by a condition that could skip the beacon.
+check_true("every beacon is a bare top-level statement (nothing can gate it)",
+           CALLS and all(ln.startswith("rig_toast ") for _, ln in CALLS),
+           "an indented call site is inside a conditional")
+
+# A call site inside a function body may simply never be called; one inside a
+# quoted heredoc is dead text shipped to the rig. Both are silent failures.
+def _fn_ranges(lines):
+    out, start = [], None
+    for i, ln in enumerate(lines, 1):
+        if re.match(r"^[A-Za-z_][A-Za-z0-9_]*\(\)\s*\{\s*$", ln):
+            start = i
+        elif ln == "}" and start is not None:
+            out.append((start, i))
+            start = None
+    return out
+
+
+def _heredoc_ranges(lines):
+    """Line spans covered by a heredoc body, so a beacon buried in remote
+    script text is caught. Only the last redirect on a line is tracked, which
+    is all install.sh ever uses."""
+    out, tag, start = [], None, None
+    for i, ln in enumerate(lines, 1):
+        if tag is None:
+            m = re.search(r"<<-?\s*'?\"?([A-Za-z_][A-Za-z0-9_]*)'?\"?\s*$", ln)
+            if m:
+                tag, start = m.group(1), i
+        elif ln.strip() == tag:
+            out.append((start, i))
+            tag = None
+    return out
+
+
+FN = _fn_ranges(LINES)
+HD = _heredoc_ranges(LINES)
+DEF_LINE = _find(r"^rig_toast\(\)\s*\{")
+check_true("no beacon is buried in a function body or a heredoc",
+           CALLS and not [n for n, _ in CALLS
+                          if any(a < n < b for a, b in FN)
+                          or any(a < n < b for a, b in HD)])
+
+# The beacon must read no operator-settable knob: not an etk.conf key, not an
+# ETK_* env var beyond its own state. $ETK_ROOT and $RIG_SSH are addresses, not
+# switches, so they are allowed.
+CONF_KEYS = set(re.findall(r"^([A-Z][A-Z0-9_]*)=",
+                           open(os.path.join(ROOT, "etk.conf.example")).read(), re.M))
+ALLOWED = {"RIG_SSH", "ETK_ROOT"}
+BODY = ""
+if DEF_LINE:
+    end = next((i + 1 for i, ln in enumerate(LINES)
+                if i + 1 > DEF_LINE and ln == "}"), len(LINES))
+    BODY = "\n".join(LINES[DEF_LINE - 1:end])
+used_conf = sorted((CONF_KEYS - ALLOWED) & set(re.findall(r"[A-Z][A-Z0-9_]*", BODY)))
+check("rig_toast reads no etk.conf knob", (bool(BODY), used_conf), (True, []))
+# Scan the call line AND the two lines above it: the cheapest way to smuggle a
+# kill-switch back in is an `if [ "$SOME_KNOB" = "1" ]` wrapped round a beacon.
+# Comment lines are excluded: several stage banners legitimately NAME their
+# own kill-switch in prose right above the beacon that must ignore it.
+gated = [n for n, _ in CALLS
+         for ctx in ["\n".join(x for x in LINES[max(0, n - 3):n]
+                               if not x.lstrip().startswith("#"))]
+         if any(k in ctx for k in (CONF_KEYS - ALLOWED))]
+check("no call site is gated by a knob", (bool(CALLS), gated), (True, []))
+check_true("no kill-switch named for the beacon exists anywhere in install.sh",
+           not re.search(r"ETK_(TOAST|BEACON|ANNOUNCE)_(ENABLE|OFF|DISABLE|SKIP)",
+                         install_src),
+           "ALWAYS ON is the whole security property")
+
+# --- VIRGIN / STALE RIG ----------------------------------------------------
+# The beacon starts before STEP 3 has pushed bin/, so it bootstraps its own
+# sender. Its probe greps the rig's sender for the `--progress` case label:
+# same byte-exact coupling as the mako app-names above, same failure mode if
+# it drifts — the probe silently stops matching and every install falls back
+# to the /tmp copy. Pin the two together.
+PROBE = re.search(r"grep -q '(\^--progress\))'", install_src)
+check_true("the beacon probes the rig sender for the progress form",
+           PROBE is not None)
+if PROBE:
+    check_true("that probe pattern matches bin/etk_notify.sh",
+               re.search(r"^--progress\)", notify_src, re.M) is not None,
+               "drift here demotes every install to the /tmp fallback")
+check_true("the beacon falls back to a scp'd sender on a virgin rig",
+           "/tmp/etk_notify.sh" in install_src)
+
+# --- FAIL-SOFT -------------------------------------------------------------
+check_true("every beacon call site is `|| true`-guarded",
+           CALLS and all(ln.rstrip().endswith("|| true") for _, ln in CALLS),
+           "a beacon may never break or block an install")
+
+# --- QUOTING ---------------------------------------------------------------
+# The label crosses into a single-quoted word inside a remote shell command.
+# A label carrying operator or config data would be a remote-execution seam.
+LABELS = [re.match(r'^rig_toast\s+(\d+)\s+"([^"]*)"', ln) for _, ln in CALLS]
+check("every call site is `rig_toast <int> \"<literal>\"`",
+      (bool(CALLS), [ln for m, (_, ln) in zip(LABELS, CALLS) if m is None]),
+      (True, []))
+LBL = [m.group(2) for m in LABELS if m]
+check_true("no label interpolates a variable, command, or quote",
+           LBL and not any(re.search(r"[$`'\\]", s) for s in LBL))
+check_true("every label is plain ASCII and <= 40 chars",
+           LBL and all(s.isascii() and s.isprintable() and len(s) <= 40
+                       for s in LBL))
+
+# --- MONOTONIC -------------------------------------------------------------
+PCTS = [int(m.group(1)) for m in LABELS if m]
+check_true("percentages are monotonic non-decreasing in file order",
+           PCTS and all(a <= b for a, b in zip(PCTS, PCTS[1:])),
+           f"{PCTS}")
+check("the last beacon is 100", PCTS[-1] if PCTS else None, 100)
+check_true("percentages stay in range",
+           PCTS and all(0 <= p <= 100 for p in PCTS))
+
+# --- NO SILENCE ------------------------------------------------------------
+# STEP 0's pkill is the first byte install.sh changes on the rig. The whole
+# point of the feature is that the handheld has already said so by then.
+QUIESCE = next((i + 1 for i, ln in enumerate(LINES)
+                if "pkill -f vault_d.sh" in ln), 0)
+FIRST = CALLS[0][0] if CALLS else None
+check_true(f"a beacon fires before the STEP 0 quiesce "
+           f"(line {FIRST} vs {QUIESCE})", FIRST is not None and FIRST < QUIESCE,
+           "announcing after the first mutation defeats the purpose")
+check_true("the first beacon opens at <= 2%", bool(PCTS) and PCTS[0] <= 2)
+# ...and it is not merely somewhere before the pkill: it precedes tui_init,
+# i.e. install.sh announces itself before it so much as takes over the
+# operator's terminal. Deleting the opening beacon and leaning on the STEP 0
+# one would still clear the pkill line by three lines; this is what pins it.
+TUI_INIT = _find(r"^\s*tui_init\s*$")
+check_true(f"the first beacon precedes tui_init (line {FIRST} vs {TUI_INIT})",
+           FIRST is not None and TUI_INIT is not None and FIRST < TUI_INIT,
+           "the announcement belongs to no step; it comes before all of them")
+
+# Every TUI step must be announced, or the card goes stale for the length of
+# a whole step (STEP 4's vault push and STEP 6.55's RPCS3 staging are minutes).
+STEP_STARTS = [i + 1 for i, ln in enumerate(LINES)
+               if re.match(r"^\s*tui_step_start\s", ln)]
+unannounced = [n for n in STEP_STARTS
+               if not any(abs(n - c) <= 2 for c, _ in CALLS)]
+check("every tui_step_start site has a beacon within 2 lines", unannounced, [])
+
+# The 6.x gap: tui_step_done 5 -> tui_step_start 6 has no TUI calls at all.
+GAP_A = max((i + 1 for i, ln in enumerate(LINES)
+             if re.match(r"^\s*tui_step_done 5\s*$", ln)), default=0)
+GAP_B = next((i + 1 for i, ln in enumerate(LINES)
+              if re.match(r"^\s*tui_step_start 6\s*$", ln)), 0)
+in_gap = [n for n, _ in CALLS if GAP_A < n < GAP_B]
+check_true(f"the silent 6.x window (lines {GAP_A}-{GAP_B}) carries beacons",
+           len(in_gap) >= 10, f"{len(in_gap)} beacons")
+
+# --- VERDICTS --------------------------------------------------------------
+TAIL = "\n".join(LINES[CALLS[-1][0] - 1:]) if CALLS else ""
+check_true("the success path closes the card", "--close" in TAIL)
+check_true("the success path sends the COMPLETE verdict",
+           "'ETK INSTALL COMPLETE'" in TAIL)
+check_true("the success path fires 100 before closing",
+           re.search(r'rig_toast 100 "[^"]*"', TAIL) is not None)
+check_true("a failed install gets a STOPPED verdict",
+           "'ETK INSTALL STOPPED'" in install_src)
+check_true("the STOPPED verdict hangs off an EXIT trap",
+           re.search(r"^trap\s+etk_toast_stopped\s+EXIT", install_src, re.M)
+           is not None)
+check_true("the STOPPED handler cannot mask the exit code",
+           re.search(r"etk_toast_stopped\(\)\s*\{\s*\n\s*local rc=\$\?",
+                     install_src) is not None
+           and "exit $rc" in install_src)
+check_true("the terminal verdict is guarded against double-firing",
+           "ETK_TOAST_FIRED" in install_src
+           and re.search(r'\[ "\$ETK_TOAST_FIRED" = "1" \]', install_src)
+           is not None)
+# tui_fail exits THROUGH tui_cleanup, which runs `trap - INT TERM EXIT` and so
+# disarms the EXIT trap before the shell reaches it. Those are install.sh's
+# loudest stops (a Sentry that will not start), so the verdict has to be sent
+# at the call site or the card just fades out 45 s later saying nothing.
+uncovered = [i + 1 for i, ln in enumerate(LINES)
+             if re.match(r"^\s*tui_fail\s", ln)
+             and "etk_toast_verdict_stopped" not in LINES[max(0, i - 1)]]
+check("every tui_fail site sends the STOPPED verdict first", uncovered, [])
+# tui.sh's own `trap tui_cleanup INT TERM EXIT` runs at tui_init and would
+# clobber an EXIT trap armed before it. Both arms must be present.
+check("the EXIT trap is armed on both sides of tui_init",
+      len(re.findall(r"^trap\s+etk_toast_stopped\s+EXIT", install_src, re.M)), 2)
 
 print()
 if FAILS:
