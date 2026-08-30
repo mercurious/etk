@@ -140,7 +140,7 @@ Push-Dir -LocalDir (Join-Path $RepoRoot "scripts") -RemoteParent $EtkRoot -Mirro
 # the rest of tools/ is host-side; uninstall.sh rm -rf's $ETK_ROOT/tools, so
 # each rig-runtime dependency must be deployed here, never one-off scp'd):
 #   etk_drift.py   : OS-drift detector
-#   vault_sweep.sh : Manage Shaders engine (missing => "no boundary" screen)
+#   vault_sweep.sh : Manage Shaders & Caches engine (missing => "no boundary")
 #   wl-mirror      : aarch64 mirror binary used by bin/dpmirror_d.sh
 $driftLocal = Join-Path $RepoRoot "tools\etk_drift.py"
 if (Test-Path -LiteralPath $driftLocal) {
@@ -152,9 +152,9 @@ if (Test-Path -LiteralPath $driftLocal) {
 $sweepLocal = Join-Path $RepoRoot "tools\vault_sweep.sh"
 if (Test-Path -LiteralPath $sweepLocal) {
     Send-File -LocalPath $sweepLocal -RemotePath "$EtkRoot/tools/vault_sweep.sh"
-    Write-Ok "Manage Shaders engine (vault_sweep.sh) deployed."
+    Write-Ok "Manage Shaders & Caches engine (vault_sweep.sh) deployed."
 } else {
-    Write-Warn "tools\vault_sweep.sh not found locally - the Manage Shaders screen will show 'no boundary'."
+    Write-Warn "tools\vault_sweep.sh not found locally - the Manage Shaders & Caches screen will show 'no boundary'."
 }
 $wlLocal = Join-Path $RepoRoot "tools\rocknix-bin\wl-mirror"
 if (Test-Path -LiteralPath $wlLocal) {
