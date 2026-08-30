@@ -657,6 +657,13 @@ def resolve_game_name(target_id, roms_dir=None, games_yml=None):
     iso_stem = None
     try:
         for entry in sorted(os.listdir(roms_dir)):
+            # Skip dotfiles — a macOS '._name.psn' AppleDouble sibling sorts
+            # ahead of its real launcher (leading '.'), so on a card that's
+            # been mounted on a Mac the header could resolve to
+            # '._Gran Turismo 5 Prologue'. _list_psn_games and
+            # list_installed_games already skip them for the same reason.
+            if entry.startswith('.'):
+                continue
             if entry.endswith(".psn"):
                 with open(os.path.join(roms_dir, entry), 'r') as f:
                     if f.read().strip() == target_id:
