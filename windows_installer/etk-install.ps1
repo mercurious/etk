@@ -18,6 +18,11 @@
 # STEP 6.4 (custom kernel + grub entries incl. the SD-boot pair) — it is
 # gated on a locally built KERNEL_IMAGE artifact that Windows hosts don't
 # have; the GTK kernel reaches a rig via the flashable card image instead.
+# Also NOT ported, same reason: STEP 6.45 (osguard - it replays 6.4's heal
+# bundle) and STEPS 6.552/6.553/6.554 (per-title core catalog, next-boot bind
+# manifest, community patch fetch). The INSTALL BEACON below is synced to
+# install.sh as of v0.8.7 (2026-08-29); the percent bands those unported
+# steps own are simply absent from the card this script draws.
 #
 # Run from the repo root:
 #   powershell -ExecutionPolicy Bypass -File .\etk-install.ps1
@@ -61,11 +66,209 @@ if ("$liveCheck" -match "ETK_LIVE") {
 }
 
 # ==========================================================
+# RIG INSTALL BEACON  (install.sh parity, operator-decided 2026-08-29)
+# ==========================================================
+# An ETK install must be impossible to run without the person holding the
+# handheld noticing. From here to the last step the rig's own screen carries
+# an "ETK Progress" card: overall percent and the name of the running stage,
+# and NOTHING else - no paths, no game ids, no host names.
+#
+# ALWAYS ON. There is no parameter, no etk-env.ps1 value and no kill-switch,
+# by design: a switch is exactly what a silent installer would flip, so the
+# only way to install without announcing it is to edit this file. Every other
+# optional surface in this port ships with a toggle; this one is the
+# deliberate exception.
+#
+# HONEST ABOUT WHAT IT IS: this is COOPERATIVE ANNOUNCEMENT, not foreign-
+# installer detection. It proves THIS installer announced itself. It cannot
+# see, and makes no claim about, an installer that chose not to.
+#
+# Fail-soft: a beacon may NEVER break or block an install. The body swallows
+# its own failures (bounded, non-retrying transport calls inside a try/catch),
+# so a rig with no bus, no mako, or a half-provisioned $EtkRoot installs
+# exactly as it did before - just without the card.
+#
+# QUOTING: the label reaches the rig inside a single-quoted word in a remote
+# shell command. Labels are therefore FIXED ASCII literals written at the call
+# sites (<= 40 chars). NEVER interpolate a game id, a path, an etk-env.ps1
+# value or anything else operator-supplied into this call -
+# tools/release_sanity.sh enforces that statically.
+#
+# THE PERCENTS AND LABELS ARE install.sh's, VERBATIM, so both installers draw
+# the same card on the same rig and an operator can compare them. The port
+# skips the vault pull (8-13) and push (20-30) - no host vault on Windows -
+# and does not port STEP 6.4/6.45 (44-50) or STEPS 6.552/6.553/6.554 (68-78),
+# so those bands never appear. Monotonic non-decreasing to 100 is the
+# contract, not a dense sequence.
+# ==========================================================
+$script:ToastId    = ""      # live notification id; replaces the card in place
+$script:ToastSh    = ""      # resolved rig-side sender path ("-" once given up)
+$script:ToastStage = ""      # last stage announced - the STOPPED verdict's body
+$script:ToastFired = $false  # $true once a terminal verdict went out (guard)
+
+# Backstop for a beacon that precedes a SINGLE bulk transfer with no seam to
+# put another beacon in - the ~78 MB AppImage fetch, a driver push. The 45 s
+# default would expire mid-transfer and blank the handheld for minutes, which
+# is the failure this whole surface exists to prevent; an infinite expire
+# would leave an IMMORTAL stale card after a kill. Ten minutes covers these on
+# a slow link and still self-clears. Everywhere the code has a seam, the
+# answer is another beacon, not a longer window.
+$script:ToastBulkMs = 600000
+
+function Invoke-RigToast {
+    param(
+        [Parameter(Mandatory)][int]$Pct,
+        [Parameter(Mandatory)][string]$Stage,
+        [int]$TimeoutMs = 45000
+    )
+    $script:ToastStage = $Stage
+    try {
+        if ($script:ToastSh -eq "") {
+            # VIRGIN RIG: the first beacon fires before STEP 3 has pushed
+            # bin/, so on a fresh/reflashed rig the sender does not exist yet.
+            # Seed one copy in /tmp and keep using it for the whole run -
+            # /tmp survives as long as the boot, which is longer than any
+            # install. Such a rig has no [app-name="ETK Progress"] mako block
+            # either (STEP 1 writes it), so the card falls back to stock
+            # styling; it still shows, which is the point.
+            #
+            # The probe greps for the `--progress` case label rather than
+            # testing for the file, because a rig carrying a sender that
+            # PREDATES the progress form is the same problem as a rig carrying
+            # none: the flag would fall through to the plain-toast path and
+            # post a card summarised "--progress".
+            Invoke-Bounded -Exe "ssh" -Arguments ($script:SshBase + @($RigSsh, "grep -q '^--progress)' $EtkRoot/bin/etk_notify.sh")) `
+                           -TimeoutSec 20 -Quiet -What "beacon sender probe" | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                $script:ToastSh = "$EtkRoot/bin/etk_notify.sh"
+            } else {
+                $script:ToastSh = "-"
+                $senderLocal = Join-Path $RepoRoot "bin\etk_notify.sh"
+                if (Test-Path -LiteralPath $senderLocal) {
+                    # LF-normalise on the way out. install.sh scp's the file
+                    # straight across because a Unix checkout is LF; a Windows
+                    # clone can carry CRLF, and the rig's sh chokes on it
+                    # exactly as the STEP 3 fix-up below exists to prevent.
+                    $senderTmp = New-LfTempFile -Content (Get-Content -LiteralPath $senderLocal -Raw)
+                    try {
+                        Invoke-Bounded -Exe "scp" -Arguments ($script:ScpBase + @($senderTmp, "$($RigSsh):/tmp/etk_notify.sh")) `
+                                       -TimeoutSec 30 -Quiet -What "beacon sender seed" | Out-Null
+                        if ($LASTEXITCODE -eq 0) { $script:ToastSh = "/tmp/etk_notify.sh" }
+                    } finally {
+                        Remove-Item $senderTmp -Force -ErrorAction SilentlyContinue
+                    }
+                }
+            }
+        }
+        if ($script:ToastSh -eq "-") { return }
+        # The timeout is a BACKSTOP so an abandoned card self-dismisses - it is
+        # NOT the card's lifetime. mako honours expire_timeout (the "ETK
+        # Progress" criteria sets no ignore-timeout), so the card survives only
+        # as long as the NEXT beacon lands inside this window. That is why the
+        # fat stages below are subdivided down to their seams and why a
+        # seamless bulk transfer arms $script:ToastBulkMs instead. A stage that
+        # outruns its window blanks the handheld, which is the bug this surface
+        # exists to prevent.
+        $sendId = "0"
+        if ($script:ToastId) { $sendId = $script:ToastId }
+        $reply = Invoke-Bounded -Exe "ssh" `
+                     -Arguments ($script:SshBase + @($RigSsh, "ETK_NOTIFY_ID=$sendId sh $($script:ToastSh) --progress 'ETK INSTALL' '$Stage' $Pct $TimeoutMs")) `
+                     -TimeoutSec 20 -Quiet -What "beacon"
+        if ($LASTEXITCODE -eq 255) {
+            # 255 is ssh's own "could not reach the host" - not the sender's
+            # status (a remote command's own exit is 0..254; Windows OpenSSH
+            # uses 255 for transport failure exactly as OpenSSH does anywhere).
+            # A rig that fell off the network mid-install is the likeliest
+            # install failure there is, and every later beacon AND the exit
+            # verdict would each pay a full connect timeout: minutes of dead
+            # terminal where the installer used to fail fast. Latch the
+            # gave-up sentinel so the whole run stops trying after the first.
+            #
+            # Deliberately NOT latched on a nonzero from the sender itself (a
+            # bus or mako hiccup): that costs one fast local round trip, and
+            # killing the card for the rest of the install would trade a UX
+            # cost for exactly the security property this surface holds.
+            $script:ToastSh = "-"
+            return
+        }
+        # ANCHORED digits-only: a rig echoing garbage (an ssh motd, a login
+        # banner) must never reach a later command line. An unusable reply
+        # leaves the previous id in place; if one was never latched at all the
+        # id stays 0, which the sender reads as CREATE NEW - so those cards
+        # STACK rather than replace. Acceptable (a visible pile beats a
+        # missing card), but it is exactly what stdout pollution looks like.
+        $reply = ($reply -join "`n").Trim()
+        if ($reply -match '^[0-9]+$') { $script:ToastId = $reply }
+    } catch {
+        # Invoke-Bounded's wall-clock kill throws, and so would a local file
+        # error in the bootstrap above. Both mean this transport is not going
+        # to carry a card today, so latch rather than pay the same cost at
+        # every remaining stage. Fail-soft: nothing propagates from here.
+        $script:ToastSh = "-"
+    }
+}
+
+# The beacon's other half: a card left behind by an install that died
+# mid-flight would go on reporting work that is already over. Close it and say
+# so. install.sh hangs this off an EXIT trap; PowerShell has none, so the port
+# reaches the same guarantee from the try/finally armed below plus an explicit
+# call at its one hard-exit fail site.
+function Send-RigToastStopped {
+    if ($script:ToastFired) { return }
+    $script:ToastFired = $true
+    # ""  = no beacon ever ran, so there is no card to close.
+    # "-" = no sender, or the rig stopped answering. Either way an ssh here
+    #       buys nothing and costs a full connect timeout on the way out.
+    if ($script:ToastSh -eq "" -or $script:ToastSh -eq "-") { return }
+    # ONE ssh, not two: on a rig that went away this is the difference between
+    # one connect timeout and two. `--close 0` is a documented no-op in the
+    # sender, so an id that never latched needs no branch here - the verdict
+    # still goes out, which is the point (an operator with no end-state toast
+    # cannot tell a finished install from an abandoned one).
+    $closeId = "0"
+    if ($script:ToastId) { $closeId = $script:ToastId }
+    try {
+        Invoke-Bounded -Exe "ssh" `
+            -Arguments ($script:SshBase + @($RigSsh, "sh $($script:ToastSh) --close $closeId; sh $($script:ToastSh) 'ETK INSTALL STOPPED' '$($script:ToastStage)'")) `
+            -TimeoutSec 20 -Quiet -What "beacon verdict" | Out-Null
+    } catch { }
+}
+
+# ==========================================================
+# THE VERDICT GUARD. install.sh arms `trap etk_toast_stopped EXIT`; PowerShell
+# has no EXIT trap, so the port gets the same GUARANTEE from a try/finally
+# spanning the whole install. Every way this script ends passes through it:
+# a throw (the port's dominant failure - Invoke-Bounded, Send-Text, Send-File,
+# Push-Dir and the Assert-* helpers all throw under $ErrorActionPreference
+# 'Stop'), the one explicit `exit 1` fail site (which ALSO sends the verdict
+# directly, mirroring install.sh's explicit tui_fail sites), and a normal
+# finish (where the COMPLETE verdict has already set the double-fire guard,
+# making the finally a no-op).
+#
+# NEVER masks the exit code: there is no catch, so the original error still
+# propagates and powershell.exe still exits non-zero.
+#
+# The body inside is deliberately NOT re-indented. This port mirrors install.sh
+# line for line and is diffed against it by hand at every release; re-indenting
+# 500 lines to add a guard would cost more than it buys.
+#
+# KNOWN LIMIT, the same one install.sh documents for its own Ctrl-C path: a
+# hard console kill can skip the finally, and the card then clears on its
+# expire backstop instead of showing a verdict.
+# ==========================================================
+try {
+
+# THE SECURITY MOMENT: the rig SSH probe above has answered, nothing has been
+# mutated yet, and the handheld says so before the first pkill.
+Invoke-RigToast 2 "ETK install starting"
+
+# ==========================================================
 # STEP 0: PROBE & QUIESCE  (install.sh Step 0)
 # Kill ETK workers before file ops. Resolve the rig game ID purely to
 # provision that game's vault dir; the Sentry creates per-game dirs on
 # demand anyway, so the NPUA80075 fallback is fine when idle.
 # ==========================================================
+Invoke-RigToast 4 "Quiescing daemons"
 Write-Step 0 $TOTAL "PROBING & QUIESCING REMOTE RIG..."
 Invoke-Rig "pkill -f vault_d.sh; pkill -f thermal_d.sh; pkill -f mango_bridge.sh; pkill -f input_d.py" 2>$null | Out-Null
 Start-Sleep -Seconds 1
@@ -132,6 +335,7 @@ Write-Note "No host-side vault backup on Windows. Copy <ETK_ROOT>/vault over SMB
 # STEP 3: DEPLOY SCRIPTS, DAEMONS & OVERLAYS  (install.sh Step 3)
 # --delete is replicated by Push-Dir -Mirror (remote tree removed first).
 # ==========================================================
+Invoke-RigToast 14 "Deploying daemons"
 Write-Step 3 $TOTAL "DEPLOYING GUARDIAN DAEMONS & SCRIPTS..."
 Push-Dir -LocalDir (Join-Path $RepoRoot "bin")     -RemoteParent $EtkRoot -Mirror
 Push-Dir -LocalDir (Join-Path $RepoRoot "scripts") -RemoteParent $EtkRoot -Mirror
@@ -209,6 +413,7 @@ Write-Step 4 $TOTAL "RESTORE BANKED SHADERS (vault push) - SKIPPED on Windows ho
 # ==========================================================
 # STEP 5: DEPLOY ETK PITSTOP ROCKNIX INTERFACE  (install.sh Step 5)
 # ==========================================================
+Invoke-RigToast 34 "Pitstop interface"
 Write-Step 5 $TOTAL "DEPLOYING ETK PITSTOP ROCKNIX INTERFACE..."
 
 # Push config payload (pitstop_fields.json, crash_signatures.json,
@@ -245,6 +450,10 @@ Invoke-Rig "sed -i 's/\r$//' /storage/.config/modules/etk_pitstop.sh && chmod +x
 $check = (Invoke-Rig "[ -x /storage/.config/modules/etk_pitstop.sh ] && echo OK || echo MISSING").Trim()
 if ($check -ne "OK") {
     Write-ErrLine "Launcher missing or lacks +x - aborting."
+    # install.sh sends the verdict at its tui_fail sites for the same
+    # reason: a hard stop must not leave the card reporting work that
+    # ended. Belt to the finally's braces - the guard makes it fire once.
+    Send-RigToastStopped
     exit 1
 }
 Write-Ok "Launcher verified and locked to disk."
@@ -263,6 +472,7 @@ if (($glCount -as [int]) -ge 1) {
 # STEP 6: WRITE & RESTART THE SENTRY  (install.sh Step 6)
 # SENTRY and SVC bodies are pulled verbatim from install.sh.
 # ==========================================================
+Invoke-RigToast 38 "Arming sentry"
 Write-Step 6 $TOTAL "DEPLOYING ROCKNIX-NATIVE SYSTEMD SENTRY..."
 $sentry = Get-Heredoc -Path $InstallSh -Marker "SENTRY"
 $svc    = Get-Heredoc -Path $InstallSh -Marker "SVC"
@@ -286,6 +496,7 @@ else { Write-Warn "Sentry not confirmed active (reported '$active'). Check: ssh 
 # install.sh. Reboot-gated: a bind-mount can't hot-swap a driver a
 # running RPCS3 already mapped.
 # ==========================================================
+Invoke-RigToast 54 "Turnip driver catalog"
 Write-Step 6 $TOTAL "STEP 6.5: CUSTOM TURNIP DRIVER CATALOG..."
 # Keep these pins in lockstep with install.sh (CERTIFIED_BUILDS / CERT_SHA) — they
 # drift when a release rotates and the fetch then 404s down to stock-only (caught
@@ -312,6 +523,9 @@ foreach ($cb in $certified) {
     $local = Join-Path $driversDir $cb.Name
     if (-not (Test-Path -LiteralPath $local)) {
         # drivers/ is gitignored, so a fresh clone has no .so — fetch it.
+        # [B] heartbeat: a certified-build fetch is a seamless bulk
+        # transfer, so it arms the long backstop rather than a beacon.
+        Invoke-RigToast 55 "Turnip driver catalog" $script:ToastBulkMs
         Write-Note "Fetching certified driver $($cb.Name) from the latest ETK release..."
         try {
             Invoke-WebRequest -Uri "$driverBase/$($cb.Name)" -OutFile $local -UseBasicParsing
@@ -326,6 +540,8 @@ foreach ($cb in $certified) {
             Remove-Item $local -Force
             Write-Warn "$($cb.Name) FAILED sha256 verification - refusing to stage (expected $($cb.Sha))."
         } else {
+            # [B] heartbeat: the push of one verified .so to the catalog.
+            Invoke-RigToast 56 "Turnip driver catalog" $script:ToastBulkMs
             Send-File -LocalPath $local -RemotePath "/storage/turnip/drivers/$($cb.Name)"
             $staged++
             $turnipKeep += $cb.Name
@@ -374,6 +590,7 @@ else {
 # back to stock. Bind-mount over read-only /usr/bin/rpcs3-sa — stock is never
 # overwritten. RPCS3REMOTE body verbatim.
 # ==========================================================
+Invoke-RigToast 60 "RPCS3 core staging"
 Write-Step 6 $TOTAL "STEP 6.55: RPCS3 GTK EDITION (default emulator)..."
 $certRpcs3    = "rpcs3-etk_gtk-edition-0.8.5_v0.0.41-19638-a1deb2921_linux_aarch64.AppImage"  # lockstep with install.sh CERT_RPCS3
 $certRpcs3Sha = "0185e2859d12b3bc3523ecdc629bfccf912d4fcec8c2c14772af139f78a67aeb"
@@ -386,6 +603,8 @@ if ($Rpcs3AppImage -eq "stock") {
     if (-not (Test-Path -LiteralPath $emuDir)) { New-Item -ItemType Directory -Path $emuDir -Force | Out-Null }
     $emuLocal = Join-Path $emuDir $certRpcs3
     if (-not (Test-Path -LiteralPath $emuLocal)) {
+        # [B] heartbeat: ~78 MB over the internet, no seam inside it.
+        Invoke-RigToast 62 "RPCS3 core staging" $script:ToastBulkMs
         Write-Note "Fetching RPCS3 GTK Edition from the latest ETK release (~78MB, one-time)..."
         try {
             # PS 5.1's IWR progress rendering throttles large downloads
@@ -415,6 +634,8 @@ if ($Rpcs3AppImage -eq "stock") {
     Write-Warn "Rpcs3AppImage set but file not found: $Rpcs3AppImage - stock stays active."
 }
 if ($rpcs3StageSrc) {
+    # [B] heartbeat: ~78 MB host -> rig, no seam inside it either.
+    Invoke-RigToast 65 "RPCS3 core staging" $script:ToastBulkMs
     Send-File -LocalPath $rpcs3StageSrc -RemotePath "/storage/rpcs3/rpcs3-sa.custom"
     # A Windows file carries no Linux exec bit — set it on the rig copy
     # (an AppImage without +x fails as a silent exit-126 "quits on launch").
@@ -435,6 +656,7 @@ else {
 # --- STEP 6.56: RPCS3 runtime env flags  (install.sh Step 6.56) ---------
 # profile.d vector; reaches the RPCS3 runtime at every game launch. For the
 # GTK Edition set $Rpcs3EnvFlags = "GTK_REMAP0_ONE=1" (road-flicker fix).
+Invoke-RigToast 82 "Support services"
 if ($Rpcs3EnvFlags) {
     $exports = (($Rpcs3EnvFlags.Trim() -split '\s+') | ForEach-Object { "export $_" }) -join "`n"
     Send-Text -Content ($exports + "`n") -RemotePath "/storage/.config/profile.d/096-etk-rpcs3-flags"
@@ -456,6 +678,7 @@ Write-Ok "Audio watchdog retired (silent-boot race fixed in the GTK kernel)."
 # --- STEP 6.6: POWER PROFILE APPLIER  (install.sh Step 6.6) -------------
 # Boot oneshot re-applying the Pitstop POWER tab's gov/clock profile
 # (sysfs resets every boot). Self-skips until a profile is set.
+Invoke-RigToast 84 "Support services"
 $pwrBody = Get-Heredoc -Path $InstallSh -Marker "POWERREMOTE"
 Invoke-RigBash -Script $pwrBody | Out-Null
 Write-Ok "POWER applier deployed (etk-power.service - self-skips until a profile is set)."
@@ -464,6 +687,7 @@ Write-Ok "POWER applier deployed (etk-power.service - self-skips until a profile
 # pstore harvester + kmsg flight recorder unit. The WRITE side (ramoops
 # grub token) stays operator-armed via scripts/arm_blackbox.sh — never
 # auto-applied. The body also reports grub-drift warnings; print them.
+Invoke-RigToast 86 "Support services"
 $bbBody = Get-Heredoc -Path $InstallSh -Marker "BLACKBOXREMOTE"
 $bbOut = Invoke-RigBash -Script $bbBody
 if ($bbOut) { $bbOut | ForEach-Object { Write-Note $_ } }
@@ -473,6 +697,7 @@ Write-Ok "Panic Black Box read-side deployed (write-side stays operator-armed)."
 # Mirrors the internal panel to an external DisplayPort for capture/OBS.
 # Idle until a DP sink links; toggled by ETK_DP_MIRROR in the generated
 # etk.conf (Step 3). DPMIRRORREMOTE verbatim.
+Invoke-RigToast 88 "Support services"
 $dpBody = Get-Heredoc -Path $InstallSh -Marker "DPMIRRORREMOTE"
 Invoke-RigBash -Script $dpBody | Out-Null
 Write-Ok "DP-mirror daemon deployed (idle until an external DisplayPort links)."
@@ -503,6 +728,7 @@ if (($EtkDpAudioS16 -ne "0") -and (Test-Path -LiteralPath $wpConfLocal)) {
 # PROF / CORE / S3SVC bodies are pulled verbatim from install.sh —
 # Mesa 10G cache cap + ulimit, boot-persistent coredump capture.
 # ==========================================================
+Invoke-RigToast 90 "Stability harness"
 Write-Step 7 $TOTAL "ARMING STAGE III HARNESS (cache cap + coredump capture)..."
 $prof  = Get-Heredoc -Path $InstallSh -Marker "PROF"
 $core  = Get-Heredoc -Path $InstallSh -Marker "CORE"
@@ -524,6 +750,7 @@ else { Write-Warn "Stage III harness not confirmed (core_pattern '$cpat') - cras
 # stall) + RBSVC (unit) pulled verbatim from install.sh. Deliberately NOT
 # run at install time (it bind-mounts over live game paths); it takes
 # effect on the next cold boot. No-op on single-card rigs.
+Invoke-RigToast 94 "Storage rebind"
 Write-Step 7 $TOTAL "STEP 6.85: SD GAME-TREE REBIND (crash-card storage model)..."
 $rbnd  = Get-Heredoc -Path $InstallSh -Marker "RBND"
 $rbsvc = Get-Heredoc -Path $InstallSh -Marker "RBSVC"
@@ -538,6 +765,7 @@ else { Write-Warn "SD rebind service did not verify - crash-card rigs unaffected
 # Conditional on $PaddockToken in etk-env.ps1. Mirrors the bash step:
 # token -> identity -> verify-or-create PRIVATE repo -> seed -> wire rig.
 # ==========================================================
+Invoke-RigToast 96 "Paddock link"
 Write-Step 8 $TOTAL "PADDOCK LINK (private paddock)..."
 if (-not $PaddockToken) {
     Write-Note "No PaddockToken in etk-env.ps1 - private paddock skipped (tab stays hidden)."
@@ -594,6 +822,31 @@ if (-not $PaddockToken) {
     }
 }
 
+# ==========================================================
+# BEACON: the COMPLETE verdict. Full bar, then the card goes - a progress card
+# left to fade keeps reporting work that is already over - then one line on the
+# ETK verdict surface so the handheld shows an unambiguous end state. Setting
+# the double-fire guard here also disarms the STOPPED path for good, so nothing
+# produced downstream (the finally below, PowerShell's own teardown) can
+# contradict a successful install.
+# ==========================================================
+Invoke-RigToast 100 "Complete"
+$script:ToastFired = $true
+# Gated on a resolved SENDER, never on a latched id: an id that failed to latch
+# (an ssh banner on stdout, say) would otherwise cost the operator the one toast
+# that says the install is over. `--close 0` is a no-op in the sender, so the
+# close simply does nothing when there is no card to close. One ssh, same
+# reasoning as the STOPPED path.
+if ($script:ToastSh -ne "" -and $script:ToastSh -ne "-") {
+    $doneId = "0"
+    if ($script:ToastId) { $doneId = $script:ToastId }
+    try {
+        Invoke-Bounded -Exe "ssh" `
+            -Arguments ($script:SshBase + @($RigSsh, "sh $($script:ToastSh) --close $doneId; sh $($script:ToastSh) 'ETK INSTALL COMPLETE'")) `
+            -TimeoutSec 20 -Quiet -What "beacon verdict" | Out-Null
+    } catch { }
+}
+
 Write-Host ""
 Write-Host ">>> DEPLOYMENT COMPLETE. REBOOT THE DEVICE TO ACTIVATE ETK PITSTOP IN ROCKNIX TOOLS." -ForegroundColor Green
 Write-Note "(EmulationStation reads the Tools gamelist at startup, so the polished"
@@ -602,3 +855,9 @@ Write-Note "(The reboot also loads any newly selected Turnip driver build and th
 Write-Note " custom RPCS3 GTK Edition bind - both are boot-gated by design.)"
 Write-Note "Confirm sentry health: ssh $RigSsh 'systemctl status etk.service'"
 Write-Host ""
+
+} finally {
+    # Reached on a throw, on the explicit `exit 1`, and on a clean finish. The
+    # double-fire guard makes it a no-op after the COMPLETE verdict above.
+    Send-RigToastStopped
+}
