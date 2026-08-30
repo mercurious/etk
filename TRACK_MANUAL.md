@@ -608,9 +608,10 @@ knobs, writes the handoff, verifies afterward from read-only telemetry.
   **not retiring** (re-affirmed 2026-08-07). Rig-side bodies are pulled VERBATIM from
   install.sh heredoc markers at runtime, so daemon logic can't drift; only the PS-native
   host side needs manual sync — `release_sanity.sh` gates the cert pins (they HAD drifted
-  two releases). Port debt: STEPs 6.45 / 6.552 / 6.554 + the install beacon (a
-  Windows-host install is currently SILENT on the rig — a real hole in the beacon's
-  anti-silent-install property until the port carries it).
+  two releases). Port debt: STEPs 6.45 / 6.552 / 6.554. The install beacon is PORTED
+  (v0.8.7, same labels/percents as install.sh so both installers draw a comparable
+  card; `release_sanity.sh` gates the port's beacon roster, ungated call sites, and
+  verdicts at every cut — beacon lockstep can no longer drift silently).
 - **Flashable image lane:** `os-install/build/build_gtk_image_v2.sh` bakes base ROCKNIX +
   the three artifacts into `ROCKNIX-GTK-SM8250.aarch64-<date>.img.gz`. Since 0.8.0 the
   shipped image is the **v4 hostless lane** — UNIQUE labels `ROCKNIX-GTK`/`GTKSTOR` (safe

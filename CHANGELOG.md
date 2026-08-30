@@ -30,6 +30,17 @@ boot-config hardening staged since 0.8.6.
   network can never hang the install's exit. `tools/test_notify.py` pins the
   stage roster, the backstop map, monotonic percentages, fail-soft guards,
   and both verdict paths — and the pins are mutation-tested.
+- **The Windows installer announces itself on the rig too.** A Windows-host
+  install was silent on the handheld's screen — exactly the gap the beacon
+  exists to close. The PowerShell port now drives the same "ETK Progress"
+  card with install.sh's own stage labels and percentages, so both installers
+  are directly comparable on the same rig, and posts the same
+  "ETK INSTALL COMPLETE" / "ETK INSTALL STOPPED" verdicts. Always on, no
+  parameter, no config value, no kill-switch; fail-soft, and a rig that falls
+  off the network mid-install still exits fast. `tools/release_sanity.sh` now
+  gates the port's beacon roster, percent map, ungated call sites and
+  verdicts at every cut. (Live validation of the port requires a Windows
+  host; the beacon semantics it mirrors are the rig-validated ones.)
 - **Pitstop GAME SWITCHER (hold SELECT).** Re-point Pitstop at any installed
   game from inside the app: hold SELECT on TELEMETRY / TUNING / TOOLS, pick
   with the right stick, release to switch. Previously the only way was to
