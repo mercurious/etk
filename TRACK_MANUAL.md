@@ -608,7 +608,9 @@ knobs, writes the handoff, verifies afterward from read-only telemetry.
   **not retiring** (re-affirmed 2026-08-07). Rig-side bodies are pulled VERBATIM from
   install.sh heredoc markers at runtime, so daemon logic can't drift; only the PS-native
   host side needs manual sync — `release_sanity.sh` gates the cert pins (they HAD drifted
-  two releases). Port debt: STEPs 6.45 / 6.552 / 6.554.
+  two releases). Port debt: STEPs 6.45 / 6.552 / 6.554 + the install beacon (a
+  Windows-host install is currently SILENT on the rig — a real hole in the beacon's
+  anti-silent-install property until the port carries it).
 - **Flashable image lane:** `os-install/build/build_gtk_image_v2.sh` bakes base ROCKNIX +
   the three artifacts into `ROCKNIX-GTK-SM8250.aarch64-<date>.img.gz`. Since 0.8.0 the
   shipped image is the **v4 hostless lane** — UNIQUE labels `ROCKNIX-GTK`/`GTKSTOR` (safe
@@ -619,16 +621,30 @@ knobs, writes the handoff, verifies afterward from read-only telemetry.
 
 ### A.3 The UI layer (Pitstop, notifications, HUD, installs)
 
-**The Pitstop app** (`bin/etk_pitstop.py`, ~6,300 lines, curses in a fullscreen `foot`
+**The Pitstop app** (`bin/etk_pitstop.py`, ~9,500 lines, curses in a fullscreen `foot`
 terminal, launched from the ROCKNIX Tools carousel; raw evdev pad input,
 focus-independent; L1/R1 cycle tabs). The operator's interface to every subsystem — and
 the reason no A/B session is ever mis-attributed.
+
+**GAME SWITCHER (0.8.7):** hold **SELECT** on TELEMETRY/TUNING/TOOLS → overlay lists
+every installed game (`.psn` stems > tagged `.iso`/`.m3u` > games.yml); right stick
+picks; **releasing SELECT loads that ID into Pitstop** (atomic write to the last-played
+anchor + in-place re-exec, so every per-game binding re-derives — unapplied TUNING edits
+are discarded by design). No stick movement, or release on the current game = silent
+dismiss. It REFUSES while a session is live **or its ledger row is not yet stamped**
+(`_game_running()` OR the `session_anchor.txt` breadcrumb — postmortem reads `game_id`
+from the same anchor the switcher writes, and the breadcrumb brackets exactly the unsafe
+exit-edge window). Stick range is probed via `EVIOCGABS` at pad open; an unprobed pad
+falls back to 0-255 with out-of-range samples disarming the overlay (rollback to the
+opening highlight — a mis-ranged pad yields a visible cancel, never a wrong switch).
+Works in `ETK_NO_TARGET` mode: a fresh rig binds its first game without the old
+launch-then-R3 dance, which is also why the ledger no longer collects those ABORTED rows.
 
 | Tab | What it does | Writes / drives |
 |---|---|---|
 | **TELEMETRY** (default) | career anchor + scrollable ledger merged with config-change rows; detail card decodes `crash_sig` → plain-language diagnosis + SUGGESTED FIX + TRACTION CONTROL advice; KPI gauges; crash-frame preview via swayimg | reads `sessions.tsv`, `career/`, `crash_signatures.json` |
 | **TUNING** | schematic per-game RPCS3 YAML editor (36 schema fields; **section-aware injector** that refuses cross-section corruption; atomic save + read-back verify) | `config_<ID>.yml`; one row per change → `config_changes.tsv` |
-| **TOOLS** | Manage Shaders (over `vault_sweep.sh`) · background installs (below) · PKG install (uinput Enter-taps through RPCS3's GUI-only dialog; **waits for self-exit** — early kill truncates installs) · headless firmware install (`--installfw`, self-provisions dev_flash) · game uninstall (preserves saves + vault) · Trigger Calibration · screenshot mode | `etk_install_lock`, storage-coherence gate |
+| **TOOLS** | Manage Shaders & Caches (vault status + per-game/all-games RPCS3 cache clears + stale-vault sweep, over `vault_sweep.sh`; destructive ops refuse while ANY RPCS3 is alive — a background install writes `dev_hdd1/caches` too; a clear that removed nothing reports failure, never success) · background installs (below) · PKG install (uinput Enter-taps through RPCS3's GUI-only dialog; **waits for self-exit** — early kill truncates installs) · headless firmware install (`--installfw`, self-provisions dev_flash) · game uninstall (preserves saves + vault) · Trigger Calibration · screenshot mode | `etk_install_lock`, storage-coherence gate |
 | **DRIVER** | BUILD selector (Turnip catalog; `selected` vs boot-stamped `loaded` ground truth; reboot-gated) + ROAD FEEL dial (Max Stability=`syncdraw` / Balanced=`sddepth` / Max Performance=none; falsified gears exiled to Advanced) | `/storage/turnip/selected`; `097-etk-turnip-dials` + `active_tune.txt` **atomically** → `tune_tag` |
 | **POWER** | schema-driven gov/floor knobs (no OC — OPP cap 800 MHz), presets, **grid** rung | `/storage/etk-power/profile` → `pwr` col; live sysfs |
 | **PADDOCK** | private-repo vault sync (homologation-gated; only tab that touches the network, deliberately last) | `paddock_sync.sh` |
@@ -662,6 +678,17 @@ tool from a Sentry-spawned context also needs `XDG_RUNTIME_DIR=/var/run/0-runtim
   **int32 only** (`v`/`i` — a uint32 fails the whole Notify call), via `busctl --user call`
   (`dbus-send` can't send nested containers; `gdbus` is absent). Use
   `progress-color=over #RRGGBBAA` translucent; a replace that omits the hint clears the bar.
+- **The install beacon (0.8.7) is ALWAYS-ON by design — do not add a switch.** While
+  `install.sh` runs, the rig carries an "ETK INSTALL" progress card (overall % + stage,
+  nothing else), opened BEFORE the first daemon is killed, closed on an explicit
+  COMPLETE/STOPPED verdict; an abandoned card self-dismisses (45 s expire, refreshed per
+  beacon; long transfers carry in-loop heartbeats under a 10-min bulk window). Its point
+  is anti-silent-install: a kill-switch is exactly what a silent installer would flip, so
+  there is none — not in etk.conf, not in env (`tools/test_notify.py` pins the roster,
+  the backstop map, and the absence of any gate). Honest limit: it announces OUR
+  installer, cooperatively — it is not foreign-installer detection. Fail-soft: a rig
+  with no notification bus installs exactly as before; a dead rig latches a give-up
+  sentinel on ssh 255 so exit never hangs on doomed verdicts.
 - **A bad mako config is a rig-wide outage:** one invalid option and the next boot mako
   exits, killing every notification ROCKNIX-wide. `max-visible` is illegal inside an
   `[app-name=…]` criteria; `sort`/`max-history` are global-only. install.sh backs up,

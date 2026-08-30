@@ -4,6 +4,85 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ## [Unreleased]
 
+## [0.8.7] - 2026-08-29 — Pit Board Edition
+
+The pit board is the sign the crew hangs over the wall so the driver always
+knows what is happening — this cut is three of those. Every install announces
+itself on the handheld's own screen; the game Pitstop points at is one chord
+away instead of a launch-and-abort; and the cache screen tells the truth. All
+three features shipped through paired build/adversarial-review agent passes
+(every claim independently re-verified, every fix mutation-tested), plus the
+boot-config hardening staged since 0.8.6.
+
+### Added
+- **Install beacon — the rig announces its own install.** While `install.sh`
+  runs, the handheld carries an "ETK INSTALL" progress card: overall percent
+  and the running stage, nothing else. It opens before the first daemon is
+  killed and closes on an explicit verdict — "ETK INSTALL COMPLETE" or
+  "ETK INSTALL STOPPED" naming the stage that stopped; an abandoned card
+  self-dismisses within 45 s, and long transfers carry in-loop heartbeats so
+  the card never expires mid-stage. ALWAYS ON: no env gate, no etk.conf knob,
+  no kill-switch anywhere — a switch is exactly what a silent installer would
+  flip. This is cooperative announcement (it proves THIS installer announced
+  itself), not foreign-installer detection; a Windows-host install does not
+  yet announce (tracked as PS-port debt). Fail-soft throughout: a rig with no
+  notification bus installs exactly as before, and a rig that drops off the
+  network can never hang the install's exit. `tools/test_notify.py` pins the
+  stage roster, the backstop map, monotonic percentages, fail-soft guards,
+  and both verdict paths — and the pins are mutation-tested.
+- **Pitstop GAME SWITCHER (hold SELECT).** Re-point Pitstop at any installed
+  game from inside the app: hold SELECT on TELEMETRY / TUNING / TOOLS, pick
+  with the right stick, release to switch. Previously the only way was to
+  launch the other game and R3-abort it, which put a junk abort row in the
+  session ledger. The list is everything installed (.psn launchers, tagged
+  .iso/.m3u discs, and RPCS3's games.yml); the switch is a full in-place
+  restart, so every per-game binding re-derives, and unapplied TUNING edits
+  are discarded by it. It refuses while a game is running — and through the
+  few seconds after a session ends before its ledger row is stamped — because
+  the ledger reads its game_id from the same last-played anchor the switcher
+  writes. The stick's range is probed from the kernel at pad open; a pad that
+  refuses the probe gets a guarded fallback that cancels visibly rather than
+  ever committing a wrong game. On a fresh rig with no game bound, the chord
+  works on the TOOLS tab, so the first game binds without launching anything.
+
+### Changed
+- **Manage Shaders is now "Manage Shaders & Caches" — rebuilt, and honest.**
+  The old screen drew its action rows underneath the footer, which erased
+  them every frame while leaving them cursor-selectable — a defect that only
+  appeared as the vault filled, which is how it shipped: on a full vault the
+  "Clear RPCS3 cache" row was selectable but invisible. The rebuilt page is a
+  compact vault summary over four plain actions: clear RPCS3's caches for the
+  current game, for all games, sweep stale vault shaders, Back. Clears now
+  cover both RPCS3 cache roots (sizes used to understate the delete), find
+  the real per-game directory forms (the old per-game path was a wrong
+  hardcoded guess that could free nothing), refuse while any emulator is
+  alive — a game or a background install — and a clear that removed nothing
+  reports failure instead of success; a partial clear says PARTLY CLEARED on
+  the toast too. The banked shader vault is never touched by any of it, and
+  the confirm text says so before the delete.
+- **Kernel deploy defaults to booting what it installed** (`KERNEL_DEPLOY_MODE`
+  fallback is now `default`, not `test`): installing a custom kernel IS the
+  intent to boot it. STEP 6.4 withholds auto-boot — silent downgrade to
+  `test` plus a `[GUARD]` line — unless the rig is the verified Flip 2 AND
+  the kernel's module tree exists on the target, so a stale KERNEL_IMAGE can
+  never auto-boot a module-less system.
+- **Self-update carries unit fixes to couch-only users:** the in-app updater
+  now reconciles shipped systemd unit changes, so a rig that only ever
+  updates from the TOOLS tab picks up unit repairs that used to require a
+  host install.
+
+### Fixed
+- **osguard Phase B re-applies the numeric default pin**, so a post-OS-update
+  self-heal converges to the same boot default a fresh install writes
+  (heal == fresh; the string-id default does not resolve on the 4Kn internal
+  ESP).
+- **Game uninstall no longer leaks the per-game dev_hdd1 cache** — it
+  resolved the same wrong hardcoded path the cache screen's clear did, and
+  now shares the cache screen's resolver.
+- **TOOLS-menu on-select help no longer lands under the footer** at short
+  terminal heights — a pre-existing anchor bug affecting several menu
+  entries, repaired for all of them.
+
 ## [0.8.6] - 2026-08-28 — Qualifying Lap Edition
 
 **One month from now the chassis changes; this release is the practice lap.**
