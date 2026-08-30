@@ -2198,7 +2198,7 @@ rm -f "$OSG_OUT_FILE"
 # optional etk.conf TURNIP_SO names the DEFAULT pick on a rig that hasn't chosen.
 # §G.5 note: once a fork is bound, the Mesa fingerprint tracks OUR driver, so a
 # nightly's stock-Mesa change is intentionally masked (we want our driver).
-rig_toast 54 "Turnip driver catalog" $ETK_TOAST_BULK_MS || true
+rig_toast 54 "Turnip driver catalog" || true
 ssh $RIG_SSH "mkdir -p /storage/turnip/drivers /storage/.config/system.d/" 2>/dev/null
 # The host drivers/ dir IS the catalog: every .so in it is staged to the rig and
 # offered in the DRIVER tab. Dropping a build into drivers/ is all it takes.
@@ -2256,6 +2256,7 @@ for cb in $CERTIFIED_BUILDS; do
     # here would delete their work from the host tree. Only ever sha-check bytes
     # we just pulled off the network.
     [ -f "./drivers/$cb" ] && continue
+    rig_toast 55 "Turnip driver catalog" $ETK_TOAST_BULK_MS || true
     say "${G}[ETK]${N} Fetching certified driver $cb from the latest ETK release..."
     mkdir -p ./drivers
     _part="./drivers/.$cb.part"
@@ -2276,6 +2277,7 @@ done
 staged=0
 for f in ./drivers/*.so; do
     [ -e "$f" ] || continue          # literal glob when drivers/ is empty
+    rig_toast 56 "Turnip driver catalog" $ETK_TOAST_BULK_MS || true
     b=$(basename "$f")
     rsync -az "$f" "$RIG_SSH:/storage/turnip/drivers/$b" >/dev/null 2>&1 \
         && { staged=$((staged + 1)); TURNIP_KEEP="$TURNIP_KEEP $b"; }
@@ -2500,7 +2502,7 @@ fi
 # remains the certified rpcs3-sa.custom staged above. The certified AppImage in
 # emulators/ is itself part of the catalog (it's how a pin gets un-A/B'd
 # without a reinstall). Kill-switch ETK_CORE_SWAP=0 skips catalog + wrapper.
-rig_toast 68 "RPCS3 core staging" $ETK_TOAST_BULK_MS || true
+rig_toast 68 "RPCS3 core staging" || true
 if [ "${ETK_CORE_SWAP:-1}" = "1" ]; then
     ssh $RIG_SSH "mkdir -p $ETK_ROOT/emulators" 2>/dev/null
     CORE_KEEP=""
@@ -2509,6 +2511,7 @@ if [ "${ETK_CORE_SWAP:-1}" = "1" ]; then
         [ -e "$f" ] || continue
         b=$(basename "$f")
         chmod +x "$f" 2>/dev/null
+        rig_toast 69 "RPCS3 core staging" $ETK_TOAST_BULK_MS || true
         rsync -az "$f" "$RIG_SSH:$ETK_ROOT/emulators/$b" >/dev/null 2>&1 \
             && { core_staged=$((core_staged + 1)); CORE_KEEP="$CORE_KEEP $b"; }
     done

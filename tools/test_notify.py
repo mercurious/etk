@@ -590,6 +590,27 @@ check("every sub-beacon sits inside an already-announced stage",
       (bool(CALLS), [n for n, _ in SUB if not any(s < n for s, _ in STAGE)]),
       (True, []))
 
+# The stage roster is pinned EXACTLY, not bounded. Review mutant N2 moved a
+# repeated-label stage beacon ("Support services" names four distinct stages)
+# inside an `if` with comment padding: the knob scan reads only three lines up
+# and skips comments, the label's FIRST site stayed at column 0, and nothing
+# fired. Demoting any stage announcement to a skippable indented site changes
+# this number, whatever its label.
+check("the stage-beacon roster is pinned", len(STAGE), 29)
+
+# The long-backstop map is pinned as a SET, not an existence check. Review
+# mutant A stripped $ETK_TOAST_BULK_MS from the beacon that opens the
+# whole-vault push rsync, and a per-stage existence check passed because a
+# --restore-state-only heartbeat later in the same stage still carried the
+# flag — the 45 s expire trap reintroduced, silently. Every change to a bulk
+# window must now edit this list, which is the point: the backstop map is an
+# operator-facing timing contract, not an implementation detail.
+BULK = sorted(int(m.group(1)) for _, ln in CALLS
+              for m in [re.match(r"^\s*rig_toast\s+(\d+)\s.*\$ETK_TOAST_BULK_MS", ln)]
+              if m)
+check("the long-backstop map is exactly the intended bulk windows",
+      BULK, [9, 11, 13, 20, 30, 44, 55, 56, 62, 65, 69])
+
 # A call site inside a function body may simply never be called; one inside a
 # quoted heredoc is dead text shipped to the rig. Both are silent failures.
 def _fn_ranges(lines):
