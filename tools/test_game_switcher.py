@@ -286,6 +286,14 @@ check("full union, alphabetical by title", games, [
 ids = [g for g, _ in games]
 check_true("a macOS AppleDouble sibling is not a game",
            "ZZZZ00001" not in ids)
+# ...and the HEADER resolver has to agree with the list. '._Ghost.psn' sorts
+# first (leading '.'), its body IS a well-formed ID, so the dotfile skip is
+# the only thing keeping it out: before that skip resolve_game_name returned
+# '._Ghost' as the on-screen game name on any card mounted on a Mac. It now
+# falls through to the bare ID, exactly as the switcher list drops it.
+check("the header resolver skips the AppleDouble sibling too",
+      pit.resolve_game_name("ZZZZ00001", roms_dir=ROMS, games_yml=GAMES_YML),
+      "ZZZZ00001")
 check_true("a malformed .psn ID is dropped", "not-an-id" not in ids)
 check_true("an empty .psn is dropped", "" not in ids)
 check_true("a lowercase serial tag is not an ID", "BCUS98111" not in ids)
