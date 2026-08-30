@@ -46,6 +46,12 @@ ETK_PITSTOP at the file from before the "rebuild TOOLS entry 0" commit:
 [GEOM] then fails at 60x15 and at 60x22-with-a-full-vault while still PASSING
 at 60x22-with-3-games — the content-dependence that let the bug ship.
 
+The TOOLS top-level MENU had the sibling defect (8 uncapped rows from row 8;
+below h=19 the tail is erased by the footer or clipped off-screen while the
+cursor still wraps onto it). Against the file from before the menu-window
+commit, the [GEOM] menu checks fail at 60x15 and 40x12 — cursor positions the
+window cannot show — while the cache-screen checks above them keep passing.
+
 No rig, no terminal, no emulator, no root.
 """
 import curses
@@ -233,36 +239,70 @@ def _geom():
                            "shedding from the tail drops the only line that "
                            "answers the question the operator actually has")
 
-    # THE MENU'S on-select help band. It anchors from the footer, and anchoring
-    # with max() flowed it DOWNWARD onto h-3/h-2 (drawn, then erased) whenever
-    # the 8-item list reached that far -- the same defect class as the graph.
-    # Note: the menu LIST itself still overflows below h=19 (8 fixed rows from
-    # row 8); that is pre-existing and tracked separately, so the strict
-    # whole-screen assertion runs only where the list fits.
+    # THE MENU. Two defect classes, one body band:
+    #  - the on-select help anchors from the footer, and anchoring with max()
+    #    flowed it DOWNWARD onto h-3/h-2 (drawn, then erased) whenever the
+    #    8-item list reached that far -- fixed with the cache screen.
+    #  - the LIST itself flowed all eight entries from row 8 with no cap, so
+    #    below h=19 the tail landed on the footer rows or off-screen while the
+    #    cursor still cycled onto it (_tools_move wraps mod 8) -- four entries
+    #    selectable-but-invisible on the 60x15 contract grid. The list is now
+    #    windowed around the cursor (the uninstall-list idiom), which is why
+    #    the strict whole-screen assertion runs at EVERY size and every entry
+    #    must be reachable BY SELECTING IT, not by fitting.
     _HELP_MARKERS = ("Free up space", "Staging drop folder", "Hold L1 + L2",
                      "always / in-game", "R1 + DPAD-Down", "Turn it off",
                      "Firmware drop folder", "Checks GitHub", "in place -",
                      "or sweep shaders")
-    for h, w in ((15, 60), (18, 60), (19, 60), (20, 60), (22, 60), (30, 100)):
+    for h, w in ((15, 60), (12, 40), (18, 60), (19, 60), (20, 60), (22, 60),
+                 (30, 100)):
         for cur in range(len(pit._TOOLS_MENU)):
             scr = FakeScr(h, w)
             pit.draw_tools(scr, {"tools_mode": "menu", "tools_cursor": cur,
                                  "gamepad_status": ""})
-            help_rows = [r for r, c, t in scr.writes
-                         if c == 4 and any(m in t for m in _HELP_MARKERS)]
-            check(f"menu help {w}x{h} cur={cur}: never on the footer rows",
-                  [r for r in help_rows if r > h - 4], [])
+            check(f"menu {w}x{h} cur={cur}: nothing lands on the footer rows",
+                  [r for r, _, _ in scr.writes if r > h - 4], [])
             # Menu entries are the "N. label" writes; the install/firmware help
             # also writes a bare path at col 6, so match the numbering.
             item_rows = {r for r, c, t in scr.writes
                          if c == 6 and re.match(r"^\d+\. ", t)}
+            check_true(f"menu {w}x{h} cur={cur}: the selected entry is drawn",
+                       any(t.startswith(f"{cur + 1}. ")
+                           for _r, c, t in scr.writes if c == 6),
+                       "a control the operator can move onto must be visible")
+            help_rows = [r for r, c, t in scr.writes
+                         if c == 4 and any(m in t for m in _HELP_MARKERS)]
+            check(f"menu help {w}x{h} cur={cur}: never on the footer rows",
+                  [r for r in help_rows if r > h - 4], [])
             check(f"menu help {w}x{h} cur={cur}: never over a menu entry",
                   sorted(set(help_rows) & item_rows), [])
             if h >= 19:                      # the whole list fits; be strict
-                check(f"menu {w}x{h} cur={cur}: nothing lands on the footer rows",
-                      [r for r, _, _ in scr.writes if r > h - 4], [])
                 check(f"menu {w}x{h} cur={cur}: every entry is drawn",
                       len(item_rows), len(pit._TOOLS_MENU))
+
+    # A live background install puts a status line ABOVE the list, so the
+    # window's budget must come from the live y, not a hardcoded row count.
+    real_status, real_queue = pit._install_status, pit._install_queue
+    try:
+        pit._install_status = lambda: {"state": "INSTALLING", "pct": 42,
+                                       "name": "Gran Turismo 5 Prologue",
+                                       "msg": ""}
+        pit._install_queue = lambda: [1, 2]
+        for cur in (0, len(pit._TOOLS_MENU) - 1):
+            scr = FakeScr(15, 60)
+            pit.draw_tools(scr, {"tools_mode": "menu", "tools_cursor": cur,
+                                 "gamepad_status": ""})
+            check(f"menu 60x15 install-live cur={cur}: nothing on the footer "
+                  "rows", [r for r, _, _ in scr.writes if r > 15 - 4], [])
+            check_true(f"menu 60x15 install-live cur={cur}: selected entry "
+                       "drawn", any(t.startswith(f"{cur + 1}. ")
+                                    for _r, c, t in scr.writes if c == 6))
+            check_true(f"menu 60x15 install-live cur={cur}: the status line "
+                       "survives", any("INSTALLING" in t
+                                       for _r, _c, t in scr.writes),
+                       "it is why the operator came back to the tab")
+    finally:
+        pit._install_status, pit._install_queue = real_status, real_queue
 
     if hasattr(pit, "_cache_layout"):
         # The budget itself: furniture is shed, controls never are.
