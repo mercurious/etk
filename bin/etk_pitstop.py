@@ -5287,17 +5287,6 @@ def _du_mb(*paths):
         return None
 
 
-def _sum_mb(*vals):
-    """Total of _du_mb results; None if ANY part is unknown. A half-known total
-    printed as a number would understate a delete, so it prints as "?"."""
-    total = 0
-    for v in vals:
-        if v is None:
-            return None
-        total += v
-    return total
-
-
 def _cache_dirs_for_id(gid, roots=None):
     """Every direct child of the RPCS3 cache roots that belongs to title `gid`.
 
@@ -5952,8 +5941,15 @@ def _run_cache_op(op, gid, notify):
         ok, lines = _cache_clear_verdict(op, gid, freed // 1024, removed,
                                          failed, bool(leftover))
         if ok:
-            notify.post("CACHE CLEARED",
-                        f"{freed // 1024} MB freed - rebuilds on next launch",
+            # A partial clear may not toast an unqualified success: the toast is
+            # the surface the operator sees after walking away from the panel,
+            # and "CACHE CLEARED" over a still-populated root sends them chasing
+            # a stutter the leftover cache is causing. The screen body already
+            # says PARTLY CLEARED; the toast must agree with it.
+            notify.post("PARTLY CLEARED" if failed else "CACHE CLEARED",
+                        f"{freed // 1024} MB freed"
+                        + (f", {failed} folder(s) would not - see the log"
+                           if failed else " - rebuilds on next launch"),
                         timeout=10000)
         else:
             notify.post("NOT CLEARED",

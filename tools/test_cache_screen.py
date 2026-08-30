@@ -685,6 +685,15 @@ def _paths():
                any("would not delete" in ln for ln in lines))
     check_true("...and still keeps the vault promise on screen",
                any("vault was not touched" in ln for ln in lines))
+    # The toast is the surface the operator sees after walking away from the
+    # panel. Review round 3: a partial clear toasted an unqualified
+    # "CACHE CLEARED" while a root full of caches still stood -- the two
+    # loudest signals must agree with the screen's PARTLY CLEARED.
+    check_true("...and the TOAST says PARTLY CLEARED, not CACHE CLEARED",
+               any(s == "PARTLY CLEARED" for s, _ in n4.posts)
+               and not any(s == "CACHE CLEARED" for s, _ in n4.posts))
+    check_true("...naming the count that would not go",
+               any("would not" in b for _, b in n4.posts))
     check("...and the real root really was emptied",
           sorted(os.listdir(RUNTIME_CACHE)), [])
     os.remove(HDD1_CACHE)
@@ -742,8 +751,6 @@ def _paths():
     finally:
         os.environ["PATH"] = real_path
         shutil.rmtree(stub_bin, ignore_errors=True)
-    check("summing an unknown part yields unknown", pit._sum_mb(1, None, 2), None)
-    check("summing known parts adds up", pit._sum_mb(1, 2, 3), 6)
     shutil.rmtree(RUNTIME_CACHE, ignore_errors=True)
     shutil.rmtree(HDD1_CACHE, ignore_errors=True)
     ok, _ = pit._run_cache_op("clear_all", "NPEA00050", Stub())
