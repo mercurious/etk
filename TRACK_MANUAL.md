@@ -367,7 +367,19 @@ cloud node builds; the Mac stages and relays; the rig never faces the internet.
 | Node | Spec | Owns | Reached by |
 |---|---|---|---|
 | **The Air** (M1 MacBook Air, 8 GB, fanless) | colima aarch64 VM | staging, `install.sh` handoff, **all rig contact**, quick warm rebuilds | local |
-| **etk-cloud** (Oracle Always-Free Ampere A1) | 4 cores / 23 GB / 145 GB, Ubuntu 24.04 aarch64, native docker | long/heavy builds — toolchain images, clean rebuilds, sanitizer builds | `ssh etk-cloud` (alias in `~/.ssh/config`; IP is **ephemeral** — re-read from console after stop/start) |
+| **etk-cloud** (Oracle Always-Free Ampere A1) | 4 cores / 23 GB / 145 GB, Ubuntu 24.04 aarch64, native docker | long/heavy builds — toolchain images, clean rebuilds, sanitizer builds | `ssh etk-cloud` (alias in `~/.ssh/config`; IP is **reserved/static** since 2026-08-30 — survives stop/start, no console re-read) |
+
+**IP no longer drifts (2026-08-30).** etk-cloud's public address used to be an
+Oracle *ephemeral* IP: it was reassigned on every stop/start, so `ssh etk-cloud`
+would silently point at nothing and the operator had to re-read the address from
+the OCI console. It is now an Oracle **reserved** IP, so it persists across
+stop/start and the alias stays valid. Nothing in this manual needs the literal
+address — always go through the `etk-cloud` alias. (Address, OCIDs and the
+swap procedure live in the private dossiers repo, not here.)
+
+Caveat if the instance is ever rebuilt: a reserved IP must be re-attached to the
+new instance, and an unattached reservation can bill — delete it with the
+instance if the node is retired for good.
 
 Why it exists (2026-08-05): the LLVM-22 toolchain image took ~30 h across two failed
 attempts on the Air (ENOSPC, memory overload) and built unattended on etk-cloud first try.
