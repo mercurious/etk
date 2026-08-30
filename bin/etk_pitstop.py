@@ -6099,12 +6099,29 @@ def draw_tools(stdscr, state):
         # Single-spaced items (the uninstall-list idiom): the rig's foot
         # terminal is only ~22 rows, and double spacing pushed everything
         # below into the footer.
-        for i, label in enumerate(_TOOLS_MENU):
+        #
+        # And WINDOWED around the cursor (the uninstall-list idiom again):
+        # eight uncapped rows from row 8 reach row 15, past the last row
+        # _draw_footer leaves the body (h-4) on any panel under 19 rows — on
+        # the 60x15 contract grid three entries were drawn and then erased
+        # every frame, one never drew at all, and _tools_move still wrapped
+        # onto all four: selectable-but-invisible, the defect class the cache
+        # screen was rebuilt to remove. The band y..h-4 is INCLUSIVE
+        # (_cache_layout's convention — the exact-fit height is 60x19), which
+        # is the one place this differs from the uninstall list's arithmetic.
+        cur = state.get("tools_cursor", 0)
+        cap = max(1, (h - 3) - y)
+        if len(_TOOLS_MENU) <= cap:
+            off = 0
+        else:
+            off = min(max(0, cur - cap // 2), len(_TOOLS_MENU) - cap)
+        for i in range(off, min(off + cap, len(_TOOLS_MENU))):
+            label = _TOOLS_MENU[i]
             if i == _TOOLS_SCREENSHOT_IDX:
                 label = f"{label}: {_read_screenshot_mode()}"
             elif i == _TOOLS_BOG_IDX:
                 label = f"{label}: {_read_bog_chord_state()}"
-            sel = (i == state.get("tools_cursor", 0))
+            sel = (i == cur)
             put(y, 4, "> " if sel else "  ",
                 curses.color_pair(1) if sel else curses.A_NORMAL)
             put(y, 6, f"{i + 1}. {label}",
@@ -6120,7 +6137,6 @@ def draw_tools(stdscr, state):
         # clamps it to the anchor instead; `room` then suppresses the band
         # outright when the list leaves no space, because two help lines that
         # overwrite two menu entries are not an improvement on no help lines.
-        cur = state.get("tools_cursor", 0)
         ty = min(y + 1, h - 6)
         room = (ty >= y) and (ty + 1 <= h - 4)
         if not room:
