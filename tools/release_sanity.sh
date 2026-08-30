@@ -418,6 +418,115 @@ if [ -f "$PS1_FILE" ] && [ -f "$REPO_ROOT/install.sh" ]; then
     else
         bad "PS port Turnip catalog DRIFTED (ps1: $(echo $P_TN) vs install.sh: $(echo $I_TN))"
     fi
+
+    # ---- INSTALL BEACON lockstep (added 2026-08-29, v0.8.7) --------------
+    # The beacon is a SECURITY surface, not a nicety: an ETK install must be
+    # impossible to run without the person holding the handheld noticing.
+    # install.sh's half is pinned by tools/test_notify.py's [BEACON] suite; the
+    # port is the OTHER way bytes reach a rig, and it shipped silent for four
+    # releases. These are its gates.
+    #
+    # WHAT THEY DO NOT PROVE, stated as plainly as test_notify.py states it:
+    # they are static reads of the .ps1. There is no pwsh on a release host, so
+    # nothing here parses PowerShell — "unconditional" is inferred from column 0
+    # (the port indents every nested block; the single script-wide try/finally
+    # that carries the verdict does not branch, so it does not change that
+    # reading), and no check can prove the rig actually rendered a card. That is
+    # the operator's screen to verify — see WINDOWS_HOST_README.md.
+    #
+    # RESIDUAL, named rather than papered over: a beacon gated on a NON-config
+    # local would still read as column-0 to these greps. What they close is a
+    # CONFIG-driven kill-switch, which is what ALWAYS ON is actually about, plus
+    # a deleted or malformed call site. Verified by mutation before shipping:
+    # knob-gated block, inline gate, dropped stage, interpolated label,
+    # non-terminating percent map, missing STOPPED verdict — 6/6 caught.
+    P_ENV="$REPO_ROOT/windows_installer/etk-env.ps1"
+    P_DEF=$(grep -cE '^function Invoke-RigToast[[:space:]]' "$PS1_FILE")
+    # STRICT call form: `Invoke-RigToast <int> "<literal>" [ms]` and nothing
+    # else on the line. The label is a FIXED ASCII literal because it reaches
+    # the rig inside a single-quoted word of a remote shell command.
+    P_CALL_RE='^[[:space:]]*Invoke-RigToast [0-9]+ "[^"$`'"'"'\\]*"([[:space:]]+(\$script:ToastBulkMs|[0-9]+))?[[:space:]]*$'
+    P_CALLS=$(grep -cE "$P_CALL_RE" "$PS1_FILE")
+    # EXACT ARITHMETIC, and it is load-bearing — same trick and same reason as
+    # test_notify.py's: a call rewritten `if ($Knob) { Invoke-RigToast ... }`
+    # stops matching the strict form, silently drops OUT of the roster, and
+    # every other check below would then pass on a beacon a config can switch
+    # off. Counting the raw token closes that hole (so no COMMENT in the .ps1
+    # may spell the token either).
+    P_TOK=$(grep -o 'Invoke-RigToast' "$PS1_FILE" | wc -l | tr -d ' ')
+    if [ "$P_DEF" = 1 ] && [ "$P_TOK" = "$((P_CALLS + P_DEF))" ]; then
+        ok "PS port defines the beacon; all $P_CALLS call sites are strict-form"
+    else
+        bad "PS port beacon roster is not exact ($P_DEF definition(s), $P_CALLS strict calls, $P_TOK raw tokens — a gated or malformed call escaped the form)"
+    fi
+
+    # ALWAYS ON. No parameter, no etk-env.ps1 value, no kill-switch may gate a
+    # beacon: a switch is exactly what a silent installer would flip. Scan each
+    # call line AND the two lines above it (comments excluded — several banners
+    # legitimately NAME a kill-switch in prose right above a beacon that must
+    # ignore it) for any etk-env.ps1 knob. $RigSsh/$EtkRoot are ADDRESSES, not
+    # switches, so they are allowed.
+    P_KNOBS=$(sed -n 's/^\$\([A-Za-z][A-Za-z0-9_]*\)[[:space:]]*=.*/\1/p' "$P_ENV" 2>/dev/null \
+              | grep -vxE 'RigSsh|EtkRoot' | sort -u)
+    P_GATED=""
+    for _n in $(grep -nE '^[[:space:]]*Invoke-RigToast [0-9]' "$PS1_FILE" | cut -d: -f1); do
+        _lo=$((_n - 2)); [ "$_lo" -lt 1 ] && _lo=1
+        _ctx=$(sed -n "${_lo},${_n}p" "$PS1_FILE" | grep -v '^[[:space:]]*#')
+        for _k in $P_KNOBS; do
+            case "$_ctx" in *"\$$_k"*) P_GATED="$P_GATED $_n:\$$_k" ;; esac
+        done
+    done
+    P_SWITCH=$(grep -cE '(NoBeacon|SkipBeacon|BeaconOff|QuietInstall|ETK_(TOAST|BEACON|ANNOUNCE)_(ENABLE|OFF|DISABLE|SKIP))' "$PS1_FILE")
+    # `-f $P_ENV` is part of the verdict, not a precondition: a missing env file
+    # would empty $P_KNOBS and silently disarm the scan into a free PASS.
+    if [ -f "$P_ENV" ] && [ -z "$P_GATED" ] && [ "$P_SWITCH" = 0 ] && [ "$P_CALLS" -gt 0 ]; then
+        ok "PS port: no beacon call site is gated by a knob, and no kill-switch exists"
+    else
+        bad "PS port beacon is GATED — ALWAYS ON is the whole security property (knob hits:${P_GATED:- none}; kill-switch tokens: $P_SWITCH; env file: ${P_ENV})"
+    fi
+
+    # The roster and the percentages are install.sh's own, so the two
+    # installers draw a comparable card on the same rig. MINIMUM pinned, not
+    # bounded: dropping a stage announcement must fail here, whatever its
+    # label. The port legitimately has GAPS (no vault pull/push, no STEP
+    # 6.4/6.45, no 6.552-6.554), so the contract is monotonic non-decreasing
+    # ending at 100 — never a dense sequence.
+    P_MIN=19
+    P_PCTS=$(grep -oE '^[[:space:]]*Invoke-RigToast [0-9]+' "$PS1_FILE" | grep -oE '[0-9]+$' | tr '\n' ' ')
+    P_MONO=$(printf '%s\n' "$P_PCTS" | awk '{ p=-1; o=1; for (i=1;i<=NF;i++) { if ($i+0 < p) o=0; if ($i+0 < 0 || $i+0 > 100) o=0; p=$i+0 } if (NF == 0 || p != 100) o=0; print o }')
+    if [ "$P_CALLS" -ge "$P_MIN" ] && [ "$P_MONO" = 1 ]; then
+        ok "PS port beacon map: $P_CALLS sites, monotonic, ends at 100"
+    else
+        bad "PS port beacon map BROKEN ($P_CALLS sites, need >= $P_MIN; monotonic-to-100: $P_MONO) [$P_PCTS]"
+    fi
+
+    # Both verdicts, and the announcement before the first MUTATION — the whole
+    # point is that the handheld has already said so by the time the installer
+    # pkills a daemon.
+    P_FIRST=$(grep -nE '^[[:space:]]*Invoke-RigToast [0-9]' "$PS1_FILE" | head -1 | cut -d: -f1)
+    P_MUT=$(grep -n 'pkill -f vault_d.sh' "$PS1_FILE" | head -1 | cut -d: -f1)
+    if grep -q "'ETK INSTALL COMPLETE'" "$PS1_FILE" && grep -q "'ETK INSTALL STOPPED'" "$PS1_FILE"; then
+        ok "PS port sends both terminal verdicts (COMPLETE / STOPPED)"
+    else
+        bad "PS port is missing a terminal verdict — an operator cannot tell a finished install from an abandoned one"
+    fi
+    if [ -n "$P_FIRST" ] && [ -n "$P_MUT" ] && [ "$P_FIRST" -lt "$P_MUT" ]; then
+        ok "PS port announces itself before the first rig mutation (line $P_FIRST vs $P_MUT)"
+    else
+        bad "PS port announces AFTER its first mutation (beacon line ${P_FIRST:-none} vs pkill ${P_MUT:-none}) — that defeats the purpose"
+    fi
+
+    # Byte-exact coupling, same as install.sh's: the sender probe greps for the
+    # `--progress` case label, because a rig carrying a sender that PREDATES the
+    # progress form is the same problem as a rig carrying none. If this pattern
+    # drifts from bin/etk_notify.sh, every Windows install silently demotes to
+    # the /tmp fallback and nobody finds out.
+    if grep -q "grep -q '\^--progress)'" "$PS1_FILE" \
+       && grep -qE '^--progress\)' "$REPO_ROOT/bin/etk_notify.sh" 2>/dev/null; then
+        ok "PS port beacon probes the rig sender for the progress form"
+    else
+        bad "PS port sender probe DRIFTED from bin/etk_notify.sh's '--progress)' label"
+    fi
 else
     skip "windows_installer/etk-install.ps1 not found"
 fi
