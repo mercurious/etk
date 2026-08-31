@@ -145,6 +145,8 @@ not a first contact.
   base → the same nightly. Emulator and driver certification pins are
   deliberately unchanged — this lap tests the track, not new machinery.
 
+## [0.8.5] - 2026-08-10 — Good Manners Edition
+
 **The kit stopped being a Gran Turismo rig, and its controls had not noticed.**
 For most of the campaign the ETK ran one series on one device, so an ETK chord
 parked on a bare shoulder button cost nothing — the GT titles do not bind it.
