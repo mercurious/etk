@@ -216,6 +216,6 @@ v0.8.5 (08-10) · v0.8.6 (08-28) · 0.8.7 (pending)
 ---
 
 ### Corrections surfaced while compiling (vs `CHANGELOG.md`)
-1. HEAD's `CHANGELOG.md` lost its `## [0.8.5]` header — the 0.8.5 body sits inside the `[0.8.6]` section (bad merge at the 0.8.6 cut; verify with `git show v0.8.5:CHANGELOG.md`).
+1. `CHANGELOG.md` had lost its `## [0.8.5]` header at the 0.8.6 cut — the 0.8.5 body sat inside the `[0.8.6]` section. Restored byte-identical to the v0.8.5 tag in `3921b2f`.
 2. The 0.8.5 notes say Turnip was unchanged; `gtk_stack.json` at the v0.8.5 tag certifies `26.2.0_gtk_0.7`, and `26.3.0-devel` joined the catalog. Filed under v0.8.5 above.
 3. The 0.8.6 "pins deliberately unchanged" claim: RPCS3 core 0.9.0 was certified 08-20 and rolled back 08-27; the shipped 0.8.5 sha changed.
