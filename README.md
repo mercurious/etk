@@ -31,6 +31,7 @@ House developed Gran Turismo-specific bug fixes and special tunings to the emula
 | macOS | arm64 | Apple M1 Metal/MoltenVK | RPCS3 | ETK-tuned fork | [.app](https://github.com/mercurious/etk-rpcs3-gtk/releases/tag/gtk-edition-0.6.0-macos) | [repo](https://github.com/mercurious/etk-rpcs3-gtk) | none, just GT bug fixes |
 | ROCKNIX | arm64 (SM8250) | Adreno 650/Mesa Turnip | RPCS3 | ROCKNIX-GTK fork | [.img.gz](https://github.com/mercurious/etk/releases/latest) | [repo](https://github.com/mercurious/etk-rpcs3-gtk) | **complete**🏁  |
 | Windows | x64 | AMD Radeon RDNA/2/native Vulkan | RPCS3 | ETK-tuned fork | [.exe](https://github.com/mercurious/etk-rpcs3-gtk/releases/tag/gtk-edition-0.6.0-windows) | [repo](https://github.com/mercurious/etk-rpcs3-gtk) | none, just GT bug fixes |
+| Asahi Linux | arm64 (M1) | Apple M1 Honeykrisp/Mesa | RPCS3 | native ETK build (validation surface) | [.tar.gz](https://github.com/mercurious/rpcs3-asahi-M1/releases) | [repo](https://github.com/mercurious/rpcs3-asahi-M1) | bench oracle: reproduced & fixed the clang-22 SPU miscompile on a 2nd open driver; needs overcommit + VRAM tuning on 8 GB unified. Not a shipping target |
   
 
 ## Why Install ROCKNIX-GTK and the ETK?
