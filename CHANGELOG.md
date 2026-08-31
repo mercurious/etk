@@ -4,7 +4,7 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ## [Unreleased]
 
-## [0.8.7] - 2026-08-29 — Pit Board Edition
+## [0.8.7] - 2026-08-31 — Pit Board Edition
 
 The pit board is the sign the crew hangs over the wall so the driver always
 knows what is happening — this cut is three of those. Every install announces
@@ -93,6 +93,30 @@ boot-config hardening staged since 0.8.6.
 - **TOOLS-menu on-select help no longer lands under the footer** at short
   terminal heights — a pre-existing anchor bug affecting several menu
   entries, repaired for all of them.
+- **The session ledger names the emulator build again.** Rows had been
+  recording the emulator slot of the stack fingerprint as unknown (`r?`)
+  since the new core line arrived — the old parser keyed on a label only the
+  early builds carried. It now reads the build's own "GTK Edition" stamp,
+  which every build carries, so A/B comparisons stay attributable across
+  core updates. A stock emulator still reads `r?` on purpose: that is the
+  signal that no custom core ran.
+
+### Stack
+- **RPCS3 GTK Edition 0.9.0.3 is the certified core** (was 0.8.5). The new
+  line moves to a newer upstream base carrying months of emulator fixes,
+  retires the temporary SPU workaround — the real fix landed upstream — and
+  adds a fix for stacked duplicate recovery notices found while validating
+  on a second machine.
+  First launch after update recompiles shaders; per-game pins and saved
+  tunes carry over untouched.
+- **Turnip catalog grows to seven** (nothing removed, downgrade path
+  intact): Mesa **26.2.1** joins as a stable option, and the development
+  build the late-August sessions actually ran joins under its full name.
+  Development builds now carry their snapshot date in the filename, so the
+  newest one is obvious in the DRIVER list. The certified default stays
+  **26.2.0** until the newcomers earn track time.
+- **Kernel unchanged**: `20260827-0.5` (7.2.0), the build validated live in
+  0.8.6, ships again as-is.
 
 ## [0.8.6] - 2026-08-28 — Qualifying Lap Edition
 

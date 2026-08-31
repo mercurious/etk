@@ -596,8 +596,8 @@ else {
 # ==========================================================
 Invoke-RigToast 60 "RPCS3 core staging"
 Write-Step 6 $TOTAL "STEP 6.55: RPCS3 GTK EDITION (default emulator)..."
-$certRpcs3    = "rpcs3-etk_gtk-edition-0.8.5_v0.0.41-19638-a1deb2921_linux_aarch64.AppImage"  # lockstep with install.sh CERT_RPCS3
-$certRpcs3Sha = "0185e2859d12b3bc3523ecdc629bfccf912d4fcec8c2c14772af139f78a67aeb"
+$certRpcs3    = "rpcs3-etk_gtk-edition-0.9.0.3_armsx3-a74a0f3e0_linux_aarch64.AppImage"  # lockstep with install.sh CERT_RPCS3
+$certRpcs3Sha = "8bf606d3740503c580b7fe81b569a7b37513223f6547fc99fff96ba09c0a6437"
 $rpcs3StageSrc = $null
 if ($Rpcs3AppImage -eq "stock") {
     Write-Note "RPCS3: stock ROCKNIX build selected (etk-env.ps1 opt-out)."

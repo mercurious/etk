@@ -2407,8 +2407,8 @@ rm -f "$TURNIP_OUT_FILE"
 # artifact it names is fetchable or staged — release_sanity now enforces
 # exactly that. 0.9.0.1 stays catalog-only (A/B) until the September gates.
 rig_toast 60 "RPCS3 core staging" || true
-CERT_RPCS3="rpcs3-etk_gtk-edition-0.8.5_v0.0.41-19638-a1deb2921_linux_aarch64.AppImage"
-CERT_RPCS3_SHA="0185e2859d12b3bc3523ecdc629bfccf912d4fcec8c2c14772af139f78a67aeb"
+CERT_RPCS3="rpcs3-etk_gtk-edition-0.9.0.3_armsx3-a74a0f3e0_linux_aarch64.AppImage"
+CERT_RPCS3_SHA="8bf606d3740503c580b7fe81b569a7b37513223f6547fc99fff96ba09c0a6437"
 RPCS3_RELEASE_BASE="https://github.com/mercurious/etk/releases/latest/download"
 ssh $RIG_SSH "mkdir -p /storage/rpcs3 /storage/.config/system.d/" 2>/dev/null
 # Pre-flight: the staging target lives on /storage — the small UFS SYSTEM
