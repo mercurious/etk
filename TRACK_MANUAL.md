@@ -967,7 +967,8 @@ Full procedure: `dossiers/ReleaseRunbook.md`. The order of operations:
 2. **The gates:** `tools/release_sanity.sh` (law #8 filename gate: version-only artifact
    names, digits/dots only — `-audiofix0` shipped once in a published kernel; never again)
    + `test_installers.py` + `test_paddock.py` + `test_notify.py` + `test_install_queue.py`
-   + asset shas + pseudonym/PII sweep.
+   + `test_stack_tag.sh` (ledger r-component parses every core lineage's banner;
+   stock stays `r?` — the honest tell) + asset shas + pseudonym/PII sweep.
 3. **ALL FOUR assets ship on EVERY release even when unchanged** — `install.sh` fetches
    from `releases/latest/download`, and publishing moves `latest`, so a missing asset
    breaks every fresh install. `APP_VERSION` == the tag (load-bearing: self-update

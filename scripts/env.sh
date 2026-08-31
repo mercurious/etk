@@ -394,9 +394,16 @@ etk_stack_tag() {
     _kn=$(uname -v 2>/dev/null | sed -n 's/^#\([0-9][0-9]*\).*/\1/p')
     [ -n "$_kn" ] && _kr="${_kr}#${_kn}"
     [ -z "$_kr" ] && _kr="?"
-    # RPCS3: the log banner's etk/<ver> field carries the fork version AND the
-    # upstream build number — exactly the pair that moves on a base bump.
-    _r3=$(grep -m1 -aoE 'etk/[^ |]+' "$RPCS3_LOG" 2>/dev/null | head -n1 | cut -d/ -f2)
+    # RPCS3: the log banner self-identifies the fork build. The old `etk/<ver>`
+    # field was the BUILD BRANCH NAME (0.8.x docker builds carried it;
+    # PROVENANCE-0.8.x.md shows it drifting from the actual source) — forge
+    # mints build from a detached tree, so 0.9.0+ banners have no etk/ field
+    # and every row read r?. Match the GTK Edition stamp itself, present in
+    # every lineage; keep etk/ as a fallback for old-core log archives. Stock
+    # carries neither, so r stays "?" — the honest tell (2026-08-27 incident).
+    # Banner sits on the log's first line: bound the read like the Serial scan.
+    _r3=$(head -c 262144 "$RPCS3_LOG" 2>/dev/null | grep -m1 -aoE 'GTK Edition v[^ |]+' | sed 's/^GTK Edition v//')
+    [ -z "$_r3" ] && _r3=$(head -c 262144 "$RPCS3_LOG" 2>/dev/null | grep -m1 -aoE 'etk/[^ |]+' | cut -d/ -f2)
     [ -z "$_r3" ] && _r3="?"
     printf 'stack=rk%s/k%s/r%s' "$_rk" "$_kr" "$_r3"
 }
