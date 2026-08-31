@@ -118,6 +118,27 @@ persist_conf() {
 
 echo -e "${C}>>> ETK SSH pairing — target: ${TARGET}${N}"
 
+# --- STEP 0: stale host key. A reflashed card generates NEW sshd host keys,
+# so a changed-key refusal at pair time is ROUTINE maintenance, not only an
+# attack signature — and without this step every probe below fails opaquely
+# (first hit: 2026-08-31, first reflash from the Asahi host). Detect the
+# mismatch explicitly, clear ONLY this host's stale entries (ssh-keygen -R
+# keeps a known_hosts.old backup), and show the fingerprint the rig offers
+# now so the operator can eyeball what they are about to trust. Strict
+# checking stays on everywhere: accept-new below takes the NEW key, which is
+# the deliberate trust decision of running --pair in the first place.
+HK_ERR=$(ssh -o BatchMode=yes -o ConnectTimeout=6 "$TARGET" true 2>&1 >/dev/null)
+if printf '%s' "$HK_ERR" | grep -q "REMOTE HOST IDENTIFICATION HAS CHANGED"; then
+    echo -e "    ${Y}>>> The rig's host key CHANGED (normal after a card reflash).${N}"
+    echo -e "    ${Y}    Clearing the stale known_hosts entries for ${RIG_HOST}${N}"
+    echo -e "    ${Y}    (backup kept as ~/.ssh/known_hosts.old).${N}"
+    ssh-keygen -R "$RIG_HOST" >/dev/null 2>&1
+    NEW_FP=$(ssh-keyscan -T 6 -t ed25519 "$RIG_HOST" 2>/dev/null | ssh-keygen -lf - 2>/dev/null | head -n1)
+    [ -n "$NEW_FP" ] && echo -e "    ${C}    Rig now offers: ${NEW_FP}${N}"
+    echo -e "    ${Y}    If you did NOT just reflash or reinstall this rig, STOP and${N}"
+    echo -e "    ${Y}    investigate before entering a password.${N}"
+fi
+
 # --- STEP 1: test first (the real path). Reachable already? Zero passwords. -
 # Passes for an existing working setup (user's own key) OR a prior correct
 # ETK pair -> behavior unchanged when already paired (§G.6).

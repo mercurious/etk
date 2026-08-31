@@ -366,7 +366,7 @@ cloud node builds; the Mac stages and relays; the rig never faces the internet.
 
 | Node | Spec | Owns | Reached by |
 |---|---|---|---|
-| **The Air** (M1 MacBook Air, 8 GB, fanless) | colima aarch64 VM | staging, `install.sh` handoff, **all rig contact**, quick warm rebuilds | local |
+| **The Air** (M1 MacBook Air, 8 GB, fanless) | **Asahi Linux (Fedora aarch64) primary since 2026-08-31**; macOS boot retained (colima `--local` fallback lives there — untested under Asahi/podman) | staging, `install.sh` handoff, **all rig contact**, quick warm rebuilds; **native card work**: `dd` etches the card directly (runbook §6, no Etcher) and the card's own partitions (`ROCKNIX-GTK` vfat / `GTKSTOR` ext4) mount natively — direct ROM management, no Samba/ssh detour. Card out of the rig only; hand-manage `roms/` content, never `etk_telemetry/` or the RPCS3 config trees | local |
 | **etk-cloud** (Oracle Always-Free Ampere A1) | 4 cores / 23 GB / 145 GB, Ubuntu 24.04 aarch64, native docker | long/heavy builds — toolchain images, clean rebuilds, sanitizer builds | `ssh etk-cloud` (alias in `~/.ssh/config`; IP is **reserved/static** since 2026-08-30 — survives stop/start, no console re-read) |
 
 **IP no longer drifts (2026-08-30).** etk-cloud's public address used to be an
@@ -620,7 +620,9 @@ knobs, writes the handoff, verifies afterward from read-only telemetry.
   **not retiring** (re-affirmed 2026-08-07). Rig-side bodies are pulled VERBATIM from
   install.sh heredoc markers at runtime, so daemon logic can't drift; only the PS-native
   host side needs manual sync — `release_sanity.sh` gates the cert pins (they HAD drifted
-  two releases). Port debt: STEPs 6.45 / 6.552 / 6.554. The install beacon is PORTED
+  two releases). Port debt: STEPs 6.45 / 6.552 / 6.554, and `--pair`'s stale-hostkey
+  clear (bash-side only since 0.8.8; Windows ssh.exe shares known_hosts semantics, so
+  a reflash strands the PS port the same way until ported). The install beacon is PORTED
   (v0.8.7, same labels/percents as install.sh so both installers draw a comparable
   card; `release_sanity.sh` gates the port's beacon roster, ungated call sites, and
   verdicts at every cut — beacon lockstep can no longer drift silently).
@@ -631,6 +633,11 @@ knobs, writes the handoff, verifies afterward from read-only telemetry.
   `/flash/mount-storage.sh`, `.seed_config` staged. Recover a previous image's labels by
   decompressing it before rebuilding — do not trust prose about which labels ship (a
   stale "standard labels" line stood for two releases after it stopped being true).
+  **A reflash mints new sshd host keys** — the first `ssh`/`--pair` after flashing hits
+  REMOTE HOST IDENTIFICATION HAS CHANGED. Routine, not (necessarily) an attack:
+  `etk_pair.sh` STEP 0 detects it, clears ONLY the rig's stale known_hosts entries, and
+  prints the fingerprint the rig now offers; strict checking stays on. Never relax
+  `StrictHostKeyChecking` globally for this.
 
 ### A.3 The UI layer (Pitstop, notifications, HUD, installs)
 
