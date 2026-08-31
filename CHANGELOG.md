@@ -142,8 +142,13 @@ not a first contact.
 
 ### Changed
 - Kernel manifest pin → `20260827-0.5` (7.2.0, nightly base); flashable image
-  base → the same nightly. Emulator and driver certification pins are
-  deliberately unchanged — this lap tests the track, not new machinery.
+  base → the same nightly. The Turnip certification pin is deliberately
+  unchanged — this lap tests the track, not new machinery.
+- RPCS3 core 0.9.0 (ARMSX3 base) was certified mid-window (2026-08-20) and
+  rolled back on 2026-08-27 when the deploy gate began demanding cert pins
+  with sources. The shipped core is 0.8.5 again, freshly re-minted — same
+  filename, new sha. *Correction 2026-08-31: this entry originally said all
+  certification pins were unchanged.*
 
 ## [0.8.5] - 2026-08-10 — Good Manners Edition
 
@@ -235,8 +240,13 @@ quietly poisoning every rate the project computes.
   verified by their markers *inside the built image*, not by reading the patch
   directory — plus five typec/DisplayPort/dpu patches. The withdrawn q6asm
   24-bit patch is staged in no build tier.
-- **RPCS3 GTK Edition 0.8.5**, Turnip `26.1.6_gtk_0.7` + `26.2.0-rc3_gtk_0.7`
-  unchanged.
+- **Turnip certified default advanced** `26.1.6_gtk_0.7` → `26.2.0_gtk_0.7`,
+  and `26.3.0-devel-e40d93a_gtk_0.7` joined the catalog as the pre-release
+  slot; the cumulative catalog keeps every earlier build as a downgrade path.
+- **RPCS3 GTK Edition 0.8.5**, re-pinned to the 2026-08-07 re-mint it had
+  fallen behind (see above).
+- *Correction 2026-08-31: this block originally claimed Turnip was unchanged;
+  the tag's own manifest certifies `26.2.0_gtk_0.7`.*
 
 ### Also in this release (landed after 0.8.4 shipped)
 - **`forge.sh`** — the etk-cloud build conductor. Six lanes, detached builds that
