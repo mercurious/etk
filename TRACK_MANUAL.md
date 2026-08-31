@@ -979,6 +979,10 @@ Full procedure: `dossiers/ReleaseRunbook.md`. The order of operations:
 **Two catalogs, two opposite rules:** TURNIP is **CUMULATIVE** — each cut adds, nothing is
 removed, every listed driver ships as a release asset (a dropped asset is unfetchable for
 every fresh install), `CERTIFIED_BUILDS[0]` = certified default = the manifest's pin.
+Devel builds name their base as `26.X.0-devel-YYYYMMDD-<sha>` (date first so the DRIVER
+tab's lexical sort is chronological; sha for exact rebuild) — the trailing `gtk_0.N` is the
+fork GEAR-SERIES generation and never bumps for a base re-pin (`drivers/README.md` Naming;
+`-e40d93a` is the one grandfathered sha-only name).
 RPCS3 CORES are the opposite — **capped at TWO shipping builds, never published** (A/B
 tooling, not a distribution channel); `rpcs3-EXP-*` probes are campaign-transient,
 exempt from the cap and loudly NOTEd by the gate — retire them when the campaign ends. Changing the driver pair means changing **FIVE places** (they had

@@ -2230,11 +2230,13 @@ ssh $RIG_SSH "mkdir -p /storage/turnip/drivers /storage/.config/system.d/" 2>/de
 # must match config/gtk_stack.json's turnip pin (what self-update and the
 # flashable card both take). Contrast the RPCS3 CORES at STEP 6.552: those are
 # capped at two, host-side A/B only, and never published at all.
-CERTIFIED_BUILDS="etk_turnip_rocknix_26.2.0_gtk_0.7.so etk_turnip_rocknix_26.3.0-devel-e40d93a_gtk_0.7.so etk_turnip_rocknix_26.2.0-rc3_gtk_0.7.so etk_turnip_rocknix_26.1.6_gtk_0.7.so etk_turnip_rocknix_26.1.3_gtk_0.4.so"
+CERTIFIED_BUILDS="etk_turnip_rocknix_26.2.0_gtk_0.7.so etk_turnip_rocknix_26.2.1_gtk_0.7.so etk_turnip_rocknix_26.3.0-devel-20260821-d2e56df_gtk_0.7.so etk_turnip_rocknix_26.3.0-devel-e40d93a_gtk_0.7.so etk_turnip_rocknix_26.2.0-rc3_gtk_0.7.so etk_turnip_rocknix_26.1.6_gtk_0.7.so etk_turnip_rocknix_26.1.3_gtk_0.4.so"
 DRIVER_RELEASE_BASE="https://github.com/mercurious/etk/releases/latest/download"
 # sha256 of each certified build — a fetched binary is verified against this.
 driver_sha() { case "$1" in
     etk_turnip_rocknix_26.2.0_gtk_0.7.so) echo "7ed58c2fccafd114fc47aa11b2e2fa3ae676a8ee0242089c0faf1984a480fcb4" ;;
+    etk_turnip_rocknix_26.2.1_gtk_0.7.so) echo "90be699eb62f13b8aea3cc390b2f158ab6b895fc1972468d27b00d8a81983606" ;;
+    etk_turnip_rocknix_26.3.0-devel-20260821-d2e56df_gtk_0.7.so) echo "9e35ed234e5a8f361f91110763479ce42ade72f14d779e22705ed3927c601793" ;;
     etk_turnip_rocknix_26.3.0-devel-e40d93a_gtk_0.7.so) echo "6f02dec2e2c12d2dbbf6c92b6ea47909f10ec9a49e53d0a510ebd6a868787968" ;;
     etk_turnip_rocknix_26.2.0-rc3_gtk_0.7.so) echo "0041e22968e4c74157eae902138f0d158cf2089b196c4ee0821f1625f5b4a0ac" ;;
     etk_turnip_rocknix_26.2.0-rc3_gtk_0.6.so) echo "96a0dbf8113498ebb7828cdb214c0f444f9a88e8050ab9b78744bdeef8dc588c" ;;

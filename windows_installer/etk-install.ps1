@@ -505,6 +505,10 @@ Write-Step 6 $TOTAL "STEP 6.5: CUSTOM TURNIP DRIVER CATALOG..."
 $certified = @(
     @{ Name = "etk_turnip_rocknix_26.2.0_gtk_0.7.so"
        Sha  = "7ed58c2fccafd114fc47aa11b2e2fa3ae676a8ee0242089c0faf1984a480fcb4" }
+    @{ Name = "etk_turnip_rocknix_26.2.1_gtk_0.7.so"
+       Sha  = "90be699eb62f13b8aea3cc390b2f158ab6b895fc1972468d27b00d8a81983606" }
+    @{ Name = "etk_turnip_rocknix_26.3.0-devel-20260821-d2e56df_gtk_0.7.so"
+       Sha  = "9e35ed234e5a8f361f91110763479ce42ade72f14d779e22705ed3927c601793" }
     @{ Name = "etk_turnip_rocknix_26.3.0-devel-e40d93a_gtk_0.7.so"
        Sha  = "6f02dec2e2c12d2dbbf6c92b6ea47909f10ec9a49e53d0a510ebd6a868787968" }
     @{ Name = "etk_turnip_rocknix_26.2.0-rc3_gtk_0.7.so"

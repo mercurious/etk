@@ -55,13 +55,32 @@ an operator with local builds just has more in the catalog.
 > backwards, since a build has to run on the rig before it can earn
 > certification. Curate the shipped catalog via what goes in the release.
 
+## Naming: the livery, and how devel builds order
+
+`[house]_[driver]_[os]_[base-version]_[game-target]_[fork-version]` —
+`etk_turnip_rocknix_26.2.1_gtk_0.7.so`. The trailing `gtk_0.N` is the **fork
+patch-series generation**: it moves only when the gear series itself changes
+(0.6 → 0.7 was the bit-allocation fix below), never for a base re-pin — two
+devel builds at different Mesa pins legitimately share one `gtk_0.7`.
+
+**Devel builds carry their pin date in the base-version field** (since
+2026-08-31): `26.3.0-devel-YYYYMMDD-<sha>` — the date makes the DRIVER-tab
+chooser (a lexical sort) list them chronologically, and the sha stays the
+exact rebuild pointer (`git checkout <sha>` upstream). One grandfather:
+`26.3.0-devel-e40d93a` (pinned 2026-08-07) keeps its sha-only name — it is
+published under it and ledger rows attribute to it.
+
 ## Current catalog
 
 | Build | Base | Status | Notes |
 |---|---|---|---|
-| `etk_turnip_rocknix_26.1.3_gtk_0.4.so` | mesa-26.1.3 | **proven** | The track-validated fork; shipped in the release, and `TURNIP_SO` (default pick). |
-| `etk_turnip_rocknix_26.1.6_gtk_0.7.so` | mesa-26.1.6 | unvalidated | 26.1.6 rebase + 2 upstream backports + `zlatez`, on the decoupled gear registry. |
-| `etk_turnip_rocknix_26.2.0-rc3_gtk_0.7.so` | mesa-26.2.0-rc3 | unvalidated | **Race this one.** Same series on the pre-release base (carries both backports natively). |
+| `etk_turnip_rocknix_26.2.0_gtk_0.7.so` | mesa-26.2.0 | **certified default** | `CERTIFIED_BUILDS[0]` == the `gtk_stack.json` pin; what self-update and the flashed card take. |
+| `etk_turnip_rocknix_26.2.1_gtk_0.7.so` | mesa-26.2.1 | unvalidated | Minted 2026-08-31 (13 of 26.2.1's 19 fixes touch turnip/freedreno); needs rig time before any default advance. |
+| `etk_turnip_rocknix_26.3.0-devel-20260821-d2e56df_gtk_0.7.so` | main @ `d2e56df` | driven | The daily driver of the late-August campaign (ledger-attributed since the 08-21 pin); first dated-devel name. |
+| `etk_turnip_rocknix_26.3.0-devel-e40d93a_gtk_0.7.so` | main @ `e40d93a` | superseded | 2026-08-07 devel pin; kept for the downgrade path (sha-only name, grandfathered). |
+| `etk_turnip_rocknix_26.2.0-rc3_gtk_0.7.so` | mesa-26.2.0-rc3 | superseded | Pre-release slot before 26.2.0 shipped stable. |
+| `etk_turnip_rocknix_26.1.6_gtk_0.7.so` | mesa-26.1.6 | fallback stable | Frozen; 26.1 series is EOL upstream. |
+| `etk_turnip_rocknix_26.1.3_gtk_0.4.so` | mesa-26.1.3 | proven baseline | The original track-validated fork build. |
 
 Retired: `gtk_0.1`, `gtk_0.2`, both `gtk_0.5` (2026-07-30) and both `gtk_0.6` (2026-08-03).
 
