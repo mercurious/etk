@@ -73,12 +73,12 @@ FORGE_RPCS3_MARKER="${FORGE_RPCS3_MARKER:-rpcs3_perf_stat}"
 FORGE_RPCS3_ARTIFACT="${FORGE_RPCS3_ARTIFACT:-rpcs3-etk_gtk-edition-0.8.5_v0.0.41-19638-a1deb2921_linux_aarch64.AppImage}"
 FORGE_TURNIP_VERS="${FORGE_TURNIP_VERS:-26.1.6 26.2.0-rc3}"
 FORGE_TURNIP_GTKVER="${FORGE_TURNIP_GTKVER:-0.7}"
-# 0.8.6 defaults = the 7.2/20260827 lane (the manifest's pinned kernel; the
+# 0.9.0 defaults = the 7.2/20260901 lane (the manifest's pinned kernel; the
 # release gate asserts a bare `./forge.sh kernel` mints exactly that). The
 # DATE/VER/BUILD trio moves TOGETHER: build selector 72 is the 7.2 recipe —
 # mixing an old selector with a new name would mint a 7.1.2 kernel under a
-# 7.2 label. Official 20260901 remint: bump DATE (and re-verify) only.
-FORGE_KERNEL_DATE="${FORGE_KERNEL_DATE:-20260827}"
+# 7.2 label. Bumped 20260827->20260901 at the official-chassis remint.
+FORGE_KERNEL_DATE="${FORGE_KERNEL_DATE:-20260901}"
 FORGE_KERNEL_VER="${FORGE_KERNEL_VER:-0.5}"
 FORGE_KERNEL_ARTDIR="${FORGE_KERNEL_ARTDIR:-$HOME/rocknix-gtk/artifacts}"
 # Recipe selector for lane_kernel: 72 = 7.2/20260901-era (scripts/build_72.sh),
