@@ -75,8 +75,10 @@ published under it and ledger rows attribute to it.
 | Build | Base | Status | Notes |
 |---|---|---|---|
 | `etk_turnip_rocknix_26.2.0_gtk_0.7.so` | mesa-26.2.0 | **certified default** | `CERTIFIED_BUILDS[0]` == the `gtk_stack.json` pin; what self-update and the flashed card take. |
+| `etk_turnip_rocknix_26.2.2_gtk_0.7.so` | mesa-26.2.2 | unvalidated | Minted 2026-09-02 (16 of 26.2.2's 91 commits touch turnip/freedreno; none in the sync/fence/tiler family). Newest stable candidate; needs rig time before any default advance. |
 | `etk_turnip_rocknix_26.2.1_gtk_0.7.so` | mesa-26.2.1 | unvalidated | Minted 2026-08-31 (13 of 26.2.1's 19 fixes touch turnip/freedreno); needs rig time before any default advance. |
-| `etk_turnip_rocknix_26.3.0-devel-20260821-d2e56df_gtk_0.7.so` | main @ `d2e56df` | driven | The daily driver of the late-August campaign (ledger-attributed since the 08-21 pin); first dated-devel name. |
+| `etk_turnip_rocknix_26.3.0-devel-20260902-c0682c5_gtk_0.7.so` | main @ `c0682c54` | unvalidated | 2026-09-02 devel pin, 5/8 series: 0002 + 0003/0004 skipped (main renamed `gmem_disable_reason`; dead gears, registered-but-inert) — **no `dsbypass`/`dsany` on this build**. |
+| `etk_turnip_rocknix_26.3.0-devel-20260821-d2e56df_gtk_0.7.so` | main @ `d2e56df` | driven | The daily driver of the late-August campaign (superseded by the 09-02 pin) (ledger-attributed since the 08-21 pin); first dated-devel name. |
 | `etk_turnip_rocknix_26.3.0-devel-e40d93a_gtk_0.7.so` | main @ `e40d93a` | superseded | 2026-08-07 devel pin; kept for the downgrade path (sha-only name, grandfathered). |
 | `etk_turnip_rocknix_26.2.0-rc3_gtk_0.7.so` | mesa-26.2.0-rc3 | superseded | Pre-release slot before 26.2.0 shipped stable. |
 | `etk_turnip_rocknix_26.1.6_gtk_0.7.so` | mesa-26.1.6 | fallback stable | Frozen; 26.1 series is EOL upstream. |
