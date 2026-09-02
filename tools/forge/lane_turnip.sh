@@ -36,10 +36,13 @@ for V in $VERS; do
     RAW="/work/out/libvulkan_freedreno-rocknix-$V.so"
     VSTR=$(docker exec turnip-rocknix sh -c "strings $RAW | grep -F 'ETK-GTK' | head -1" || true)
     log "version string: $VSTR"
-    # A devel entry carries its base pin in the name (26.3.0-devel-e40d93a) but the
-    # tree's PACKAGE_VERSION has no pin — match on the pin-stripped form. Strips only
-    # a trailing 7-40 char hex run: -rcN is a real version component and survives.
-    VMATCH=$(printf '%s' "$V" | sed -E 's/-[0-9a-f]{7,40}$//')
+    # A devel entry carries its base pin in the name (26.3.0-devel-e40d93a, or the
+    # dated form 26.3.0-devel-20260902-c0682c5 since 2026-08-31) but the tree's
+    # PACKAGE_VERSION has no pin — match on the pin-stripped form. Strips only a
+    # trailing 7-40 char hex run plus an optional 8-digit pin date before it: -rcN
+    # is a real version component and survives. (The date is all hex digits, so
+    # the sha-only regex left "-YYYYMMDD" attached and would FATAL a dated name.)
+    VMATCH=$(printf '%s' "$V" | sed -E 's/(-[0-9]{8})?-[0-9a-f]{7,40}$//')
     case "$VSTR" in
         *"Mesa $VMATCH"*ETK-GTK*) : ;;
         *) log "FATAL: missing/foreign ETK-GTK version string"; exit 1 ;;
