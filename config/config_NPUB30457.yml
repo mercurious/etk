@@ -201,7 +201,7 @@ Video:
   Force CPU Blit: false
   Force Hardware MSAA Resolve: false
   Force High Precision Z buffer: false
-  Frame limit: PS3 Native
+  Frame limit: Auto
   Framebuffer Aliasing Heuristic Bias: Auto
   Handle RSX Memory Tiling: false
   Log shader programs: false
@@ -238,7 +238,7 @@ Video:
   Relaxed ZCULL Sync: false
   Renderdoc Compatibility Mode: false
   Renderer: Vulkan
-  Resolution: 1280x720
+  Resolution: 720x480
   Resolution Scale: 100
   Screen size in inches: 24
   Second Frame Limit: 0
