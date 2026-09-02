@@ -500,6 +500,18 @@ Walk this list BEFORE handing the operator `./forge.sh rpcs3`:
    release_sanity FAILs a cert pin with zero sources, install.sh keeps the staged
    custom through any staging failure, and STEP 6.553 prints the NEXT-BOOT BIND
    verdict — read it at every install; `loaded=stock` unrequested is the falsifier.
+6. **Turnip: a NAMING change must be re-proven against the lane's own gates before the
+   mint.** `lane_turnip.sh` derives the expected `Mesa <ver>` string from the entry name by
+   stripping the devel pin; the dated scheme (`26.3.0-devel-YYYYMMDD-<sha7>`, 2026-08-31)
+   was adopted in the catalog and docs but never run through that regex — an 8-digit date
+   is all hex, so the sha-only strip left `-YYYYMMDD` attached and the first dated mint
+   (2026-09-02) would have FATAL'd as a foreign version string. Caught by a host-side
+   discriminating test (old regex fails the new name, new regex passes all shapes) BEFORE
+   the run, not by a wasted lane. Same shape as the fingerprint lesson: a name looked
+   right and nothing exercised the code that parses it. Also: upstream `main` can move
+   under a series patch that WRITES a field, not just its context (df96a4da renamed
+   `gmem_disable_reason`) — `patch -F3 --dry-run` "succeeds" on that and the build would
+   not; read the failing hunk's payload lines before calling a drift trivial.
 
 #### Build-loop traps (Stage IV garage learnings)
 
