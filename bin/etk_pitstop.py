@@ -3601,6 +3601,28 @@ def _enable_mangohud(psn_filename):
         return False
 
 
+def _ledger_seed(tid, kind):
+    """Surface a config seed in the CONFIG ledger so TELEMETRY shows it as a
+    config event with honest provenance (NOTEBOOK SEED = the shipped
+    per-title tune; GOLDEN SEED = the generic template). Best-effort: the
+    seed stands even if the append fails. Shared by the startup sweep and
+    the PKG installer — until 0.9.0 the installer path seeded silently, and
+    the very first title on a fresh card left no row (found 2026-09-03)."""
+    try:
+        os.makedirs(TELEMETRY_DIR, exist_ok=True)
+        if not os.path.exists(CONFIG_CHANGES_LEDGER):
+            ltmp = CONFIG_CHANGES_LEDGER + ".tmp"
+            with open(ltmp, 'w') as f:
+                f.write(CONFIG_CHANGES_HEADER)
+            os.replace(ltmp, CONFIG_CHANGES_LEDGER)
+        with open(CONFIG_CHANGES_LEDGER, 'a') as f:
+            _ev = "NOTEBOOK SEED" if kind == "notebook" else "GOLDEN SEED"
+            f.write(f"{int(time.time())}\t{tid}\t{_ev}\trpcs3-defaults\t"
+                    f"{'notebook' if kind == 'notebook' else 'golden'}\n")
+    except Exception as e:
+        _log(f"config seed: ledger append failed: {e}")
+
+
 def _deploy_template_config(title_id):
     """Copy the ETK template to custom_configs/config_<ID>.yml so the
     game's first launch runs tuned. Never clobbers a config that already
@@ -3616,6 +3638,7 @@ def _deploy_template_config(title_id):
         os.makedirs(RPCS3_CUSTOM_CONFIGS, exist_ok=True)
         shutil.copyfile(src, dest)
         _log(f"config seed: {title_id} <- {kind}")
+        _ledger_seed(title_id, kind)
         return "applied"
     except Exception as e:
         _log(f"template config deploy failed: {e}")
@@ -3687,22 +3710,7 @@ def _golden_seed_config(tid, disc=False):
     except Exception as e:
         _log(f"golden seed: write failed for {tid}: {e}")
         return "failed"
-    # Surface the seed in the CONFIG ledger so TELEMETRY shows it as a
-    # config event with honest provenance (best-effort; the seed stands
-    # even if the ledger append fails).
-    try:
-        os.makedirs(TELEMETRY_DIR, exist_ok=True)
-        if not os.path.exists(CONFIG_CHANGES_LEDGER):
-            ltmp = CONFIG_CHANGES_LEDGER + ".tmp"
-            with open(ltmp, 'w') as f:
-                f.write(CONFIG_CHANGES_HEADER)
-            os.replace(ltmp, CONFIG_CHANGES_LEDGER)
-        with open(CONFIG_CHANGES_LEDGER, 'a') as f:
-            _ev = "NOTEBOOK SEED" if kind == "notebook" else "GOLDEN SEED"
-            f.write(f"{int(time.time())}\t{tid}\t{_ev}\trpcs3-defaults\t"
-                    f"{'notebook' if kind == 'notebook' else 'golden'}\n")
-    except Exception as e:
-        _log(f"golden seed: ledger append failed: {e}")
+    _ledger_seed(tid, kind)
     _log(f"golden seed: {tid} <- {kind} ({'disc' if disc else 'pkg'})")
     return "seeded"
 

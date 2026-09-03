@@ -4,6 +4,12 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ## [Unreleased]
 
+### Fixed
+- **A game installed from the TOOLS tab now records its config seed in the
+  ledger** like the startup sweep always did, so the first title on a fresh
+  card shows where its starting config came from (shipped tune or generic
+  starter).
+
 ## [0.9.0] - 2026-09-03 — Official Chassis Edition
 
 Certified stack: RPCS3 **GTK Edition 0.9.0.3** · Mesa Turnip **26.2.2 gtk_0.7** ·

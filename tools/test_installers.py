@@ -891,6 +891,7 @@ with tempfile.TemporaryDirectory() as tmp:
     check("notebook: existing config kept", pit._golden_seed_config("NPEA00050"), "kept existing")
     led = open(pit.CONFIG_CHANGES_LEDGER).read()
     check("notebook: ledger names the provenance", "NOTEBOOK SEED" in led and "GOLDEN SEED" in led, True)
+    os.remove(pit.CONFIG_CHANGES_LEDGER)
     check("notebook: installer path uses the shipped tune too",
           (pit._deploy_template_config("NPEA90002"), os.path.exists(os.path.join(pit.RPCS3_CUSTOM_CONFIGS, "config_NPEA90002.yml"))), ("applied", True))
     open(os.path.join(nb, "config_NPEA90002.yml"), "w").write("Video:\n  Resolution Scale: 85\n")
@@ -898,6 +899,12 @@ with tempfile.TemporaryDirectory() as tmp:
     check("notebook: installer path copies the tune when present",
           (pit._deploy_template_config("NPEA90002"), open(os.path.join(pit.RPCS3_CUSTOM_CONFIGS, "config_NPEA90002.yml")).read()),
           ("applied", "Video:\n  Resolution Scale: 85\n"))
+    # Found on the 0.9.0 card (2026-09-03): the PKG installer seeded the shipped
+    # GT5P tune byte-for-byte and config_changes.tsv did not exist afterwards —
+    # only the startup sweep ever ledgered its seeds. Provenance is the point.
+    led2 = open(pit.CONFIG_CHANGES_LEDGER).read() if os.path.exists(pit.CONFIG_CHANGES_LEDGER) else ""
+    check("notebook: installer path ledgers its seeds (template then notebook)",
+          ("NPEA90002\tGOLDEN SEED" in led2, "NPEA90002\tNOTEBOOK SEED" in led2), (True, True))
     pit.NOTEBOOK_SEED_ENABLED = False
     os.remove(os.path.join(pit.RPCS3_CUSTOM_CONFIGS, "config_NPEA00050.yml"))
     pit._golden_seed_config("NPEA00050")
