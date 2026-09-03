@@ -45,6 +45,7 @@ export ETK_SELF_UPDATE="${ETK_SELF_UPDATE:-1}"
 # RPCS3's hostile defaults (disc/ISO titles additionally get the
 # Strict Rendering Mode fix). Set 0 to disable (kill-switch).
 export ETK_GOLDEN_SEED="${ETK_GOLDEN_SEED:-1}"
+export ETK_NOTEBOOK_SEED="${ETK_NOTEBOOK_SEED:-1}"
 # ISO onboarding (0.7.2, default-ON): Pitstop makes a dropped .iso a
 # first-class ES game — renames [BRACKET-ID] tags to (PARENID) (ROCKNIX's
 # get_setting escapes ()& but NOT [], so bracketed names silently kill

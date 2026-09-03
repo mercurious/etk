@@ -192,6 +192,11 @@ ETK_GOLDEN_SEED=1
 # certified default since 0.9.0). Never overwrites a dial the DRIVER tab has
 # written. 0 => leave a dial-less rig at "no barrier".
 ETK_TURNIP_DIAL_SEED=1
+# ETK_NOTEBOOK_SEED (default 1): a title that has a SHIPPED per-title tune
+# (config/config_<ID>.yml, the kit's committed notebook) is seeded from it
+# instead of the generic template when it first appears. Existing configs are
+# never touched. 0 => template-only seeding, as before 0.9.0.
+ETK_NOTEBOOK_SEED=1
 
 # --- ISO onboarding (0.7.2, ships ON) ---
 # Makes "copy the .iso into roms/ps3" the entire install. At every

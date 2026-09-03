@@ -27,6 +27,12 @@ rather than crowned by it.
   — only where no dial exists; a dial you set is never overwritten. The first
   session is ledgered under the dial it ran. Kill-switch
   `ETK_TURNIP_DIAL_SEED=0`.
+- **Shipped game tunes now apply.** The kit has long bundled a per-title
+  reference tune for every game the rig has settled, and a fresh install
+  never used them — every new title got the generic starter config. A title
+  with a shipped tune now starts on it; titles without one still get the
+  starter; a config you already have is never touched. Kill-switch
+  `ETK_NOTEBOOK_SEED=0`.
 - **Release identity gate.** The release tooling refuses to push or prepare a
   cut under any GitHub login but the project's own.
 

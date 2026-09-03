@@ -781,7 +781,11 @@ title-specific value is a **DIAL, not a default** (e.g. `Preferred SPU Threads` 
 at 3, but the template ships auto). Do not promote a GT-weighted session majority into the
 template — ~86% of ledger weight is one series, and the seed exists for the titles that
 are NOT it. Disc/ISO seeds additionally set `Strict Rendering Mode: true`. Seeds are
-ledgered as GOLDEN SEED rows; existing configs never touched.
+ledgered as GOLDEN SEED rows; existing configs never touched. **The notebook seed (0.9.0):**
+a title that has a shipped `config/config_<ID>.yml` seeds from THAT (ledgered NOTEBOOK
+SEED; `ETK_NOTEBOOK_SEED=0` kills it) — the doctrine above governs the TEMPLATE's content,
+and a title's own settled tune applied to that title is the "dial", delivered. Found on the
+0.9.0 card walk: 45 tunes rode the card and none reached `custom_configs/`.
 
 **HUD work** obeys the DDU strict-lock and glyph law (§2.4). The mode bodies, gauge
 animations, and anti-lock gauge history live with the mechanism entry; the operative laws:

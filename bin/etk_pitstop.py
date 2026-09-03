@@ -267,6 +267,32 @@ ETK_TEMPLATE_CONFIG = os.environ.get(
 # overlay was removed for 0.7.x — refuted as a false fix; both packaging
 # models now seed the plain template.)
 GOLDEN_SEED_ENABLED = os.environ.get('ETK_GOLDEN_SEED', '1').strip() != '0'
+# The notebook seed (0.9.0, default-ON; etk.conf kill-switch ETK_NOTEBOOK_SEED=0).
+# config/config_<ID>.yml is the kit's COMMITTED per-title reference tune —
+# bundled on the card, pushed by install.sh — and until 0.9.0 it rode along
+# unused: every fresh rig seeded every title from the generic template. Now a
+# title that has a shipped tune seeds from it; a title without one still gets
+# the template (the golden-seed doctrine, §A.3, governs the TEMPLATE's content
+# — a title's own settled tune applied to that title is the doctrine's "dial",
+# delivered). Existing configs are never touched either way.
+ETK_NOTEBOOK_DIR = os.environ.get(
+    'ETK_NOTEBOOK_DIR', f"{os.environ.get('ETK_ROOT', '/storage/games-internal/roms/etk')}/config")
+NOTEBOOK_SEED_ENABLED = os.environ.get('ETK_NOTEBOOK_SEED', '1').strip() != '0'
+
+
+def _seed_source(tid):
+    """(path, kind) to seed custom_configs/config_<tid>.yml from: the shipped
+    per-title tune when the notebook has one and the seed is enabled, else
+    the golden template. kind is 'notebook' or 'template' for ledger/log
+    provenance. Pure lookup; never raises."""
+    try:
+        if NOTEBOOK_SEED_ENABLED and tid:
+            nb = os.path.join(ETK_NOTEBOOK_DIR, f"config_{tid}.yml")
+            if os.path.isfile(nb) and os.path.getsize(nb) > 0:
+                return nb, "notebook"
+    except Exception:
+        pass
+    return ETK_TEMPLATE_CONFIG, "template"
 # ISO onboarding (0.7.2, default-ON; env.sh exports the etk.conf
 # kill-switch ETK_ISO_ONBOARD=0). ES's ps3 system scans ONLY
 # ".ps3 .psn .m3u" (es_systems.cfg, verified on-rig 2026-07-19), so a
@@ -3582,12 +3608,14 @@ def _deploy_template_config(title_id):
     dest = os.path.join(RPCS3_CUSTOM_CONFIGS, f"config_{title_id}.yml")
     if os.path.exists(dest):
         return "kept existing"
+    src, kind = _seed_source(title_id)
     try:
-        if not os.path.exists(ETK_TEMPLATE_CONFIG):
-            _log(f"template config missing: {ETK_TEMPLATE_CONFIG}")
+        if not os.path.exists(src):
+            _log(f"template config missing: {src}")
             return "template missing"
         os.makedirs(RPCS3_CUSTOM_CONFIGS, exist_ok=True)
-        shutil.copyfile(ETK_TEMPLATE_CONFIG, dest)
+        shutil.copyfile(src, dest)
+        _log(f"config seed: {title_id} <- {kind}")
         return "applied"
     except Exception as e:
         _log(f"template config deploy failed: {e}")
@@ -3643,8 +3671,9 @@ def _golden_seed_config(tid, disc=False):
     dest = os.path.join(RPCS3_CUSTOM_CONFIGS, f"config_{tid}.yml")
     if os.path.exists(dest):
         return "kept existing"
+    src, kind = _seed_source(tid)
     try:
-        with open(ETK_TEMPLATE_CONFIG) as f:
+        with open(src) as f:
             lines = f.readlines()
     except Exception as e:
         _log(f"golden seed: template unreadable: {e}")
@@ -3669,11 +3698,12 @@ def _golden_seed_config(tid, disc=False):
                 f.write(CONFIG_CHANGES_HEADER)
             os.replace(ltmp, CONFIG_CHANGES_LEDGER)
         with open(CONFIG_CHANGES_LEDGER, 'a') as f:
-            f.write(f"{int(time.time())}\t{tid}\tGOLDEN SEED\trpcs3-defaults\t"
-                    f"golden\n")
+            _ev = "NOTEBOOK SEED" if kind == "notebook" else "GOLDEN SEED"
+            f.write(f"{int(time.time())}\t{tid}\t{_ev}\trpcs3-defaults\t"
+                    f"{'notebook' if kind == 'notebook' else 'golden'}\n")
     except Exception as e:
         _log(f"golden seed: ledger append failed: {e}")
-    _log(f"golden seed: {tid} <- template ({'disc' if disc else 'pkg'})")
+    _log(f"golden seed: {tid} <- {kind} ({'disc' if disc else 'pkg'})")
     return "seeded"
 
 

@@ -866,6 +866,45 @@ finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
 print()
+
+print("\n[N] notebook seed: a shipped per-title tune outranks the generic template")
+# 0.9.0: config/config_<ID>.yml (the committed notebook, bundled on the card
+# and pushed by install.sh) used to ride along unused — every fresh rig seeded
+# every title from etk_template.yml. Now a title WITH a shipped tune seeds from
+# it; a title without one still gets the template; an existing config is never
+# touched; the kill-switch restores template-only. Discriminating: the old code
+# copies the template for both titles.
+with tempfile.TemporaryDirectory() as tmp:
+    cfg, bios, etk = build_pkg_rig(tmp)
+    nb = os.path.join(etk, "config"); os.makedirs(nb, exist_ok=True)
+    pit.ETK_NOTEBOOK_DIR = nb
+    pit.NOTEBOOK_SEED_ENABLED = True
+    pit.TELEMETRY_DIR = os.path.join(etk, "etk_telemetry")
+    pit.CONFIG_CHANGES_LEDGER = os.path.join(pit.TELEMETRY_DIR, "config_changes.tsv")
+    open(os.path.join(nb, "config_NPEA00050.yml"), "w").write("Video:\n  Resolution Scale: 66\n")
+    check("notebook: tuned title seeds from its shipped tune", pit._golden_seed_config("NPEA00050"), "seeded")
+    check("notebook: shipped tune content landed",
+          open(os.path.join(pit.RPCS3_CUSTOM_CONFIGS, "config_NPEA00050.yml")).read(), "Video:\n  Resolution Scale: 66\n")
+    check("notebook: untuned title still seeds the template", pit._golden_seed_config("NPUB30457"), "seeded")
+    check("notebook: template content landed for the untuned title",
+          open(os.path.join(pit.RPCS3_CUSTOM_CONFIGS, "config_NPUB30457.yml")).read(), "Video:\n  Resolution Scale: 100\n")
+    check("notebook: existing config kept", pit._golden_seed_config("NPEA00050"), "kept existing")
+    led = open(pit.CONFIG_CHANGES_LEDGER).read()
+    check("notebook: ledger names the provenance", "NOTEBOOK SEED" in led and "GOLDEN SEED" in led, True)
+    check("notebook: installer path uses the shipped tune too",
+          (pit._deploy_template_config("NPEA90002"), os.path.exists(os.path.join(pit.RPCS3_CUSTOM_CONFIGS, "config_NPEA90002.yml"))), ("applied", True))
+    open(os.path.join(nb, "config_NPEA90002.yml"), "w").write("Video:\n  Resolution Scale: 85\n")
+    os.remove(os.path.join(pit.RPCS3_CUSTOM_CONFIGS, "config_NPEA90002.yml"))
+    check("notebook: installer path copies the tune when present",
+          (pit._deploy_template_config("NPEA90002"), open(os.path.join(pit.RPCS3_CUSTOM_CONFIGS, "config_NPEA90002.yml")).read()),
+          ("applied", "Video:\n  Resolution Scale: 85\n"))
+    pit.NOTEBOOK_SEED_ENABLED = False
+    os.remove(os.path.join(pit.RPCS3_CUSTOM_CONFIGS, "config_NPEA00050.yml"))
+    pit._golden_seed_config("NPEA00050")
+    check("notebook: kill-switch falls back to the template",
+          open(os.path.join(pit.RPCS3_CUSTOM_CONFIGS, "config_NPEA00050.yml")).read(), "Video:\n  Resolution Scale: 100\n")
+    pit.NOTEBOOK_SEED_ENABLED = True
+
 if FAILS:
     print(f"FAILED: {len(FAILS)} check(s) -> {FAILS}")
     sys.exit(1)
