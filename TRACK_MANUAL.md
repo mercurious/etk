@@ -710,6 +710,15 @@ tool from a Sentry-spawned context also needs `XDG_RUNTIME_DIR=/var/run/0-runtim
   **int32 only** (`v`/`i` — a uint32 fails the whole Notify call), via `busctl --user call`
   (`dbus-send` can't send nested containers; `gdbus` is absent). Use
   `progress-color=over #RRGGBBAA` translucent; a replace that omits the hint clears the bar.
+- **A virgin rig has NO mako config, and mako's default layer is UNDER fullscreen ES
+  (2026-09-03, 0.9.0 card walk).** ROCKNIX's `mako-notify` generates
+  `/storage/.config/mako/config` (`layer=overlay` is the load-bearing line) on first use;
+  until then every toast is accepted by the bus (id returned, rc 0) and invisible —
+  screenshot-proven with `grim`. The kit seeds the stock style itself (rig_toast's first
+  beacon, STEP 1, the card's `.seed_config/mako/config`, the PS port), byte-identical to
+  mako-notify's template; `tools/test_notify.py` pins all four. Diagnostic: `makoctl` needs
+  `DBUS_SESSION_BUS_ADDRESS=unix:path=/var/run/0-runtime-dir/bus`; verdict from a `grim`
+  screenshot, never from the sender's exit status.
 - **The install beacon (0.8.7) is ALWAYS-ON by design — do not add a switch.** While
   `install.sh` runs, the rig carries an "ETK INSTALL" progress card (overall % + stage,
   nothing else), opened BEFORE the first daemon is killed, closed on an explicit

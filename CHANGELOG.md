@@ -50,6 +50,17 @@ rather than crowned by it.
 - **Forge naming gate accepts dated development driver names**, so a
   development Turnip mint can no longer fail its own version-string check.
 
+### Fixed
+- **Install beacon invisible on a freshly flashed card.** On a card that
+  had never shown a system notification, every ETK toast — the install
+  progress card, verdicts, the boot-time recovery instruction — was accepted
+  by the notification daemon and drawn underneath the fullscreen front-end,
+  because the daemon's stock style (which puts notifications on top) is only
+  created the first time ROCKNIX itself shows one. The kit now seeds that
+  stock style itself: before the very first beacon, in the style step, on the
+  card image, and from the Windows installer. Rigs that already have the
+  style are untouched.
+
 ### Stack
 - **Kernel `20260901-0.5`** — the 7.2.0 GTK kernel rebuilt on the official
   ROCKNIX 20260901 tag (the 0.8.6/0.8.7 kernel was built on the nightly it

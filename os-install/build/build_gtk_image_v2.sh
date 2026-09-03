@@ -95,6 +95,22 @@ if [ -n "$SEED_CONFIG" ]; then
         "$REPO/config/etk-gtk-version.service" > "$_t"
     echo "   re-rendered seed boot-identity: ROCKNIX-GTK ${_GV:-dev}-${_GD:-dev}"
   done
+  # THE STOCK MAKO STYLE + ETK BLOCKS (0.9.0). A hostless card never runs
+  # install.sh STEP 1, and a virgin ROCKNIX has no mako config until its own
+  # mako-notify first runs — mako's default layer is UNDER fullscreen ES, so
+  # every toast (install beacon, verdicts, osguard's boot-time recovery
+  # instruction) was invisible on a fresh card. Render the file install.sh
+  # would write, from install.sh's own MKSTOCK + MK heredocs (one source).
+  mkdir -p "$ER/.seed_config/mako"
+  # awk stops at the FIRST block of each kind (install.sh carries the stock
+  # template twice: the first-beacon seed and STEP 1's).
+  {
+    awk "/<<'MKSTOCK'\$/{f=1;next} /^MKSTOCK\$/{if(f)exit} f" "$REPO/install.sh"
+    awk "/<<'MK'\$/{f=1;next} /^MK\$/{if(f)exit} f" "$REPO/install.sh"
+  } > "$ER/.seed_config/mako/config"
+  grep -q '^layer=overlay$' "$ER/.seed_config/mako/config" || die "seed mako config lost layer=overlay"
+  grep -q '^\[app-name="ETK Progress"\]$' "$ER/.seed_config/mako/config" || die "seed mako config lost the ETK Progress block"
+  echo "   seeded mako style: $(grep -c '^\[app-name=' "$ER/.seed_config/mako/config") ETK surfaces on the stock overlay style"
   # The SHIPPED Turnip dial (0.9.0): the seed is a snapshot of a past install
   # and carries whatever dial that rig had — usually none, which boots a fresh
   # card at "no barrier". Bake the kit's default (zlatez) so the card's first

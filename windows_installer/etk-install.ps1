@@ -130,7 +130,17 @@ function Invoke-RigToast {
             # /tmp survives as long as the boot, which is longer than any
             # install. Such a rig has no [app-name="ETK Progress"] mako block
             # either (STEP 1 writes it), so the card falls back to stock
-            # styling; it still shows, which is the point.
+            # styling - IF one exists. A virgin ROCKNIX has no mako config
+            # until its own mako-notify first runs, and mako's default layer
+            # sits UNDER fullscreen EmulationStation: every toast accepted,
+            # none visible (0.9.0 card walk, 2026-09-03). Seed mako-notify's
+            # own template first (byte-identical to install.sh's MKSTOCK) and
+            # reload mako on its session bus. Never touches an existing config;
+            # fail-soft (the `; true` keeps a miss from tripping the probe).
+            $stockMako = "max-visible=1\nlayer=overlay\nfont=monospace 30\ntext-color=#ffffff\ntext-alignment=center\nbackground-color=#000000\nborder-size=0\nborder-radius=10\ndefault-timeout=1500\nanchor=top-center\nwidth=500\n"
+            $seedCmd = "test -f /storage/.config/mako/config || { mkdir -p /storage/.config/mako && printf '%b' '$stockMako' > /storage/.config/mako/config && XDG_RUNTIME_DIR=/var/run/0-runtime-dir DBUS_SESSION_BUS_ADDRESS=unix:path=/var/run/0-runtime-dir/bus makoctl reload; }; true"
+            Invoke-Bounded -Exe "ssh" -Arguments ($script:SshBase + @($RigSsh, $seedCmd)) `
+                           -TimeoutSec 20 -Quiet -What "stock mako style seed (virgin rig)" | Out-Null
             #
             # The probe greps for the `--progress` case label rather than
             # testing for the file, because a rig carrying a sender that

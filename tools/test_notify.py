@@ -48,6 +48,7 @@ separately against busybox:1.36; the constructs used are POSIX-basic.
 import importlib.util
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -690,6 +691,59 @@ if PROBE:
                "drift here demotes every install to the /tmp fallback")
 check_true("the beacon falls back to a scp'd sender on a virgin rig",
            "/tmp/etk_notify.sh" in install_src)
+
+# --- VIRGIN RIG: THE STOCK STYLE MUST EXIST OR NOTHING SHOWS -----------------
+# Found on the 0.9.0 card walk (2026-09-03): a freshly flashed card has NO
+# /storage/.config/mako/config — ROCKNIX's mako-notify generates the stock
+# style on first use, and nothing had used it yet. mako then runs on its
+# defaults, whose layer sits BELOW a fullscreen EmulationStation, so every
+# beacon was accepted by the bus (id returned, rc 0) and drawn where nobody
+# could see it. STEP 1 hit "[SKIP] mako config absent" and left it that way.
+# Screenshot-proven: same probe, invisible before the stock style, visible
+# after. The load-bearing line is `layer=overlay`; the rest mirrors what
+# mako-notify writes so a rig seeded by us and one seeded by ROCKNIX match.
+STOCK_LINES = [l for l in STOCK.split("[urgency")[0].strip().splitlines()]
+ps1_src = open(os.path.join(ROOT, "windows_installer", "etk-install.ps1"), errors="replace").read()
+def _stock_copies(src):
+    """Every MKSTOCK heredoc body in install.sh (rig_toast's virgin seed and
+    STEP 1's absent-config seed), as line lists."""
+    return [b.strip().splitlines() for b in re.findall(r"<<'MKSTOCK'\n(.*?)\nMKSTOCK", src, re.S)]
+copies = _stock_copies(install_src)
+check("install.sh carries the stock mako style for virgin rigs (two seeds: first beacon + STEP 1)",
+      len(copies), 2)
+for i, c in enumerate(copies):
+    check_true(f"stock seed #{i+1} is byte-identical to mako-notify's template",
+               c == STOCK_LINES, "a drifted seed styles ROCKNIX's own toasts differently on our rigs")
+    check_true(f"stock seed #{i+1} puts mako on the overlay layer",
+               "layer=overlay" in c, "the default layer is under fullscreen ES — invisible")
+check_true("the first beacon seeds the stock style before it probes the sender",
+           re.search(r"rig_toast\(\) \{.*?MKSTOCK.*?grep -q '\^--progress\)'", install_src, re.S) is not None,
+           "STEP 1 runs after the first beacon; a virgin rig's opening card would still be hidden")
+check_true("no comment still claims a virgin rig 'still shows' on stock styling",
+           "it still shows, which is the point" not in install_src
+           and "it still shows, which is the point" not in ps1_src)
+check_true("the PowerShell port seeds the stock style on a virgin rig too",
+           "layer=overlay" in ps1_src, "same virgin-rig blindness on a Windows-host install")
+IMG_SRC = open(os.path.join(ROOT, "os-install", "build", "build_gtk_image_v2.sh")).read()
+check_true("the card seeds .seed_config/mako/config (a hostless card never runs STEP 1)",
+           ".seed_config/mako/config" in IMG_SRC and "MKSTOCK" in IMG_SRC,
+           "osguard's boot-time recovery toast rides the same surface")
+# Harness: STEP 1 with NO config must create it, stock first, ETK blocks after.
+tmp_v = tempfile.mkdtemp()
+try:
+    stub_v = _make_stubs(tmp_v)
+    cfg_v = os.path.join(tmp_v, "mako", "config")
+    r = _run_block(_install_block_script(), cfg_v, stub_v)
+    check("absent config: STEP 1 seeds it instead of skipping", os.path.exists(cfg_v), True)
+    if os.path.exists(cfg_v):
+        body = open(cfg_v).read()
+        check("absent config: stock style leads the file", body.split("[")[0].strip().splitlines(), STOCK_LINES)
+        check("absent config: both ETK surfaces follow", ('[app-name="ETK"]' in body, '[app-name="ETK Progress"]' in body), (True, True))
+        check("absent config: reported, not skipped", "[SKIP]" in r.stdout, False)
+        _run_block(_install_block_script(), cfg_v, stub_v)
+        check("absent-then-present: second run is byte-identical", open(cfg_v).read(), body)
+finally:
+    shutil.rmtree(tmp_v, ignore_errors=True)
 
 # --- FAIL-SOFT -------------------------------------------------------------
 check_true("every beacon call site is `|| true`-guarded",

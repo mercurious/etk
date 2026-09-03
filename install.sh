@@ -264,8 +264,34 @@ rig_toast() {
         # in /tmp and keep using it for the whole run — /tmp survives as long as
         # the boot, which is longer than any install. Such a rig has no
         # [app-name="ETK Progress"] mako block either (STEP 1 writes it), so the
-        # card falls back to stock styling; it still shows, which is the point.
+        # card falls back to stock styling.
         #
+        # ...IF there is a stock styling. A virgin rig has NO mako config at
+        # all: ROCKNIX's mako-notify generates /storage/.config/mako/config on
+        # its first use (a brightness/volume key), and until then mako runs on
+        # its defaults — whose layer sits UNDER fullscreen EmulationStation.
+        # Every beacon was accepted by the bus (id returned, rc 0) and drawn
+        # where nobody could see it; STEP 1 then hit "[SKIP] mako config
+        # absent" and left it that way (0.9.0 card walk, 2026-09-03,
+        # screenshot-proven). Seed mako-notify's own template first — byte-
+        # identical, so a rig we seed and a rig ROCKNIX seeds look the same —
+        # and reload mako on the session bus it actually listens on. Never
+        # touches an existing config. Fail-soft: a miss here costs the card,
+        # not the install.
+        ssh $RIG_SSH "test -f /storage/.config/mako/config" >/dev/null 2>&1 || \
+        ssh $RIG_SSH "mkdir -p /storage/.config/mako && cat > /storage/.config/mako/config && XDG_RUNTIME_DIR=/var/run/0-runtime-dir DBUS_SESSION_BUS_ADDRESS=unix:path=/var/run/0-runtime-dir/bus makoctl reload" >/dev/null 2>&1 <<'MKSTOCK'
+max-visible=1
+layer=overlay
+font=monospace 30
+text-color=#ffffff
+text-alignment=center
+background-color=#000000
+border-size=0
+border-radius=10
+default-timeout=1500
+anchor=top-center
+width=500
+MKSTOCK
         # The probe greps for the `--progress` case label rather than testing
         # for the file, because a rig carrying a sender that PREDATES the
         # progress form is the same problem as a rig carrying none: the flag
@@ -713,6 +739,28 @@ SHOTREADME
 tui_log "Installing ETK mako notification style"
 MAKO_OUT=$(ssh $RIG_SSH 'bash -s' 2>&1 <<'ETKMAKO'
 MCFG=/storage/.config/mako/config
+# A VIRGIN RIG HAS NO CONFIG — and no config means mako's default layer, which
+# is under fullscreen ES: invisible toasts (0.9.0 card walk, 2026-09-03). Seed
+# mako-notify's own template (byte-identical to what ROCKNIX writes on first
+# use) so the ETK blocks below have a stock style to sit on. Existing configs
+# are never touched by this branch.
+if [ ! -f "$MCFG" ]; then
+mkdir -p "$(dirname "$MCFG")"
+cat > "$MCFG" <<'MKSTOCK'
+max-visible=1
+layer=overlay
+font=monospace 30
+text-color=#ffffff
+text-alignment=center
+background-color=#000000
+border-size=0
+border-radius=10
+default-timeout=1500
+anchor=top-center
+width=500
+MKSTOCK
+echo "    [SEED] stock mako style seeded (virgin rig: mako-notify had never run)."
+fi
 if [ -f "$MCFG" ]; then
 cp -f "$MCFG" "$MCFG.etk.bak"
 # Second stage trims trailing blank lines (same idiom as the grub strip at
@@ -780,6 +828,8 @@ ETKMAKO
 if [ "$TUI_ACTIVE" = "1" ]; then
     if echo "$MAKO_OUT" | grep -q '\[FAIL\]'; then
         tui_log "ETK mako style REJECTED by mako - rolled back"
+    elif echo "$MAKO_OUT" | grep -q '\[SEED\]'; then
+        tui_log "ETK mako notification style installed (stock style seeded: virgin rig)"
     elif echo "$MAKO_OUT" | grep -q '\[OK\]'; then
         tui_log "ETK mako notification style installed"
     else
