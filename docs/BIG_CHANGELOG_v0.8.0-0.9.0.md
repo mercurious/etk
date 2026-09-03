@@ -1,12 +1,12 @@
 # ETK Big Changelog — v0.8.0 → 0.9.0
 
 Every change across the kit between v0.8.0 (2026-07-22) and the pending 0.9.0,
-grouped by ETK release tag. **0.8.7 (2026-08-29, unreleased) is the current
-candidate cut.** Sibling-repo work is filed under the ETK release window it
+grouped by ETK release tag. **0.9.0 (2026-09-03) is the cut this document
+closes on; 0.8.7 shipped 2026-08-31.** Sibling-repo work is filed under the ETK release window it
 landed in; `CHANGELOG.md` remains the canonical per-release record.
 
 Releases: v0.8.1 (07-27) · v0.8.2 (07-30) · v0.8.3 (08-01) · v0.8.4 (08-07) ·
-v0.8.5 (08-10) · v0.8.6 (08-28) · 0.8.7 (pending)
+v0.8.5 (08-10) · v0.8.6 (08-28) · v0.8.7 (08-31) · v0.9.0 (09-03)
 
 ---
 
@@ -22,6 +22,7 @@ v0.8.5 (08-10) · v0.8.6 (08-28) · 0.8.7 (pending)
 - v0.8.6 — 20260901 upstream survey + re-survey: it's a 7.2 rebase; `patches-7.2/` staged (6 carry; DP enable-lock retired upstream; q6asm dropped)
 - v0.8.6 — build_72 + stage_72: 7.2/20260901 kernel lane with loud staging gate; ships as `20260827-0.5`, validated live
 - 0.8.7 — stage_72/build_72: stderr logging + recursive firmware count; staging-gate false-WARN/false-fail fixes
+- v0.9.0 — kernel `20260901-0.5`: 7.2.0 rebuilt on the OFFICIAL ROCKNIX 20260901 tag (delta vs the surveyed nightly touched nothing in kernel/boot/dts); cold-boot certified; card base moves to 20260901
 
 **ROCKNIX team changes** (upstream, surveyed for the 7.2 rebase — not merged)
 - sm8250: bumped to mainline kernel 7.2 (PR #3209)
@@ -72,6 +73,8 @@ v0.8.5 (08-10) · v0.8.6 (08-28) · 0.8.7 (pending)
 - v0.8.5 — stable rebase 26.1.6 → 26.2.0 (26.1 backports now native); certified `26.2.0_gtk_0.7`
 - v0.8.5 — catalog policy set: Turnip is CUMULATIVE — every listed build stays fetchable
 - v0.8.6 — stable bump 26.2.0 → 26.2.1 (repo-side; `26.2.0_gtk_0.7` remains the shipping pin); 26.1 series EOL, 26.1.6 frozen fallback
+- v0.8.7 — 26.2.1 catalogued (7 entries); certified pin still `26.2.0_gtk_0.7`
+- v0.9.0 — 26.2.2 minted + catalogued (9 entries); **certified default advances to `26.2.2_gtk_0.7`** (operator verdict; the rig's daily driver since 09-02)
 
 **Mesa Turnip dev**
 - v0.8.3 — pre-release track added: 26.2.0-rc3; enters the DRIVER catalog as `rc3_gtk_0.6` (unvalidated, operator-directed)
@@ -79,6 +82,8 @@ v0.8.5 (08-10) · v0.8.6 (08-28) · 0.8.7 (pending)
 - v0.8.5 — `26.3.0-devel-e40d93a_gtk_0.7` enters the catalog as the pre-release slot
 - v0.8.5 — ANDROID (bionic/kgsl) lane: `build_android.sh` + container provisioning; stock-Mesa adpkg reconstruction, sha-pin gates
 - v0.8.6 — devel re-pinned main@`d2e56df`; 26.3.0-rc1 lane pre-wired (upstream due 2026-10-14)
+- v0.8.7 — devel `20260821-d2e56df` catalogued under the dated naming scheme
+- v0.9.0 — devel re-pinned main@`c0682c5` (dated `20260902`, 5/8 series — no dsbypass/dsany); forge gate accepts dated devel names
 
 ## 🔊 Audio
 

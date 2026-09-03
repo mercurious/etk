@@ -6981,13 +6981,18 @@ _TU_DEBUG_KNOWN = (set(_TU_DEBUG_PRIMARY) | set(_TU_DEBUG_ADVANCED)
 # --- ROAD FEEL dial (the simple DRIVER view) -------------------------------
 # Translates the cryptic TU_DEBUG gears into three plain stops on a
 # stability<->performance axis. Each stop sets tu_debug to a PROVEN combo
-# (etk-turnip-gtk/GEARS.md): syncdraw is the best-tested crash floor; sddepth
-# is the validated FPS-recovery gear (lighter, more wedge-prone — but the
-# anti-lock net now absorbs those as SURVIVED rescues); no barrier is
-# stock/leanest. The falsified lighter gears (sdmem/sdme) are deliberately NOT
-# offered here — they stay in Advanced for the operator's own A/B work.
+# (etk-turnip-gtk/GEARS.md). Since 0.9.0 the top stop is zlatez — the dial
+# the kit SHIPS (config/097-etk-turnip-dials.default, seeded by install.sh
+# and baked into the card): it works the fragment-stage Z24S8 hazard the
+# fault decode points at rather than paying a resolve barrier, and it drew
+# the fewest anti-lock rescues in the field. syncdraw's "proven crash floor"
+# rested on a measurement from before the anti-lock net and the 7.2 chassis
+# (operator ruling 2026-09-03); it stays one Advanced toggle away. sddepth is
+# the validated FPS-recovery gear (lighter, more wedge-prone — the anti-lock
+# net absorbs those as SURVIVED rescues); no barrier is stock/leanest. The
+# falsified lighter gears (sdmem/sdme) are deliberately NOT offered here.
 _DIAL_STOPS = (
-    ("Max Stability",   "syncdraw - safest; the proven crash floor, fewest saves", {"syncdraw"}),
+    ("Max Stability",   "zlatez - the shipped default; fewest anti-lock rescues", {"zlatez"}),
     ("Balanced",        "sddepth - more FPS in heavy scenes; anti-lock covers the wedges", {"sddepth"}),
     ("Max Performance", "no barrier - leanest, most FPS; leans hardest on anti-lock", set()),
 )

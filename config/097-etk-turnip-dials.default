@@ -1,0 +1,4 @@
+# ETK Turnip dials — written by Pitstop DRIVER tab.
+# Sourced by /etc/profile at game launch; survives reboot.
+# tune_tag: tu_debug=zlatez
+export TU_DEBUG=zlatez

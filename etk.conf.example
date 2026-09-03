@@ -187,6 +187,11 @@ ETK_SELF_UPDATE="1"
 # as a GOLDEN SEED row in the TELEMETRY config ledger.
 # 1 = on (default) · 0 = kill-switch (titles then start on RPCS3 defaults)
 ETK_GOLDEN_SEED=1
+# ETK_TURNIP_DIAL_SEED (default 1): a rig with NO Turnip dial yet gets the
+# shipped one (config/097-etk-turnip-dials.default: TU_DEBUG=zlatez, the
+# certified default since 0.9.0). Never overwrites a dial the DRIVER tab has
+# written. 0 => leave a dial-less rig at "no barrier".
+ETK_TURNIP_DIAL_SEED=1
 
 # --- ISO onboarding (0.7.2, ships ON) ---
 # Makes "copy the .iso into roms/ps3" the entire install. At every

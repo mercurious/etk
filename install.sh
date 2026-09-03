@@ -2230,7 +2230,7 @@ ssh $RIG_SSH "mkdir -p /storage/turnip/drivers /storage/.config/system.d/" 2>/de
 # must match config/gtk_stack.json's turnip pin (what self-update and the
 # flashable card both take). Contrast the RPCS3 CORES at STEP 6.552: those are
 # capped at two, host-side A/B only, and never published at all.
-CERTIFIED_BUILDS="etk_turnip_rocknix_26.2.0_gtk_0.7.so etk_turnip_rocknix_26.2.2_gtk_0.7.so etk_turnip_rocknix_26.2.1_gtk_0.7.so etk_turnip_rocknix_26.3.0-devel-20260902-c0682c5_gtk_0.7.so etk_turnip_rocknix_26.3.0-devel-20260821-d2e56df_gtk_0.7.so etk_turnip_rocknix_26.3.0-devel-e40d93a_gtk_0.7.so etk_turnip_rocknix_26.2.0-rc3_gtk_0.7.so etk_turnip_rocknix_26.1.6_gtk_0.7.so etk_turnip_rocknix_26.1.3_gtk_0.4.so"
+CERTIFIED_BUILDS="etk_turnip_rocknix_26.2.2_gtk_0.7.so etk_turnip_rocknix_26.2.1_gtk_0.7.so etk_turnip_rocknix_26.2.0_gtk_0.7.so etk_turnip_rocknix_26.3.0-devel-20260902-c0682c5_gtk_0.7.so etk_turnip_rocknix_26.3.0-devel-20260821-d2e56df_gtk_0.7.so etk_turnip_rocknix_26.3.0-devel-e40d93a_gtk_0.7.so etk_turnip_rocknix_26.2.0-rc3_gtk_0.7.so etk_turnip_rocknix_26.1.6_gtk_0.7.so etk_turnip_rocknix_26.1.3_gtk_0.4.so"
 DRIVER_RELEASE_BASE="https://github.com/mercurious/etk/releases/latest/download"
 # sha256 of each certified build — a fetched binary is verified against this.
 driver_sha() { case "$1" in
@@ -2795,6 +2795,29 @@ if [ -n "${RPCS3_ENV_FLAGS:-}" ]; then
         || say "${Y}[ETK]${N} Failed to write RPCS3 env flags (096-etk-rpcs3-flags)."
 else
     ssh $RIG_SSH "rm -f /storage/.config/profile.d/096-etk-rpcs3-flags" 2>/dev/null
+fi
+
+# --- STEP 6.565: SHIPPED TURNIP DIAL (0.9.0) ---
+# A rig with no Turnip dial runs at "no barrier" — stock behaviour, and not
+# what the release certifies. Seed the kit's default (config/097-etk-turnip-
+# dials.default: TU_DEBUG=zlatez) ONLY where no dial exists; a dial the DRIVER
+# tab wrote is the operator's and is never touched. Both halves of the
+# attribution chain are written — the profile.d file the driver reads AND
+# active_tune.txt the postmortem stamps — so the first session is ledgered
+# under the dial it actually ran, not "default". Kill-switch:
+# ETK_TURNIP_DIAL_SEED=0. Fail-soft: a miss here leaves the rig playable.
+if [ "${ETK_TURNIP_DIAL_SEED:-1}" != "0" ] && [ -f ./config/097-etk-turnip-dials.default ]; then
+    if ssh $RIG_SSH "test -f /storage/.config/profile.d/097-etk-turnip-dials" 2>/dev/null; then
+        tui_log "Turnip dial present on rig — shipped default not applied"
+    else
+        _DIAL_TAG=$(sed -n 's/^# tune_tag: //p' ./config/097-etk-turnip-dials.default | head -1)
+        if scp -q ./config/097-etk-turnip-dials.default "$RIG_SSH:/storage/.config/profile.d/097-etk-turnip-dials" 2>/dev/null \
+           && ssh $RIG_SSH "mkdir -p $ETK_ROOT/etk_telemetry && printf '%s\n' '${_DIAL_TAG:-default}' > $ETK_ROOT/etk_telemetry/active_tune.txt" 2>/dev/null; then
+            say "${G}[ETK]${N} Shipped Turnip dial seeded (${_DIAL_TAG:-?}) — no dial existed on the rig."
+        else
+            say "${Y}[ETK]${N} Could not seed the shipped Turnip dial (rig stays at no-barrier; set it in Pitstop DRIVER)."
+        fi
+    fi
 fi
 
 # --- STEP 6.57: RETIRE the audio watchdog (SM8250 silent-boot fixed in kernel) ---

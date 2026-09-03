@@ -4,6 +4,65 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-03 — Official Chassis Edition
+
+Certified stack: RPCS3 **GTK Edition 0.9.0.3** · Mesa Turnip **26.2.2 gtk_0.7** ·
+kernel **rocknix-gtk-20260901-0.5** (7.2.0) · base **ROCKNIX official 20260901**.
+
+The practice lap is over. 0.8.6 rehearsed the September chassis on a nightly;
+this cut runs it on the official monthly the kernel was rebuilt against, moves
+the certified Vulkan driver to the current Mesa stable, and ships the Turnip
+dial the rig actually races on instead of leaving a fresh card at stock. A
+note on honesty: mid-cycle a host-side config error switched the kernel half
+of the anti-lock net off for about a day of sessions, and a large part of the
+shader vault was cleared, so the ledger for this window reads noisier than
+the rig felt. The release is certified on the operator's verdict — more
+performant, no regression found — with the ledger discounted for that window
+rather than crowned by it.
+
+### Added
+- **The shipped Turnip dial.** A rig with no dial used to run the driver at
+  "no barrier". The kit now ships its default (`zlatez`, the stop the
+  DRIVER tab calls Max Stability) on the card and seeds it on a host install
+  — only where no dial exists; a dial you set is never overwritten. The first
+  session is ledgered under the dial it ran. Kill-switch
+  `ETK_TURNIP_DIAL_SEED=0`.
+- **Release identity gate.** The release tooling refuses to push or prepare a
+  cut under any GitHub login but the project's own.
+
+### Changed
+- **ROAD FEEL: Max Stability is now `zlatez`.** The previous top stop,
+  `syncdraw`, earned its "proven crash floor" on measurements from before the
+  anti-lock net and the 7.2 chassis; `zlatez` works the fragment-stage depth
+  hazard the fault decode points at and drew the fewest rescues in the field.
+  `syncdraw` remains one Advanced toggle away.
+- **Game tunes ship current.** The per-title reference tunes in `config/`
+  match the rig's live notebook at the cut (four titles re-banked since
+  0.8.7), and the card carries them.
+- **Reflash re-pairing is one password again**: the pairing tool clears a
+  rig's stale host keys after a reflash instead of failing on them.
+- **Forge naming gate accepts dated development driver names**, so a
+  development Turnip mint can no longer fail its own version-string check.
+
+### Stack
+- **Kernel `20260901-0.5`** — the 7.2.0 GTK kernel rebuilt on the official
+  ROCKNIX 20260901 tag (the 0.8.6/0.8.7 kernel was built on the nightly it
+  was cut from; the official delta touched nothing in the kernel, boot or
+  device tree). Cold-boot certified on the rig. The card image is built on
+  the official 20260901 base.
+- **Turnip certified default advances to Mesa 26.2.2** (`gtk_0.7`), the
+  rig's daily driver since 2026-09-02; the catalog grows to nine (nothing
+  removed): 26.2.2 and a 2026-09-02 development snapshot join. 26.2.0, the
+  previous default, stays one DRIVER-tab pick away.
+- **RPCS3 GTK Edition 0.9.0.3 unchanged** (certified in 0.8.7).
+
+### Known behaviour
+- Two sessions on one title ended in a silent reset with nothing in the
+  kernel log beforehand — the unexplained panic class already tracked; the
+  black box records the lead-up for the next occurrence.
+- A rig that already has a dial keeps it; to take the shipped default, pick
+  Max Stability in the DRIVER tab.
+
 ## [0.8.7] - 2026-08-31 — Pit Board Edition
 
 The pit board is the sign the crew hangs over the wall so the driver always

@@ -503,12 +503,12 @@ Write-Step 6 $TOTAL "STEP 6.5: CUSTOM TURNIP DRIVER CATALOG..."
 # in the field 2026-07-11: this script still pinned gtk_0.2 while the v0.7.0
 # release ships gtk_0.4 and the rig's etk.conf already selected 0.4).
 $certified = @(
-    @{ Name = "etk_turnip_rocknix_26.2.0_gtk_0.7.so"
-       Sha  = "7ed58c2fccafd114fc47aa11b2e2fa3ae676a8ee0242089c0faf1984a480fcb4" }
     @{ Name = "etk_turnip_rocknix_26.2.2_gtk_0.7.so"
        Sha  = "36860c4e0b021b5178c952b48e781dac8da43f14b89bd6e6460fefebef1fc2cd" }
     @{ Name = "etk_turnip_rocknix_26.2.1_gtk_0.7.so"
        Sha  = "90be699eb62f13b8aea3cc390b2f158ab6b895fc1972468d27b00d8a81983606" }
+    @{ Name = "etk_turnip_rocknix_26.2.0_gtk_0.7.so"
+       Sha  = "7ed58c2fccafd114fc47aa11b2e2fa3ae676a8ee0242089c0faf1984a480fcb4" }
     @{ Name = "etk_turnip_rocknix_26.3.0-devel-20260902-c0682c5_gtk_0.7.so"
        Sha  = "75e30c8b10eaf7d50ca63dcf1681e32a13c61c0407320a303a1ad5670999f0fa" }
     @{ Name = "etk_turnip_rocknix_26.3.0-devel-20260821-d2e56df_gtk_0.7.so"

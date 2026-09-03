@@ -24,7 +24,7 @@ set -eu
 BASE_GZ="${BASE_GZ:-/work/ROCKNIX-SM8250.aarch64-20260901.img.gz}"
 KERNEL="${KERNEL:-/rocknix-gtk/artifacts/KERNEL.rocknix-gtk-20260901-0.5}"
 APPIMAGE="${APPIMAGE:-/etk/emulators/rpcs3-etk_gtk-edition-0.9.0.3_armsx3-a74a0f3e0_linux_aarch64.AppImage}"
-TURNIP_SO="${TURNIP_SO:-/etk/drivers/etk_turnip_rocknix_26.2.0_gtk_0.7.so}"
+TURNIP_SO="${TURNIP_SO:-/etk/drivers/etk_turnip_rocknix_26.2.2_gtk_0.7.so}"
 REPO="${REPO:-/etk}"
 HOOK_SCRIPT="${HOOK_SCRIPT:-}"              # optional: bake /flash/mount-storage.sh (hostless hook)
 SEED_CONFIG="${SEED_CONFIG:-}"             # optional: stage $ETK_ROOT/.seed_config (hook installs it on boot 2)
@@ -95,6 +95,21 @@ if [ -n "$SEED_CONFIG" ]; then
         "$REPO/config/etk-gtk-version.service" > "$_t"
     echo "   re-rendered seed boot-identity: ROCKNIX-GTK ${_GV:-dev}-${_GD:-dev}"
   done
+  # The SHIPPED Turnip dial (0.9.0): the seed is a snapshot of a past install
+  # and carries whatever dial that rig had — usually none, which boots a fresh
+  # card at "no barrier". Bake the kit's default (zlatez) so the card's first
+  # session runs, and is ledger-attributed to, the dial the release certifies.
+  # Same file Pitstop's DRIVER tab writes; the operator's next APPLY replaces it.
+  if [ -f "$REPO/config/097-etk-turnip-dials.default" ]; then
+    mkdir -p "$ER/.seed_config/profile.d"
+    cp "$REPO/config/097-etk-turnip-dials.default" "$ER/.seed_config/profile.d/097-etk-turnip-dials"
+    # ...and the attribution half: the postmortem stamps tune_tag from
+    # active_tune.txt, so without it the card's first rows would read "default"
+    # while the driver ran zlatez. Same pair Pitstop writes atomically.
+    mkdir -p "$ER/etk_telemetry"
+    sed -n 's/^# tune_tag: //p' "$REPO/config/097-etk-turnip-dials.default" | head -1 > "$ER/etk_telemetry/active_tune.txt"
+    echo "   seeded Turnip dial: $(cat "$ER/etk_telemetry/active_tune.txt")"
+  fi
   echo "   staged .seed_config: $(find "$ER/.seed_config" -type f | wc -l | tr -d ' ') files + $(find "$ER/.seed_config" -type l | wc -l | tr -d ' ') symlinks (hook installs on boot 2)"
 fi
 # GTK forks staged where install.sh binds them (outside .config → don't block resize)

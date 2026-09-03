@@ -532,6 +532,23 @@ else
 fi
 
 echo
+# --------------------------------------------------------------------------
+# PUBLISH IDENTITY (added 2026-09-03)
+# --------------------------------------------------------------------------
+# Every push/release goes out under the gh CLI's ACTIVE login, and a switch
+# made anywhere else is invisible here. tools/identity_guard.sh is the pre-push hook; this gate
+# runs it so a cut cannot be prepared under the wrong login either.
+echo "-- publish identity --"
+if [ -x "$REPO_ROOT/tools/identity_guard.sh" ]; then
+    if _idg=$("$REPO_ROOT/tools/identity_guard.sh" 2>&1); then ok "$_idg"
+    else bad "$(printf '%s' "$_idg" | head -1)"; fi
+    [ -x "$REPO_ROOT/.git/hooks/pre-push" ] && ok "pre-push hook installed" \
+        || bad "pre-push hook missing — run tools/identity_guard.sh --install"
+else
+    skip "tools/identity_guard.sh not found"
+fi
+
+echo
 if [ "$FAIL" = 0 ]; then
     printf "${c_ok}== release sanity: PASS ==${c_off}\n"
 else
