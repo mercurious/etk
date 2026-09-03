@@ -9,7 +9,7 @@
     "matches — bin/osguard.sh activates the staged kernel ONLY when the live",
     "OS matches (stage now, activate when coherent; never boots a mismatch)."
   ],
-  "gtk_stack": "0.8.7",
+  "gtk_stack": "0.9.0",
   "kernel": {
     "asset": "KERNEL.rocknix-gtk-20260901-0.5",
     "sha256": "de05888f8288b89e9c73ab4f82818e5ac3fa0f188c0a4f7ca0943242fc8d6d64",

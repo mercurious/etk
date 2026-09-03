@@ -21,7 +21,7 @@ set -eu
 # check below, and KERNEL still named -0.3 after the forge moved to etk-cloud.
 # release_sanity.sh only validated the FILENAME FORMAT of these, never that the
 # file exists or is the shipping one; that check is now in the gate too.
-BASE_GZ="${BASE_GZ:-/work/ROCKNIX-SM8250.aarch64-20260827.img.gz}"
+BASE_GZ="${BASE_GZ:-/work/ROCKNIX-SM8250.aarch64-20260901.img.gz}"
 KERNEL="${KERNEL:-/rocknix-gtk/artifacts/KERNEL.rocknix-gtk-20260901-0.5}"
 APPIMAGE="${APPIMAGE:-/etk/emulators/rpcs3-etk_gtk-edition-0.9.0.3_armsx3-a74a0f3e0_linux_aarch64.AppImage}"
 TURNIP_SO="${TURNIP_SO:-/etk/drivers/etk_turnip_rocknix_26.2.0_gtk_0.7.so}"
