@@ -139,6 +139,22 @@ printf '%s\n' "$TSO" > "$SEED/turnip/selected"
 echo "   turnip catalog: $(ls "$SEED/turnip/drivers" | wc -l | tr -d ' ') driver(s), selected=$TSO"
 echo "   seed: $(du -sh "$SEED" | cut -f1)  (NO /storage/.config)"
 
+# SIZE THE FILESYSTEM FROM THE SEED, NOT FROM A CONSTANT (2026-09-03). The
+# Turnip catalog is CUMULATIVE (§C.4) and the whole catalog rides the card, so
+# the seed grows every cut: 7 drivers fit the 256 MiB fixed size at 0.8.7,
+# the 9-driver 0.9.0 seed (229M) did not — mke2fs -d died populating the last
+# driver and the lane failed after every input had verified. STORAGE_MIB is now
+# a floor/override; the real size is seed + 25% + 64 MiB (journal, inode
+# tables, reserved blocks), rounded up to 64 MiB. fs-resize grows the
+# partition to the card on first boot regardless, and empty ext4 blocks gzip
+# to nothing, so a larger initial filesystem costs the image nothing.
+_SEED_MIB=$(( $(du -sk "$SEED" | cut -f1) / 1024 + 1 ))
+_NEED_MIB=$(( _SEED_MIB + _SEED_MIB / 4 + 64 ))
+_NEED_MIB=$(( (_NEED_MIB + 63) / 64 * 64 ))
+if [ "$_NEED_MIB" -gt "$STORAGE_MIB" ]; then
+  echo "   STORAGE ${STORAGE_MIB} MiB is too small for a ${_SEED_MIB} MiB seed -> using ${_NEED_MIB} MiB"
+  STORAGE_MIB=$_NEED_MIB
+fi
 say "3. build ext4 STORAGE (${STORAGE_MIB} MiB, LABEL=$STOR_LABEL) — fs-resize grows it on 1st boot"
 rm -f "$STOR"; BLOCKS=$(( STORAGE_MIB * 1024 / 4 ))
 mke2fs -q -F -t ext4 -b 4096 -O ^orphan_file -L "$STOR_LABEL" -d "$SEED" "$STOR" "$BLOCKS"
