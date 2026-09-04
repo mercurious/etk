@@ -36,6 +36,7 @@ person using it.
 | **installing a game** | **TOOLS** | runs in the background; a game launch outranks an install |
 | **updating from the couch** | **TOOLS → Check for ETK Updates** | every `gtk_stack.json` asset is fetchable from `releases/latest` |
 | **judging whether a change helped** | the ledger · `etk_dyno` · charts | the row is attributable and every claim carries its N |
+| **doubting the card itself** (odd stalls, "is it dying?") | `tools/card_doctor.py` verdict card + `state/card_doctor/<run>/report.md` | the verdict names its evidence (errors · two-pass hash agreement · latency tail · write class); a read-only tier never claims write endurance; `scan`/`write` need `sudo` and the OPERATOR runs them; a reader fault is ruled out with `--baseline` from a known-good card |
 
 > **THE RULE THIS TABLE EXISTS FOR: every loop ends at a SURFACE, and a change is not done
 > until that surface shows it.**
@@ -1068,7 +1069,11 @@ the PPU-decoder interpreter A/B is the indicated probe when RR7's turn comes).
   'a6xx|hangcheck|context_keepalive'` (wedges/rescues) · `tail sessions.tsv` (a wedged row
   is written BY R3/postmortem — don't look pre-recovery) · `/proc/PID/environ` (dial
   ground truth) · `stat -c %s /usr/lib/libvulkan_freedreno.so` (live driver — vulkaninfo
-  lies).
+  lies) · **the card itself:** `tools/card_doctor.py` (card in the Air's USB reader;
+  `survey`/`files` unprivileged, `scan`/`write` need `sudo` → the operator runs them;
+  verdict card + `state/card_doctor/<run>/report.md`; USB exposes no SD health registers,
+  so health is MEASURED — errors, two-pass hash agreement, latency tail, write class;
+  discriminate reader-vs-card with `--baseline` from a known-good card in the same reader).
 - **BusyBox laws (POSIX only):** no `--long-options`, `grep -P`, `find -printf`,
   `find -regex`/complex `-exec`, `du -h` (use `-k`/`-m`), `stat --format` (use
   `readlink`) · **`cp -rn` is a silent no-op AND `tar -xkf` ABORTS at the first existing
