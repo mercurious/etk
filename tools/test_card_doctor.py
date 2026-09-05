@@ -252,6 +252,11 @@ class DevicePick(unittest.TestCase):
             cd.pick_device(self.TREE, "/dev/nvme0n1")
         self.assertEqual(cd.pick_device(self.TREE, "/dev/nvme0n1", force=True)["name"], "nvme0n1")
 
+    def test_explicit_empty_slot_is_refused(self):
+        with self.assertRaises(SystemExit) as cm:
+            cd.pick_device(self.TREE, "/dev/sdb")            # the reader's empty second LUN
+        self.assertIn("no media", str(cm.exception))
+
     def test_ambiguous_requires_device(self):
         tree = self.TREE + [{"name": "sdc", "path": "/dev/sdc", "size": 64e9, "type": "disk", "rm": True, "tran": "usb",
                              "children": [{"name": "sdc1", "label": "GTKSTOR"}, {"name": "sdc2", "label": "ROCKNIX-GTK"}]}]

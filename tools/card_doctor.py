@@ -244,6 +244,8 @@ def pick_device(tree, explicit=None, force=False):
             if d.get("path") == explicit or f"/dev/{d.get('name')}" == explicit:
                 if not _truthy(d.get("rm")) and not force:
                     raise SystemExit(f"{explicit} is not a removable device; refusing without --force-device")
+                if _int(d.get("size")) == 0:
+                    raise SystemExit(f"{explicit} has no media (a reader's empty slot?) — seat the card or pick the other slot")
                 return d
         raise SystemExit(f"{explicit} is not a disk known to lsblk")
     cands = [d for d in disks if _truthy(d.get("rm")) and _int(d.get("size")) > 0
