@@ -260,6 +260,33 @@ class DevicePick(unittest.TestCase):
         self.assertEqual(cd.pick_device(tree)["name"], "sdq")
 
 
+class WritePartition(unittest.TestCase):
+    KIT = [{"path": "/dev/sda1", "fstype": "vfat", "label": "ROCKNIX-GTK", "size": 2 << 30},
+           {"path": "/dev/sda2", "fstype": "ext4", "label": "GTKSTOR", "size": 236 << 30}]
+    RETAIL = [{"path": "/dev/sdb1", "fstype": "exfat", "label": None, "size": 59 << 30}]
+
+    def test_kit_card_uses_gtkstor(self):
+        self.assertEqual(cd.pick_write_partition(self.KIT)["path"], "/dev/sda2")
+
+    def test_retail_exfat_is_accepted(self):
+        self.assertEqual(cd.pick_write_partition(self.RETAIL)["path"], "/dev/sdb1")
+
+    def test_gtkstor_label_beats_size(self):
+        parts = [{"path": "/dev/sdc1", "fstype": "exfat", "label": None, "size": 500 << 30},
+                 {"path": "/dev/sdc2", "fstype": "ext4", "label": "GTKSTOR", "size": 100 << 30}]
+        self.assertEqual(cd.pick_write_partition(parts)["path"], "/dev/sdc2")
+
+    def test_largest_wins_without_kit_label(self):
+        parts = [{"path": "/dev/sdc1", "fstype": "vfat", "label": "BOOT", "size": 1 << 30},
+                 {"path": "/dev/sdc2", "fstype": "ext4", "label": "data", "size": 30 << 30}]
+        self.assertEqual(cd.pick_write_partition(parts)["path"], "/dev/sdc2")
+
+    def test_no_filesystem_is_none(self):
+        self.assertIsNone(cd.pick_write_partition([]))
+        self.assertIsNone(cd.pick_write_partition([{"path": "/dev/sdd1", "fstype": None, "size": 1 << 30},
+                                                   {"path": "/dev/sdd2", "fstype": "swap", "size": 1 << 30}]))
+
+
 class Parsers(unittest.TestCase):
     def test_f3(self):
         w = "Free space: 188.00 GB\nCreating file 1.h2w ... OK!\nFree space: 180.00 GB\nAverage writing speed: 28.68 MB/s\n"

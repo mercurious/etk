@@ -50,6 +50,13 @@ all USB exposes) · remaining spare blocks (vendor-private) · reader-vs-card �
 a flaky reader or dongle produces the same symptoms; run the same tier on a
 known-good card in the same reader and pass it as --baseline to discriminate.
 
+RECORDING A BASELINE CARD (a new, known-good card in the same reader): its
+WRITE numbers are a fair baseline as-is. Its READ numbers are not until it has
+been written — a virgin card's controller answers unmapped blocks without
+touching the flash. Fill it first (`write --gib <free-2>`; that pass is also
+f3's fake-capacity check), then `scan`. Pass the baseline's run.json to later
+runs with --baseline; the comparison table lands in report_vs_baseline.md.
+
 DESTRUCTIVE OPTION (not automated here — the card holds the rig's data): when
 the card is about to be reflashed anyway, the strongest test is a whole-surface
 write+verify:  badblocks -wsv -t random -b 4096 /dev/sdX   (~3–5 h / 256 GB)
@@ -109,6 +116,7 @@ RAND_WRITE_P99_MS_DEGRADED = 1000.0  # >1 s 4 KiB write = GC starved of spares
 VERIFY_EVERY_N = 32          # 'outliers' verify: every Nth chunk + the outliers
 BIG_FILE_MIB = 8             # files >= this size count toward throughput stats
 KIT_LABELS = ("ROCKNIX-GTK", "GTKSTOR", "ROCKNIX", "STORAGE")
+WRITE_FSTYPES = ("ext4", "ext3", "ext2", "exfat", "vfat", "btrfs", "xfs", "f2fs")   # write-tier hosts
 
 # Kernel-log line classes. FATAL = a fault this device produced during the run.
 KLOG_FATAL = re.compile(
@@ -207,6 +215,18 @@ def pick_device(tree, explicit=None, force=False):
     if len(cands) > 1 and kit_score(cands[0]) == kit_score(cands[1]):
         names = ", ".join(c.get("path") or c.get("name") for c in cands)
         raise SystemExit(f"several removable disks present ({names}); pass --device")
+    return cands[0]
+
+
+def pick_write_partition(partitions):
+    """The data partition the write tier fills: the kit's GTKSTOR when present,
+    otherwise the largest partition carrying a filesystem we can mount (a retail
+    card ships one exFAT/FAT32 partition — a baseline card is exactly that).
+    Pure function (testable). None when the card has no usable filesystem."""
+    cands = [p for p in partitions if (p.get("fstype") or "") in WRITE_FSTYPES]
+    if not cands:
+        return None
+    cands.sort(key=lambda p: (p.get("label") == "GTKSTOR", p.get("size") or 0), reverse=True)
     return cands[0]
 
 
@@ -1157,6 +1177,7 @@ def render_report(run, baseline=None):
     L.append("- DEGRADED evidence is statistical: healthy flash reads at a near-uniform rate; a widening tail of slow chunks is the controller retrying ECC on weak cells — the leading indicator before uncorrectable errors appear.")
     L.append("- A reader or dongle fault mimics a card fault. Discriminate with a known-good card in the same reader: run the same tier and pass `--baseline` to this report.")
     L.append("- Read-only tiers cannot see write-endurance exhaustion. A card can read perfectly and refuse writes tomorrow; the `write` tier is the check for that.")
+    L.append("- A never-written (new) card answers reads of unmapped blocks from its controller without touching the flash, so its read speed and latency flatter it. For a like-for-like READ baseline, fill the card first (`write --gib <free-2>`, which is also f3's capacity-fraud check), then `scan`. Its WRITE figures are a fair baseline as they are.")
     L.append(f"- Destructive whole-surface write test (only when the card will be reflashed anyway): `badblocks -wsv -t random -b 4096 {ident.get('device', '/dev/sdX')}`.")
     L.append("")
     return "\n".join(L)
@@ -1266,16 +1287,33 @@ def klog_tokens(ident):
     return toks
 
 
-def finish_run(run, outdir, extra_files=None):
+def finish_run(run, outdir, baseline=None):
     run["finished"] = now_iso()
     run["partial"] = bool(run.get("partial") or STOP["flag"])
     run["verdict"] = compute_verdict(run)
     run["outdir"] = str(outdir)
     (outdir / "run.json").write_text(json.dumps(run, indent=1, default=str))
     (outdir / "report.md").write_text(render_report(run))
+    if baseline:
+        run["baseline_runid"] = baseline.get("runid")
+        (outdir / "report_vs_baseline.md").write_text(render_report(run, baseline))
     chown_to_operator(outdir)
     print_card(run)
+    if baseline:
+        print(f"  comparison vs baseline {baseline.get('runid')}: {outdir}/report_vs_baseline.md")
     return run
+
+
+def load_baseline(path):
+    if not path:
+        return None
+    try:
+        b = json.loads(Path(path).read_text())
+    except (OSError, ValueError) as e:
+        raise SystemExit(f"--baseline {path}: {e}")
+    if b.get("tool") != "card_doctor":
+        raise SystemExit(f"--baseline {path} is not a card_doctor run.json")
+    return b
 
 
 def need_root(tier, argv_hint):
@@ -1384,19 +1422,18 @@ def tier_scan(args, disk, devpath, ident, outdir):
 
 
 def tier_write(args, disk, devpath, ident, outdir):
-    ext = [p for p in ident["partitions"] if (p.get("fstype") or "").startswith("ext")]
-    if not ext:
-        raise SystemExit("write tier needs an ext4 partition on the card (the kit's GTKSTOR); none found")
-    ext.sort(key=lambda p: (p.get("label") == "GTKSTOR", p["size"]), reverse=True)
-    part = ext[0]
+    part = pick_write_partition(ident["partitions"])
+    if part is None:
+        raise SystemExit(f"write tier needs a mountable data partition ({', '.join(WRITE_FSTYPES)}); "
+                         f"the card shows {[p.get('fstype') for p in ident['partitions']] or 'no partitions'}")
     mounted_here = False
     mp = part.get("mountpoint")
     if not mp:
         mp = f"/run/card_doctor/{part.get('label') or os.path.basename(part['path'])}"
         os.makedirs(mp, exist_ok=True)
-        run_cmd(["mount", "-o", "rw,noatime", part["path"], mp], check=True)
+        run_cmd(["mount", "-o", "rw,noatime", part["path"], mp], check=True)   # fstype auto-detected
         mounted_here = True
-    wr = {"partition": part["path"], "mountpoint": mp, "mounted_by_tool": mounted_here}
+    wr = {"partition": part["path"], "fstype": part.get("fstype"), "mountpoint": mp, "mounted_by_tool": mounted_here}
     tdir = os.path.join(mp, ".card_doctor")
     os.makedirs(tdir, exist_ok=True)
     wr["dir"] = tdir
@@ -1469,6 +1506,7 @@ def main(argv=None):
         p.add_argument("--force-device", action="store_true", help="allow a non-removable device (dangerous: never point this at the system disk without reason)")
         p.add_argument("--out", default=str(repo_root() / "state" / "card_doctor"), help="output base dir (default state/card_doctor)")
         p.add_argument("--card-label", default="", help="the label printed on the card (SanDisk Extreme 256GB A2 V30 ...) — recorded in the report")
+        p.add_argument("--baseline", help="run.json of the same tier on a known-good card in the same reader; renders report_vs_baseline.md at the end")
     for name in ("survey", "files", "scan", "write"):
         p = sub.add_parser(name)
         common(p)
@@ -1489,11 +1527,16 @@ def main(argv=None):
     rp = sub.add_parser("report")
     rp.add_argument("run_json")
     rp.add_argument("--baseline", help="another run.json to compare against (a known-good card in the same reader)")
+    rp.add_argument("--card-label", help="set/correct the card label recorded in this run (rewrites run.json)")
     args = ap.parse_args(argv)
 
     if args.tier == "report":
         run = json.loads(Path(args.run_json).read_text())
-        base = json.loads(Path(args.baseline).read_text()) if args.baseline else None
+        base = load_baseline(args.baseline)
+        if args.card_label is not None:
+            run["card_label"] = args.card_label
+            run.setdefault("identity", {})["card_label"] = args.card_label
+            Path(args.run_json).write_text(json.dumps(run, indent=1, default=str))
         run["verdict"] = compute_verdict(run)
         text = render_report(run, base)
         out = Path(args.run_json).with_name("report.md" if not base else "report_vs_baseline.md")
@@ -1502,8 +1545,13 @@ def main(argv=None):
         print(f"  wrote {out}")
         return 0
 
+    if "<" in (args.card_label or ""):
+        eprint(f"[card_doctor] --card-label still contains a placeholder ({args.card_label!r}); recorded as-is — fix later with: "
+               f"tools/card_doctor.py report <run.json> --card-label \"...\"")
+
     signal.signal(signal.SIGINT, _sigint)
     signal.signal(signal.SIGTERM, _sigint)
+    baseline = load_baseline(getattr(args, "baseline", None))   # fail early on a bad path, not after an hour
 
     if args.tier == "scan" and getattr(args, "allow_file", False):
         devpath = args.device
@@ -1529,7 +1577,7 @@ def main(argv=None):
         run["survey"] = survey
         run["kernel_log"] = dict(klog_classify(lines), source=f"{note}, since boot")
         (outdir / "kernel.log").write_text("\n".join(lines))
-        finish_run(run, outdir)
+        finish_run(run, outdir, baseline)
         return 0
 
     if args.tier == "files":
@@ -1563,7 +1611,7 @@ def main(argv=None):
         (outdir / "kernel.log").write_text("\n".join(lines))
     else:
         run["kernel_log"] = {"total": 0, "fatal": [], "source": "skipped (file mode)"}
-    finish_run(run, outdir)
+    finish_run(run, outdir, baseline)
     if args.tier == "scan" and run["scan"].get("unmounted"):
         print(f"  the card's partitions were unmounted for the scan; re-seat the card or run (no sudo):  udisksctl mount -b {run['scan']['unmounted'][-1]}")
     return 0 if run["verdict"]["level"] in ("HEALTHY", "INCONCLUSIVE") else 1
