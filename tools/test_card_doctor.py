@@ -467,6 +467,53 @@ class Treadwear(unittest.TestCase):
             self.assertIn("no card matches", out.getvalue())
 
 
+class Quiescence(unittest.TestCase):
+    def test_mismatches_under_foreign_writes_are_not_corruption(self):
+        run = base_run()
+        run["scan"]["verify"]["mismatch"] = [{"idx": i} for i in range(152)]
+        run["scan"]["random_read"]["p99_ms"] = 96.6
+        self.assertEqual(cd.compute_verdict(run)["level"], "FAIL")          # quiescent: real corruption
+        run["scan"]["foreign_write_mib"] = 55 * 1024.0
+        v = cd.compute_verdict(run)
+        self.assertEqual(v["level"], "HEALTHY", v)                          # under a concurrent fill: void, not evidence
+        self.assertTrue(any("WRITTEN" in w for w in v["warnings"]))
+        self.assertTrue(any("not corruption" in w for w in v["warnings"]))
+        self.assertTrue(any("not scored" in n for n in v["notes"]))
+        run["scan"]["foreign_write_mib"] = 0.4                              # metadata noise does not void anything
+        self.assertEqual(cd.compute_verdict(run)["level"], "FAIL")
+
+    def test_set_aside_run_leaves_the_table(self):
+        run = base_run(invalid="ran concurrently with a write tier")
+        v = cd.compute_verdict(run)
+        self.assertEqual(v["level"], "SET-ASIDE")
+        self.assertEqual(v["reasons"], [])
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d, "20260905-115016-scan-sdz")
+            p.mkdir()
+            run["verdict"] = v
+            run["finished"] = "2026-09-05T12:33:23"
+            (p / "run.json").write_text(json.dumps(run))
+            rows, skipped = cd.treadwear_table(d)
+        self.assertEqual(rows, [])
+        self.assertEqual(len(skipped), 1)
+        self.assertIn("set aside", skipped[0])
+
+    def test_device_lock(self):
+        with tempfile.TemporaryDirectory() as d:
+            lock = cd.acquire_device_lock(d, "sdz", "scan")
+            self.assertTrue(lock.exists())
+            self.assertEqual(json.loads(lock.read_text())["pid"], os.getpid())
+            cd.acquire_device_lock(d, "sdz", "scan", alive=lambda pid: True)         # our own pid never blocks us
+            lock.write_text(json.dumps({"pid": 4242, "tier": "write", "started": "x"}))
+            with self.assertRaises(SystemExit) as cm:                         # a live foreign holder refuses the second tier
+                cd.acquire_device_lock(d, "sdz", "scan", alive=lambda pid: pid == 4242)
+            self.assertIn("concurrent runs contaminate", str(cm.exception))
+            lock.write_text(json.dumps({"pid": 999999, "tier": "scan", "started": "x"}))
+            lock2 = cd.acquire_device_lock(d, "sdz", "write", alive=lambda pid: False)   # a dead holder is taken over
+            self.assertEqual(json.loads(lock2.read_text())["tier"], "write")
+            cd.acquire_device_lock(d, "sdy", "scan", alive=lambda pid: True)        # another device is independent
+
+
 class Robustness(unittest.TestCase):
     def test_run_cmd_timeout_returns_none(self):
         with contextlib.redirect_stderr(io.StringIO()):

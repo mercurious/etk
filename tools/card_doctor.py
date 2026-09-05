@@ -74,6 +74,12 @@ the Norelsys NS1081 bridge, the kernel reset the reader (`reset SuperSpeed USB
 device`) and the probe's timeout killed the run — a self-inflicted "fault" the
 classifier would have pinned on the card. USB card readers expose no SMART.
 
+ONE TIER PER CARD AT A TIME. A per-device lock refuses a second tier while one
+runs, and a read-only run records any WRITES the device saw meanwhile: under
+foreign writes the two-pass hash check and the latency figures are not scored
+(2026-09-05: a fill running under a scan read as 152 corrupt chunks on a new
+card). `report RUN --set-aside REASON` removes such a run from the wear table.
+
 WHAT IT CANNOT TELL YOU: the card's own model/serial (the reader's strings are
 all USB exposes) · remaining spare blocks (vendor-private) · reader-vs-card —
 a flaky reader or dongle produces the same symptoms; run the same tier on a
@@ -101,6 +107,7 @@ Device auto-detects (the removable USB disk carrying the kit's labels); pass
 --device /dev/sdX to override. Non-removable devices are refused.
 """
 import argparse
+import atexit
 import csv
 import errno
 import hashlib
@@ -917,6 +924,9 @@ def compute_verdict(run):
     """Pure function over run.json content -> {level, reasons, warnings, notes}."""
     fails, degr, warns, notes = [], [], [], []
     tier = run.get("tier")
+    if run.get("invalid"):
+        return {"level": "SET-ASIDE", "fails": [], "degraded": [], "reasons": [], "warnings": [],
+                "notes": [f"set aside, not evidence: {run['invalid']}"], "partial": bool(run.get("partial"))}
     k = run.get("kernel_log", {})
     if k.get("fatal"):
         fails.append(f"kernel reported {len(k['fatal'])} fault line(s) for this device during the run")
@@ -931,11 +941,18 @@ def compute_verdict(run):
             nbad = sum(len(r.get("bad", [])) for r in sc.get("error_rows", []))
             fails.append(f"{st['n_err']} chunk(s) returned uncorrectable read errors ({nbad} bad {LOCALIZE_STEP}-byte range(s) localized)")
         vf = sc.get("verify", {})
+        fw = sc.get("foreign_write_mib") or 0.0
+        if fw > 1.0:
+            warns.append(f"{fw:.0f} MiB were WRITTEN to the device by another process during this read-only run — "
+                         f"latency figures are contaminated and two-pass agreement is void; re-run on a quiescent card")
         if vf.get("mismatch"):
-            fails.append(f"{len(vf['mismatch'])} chunk(s) read back DIFFERENT data on the second pass (silent corruption)")
+            if fw > 1.0:
+                warns.append(f"{len(vf['mismatch'])} chunk(s) differed between passes — under concurrent writes this is the data changing, not corruption; not scored")
+            else:
+                fails.append(f"{len(vf['mismatch'])} chunk(s) read back DIFFERENT data on the second pass (silent corruption)")
         if vf.get("err"):
             fails.append(f"{len(vf['err'])} chunk(s) failed on the second pass after reading once")
-        if st.get("n_ok"):
+        if st.get("n_ok") and fw <= 1.0:
             if st["slow_pct"] > SLOW_PCT_DEGRADED:
                 degr.append(f"{st['slow_pct']:.2f}% of chunks read slower than {SLOW_X:g}x the median ({st['slow_count']} chunks) — ECC-retry signature")
             if st["stall_count"] >= STALLS_DEGRADED:
@@ -945,11 +962,13 @@ def compute_verdict(run):
             if st.get("seq_mbps_median") is not None and st["seq_mbps_median"] < SEQ_READ_MBPS_WARN:
                 warns.append(f"sequential read {st['seq_mbps_median']:.1f} MB/s is below {SEQ_READ_MBPS_WARN:g} MB/s — check the reader/link before blaming the card")
         rr = sc.get("random_read", {})
-        if rr.get("count"):
+        if rr.get("count") and fw <= 1.0:
             if rr["p99_ms"] > RAND_P99_MS_DEGRADED:
                 degr.append(f"4 KiB random-read p99 {rr['p99_ms']:.1f} ms (threshold {RAND_P99_MS_DEGRADED:g} ms)")
             elif rr["max_ms"] > RAND_MAX_MS_DEGRADED:
                 degr.append(f"4 KiB random-read worst case {rr['max_ms']:.0f} ms (threshold {RAND_MAX_MS_DEGRADED:g} ms)")
+        if rr.get("count") and fw > 1.0:
+            notes.append(f"random-read p99 {rr['p99_ms']:.1f} ms was measured under concurrent writes — not scored")
             if rr.get("errors"):
                 fails.append(f"{rr['errors']} random 4 KiB read(s) returned errors")
         for fs in sc.get("fsck", []):
@@ -1172,7 +1191,9 @@ def render_report(run, baseline=None):
         if rr.get("count"):
             L.append(f"| 4 KiB random read (QD1, n={rr['count']}) | p50 {rr['p50_ms']:.2f} · p95 {rr['p95_ms']:.2f} · p99 {rr['p99_ms']:.2f} · max {rr['max_ms']:.1f} ms · {rr['iops_qd1']:.0f} IOPS — DEGRADED at p99 > {RAND_P99_MS_DEGRADED:g} ms |")
         if sc.get("foreign_io_mib") is not None:
-            L.append(f"| I/O on the device not issued by this tool | {sc['foreign_io_mib']:.0f} MiB |")
+            L.append(f"| reads on the device not issued by this tool | {sc['foreign_io_mib']:.0f} MiB |")
+        if sc.get("foreign_write_mib") is not None:
+            L.append(f"| WRITES to the device during this read-only run | {sc['foreign_write_mib']:.0f} MiB — must be ~0 for the two-pass check to mean anything |")
         L.append("")
         if st.get("n_ok"):
             L.append("Surface map (64 buckets, offset 0 → end): `.` normal · `-` >1.5x · `+` >3x · `#` >10x · `X` error")
@@ -1308,7 +1329,7 @@ def print_card(run):
     print(bar)
     print(f"  CARD DOCTOR  ·  {run['tier']}  ·  {ident.get('device', '?')}  {ident.get('size_human', '')}  ·  {ident.get('reader', '')}")
     print(bar)
-    tag = {"HEALTHY": "[PASS]", "DEGRADED": "[WARN]", "FAIL": "[FAIL]", "INCONCLUSIVE": "[----]"}[v["level"]]
+    tag = {"HEALTHY": "[PASS]", "DEGRADED": "[WARN]", "FAIL": "[FAIL]", "INCONCLUSIVE": "[----]", "SET-ASIDE": "[xxxx]"}[v["level"]]
     print(f"  {tag} VERDICT: {v['level']}" + ("  (partial run)" if v.get("partial") else ""))
     for r in v.get("fails", []):
         print(f"  [FAIL] {r}")
@@ -1354,6 +1375,30 @@ def print_card(run):
 # ----------------------------------------------------------------------------
 # Run plumbing
 # ----------------------------------------------------------------------------
+def acquire_device_lock(base, devname, tier, alive=None):
+    """One card_doctor tier per device at a time. Two tiers on the same card
+    contaminate each other: on 2026-09-05 a 55 GiB fill running under a scan
+    produced 152 "silent corruption" mismatches (blocks legitimately rewritten
+    between the two passes) and a 96 ms random-read p99 on a brand-new card.
+    Returns the lock path; SystemExit while another live run holds it. A lock
+    left by a dead pid is taken over."""
+    alive = alive or (lambda pid: os.path.exists(f"/proc/{pid}"))
+    Path(base).mkdir(parents=True, exist_ok=True)
+    lock = Path(base) / f".lock-{devname}"
+    if lock.exists():
+        try:
+            info = json.loads(lock.read_text())
+        except ValueError:
+            info = {}
+        pid = int(info.get("pid") or 0)
+        if pid and pid != os.getpid() and alive(pid):
+            raise SystemExit(f"another card_doctor {info.get('tier')} (pid {pid}, since {info.get('started')}) is running on "
+                             f"/dev/{devname}; concurrent runs contaminate each other — wait for it "
+                             f"(or remove {lock} if that pid is not card_doctor)")
+    lock.write_text(json.dumps({"pid": os.getpid(), "tier": tier, "started": now_iso()}))
+    return lock
+
+
 def repo_root():
     return Path(__file__).resolve().parent.parent
 
@@ -1420,6 +1465,9 @@ def treadwear_table(base):
             skipped.append(f"{d.name} (unreadable run.json)")
             continue
         if run.get("tier") == "survey" or "verdict" not in run:
+            continue
+        if run.get("invalid"):
+            skipped.append(f"{d.name} set aside: {run['invalid']}")
             continue
         rows.append(treadwear_row(run))
     rows.sort(key=lambda r: r[0])
@@ -1719,6 +1767,9 @@ def tier_scan(args, disk, devpath, ident, outdir, run):
             ours = sc["stats"].get("bytes_ok", 0) + sum(r["n"] for r in sc["error_rows"]) \
                 + sc.get("verify", {}).get("n", 0) * sc["chunk_bytes"] + sc.get("random_read", {}).get("count", 0) * 4096
             sc["foreign_io_mib"] = max(0.0, (dev_bytes - ours) / 2**20)
+            # a read-only pass writes nothing: any write is someone else's, and it voids the
+            # two-pass hash agreement (the blocks may legitimately have changed in between)
+            sc["foreign_write_mib"] = (stat1["wr_sectors"] - stat0["wr_sectors"]) * 512 / 2**20
         # NO smartctl here, deliberately: on 2026-09-04 `smartctl -d scsi` stalled the
         # Norelsys NS1081 bridge, the kernel reset the reader, and the probe's timeout
         # killed the run after 80 minutes. USB card readers expose no SMART anyway.
@@ -1736,7 +1787,11 @@ def tier_quick(args, disk, devpath, ident, outdir, run):
     size = ident["size_bytes"]
     unmounted = [] if args.keep_mounted else unmount_partitions(ident)
     sc["unmounted"] = unmounted
+    stat0 = sysfs_stat(ident["devname"])
     sc["random_read"] = random_read_probe(devpath, size, args.random_reads)
+    stat1 = sysfs_stat(ident["devname"])
+    if stat0 and stat1:
+        sc["foreign_write_mib"] = (stat1["wr_sectors"] - stat0["wr_sectors"]) * 512 / 2**20
     checkpoint(run, outdir, "random-read")
     if not args.skip_fsck:
         sc["fsck"] = run_fsck(ident["partitions"], unmounted)
@@ -1977,6 +2032,8 @@ def main(argv=None):
     rp.add_argument("run_json")
     rp.add_argument("--baseline", help="another run.json to compare against (a known-good card in the same reader)")
     rp.add_argument("--card-label", help="set/correct the card label recorded in this run (rewrites run.json)")
+    rp.add_argument("--set-aside", metavar="REASON", help="mark this run as NOT evidence (e.g. it ran concurrently with another tier); it leaves the wear table")
+    rp.add_argument("--note", action="append", help="append an operator note to this run (repeatable)")
     tw = sub.add_parser("treadwear", help="the wear table: one row per run per card, oldest first (TSV alongside)")
     tw.add_argument("--out", default=str(repo_root() / "state" / "card_doctor"))
     tw.add_argument("--vs", help="baseline card: a label substring or card_id; prints every card's latest metrics beside it")
@@ -2004,6 +2061,10 @@ def main(argv=None):
         if args.card_label is not None:
             run["card_label"] = args.card_label
             run.setdefault("identity", {})["card_label"] = args.card_label
+        if args.set_aside:
+            run["invalid"] = args.set_aside
+        for n in args.note or []:
+            run.setdefault("notes", []).append(n)
         run["verdict"] = compute_verdict(run)
         Path(args.run_json).write_text(json.dumps(run, indent=1, default=str))   # run.json is the record: keep its verdict current
         text = render_report(run, base)
@@ -2037,6 +2098,9 @@ def main(argv=None):
             need_root(args.tier, " ".join(["tools/card_doctor.py"] + (argv if argv is not None else sys.argv[1:])))
         ident = gather_identity(disk, devpath)
     ident["card_label"] = args.card_label
+    if args.tier != "survey":
+        lock = acquire_device_lock(args.out, ident["devname"], args.tier)
+        atexit.register(lambda: lock.unlink(missing_ok=True))
     tag = args.tier
     if args.tier == "scan" and getattr(args, "range", None):
         tag += "-r" + re.sub(r"[^0-9.]+", "-", args.range.strip()).strip("-")
