@@ -94,6 +94,25 @@ class Verdict(unittest.TestCase):
         self.assertEqual(v["level"], "DEGRADED", v)
         self.assertTrue(any("ECC-retry" in r for r in v["reasons"]))
 
+    def test_tail_statistics_need_enough_chunks(self):
+        rows = rows_uniform(8)
+        rows[3]["ms"] = 190.0 * 5                       # one hiccup in eight = 12.5 % "slow"
+        v = cd.compute_verdict(base_run(rows=rows))
+        self.assertEqual(v["level"], "HEALTHY", v)      # not a verdict at N=8
+        self.assertTrue(any("too few" in n for n in v["notes"]))
+        rows = rows_uniform(100)
+        for i in (10, 40, 70):                          # 3 % at N=100 is a verdict
+            rows[i]["ms"] = 190.0 * 5
+        self.assertEqual(cd.compute_verdict(base_run(rows=rows))["level"], "DEGRADED")
+        rows = rows_uniform(8)
+        rows[3].update(err=1, sha="")                   # an error convicts at any N
+        self.assertEqual(cd.compute_verdict(base_run(rows=rows))["level"], "FAIL")
+        run = base_run()
+        run["scan"]["random_read"].update(count=20, p99_ms=80.0)
+        v = cd.compute_verdict(run)
+        self.assertEqual(v["level"], "HEALTHY")         # p99 of 20 reads is not a percentile
+        self.assertTrue(any("random reads" in n for n in v["notes"]))
+
     def test_stalls_are_degraded_at_three_not_two(self):
         rows = rows_uniform()
         rows[10]["ms"] = rows[20]["ms"] = 190.0 * 12

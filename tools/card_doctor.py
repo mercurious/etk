@@ -154,6 +154,10 @@ SEQ_READ_MBPS_WARN = 20.0    # UHS-I on a USB3 reader: 60–95 MB/s; below 20 is
 SEQ_WRITE_MBPS_DEGRADED = 10.0   # Class 10 / U1 sustained-write floor
 RAND_WRITE_IOPS_DEGRADED = 50    # A1 spec = 500 write IOPS; 10 % of spec
 RAND_WRITE_P99_MS_DEGRADED = 1000.0  # >1 s 4 KiB write = GC starved of spares
+MIN_CHUNKS_FOR_TAIL = 64     # the slow-tail / stall rules are statistics: below this many
+                             # chunks one hiccup is >1 % and would convict a card (a full
+                             # device is thousands; a 1 GiB --range at 16 MiB is exactly 64)
+MIN_RANDOM_READS = 200       # same for the random-read percentiles (p99 of 20 is the max)
 VERIFY_EVERY_N = 32          # 'outliers' verify: every Nth chunk + the outliers
 BIG_FILE_MIB = 8             # files >= this size count toward throughput stats
 KIT_LABELS = ("ROCKNIX-GTK", "GTKSTOR", "ROCKNIX", "STORAGE")
@@ -956,7 +960,9 @@ def compute_verdict(run):
                 fails.append(f"{len(vf['mismatch'])} chunk(s) read back DIFFERENT data on the second pass (silent corruption)")
         if vf.get("err"):
             fails.append(f"{len(vf['err'])} chunk(s) failed on the second pass after reading once")
-        if st.get("n_ok") and fw <= 1.0:
+        if st.get("n_ok") and st["n_ok"] < MIN_CHUNKS_FOR_TAIL:
+            notes.append(f"only {st['n_ok']} chunks read — too few for the slow-tail and stall statistics (need {MIN_CHUNKS_FOR_TAIL}); errors and hash agreement still count")
+        if st.get("n_ok") and st["n_ok"] >= MIN_CHUNKS_FOR_TAIL and fw <= 1.0:
             if st["slow_pct"] > SLOW_PCT_DEGRADED:
                 degr.append(f"{st['slow_pct']:.2f}% of chunks read slower than {SLOW_X:g}x the median ({st['slow_count']} chunks) — ECC-retry signature")
             if st["stall_count"] >= STALLS_DEGRADED:
@@ -966,7 +972,9 @@ def compute_verdict(run):
             if st.get("seq_mbps_median") is not None and st["seq_mbps_median"] < SEQ_READ_MBPS_WARN:
                 warns.append(f"sequential read {st['seq_mbps_median']:.1f} MB/s is below {SEQ_READ_MBPS_WARN:g} MB/s — check the reader/link before blaming the card")
         rr = sc.get("random_read", {})
-        if rr.get("count") and fw <= 1.0:
+        if rr.get("count") and rr["count"] < MIN_RANDOM_READS:
+            notes.append(f"only {rr['count']} random reads — too few for percentiles to be scored (need {MIN_RANDOM_READS})")
+        if rr.get("count") and rr["count"] >= MIN_RANDOM_READS and fw <= 1.0:
             if rr["p99_ms"] > RAND_P99_MS_DEGRADED:
                 degr.append(f"4 KiB random-read p99 {rr['p99_ms']:.1f} ms (threshold {RAND_P99_MS_DEGRADED:g} ms)")
             elif rr["max_ms"] > RAND_MAX_MS_DEGRADED:
