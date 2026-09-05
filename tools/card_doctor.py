@@ -36,11 +36,15 @@ TIERS (each writes state/card_doctor/<runid>/{run.json,report.md,kernel.log}):
                                --note records what the terminal showed, labelled
                                as such).
   write   (ROOT, ~10 min)      writes N GiB of test files into FREE SPACE of the
-                               ext4 partition (f3write/f3read when installed,
+                               data partition (f3write/f3read when installed,
                                Python fallback), verifies them, measures
-                               sequential write speed and 4 KiB random-write
-                               IOPS/latency (fio when installed), then deletes
-                               the files. Existing data is not touched.
+                               sequential write speed, then probes 4 KiB random
+                               I/O on the first (fully written) sample file:
+                               O_DIRECT random write (spec-comparable: A1 = 500
+                               IOPS), random write + fdatasync each (save-file
+                               style), random read (fio when installed). Then
+                               deletes the files. Existing data is not touched.
+                               `--gib 1` is the 4-minute random-write re-test.
   report  RUN_JSON [--baseline RUN_JSON]   re-render / compare two runs.
 
 VERDICT LADDER (thresholds are named constants below, each with its basis):
@@ -848,10 +852,11 @@ def py_write_sample(dirpath, gib, block=4 << 20):
             "bad_blocks": bad_files, "ok": not bad_files and written == gib << 30}
 
 
-def py_random_write(filepath, seconds, block=4096, seed=99):
-    """4 KiB random O_DIRECT|O_DSYNC writes inside an existing file."""
+def py_random_write(filepath, seconds, block=4096, seed=99, dsync=True):
+    """4 KiB random O_DIRECT writes inside an existing, fully written file; dsync adds
+    O_DSYNC (each write durable before the next — the save-file case)."""
     size = os.path.getsize(filepath)
-    fd = os.open(filepath, os.O_WRONLY | os.O_DIRECT | os.O_DSYNC)
+    fd = os.open(filepath, os.O_WRONLY | os.O_DIRECT | (os.O_DSYNC if dsync else 0))
     buf = mmap.mmap(-1, block)
     mv = memoryview(buf)
     rng = random.Random(seed)
@@ -981,6 +986,16 @@ def compute_verdict(run):
                 degr.append(f"4 KiB random-write {rw['iops']:.0f} IOPS (threshold {RAND_WRITE_IOPS_DEGRADED}; A1 spec 500)")
             if rw.get("p99_ms") is not None and rw["p99_ms"] > RAND_WRITE_P99_MS_DEGRADED:
                 degr.append(f"4 KiB random-write p99 {rw['p99_ms']:.0f} ms — garbage collection starved of spare blocks")
+        rws = wr.get("random_write_sync", {})
+        if rws.get("errors"):
+            fails.append(f"{rws['errors']} random 4 KiB write+fdatasync(s) failed")
+        rrf = wr.get("random_read_file", {})
+        if rrf.get("errors"):
+            fails.append(f"{rrf['errors']} random 4 KiB read(s) of the written sample failed")
+        if rrf.get("iops") and rrf["iops"] > 20000:
+            notes.append("the random-read-on-file figure was answered by the filesystem or page cache, not the card (unwritten extents or a cached file) — ignore it")
+        if wr.get("random_write_note"):
+            notes.append(wr["random_write_note"])
 
     for n in run.get("notes") or []:
         notes.append(f"operator note (terminal, not machine-recorded): {n}")
@@ -1207,10 +1222,16 @@ def render_report(run, baseline=None):
             L.append(f"| verify | {'all blocks match' if s.get('ok') else 'MISMATCH ' + str(s.get('bad_blocks'))[:200]} |")
         rw = wr.get("random_write", {})
         if rw:
-            L.append(f"| 4 KiB random write ({rw.get('runner')}) | {fmt(rw.get('iops'), '.0f')} IOPS · p50 {fmt(rw.get('p50_ms'), '.2f')} · p99 {fmt(rw.get('p99_ms'), '.1f')} · max {fmt(rw.get('max_ms'), '.0f')} ms — DEGRADED below {RAND_WRITE_IOPS_DEGRADED} IOPS or p99 > 1 s |")
+            L.append(f"| 4 KiB random write, O_DIRECT, spec-comparable ({rw.get('runner')}) | {fmt(rw.get('iops'), '.0f')} IOPS · p50 {fmt(rw.get('p50_ms'), '.2f')} · p99 {fmt(rw.get('p99_ms'), '.1f')} · max {fmt(rw.get('max_ms'), '.0f')} ms — DEGRADED below {RAND_WRITE_IOPS_DEGRADED} IOPS or p99 > 1 s; A1 spec 500, A2 spec 2000 |")
+        rws = wr.get("random_write_sync", {})
+        if rws:
+            L.append(f"| 4 KiB random write + fdatasync each, save-file style ({rws.get('runner')}) | {fmt(rws.get('iops'), '.0f')} IOPS · p50 {fmt(rws.get('p50_ms'), '.2f')} · p99 {fmt(rws.get('p99_ms'), '.1f')} · max {fmt(rws.get('max_ms'), '.0f')} ms — informational |")
         rrd = wr.get("random_read_file", {})
         if rrd:
-            L.append(f"| 4 KiB random read on the test file ({rrd.get('runner')}) | {fmt(rrd.get('iops'), '.0f')} IOPS · p99 {fmt(rrd.get('p99_ms'), '.1f')} ms |")
+            art = " — filesystem/cache artefact, not the card" if (rrd.get("iops") or 0) > 20000 else ""
+            L.append(f"| 4 KiB random read on the written sample ({rrd.get('runner')}) | {fmt(rrd.get('iops'), '.0f')} IOPS · p99 {fmt(rrd.get('p99_ms'), '.2f')} ms{art} |")
+        if wr.get("random_write_note"):
+            L.append(f"| random probes | {wr['random_write_note']} |")
         L.append("")
     k = run.get("kernel_log", {})
     L.append("## Kernel log for this device")
@@ -1292,7 +1313,9 @@ def print_card(run):
     if wr:
         s = wr.get("sample", {})
         rw = wr.get("random_write", {})
-        print(f"  write {fmt(s.get('write_mbps'))} MB/s · read-back {fmt(s.get('read_mbps'))} MB/s · 4K randwrite {fmt(rw.get('iops'), '.0f')} IOPS p99 {fmt(rw.get('p99_ms'))} ms")
+        rws = wr.get("random_write_sync", {})
+        print(f"  write {fmt(s.get('write_mbps'))} MB/s · read-back {fmt(s.get('read_mbps'))} MB/s · 4K randwrite {fmt(rw.get('iops'), '.0f')} IOPS p99 {fmt(rw.get('p99_ms'))} ms"
+              + (f" · +fdatasync {fmt(rws.get('iops'), '.0f')} IOPS p50 {fmt(rws.get('p50_ms'))} ms" if rws else ""))
     k = run.get("kernel_log", {})
     print(f"  kernel log: {k.get('total', 0)} device lines, {len(k.get('fatal', []))} faults")
     print(bar)
@@ -1619,7 +1642,62 @@ def tier_rebuild(args, baseline):
     return run
 
 
-def tier_write(args, disk, devpath, ident, outdir):
+def run_streaming(argv, timeout=None):
+    """Run a helper while echoing its output live to stderr (f3's \\r progress
+    included) and collecting it for parsing. Returns (rc, text); rc None when the
+    binary is missing, -9 when it hung past `timeout`."""
+    try:
+        proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    except FileNotFoundError:
+        return None, ""
+    chunks = []
+    try:
+        while True:
+            b = os.read(proc.stdout.fileno(), 4096)
+            if not b:
+                break
+            chunks.append(b)
+            try:
+                sys.stderr.buffer.write(b)
+            except AttributeError:            # stderr redirected to a text buffer (tests)
+                sys.stderr.write(b.decode("utf-8", "replace"))
+            sys.stderr.flush()
+        rc = proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        rc = -9
+    return rc, b"".join(chunks).decode("utf-8", "replace")
+
+
+def fio_target(tdir):
+    """A FULLY WRITTEN 1 GiB file for the random-I/O probes: the first sample file
+    (f3's 1.h2w or the Python 1.cdw). fio's own fallocate'd scratch file has
+    unwritten extents: the first write to each costs an extent conversion plus a
+    journal commit, and reads of them are answered by the filesystem, never the
+    card (2026-09-04: 3.7 write IOPS and 366k read IOPS — both artefacts).
+    None when no sample file exists."""
+    for name in ("1.h2w", "1.cdw"):
+        p = os.path.join(tdir, name)
+        if os.path.exists(p) and os.path.getsize(p) >= 1 << 30:
+            return p
+    return None
+
+
+def fio_job(target, rw, seconds, extra=()):
+    argv = ["fio", "--name=cd", f"--filename={target}", "--size=1G", "--bs=4k", "--direct=1", "--ioengine=psync",
+            "--iodepth=1", "--time_based", f"--runtime={seconds}", "--output-format=json", "--randrepeat=1",
+            "--allow_file_create=0", f"--rw={rw}", *extra]
+    cp = run_cmd(argv, timeout=seconds * 4 + 120)
+    if cp is None:
+        return {"runner": "fio", "errors": 1, "raw": "fio missing or timed out"}
+    try:
+        return dict(parse_fio_json(cp.stdout, "write" if "write" in rw else "read"), runner="fio",
+                    errors=0 if cp.returncode == 0 else 1)
+    except (ValueError, KeyError):
+        return {"runner": "fio", "errors": 1, "raw": (cp.stdout + cp.stderr)[-1000:]}
+
+
+def tier_write(args, disk, devpath, ident, outdir, run):
     part = pick_write_partition(ident["partitions"])
     if part is None:
         raise SystemExit(f"write tier needs a mountable data partition ({', '.join(WRITE_FSTYPES)}); "
@@ -1632,6 +1710,7 @@ def tier_write(args, disk, devpath, ident, outdir):
         run_cmd(["mount", "-o", "rw,noatime", part["path"], mp], check=True)   # fstype auto-detected
         mounted_here = True
     wr = {"partition": part["path"], "fstype": part.get("fstype"), "mountpoint": mp, "mounted_by_tool": mounted_here}
+    run["write"] = wr
     tdir = os.path.join(mp, ".card_doctor")
     os.makedirs(tdir, exist_ok=True)
     wr["dir"] = tdir
@@ -1640,55 +1719,53 @@ def tier_write(args, disk, devpath, ident, outdir):
     need = (args.gib + 2) << 30
     if free < need:
         raise SystemExit(f"only {human_bytes(free)} free on {mp}; need {human_bytes(need)} for a {args.gib} GiB sample (--gib smaller)")
+    use_f3 = bool(shutil.which("f3write") and shutil.which("f3read")) and not args.python_only
+    use_fio = bool(shutil.which("fio")) and not args.python_only
     try:
-        sample = {}
-        eprint(f"[card_doctor] write sample: {args.gib} GiB into {tdir} — at a Class-10 floor of 10 MB/s this is "
-               f"~{args.gib * 1024 / 10 / 60:.0f} min to write plus the read-back; a V30 card does it in ~{args.gib * 1024 / 30 / 60:.0f} min")
-        if shutil.which("f3write") and shutil.which("f3read") and not args.python_only:
-            eprint(f"[card_doctor] f3write {args.gib} GiB -> {tdir} (f3's own progress is captured for the report; watch the device LED or `watch cat /sys/block/{ident['devname']}/stat`)")
-            cp = subprocess.run(["f3write", f"--end-at={args.gib}", tdir], capture_output=True, text=True)
-            sample = {"runner": "f3", "gib": args.gib, "f3write_rc": cp.returncode}
-            sample.update({"write_mbps": parse_f3write(cp.stdout + cp.stderr)["mbps"]})
-            if cp.returncode != 0:
-                sample["write_error"] = (cp.stderr or cp.stdout).strip()[-300:]
-            eprint("[card_doctor] f3read (verify)")
-            cp = subprocess.run(["f3read", tdir], capture_output=True, text=True)
-            r = parse_f3read(cp.stdout + cp.stderr)
-            sample.update({"f3read_rc": cp.returncode, "read_mbps": r.pop("mbps")})
+        eprint(f"[card_doctor] write sample: {args.gib} GiB into {tdir} ({'f3write/f3read' if use_f3 else 'python'}) — "
+               f"~{args.gib * 1024 / 10 / 60:.0f} min to write at the Class-10 floor of 10 MB/s, ~{args.gib * 1024 / 30 / 60:.0f} min at V30, then the read-back")
+        if use_f3:
+            rc, text = run_streaming(["f3write", f"--end-at={args.gib}", tdir])
+            sample = {"runner": "f3", "gib": args.gib, "f3write_rc": rc, "write_mbps": parse_f3write(text)["mbps"]}
+            if rc != 0:
+                sample["write_error"] = text.strip()[-300:]
+            eprint("\n[card_doctor] f3read (read back and verify)")
+            rc, text = run_streaming(["f3read", tdir])
+            r = parse_f3read(text)
+            sample.update({"f3read_rc": rc, "read_mbps": r.pop("mbps")})
             sample.update(r)
-            sample["ok"] = cp.returncode == 0 and all((r.get(k) or 0) == 0 for k in ("lost_sectors", "corrupted_sectors", "changed_sectors", "overwritten_sectors"))
-            sample["f3_output"] = (cp.stdout + cp.stderr)[-3000:]
+            sample["ok"] = rc == 0 and all((r.get(k) or 0) == 0 for k in ("lost_sectors", "corrupted_sectors", "changed_sectors", "overwritten_sectors"))
+            sample["f3_output"] = text[-3000:]
+            eprint("")
         else:
-            eprint(f"[card_doctor] python write sample {args.gib} GiB -> {tdir}")
             sample = py_write_sample(tdir, args.gib)
         wr["sample"] = sample
-        # random-write on a 1 GiB scratch file
-        if not STOP["flag"]:
-            scratch = os.path.join(tdir, "randwrite.bin")
-            eprint(f"[card_doctor] 4 KiB random-write probe: {args.fio_seconds} s writing + {max(10, args.fio_seconds // 2)} s reading on a 1 GiB scratch file"
-                   + (" (fio)" if shutil.which("fio") and not args.python_only else " (python fallback)"))
-            if shutil.which("fio") and not args.python_only:
-                base = ["fio", "--name=cd", f"--filename={scratch}", "--size=1G", "--bs=4k", "--direct=1",
-                        "--ioengine=psync", "--iodepth=1", "--time_based", "--output-format=json", "--randrepeat=1"]
-                cp = subprocess.run(base + ["--rw=randwrite", f"--runtime={args.fio_seconds}", "--fsync=1"], capture_output=True, text=True)
-                try:
-                    wr["random_write"] = dict(parse_fio_json(cp.stdout, "write"), runner="fio", errors=0 if cp.returncode == 0 else 1)
-                except (ValueError, KeyError):
-                    wr["random_write"] = {"runner": "fio", "errors": 1, "raw": (cp.stdout + cp.stderr)[-1000:]}
-                cp = subprocess.run(base + ["--rw=randread", f"--runtime={max(10, args.fio_seconds // 2)}"], capture_output=True, text=True)
-                try:
-                    wr["random_read_file"] = dict(parse_fio_json(cp.stdout, "read"), runner="fio")
-                except (ValueError, KeyError):
-                    pass
+        checkpoint(run, outdir, "write-sample")
+        target = fio_target(tdir)
+        if STOP["flag"]:
+            pass
+        elif target is None:
+            wr["random_write_note"] = "no fully written 1 GiB sample file survived the write phase — random probes skipped"
+        else:
+            s = args.fio_seconds
+            half = max(10, s // 2)
+            eprint(f"[card_doctor] random 4 KiB probes on {os.path.basename(target)} ({'fio' if use_fio else 'python'}): "
+                   f"{s} s write (O_DIRECT, spec-comparable) + {half} s write+fdatasync (save-file style) + {half} s read")
+            if use_fio:
+                wr["random_write"] = fio_job(target, "randwrite", s)
+                checkpoint(run, outdir, "random-write")
+                wr["random_write_sync"] = fio_job(target, "randwrite", half, ["--fdatasync=1"])
+                checkpoint(run, outdir, "random-write-sync")
+                wr["random_read_file"] = fio_job(target, "randread", half)
             else:
-                with open(scratch, "wb") as f:
-                    f.truncate(1 << 30)
-                    chunk = b"\0" * (4 << 20)
-                    for _ in range((1 << 30) // len(chunk)):
-                        f.write(chunk)
-                    f.flush()
-                    os.fsync(f.fileno())
-                wr["random_write"] = py_random_write(scratch, args.fio_seconds)
+                wr["random_write"] = py_random_write(target, s, dsync=False)
+                checkpoint(run, outdir, "random-write")
+                wr["random_write_sync"] = py_random_write(target, half, dsync=True)
+                checkpoint(run, outdir, "random-write-sync")
+                rr = random_read_probe(target, os.path.getsize(target), 2000)
+                wr["random_read_file"] = {"runner": "python", "iops": rr.get("iops_qd1"), "p50_ms": rr.get("p50_ms"),
+                                          "p99_ms": rr.get("p99_ms"), "max_ms": rr.get("max_ms"), "errors": rr.get("errors", 0)}
+            checkpoint(run, outdir, "random-read-file")
     finally:
         if not args.keep_files:
             shutil.rmtree(tdir, ignore_errors=True)
@@ -1824,7 +1901,7 @@ def main(argv=None):
         elif args.tier == "quick":
             tier_quick(args, disk, devpath, ident, outdir, run)
         elif args.tier == "write":
-            run["write"] = tier_write(args, disk, devpath, ident, outdir)
+            tier_write(args, disk, devpath, ident, outdir, run)
     except KeyboardInterrupt:
         run["partial"] = True
     except SystemExit:

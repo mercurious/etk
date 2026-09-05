@@ -364,6 +364,34 @@ class Stats(unittest.TestCase):
         self.assertEqual(cd.merge_ranges([(8, 4), (0, 4), (4, 4), (20, 4)]), [(0, 12), (20, 4)])
 
 
+class WriteProbes(unittest.TestCase):
+    def test_fio_target_prefers_a_full_sample_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertIsNone(cd.fio_target(d))
+            Path(d, "1.cdw").touch()
+            os.truncate(Path(d, "1.cdw"), 1 << 30)                       # sparse, but the size check is what we pin
+            self.assertEqual(cd.fio_target(d), os.path.join(d, "1.cdw"))
+            Path(d, "1.h2w").touch()
+            os.truncate(Path(d, "1.h2w"), 1 << 30)
+            self.assertEqual(cd.fio_target(d), os.path.join(d, "1.h2w"))  # f3's file wins when both exist
+            os.truncate(Path(d, "1.h2w"), 4096)                          # a truncated leftover is not a target
+            self.assertEqual(cd.fio_target(d), os.path.join(d, "1.cdw"))
+
+    def test_cache_served_random_read_is_flagged_not_scored(self):
+        wr = {"sample": {"runner": "python", "gib": 8, "write_mbps": 14.5, "read_mbps": 49.8, "bad_blocks": [], "ok": True},
+              "random_write": {"runner": "fio", "iops": 420.0, "p99_ms": 12.0, "errors": 0},
+              "random_read_file": {"runner": "fio", "iops": 366591.0, "p99_ms": 0.002, "errors": 0}}
+        run = base_run(tier="write", write=wr)
+        run.pop("scan", None)
+        v = cd.compute_verdict(run)
+        self.assertEqual(v["level"], "HEALTHY")
+        self.assertTrue(any("not the card" in n for n in v["notes"]))
+        wr["random_read_file"]["iops"] = 800.0
+        self.assertFalse(any("not the card" in n for n in cd.compute_verdict(run)["notes"]))
+        wr["random_write_sync"] = {"runner": "fio", "iops": 7.0, "p50_ms": 130.0, "errors": 1}
+        self.assertEqual(cd.compute_verdict(run)["level"], "FAIL")
+
+
 class Robustness(unittest.TestCase):
     def test_run_cmd_timeout_returns_none(self):
         with contextlib.redirect_stderr(io.StringIO()):
