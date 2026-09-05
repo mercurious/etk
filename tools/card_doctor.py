@@ -785,6 +785,7 @@ def py_write_sample(dirpath, gib, block=4 << 20):
     bad_files = []
     buf = mmap.mmap(-1, block)
     mv = memoryview(buf)
+    prog = Progress("write-sample", gib << 30)     # silence for 10+ minutes reads as a hang (2026-09-04)
     try:
         for i in range(gib):
             if STOP["flag"]:
@@ -797,16 +798,21 @@ def py_write_sample(dirpath, gib, block=4 << 20):
                     mv[:] = base
                     mv[0:8] = (i * 1_000_003 + k).to_bytes(8, "little")
                     os.write(fd, mv)
+                    if k % 16 == 0:
+                        prog.update(written + (k + 1) * block, extra=f"file {i + 1}/{gib}")
                 os.fsync(fd)
                 t_write += time.perf_counter() - t0
                 written += 1 << 30
+                prog.update(written, extra=f"file {i + 1}/{gib}")
             finally:
                 os.close(fd)
+        prog.done()
         # verify
         t_read = 0.0
         read_bytes = 0
         rbuf = mmap.mmap(-1, block)
         rmv = memoryview(rbuf)
+        prog = Progress("read-back", written)
         try:
             for i in range(gib):
                 if STOP["flag"]:
@@ -823,10 +829,13 @@ def py_write_sample(dirpath, gib, block=4 << 20):
                         if got != block or rmv[0:8] != expect_hdr or rmv[8:] != memoryview(base)[8:]:
                             bad_files.append({"file": p, "block": k})
                             break
+                        if k % 16 == 0:
+                            prog.update(read_bytes + (k + 1) * block, extra=f"file {i + 1}/{gib} bad {len(bad_files)}")
                     t_read += time.perf_counter() - t0
                     read_bytes += 1 << 30
                 finally:
                     os.close(fd)
+            prog.done()
         finally:
             rmv.release()
             rbuf.close()
@@ -848,7 +857,9 @@ def py_random_write(filepath, seconds, block=4096, seed=99):
     rng = random.Random(seed)
     lat = []
     errs = 0
-    t_end = time.monotonic() + seconds
+    t_begin = time.monotonic()
+    t_end = t_begin + seconds
+    prog = Progress("random-write", seconds, unit="s")
     try:
         while time.monotonic() < t_end and not STOP["flag"]:
             off = rng.randrange(0, size // block) * block
@@ -862,6 +873,9 @@ def py_random_write(filepath, seconds, block=4096, seed=99):
                     break
                 raise
             lat.append((time.perf_counter() - t0) * 1000.0)
+            if len(lat) % 50 == 0:
+                prog.update(min(seconds, time.monotonic() - t_begin), extra=f"{len(lat)} writes")
+        prog.done()
     finally:
         mv.release()
         buf.close()
@@ -1628,8 +1642,10 @@ def tier_write(args, disk, devpath, ident, outdir):
         raise SystemExit(f"only {human_bytes(free)} free on {mp}; need {human_bytes(need)} for a {args.gib} GiB sample (--gib smaller)")
     try:
         sample = {}
+        eprint(f"[card_doctor] write sample: {args.gib} GiB into {tdir} — at a Class-10 floor of 10 MB/s this is "
+               f"~{args.gib * 1024 / 10 / 60:.0f} min to write plus the read-back; a V30 card does it in ~{args.gib * 1024 / 30 / 60:.0f} min")
         if shutil.which("f3write") and shutil.which("f3read") and not args.python_only:
-            eprint(f"[card_doctor] f3write {args.gib} GiB -> {tdir}")
+            eprint(f"[card_doctor] f3write {args.gib} GiB -> {tdir} (f3's own progress is captured for the report; watch the device LED or `watch cat /sys/block/{ident['devname']}/stat`)")
             cp = subprocess.run(["f3write", f"--end-at={args.gib}", tdir], capture_output=True, text=True)
             sample = {"runner": "f3", "gib": args.gib, "f3write_rc": cp.returncode}
             sample.update({"write_mbps": parse_f3write(cp.stdout + cp.stderr)["mbps"]})
@@ -1649,6 +1665,8 @@ def tier_write(args, disk, devpath, ident, outdir):
         # random-write on a 1 GiB scratch file
         if not STOP["flag"]:
             scratch = os.path.join(tdir, "randwrite.bin")
+            eprint(f"[card_doctor] 4 KiB random-write probe: {args.fio_seconds} s writing + {max(10, args.fio_seconds // 2)} s reading on a 1 GiB scratch file"
+                   + (" (fio)" if shutil.which("fio") and not args.python_only else " (python fallback)"))
             if shutil.which("fio") and not args.python_only:
                 base = ["fio", "--name=cd", f"--filename={scratch}", "--size=1G", "--bs=4k", "--direct=1",
                         "--ioengine=psync", "--iodepth=1", "--time_based", "--output-format=json", "--randrepeat=1"]
