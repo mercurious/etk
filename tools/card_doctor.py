@@ -1409,8 +1409,8 @@ def treadwear_table(base):
     for d in sorted(Path(base).glob("*/")):
         rj = d / "run.json"
         if not rj.exists():
-            if (d / "chunks.csv").exists():
-                skipped.append(f"{d.name} (crashed scan — run `rebuild {d}`)")
+            if (d / "chunks.csv").exists() and not Path(str(d).rstrip("/") + "-rebuilt", "run.json").exists():
+                skipped.append(f"{d.name} (crashed scan — run `rebuild {d}`)")   # silent once its -rebuilt twin exists
             continue
         try:
             run = json.loads(rj.read_text())
