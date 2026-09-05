@@ -138,8 +138,12 @@ LOCALIZE_MAX_BAD = 256       # per chunk; beyond this a region is "extensive"
 LOCALIZE_BUDGET_S = 180.0    # per chunk; USB timeouts are 30 s each
 SLOW_X = 3.0                 # chunk time > SLOW_X * median  -> "slow"
 STALL_X = 10.0               # chunk time > STALL_X * median -> "stall"
-SLOW_PCT_DEGRADED = 1.0      # % slow chunks that flips DEGRADED (a healthy card
-                             # is near-uniform: <0.2 % in practice)
+SLOW_PCT_DEGRADED = 1.0      # % slow chunks that flips DEGRADED. CALIBRATED 2026-09-05:
+                             # a pristine SanDisk Ultra A1 64 GB (written once, idle)
+                             # through the same NS1081 reader and this same code path
+                             # read 92.7 MB/s median, 0.00 % slow, p99/median 1.5x,
+                             # max/median 1.9x, random 4 KiB p99 1.34 ms; the worn 256 GB
+                             # rig card: 75.4 MB/s, 1.32 % slow, 3.4x, 11.6x, 3.99 ms.
 STALLS_DEGRADED = 3          # isolated host hiccups happen; three multi-x stalls
                              # across the surface do not
 RAND_READS_DEFAULT = 2000    # 4 KiB random reads for the latency percentiles
