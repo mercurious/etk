@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""ETK Card Doctor — objective SD-card health evaluation, host-side, card in a USB reader.
+"""ETK Card Doctor — TREADWEAR: objective SD-card wear, host-side, card in a USB reader.
+
+SD cards are the tyres of a racing emulation rig: the one consumable, worn by
+every session, and replaced on evidence rather than on feel. Metaphor: TREADWEAR.
+Mechanism: this tool — measure, never guess; a table per tyre over time.
 
 WHY IT EXISTS (2026-09-04): the operator suspected the rig's 256 GB card was at
 the end of its life and wanted a measurement instead of a feeling. Over a USB
@@ -46,6 +50,11 @@ TIERS (each writes state/card_doctor/<runid>/{run.json,report.md,kernel.log}):
                                deletes the files. Existing data is not touched.
                                `--gib 1` is the 4-minute random-write re-test.
   report  RUN_JSON [--baseline RUN_JSON]   re-render / compare two runs.
+  treadwear [--vs LABEL|card_id]           the wear table: every run of every
+                               card, oldest first, plus each card's latest
+                               metrics beside a baseline card's. Card identity
+                               = hash of the filesystem UUIDs (changes on a
+                               reflash; the label carries the name across).
 
 VERDICT LADDER (thresholds are named constants below, each with its basis):
   FAIL      any uncorrectable read error · any hash mismatch between passes ·
@@ -150,11 +159,18 @@ KLOG_FATAL = re.compile(
 KLOG_NOISE = re.compile(r"clearing M3 reset", re.I)   # apple-dcp chatter
 
 STOP = {"flag": False}
+CHILD = {"proc": None}       # the helper currently running (f3, fio), so an interrupt can stop it
 
 
 def _sigint(_sig, _frm):
     STOP["flag"] = True
-    eprint("\n[card_doctor] interrupt — finishing the current step, then writing a PARTIAL report")
+    p = CHILD.get("proc")
+    if p is not None and p.poll() is None:
+        try:
+            p.terminate()
+        except OSError:
+            pass
+    eprint("\n[card_doctor] interrupt — stopping the current step, then writing a PARTIAL report")
 
 
 def eprint(*a, **k):
@@ -979,6 +995,9 @@ def compute_verdict(run):
         if s.get("write_mbps") is not None and s["write_mbps"] < SEQ_WRITE_MBPS_DEGRADED:
             degr.append(f"sequential write {s['write_mbps']:.1f} MB/s is below the Class-10/U1 floor of {SEQ_WRITE_MBPS_DEGRADED:g} MB/s")
         rw = wr.get("random_write", {})
+        if rw.get("invalid"):
+            notes.append(f"random-write figure set aside as invalid: {rw['invalid']}")
+            rw = {}
         if rw:
             if rw.get("errors"):
                 fails.append(f"{rw['errors']} random 4 KiB write(s) failed")
@@ -996,6 +1015,9 @@ def compute_verdict(run):
             notes.append("the random-read-on-file figure was answered by the filesystem or page cache, not the card (unwritten extents or a cached file) — ignore it")
         if wr.get("random_write_note"):
             notes.append(wr["random_write_note"])
+        for key in ("random_write", "random_write_sync", "random_read_file"):
+            if (wr.get(key) or {}).get("interrupted"):
+                notes.append(f"{key.replace('_', ' ')} probe was interrupted by the operator — not measured")
 
     for n in run.get("notes") or []:
         notes.append(f"operator note (terminal, not machine-recorded): {n}")
@@ -1221,7 +1243,11 @@ def render_report(run, baseline=None):
         elif "ok" in s:
             L.append(f"| verify | {'all blocks match' if s.get('ok') else 'MISMATCH ' + str(s.get('bad_blocks'))[:200]} |")
         rw = wr.get("random_write", {})
-        if rw:
+        if rw.get("invalid"):
+            L.append(f"| 4 KiB random write | SET ASIDE — {rw['invalid']} (measured {fmt(rw.get('iops'), '.0f')} IOPS, not a card figure) |")
+        elif rw.get("interrupted"):
+            L.append("| 4 KiB random write, O_DIRECT, spec-comparable | interrupted by the operator — not measured |")
+        elif rw:
             L.append(f"| 4 KiB random write, O_DIRECT, spec-comparable ({rw.get('runner')}) | {fmt(rw.get('iops'), '.0f')} IOPS · p50 {fmt(rw.get('p50_ms'), '.2f')} · p99 {fmt(rw.get('p99_ms'), '.1f')} · max {fmt(rw.get('max_ms'), '.0f')} ms — DEGRADED below {RAND_WRITE_IOPS_DEGRADED} IOPS or p99 > 1 s; A1 spec 500, A2 spec 2000 |")
         rws = wr.get("random_write_sync", {})
         if rws:
@@ -1330,6 +1356,122 @@ def repo_root():
     return Path(__file__).resolve().parent.parent
 
 
+# ----------------------------------------------------------------------------
+# TREADWEAR — the wear table across every run of every card (SD cards are the
+# tyres of a racing emulation rig: a consumable, measured, never guessed)
+# ----------------------------------------------------------------------------
+TREADWEAR_COLS = ["finished", "card_id", "card_label", "tier", "verdict", "seq_read_mbps", "slow_pct", "stalls",
+                  "rand_read_p99_ms", "seq_write_mbps", "rand_write_iops", "rand_write_sync_p99_ms", "read_errors",
+                  "mismatches", "runid"]
+
+
+def card_id(ident):
+    """A stable-enough identity for a card USB cannot name: the hash of its
+    filesystem UUIDs and size. It changes when the card is reflashed — the
+    operator label carries the human identity across that. (A native SD host,
+    i.e. the rig itself, exposes the real CID/serial; that is the next piece.)"""
+    uuids = sorted(p.get("uuid") or "" for p in ident.get("partitions", []) if p.get("uuid"))
+    if not uuids:
+        return "unknown"
+    return hashlib.sha256("|".join(uuids + [str(ident.get("size_bytes", 0))]).encode()).hexdigest()[:12]
+
+
+def treadwear_row(run):
+    """One ledger row per run. Empty cell = that tier does not measure it."""
+    sc = run.get("scan") or {}
+    st = sc.get("stats") or {}
+    rr = sc.get("random_read") or {}
+    wr = run.get("write") or {}
+    s = wr.get("sample") or {}
+    rw = wr.get("random_write") or {}
+    if rw.get("invalid"):
+        rw = {}                                  # a set-aside figure never enters the trend
+    rws = wr.get("random_write_sync") or {}
+    fl = run.get("files") or {}
+
+    def f(v, spec=".2f"):
+        return "" if v is None else format(v, spec)
+    seq_read = st.get("seq_mbps_median") if st.get("n_ok") else (fl.get("big_files") or {}).get("mbps_median")
+    read_errors = st.get("n_err") if st.get("n_ok") else (
+        len([e for e in fl.get("read_errors", []) if e.get("errno") == errno.EIO]) if fl else None)
+    mism = len((sc.get("verify") or {}).get("mismatch", [])) if sc.get("verify") else None
+    return [run.get("finished", ""), card_id(run.get("identity", {})), run.get("card_label", ""), run.get("tier", ""),
+            (run.get("verdict") or {}).get("level", ""), f(seq_read, ".1f"), f(st.get("slow_pct")) if st.get("n_ok") else "",
+            "" if not st.get("n_ok") else str(st.get("stall_count", "")), f(rr.get("p99_ms")), f(s.get("write_mbps"), ".1f"),
+            f(rw.get("iops"), ".0f"), f(rws.get("p99_ms"), ".1f"), "" if read_errors is None else str(read_errors),
+            "" if mism is None else str(mism), run.get("runid", "")]
+
+
+def treadwear_table(base):
+    """Every run.json under `base` (survey rows skipped — they measure nothing),
+    oldest first. Returns (rows, skipped_dirs)."""
+    rows, skipped = [], []
+    for d in sorted(Path(base).glob("*/")):
+        rj = d / "run.json"
+        if not rj.exists():
+            if (d / "chunks.csv").exists():
+                skipped.append(f"{d.name} (crashed scan — run `rebuild {d}`)")
+            continue
+        try:
+            run = json.loads(rj.read_text())
+        except ValueError:
+            skipped.append(f"{d.name} (unreadable run.json)")
+            continue
+        if run.get("tier") == "survey" or "verdict" not in run:
+            continue
+        rows.append(treadwear_row(run))
+    rows.sort(key=lambda r: r[0])
+    return rows, skipped
+
+
+def treadwear_print(rows, skipped, vs=None):
+    if not rows:
+        print("TREADWEAR: no runs yet")
+        return
+    cards = {}
+    for r in rows:
+        cards.setdefault(r[1], []).append(r)
+    print("=" * 100)
+    print(f"  TREADWEAR — {len(rows)} run(s) over {len(cards)} card(s); a row per run, the tyre's wear over time")
+    print("=" * 100)
+    head = f"  {'finished':<20} {'tier':<6} {'verdict':<12} {'seqR':>6} {'slow%':>6} {'stl':>4} {'rrP99':>6} {'seqW':>6} {'rwIOPS':>7} {'rwsP99':>7} {'err':>4} {'mism':>4}"
+    for cid, rs in cards.items():
+        label = next((r[2] for r in reversed(rs) if r[2]), "") or "(no label)"
+        print(f"  card {cid}  {label}")
+        print(head)
+        for r in rs:
+            print(f"  {r[0][:19]:<20} {r[3]:<6} {r[4]:<12} {r[5]:>6} {r[6]:>6} {r[7]:>4} {r[8]:>6} {r[9]:>6} {r[10]:>7} {r[11]:>7} {r[12]:>4} {r[13]:>4}")
+        print()
+    if vs:
+        base_rows = [r for r in rows if vs.lower() in (r[2] or "").lower() or r[1] == vs]
+        if not base_rows:
+            print(f"  --vs {vs!r}: no card matches that label or id")
+        else:
+            bid = base_rows[-1][1]
+
+            def latest(cid_rows, idx):
+                for r in reversed(cid_rows):
+                    if r[idx] != "":
+                        return r[idx]
+                return ""
+            print(f"  LATEST PER METRIC vs baseline card {bid} ({base_rows[-1][2]})")
+            print(f"  {'card':<14} {'seqR':>6} {'slow%':>6} {'stl':>4} {'rrP99':>6} {'seqW':>6} {'rwIOPS':>7} {'rwsP99':>7}")
+            for cid, rs in cards.items():
+                print(f"  {cid:<14} " + " ".join(f"{latest(rs, i):>{w}}" for i, w in ((5, 6), (6, 6), (7, 4), (8, 6), (9, 6), (10, 7), (11, 7)))
+                      + ("   <- baseline" if cid == bid else ""))
+            print()
+    for s in skipped:
+        print(f"  skipped: {s}")
+    print("  columns: seqR/seqW MB/s · slow% chunks >3x median · stl stalls >10x · rrP99 4 KiB random-read p99 ms · rwIOPS O_DIRECT 4 KiB random write · rwsP99 write+fdatasync p99 ms")
+
+
+def treadwear_write_tsv(rows, path):
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f, delimiter="\t")
+        w.writerow(TREADWEAR_COLS)
+        w.writerows(rows)
+
+
 def make_outdir(base, tier, devname):
     runid = f"{time.strftime('%Y%m%d-%H%M%S')}-{tier}-{devname}"
     d = Path(base) / runid
@@ -1398,6 +1540,8 @@ def finish_run(run, outdir, baseline=None):
     print_card(run)
     if baseline:
         print(f"  comparison vs baseline {baseline.get('runid')}: {outdir}/report_vs_baseline.md")
+    if run.get("tier") != "survey":
+        print(f"  treadwear: this card is {card_id(run.get('identity', {}))} — `tools/card_doctor.py treadwear` for its wear over time")
     return run
 
 
@@ -1642,31 +1786,51 @@ def tier_rebuild(args, baseline):
     return run
 
 
-def run_streaming(argv, timeout=None):
-    """Run a helper while echoing its output live to stderr (f3's \\r progress
-    included) and collecting it for parsing. Returns (rc, text); rc None when the
-    binary is missing, -9 when it hung past `timeout`."""
+def run_child(argv, echo=False, timeout=None):
+    """Run a long helper (f3, fio) in its OWN session, registered in CHILD so the
+    tool's SIGINT handler stops it deliberately — the terminal's Ctrl-C no longer
+    reaches the child directly, which used to make an interrupted fio job read as
+    a failed write (2026-09-04). echo=True streams stdout+stderr live to stderr
+    (f3's \\r progress) while collecting it; echo=False keeps stdout and stderr
+    apart (fio's JSON). Returns (rc, out, err); rc None = binary missing, -9 = hung
+    past `timeout`."""
     try:
-        proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        proc = subprocess.Popen(argv, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT if echo else subprocess.PIPE, start_new_session=True)
     except FileNotFoundError:
-        return None, ""
-    chunks = []
+        return None, "", ""
+    CHILD["proc"] = proc
+    out, err = "", ""
     try:
-        while True:
-            b = os.read(proc.stdout.fileno(), 4096)
-            if not b:
-                break
-            chunks.append(b)
-            try:
-                sys.stderr.buffer.write(b)
-            except AttributeError:            # stderr redirected to a text buffer (tests)
-                sys.stderr.write(b.decode("utf-8", "replace"))
-            sys.stderr.flush()
-        rc = proc.wait(timeout=timeout)
+        if echo:
+            chunks = []
+            while True:
+                b = os.read(proc.stdout.fileno(), 4096)
+                if not b:
+                    break
+                chunks.append(b)
+                try:
+                    sys.stderr.buffer.write(b)
+                except AttributeError:            # stderr redirected to a text buffer (tests)
+                    sys.stderr.write(b.decode("utf-8", "replace"))
+                sys.stderr.flush()
+            rc = proc.wait(timeout=timeout)
+            out = b"".join(chunks).decode("utf-8", "replace")
+        else:
+            o, e = proc.communicate(timeout=timeout)
+            rc = proc.returncode
+            out, err = o.decode("utf-8", "replace"), e.decode("utf-8", "replace")
     except subprocess.TimeoutExpired:
         proc.kill()
         rc = -9
-    return rc, b"".join(chunks).decode("utf-8", "replace")
+    finally:
+        CHILD["proc"] = None
+    return rc, out, err
+
+
+def run_streaming(argv, timeout=None):
+    rc, out, _ = run_child(argv, echo=True, timeout=timeout)
+    return rc, out
 
 
 def fio_target(tdir):
@@ -1687,14 +1851,16 @@ def fio_job(target, rw, seconds, extra=()):
     argv = ["fio", "--name=cd", f"--filename={target}", "--size=1G", "--bs=4k", "--direct=1", "--ioengine=psync",
             "--iodepth=1", "--time_based", f"--runtime={seconds}", "--output-format=json", "--randrepeat=1",
             "--allow_file_create=0", f"--rw={rw}", *extra]
-    cp = run_cmd(argv, timeout=seconds * 4 + 120)
-    if cp is None:
+    rc, out, err = run_child(argv, timeout=seconds * 4 + 120)
+    if rc is None or rc == -9:
         return {"runner": "fio", "errors": 1, "raw": "fio missing or timed out"}
+    if STOP["flag"] and rc != 0:
+        return {"runner": "fio", "interrupted": True}          # stopped by the operator, not a failed write
     try:
-        return dict(parse_fio_json(cp.stdout, "write" if "write" in rw else "read"), runner="fio",
-                    errors=0 if cp.returncode == 0 else 1)
+        return dict(parse_fio_json(out, "write" if "write" in rw else "read"), runner="fio",
+                    errors=0 if rc == 0 else 1)
     except (ValueError, KeyError):
-        return {"runner": "fio", "errors": 1, "raw": (cp.stdout + cp.stderr)[-1000:]}
+        return {"runner": "fio", "errors": 1, "raw": (out + err)[-1000:]}
 
 
 def tier_write(args, disk, devpath, ident, outdir, run):
@@ -1751,21 +1917,21 @@ def tier_write(args, disk, devpath, ident, outdir, run):
             half = max(10, s // 2)
             eprint(f"[card_doctor] random 4 KiB probes on {os.path.basename(target)} ({'fio' if use_fio else 'python'}): "
                    f"{s} s write (O_DIRECT, spec-comparable) + {half} s write+fdatasync (save-file style) + {half} s read")
-            if use_fio:
-                wr["random_write"] = fio_job(target, "randwrite", s)
-                checkpoint(run, outdir, "random-write")
-                wr["random_write_sync"] = fio_job(target, "randwrite", half, ["--fdatasync=1"])
-                checkpoint(run, outdir, "random-write-sync")
-                wr["random_read_file"] = fio_job(target, "randread", half)
-            else:
-                wr["random_write"] = py_random_write(target, s, dsync=False)
-                checkpoint(run, outdir, "random-write")
-                wr["random_write_sync"] = py_random_write(target, half, dsync=True)
-                checkpoint(run, outdir, "random-write-sync")
+
+            def py_read():
                 rr = random_read_probe(target, os.path.getsize(target), 2000)
-                wr["random_read_file"] = {"runner": "python", "iops": rr.get("iops_qd1"), "p50_ms": rr.get("p50_ms"),
-                                          "p99_ms": rr.get("p99_ms"), "max_ms": rr.get("max_ms"), "errors": rr.get("errors", 0)}
-            checkpoint(run, outdir, "random-read-file")
+                return {"runner": "python", "iops": rr.get("iops_qd1"), "p50_ms": rr.get("p50_ms"),
+                        "p99_ms": rr.get("p99_ms"), "max_ms": rr.get("max_ms"), "errors": rr.get("errors", 0)}
+            jobs = [("random_write", (lambda: fio_job(target, "randwrite", s)) if use_fio else (lambda: py_random_write(target, s, dsync=False))),
+                    ("random_write_sync", (lambda: fio_job(target, "randwrite", half, ["--fdatasync=1"])) if use_fio else (lambda: py_random_write(target, half, dsync=True))),
+                    ("random_read_file", (lambda: fio_job(target, "randread", half)) if use_fio else py_read)]
+            for key, job in jobs:
+                if STOP["flag"]:
+                    wr[key] = {"interrupted": True}
+                    continue
+                eprint(f"[card_doctor]   {key.replace('_', ' ')} ...")
+                wr[key] = job()
+                checkpoint(run, outdir, key.replace("_", "-"))
     finally:
         if not args.keep_files:
             shutil.rmtree(tdir, ignore_errors=True)
@@ -1809,6 +1975,9 @@ def main(argv=None):
     rp.add_argument("run_json")
     rp.add_argument("--baseline", help="another run.json to compare against (a known-good card in the same reader)")
     rp.add_argument("--card-label", help="set/correct the card label recorded in this run (rewrites run.json)")
+    tw = sub.add_parser("treadwear", help="the wear table: one row per run per card, oldest first (TSV alongside)")
+    tw.add_argument("--out", default=str(repo_root() / "state" / "card_doctor"))
+    tw.add_argument("--vs", help="baseline card: a label substring or card_id; prints every card's latest metrics beside it")
     rb = sub.add_parser("rebuild", help="reconstruct a crashed scan's run.json/report from its chunks.csv")
     rb.add_argument("outdir")
     rb.add_argument("--device", help="the card's device if it is still present (default: from the run dir name)")
@@ -1818,14 +1987,23 @@ def main(argv=None):
     rb.add_argument("--note", action="append", help="what the operator saw on the terminal for the lost stages (repeatable)")
     args = ap.parse_args(argv)
 
+    if args.tier == "treadwear":
+        rows, skipped = treadwear_table(args.out)
+        treadwear_print(rows, skipped, vs=args.vs)
+        if rows:
+            tsv = Path(args.out) / "treadwear.tsv"
+            treadwear_write_tsv(rows, tsv)
+            print(f"  table: {tsv}")
+        return 0
+
     if args.tier == "report":
         run = json.loads(Path(args.run_json).read_text())
         base = load_baseline(args.baseline)
         if args.card_label is not None:
             run["card_label"] = args.card_label
             run.setdefault("identity", {})["card_label"] = args.card_label
-            Path(args.run_json).write_text(json.dumps(run, indent=1, default=str))
         run["verdict"] = compute_verdict(run)
+        Path(args.run_json).write_text(json.dumps(run, indent=1, default=str))   # run.json is the record: keep its verdict current
         text = render_report(run, base)
         out = Path(args.run_json).with_name("report.md" if not base else "report_vs_baseline.md")
         out.write_text(text)

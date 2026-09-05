@@ -377,6 +377,20 @@ class WriteProbes(unittest.TestCase):
             os.truncate(Path(d, "1.h2w"), 4096)                          # a truncated leftover is not a target
             self.assertEqual(cd.fio_target(d), os.path.join(d, "1.cdw"))
 
+    def test_invalid_random_write_is_set_aside_not_scored(self):
+        wr = {"sample": {"runner": "python", "gib": 8, "write_mbps": 14.5, "read_mbps": 49.8, "bad_blocks": [], "ok": True},
+              "random_write": {"runner": "fio", "iops": 3.7, "p99_ms": 152.0, "errors": 0,
+                               "invalid": "probe v1: fallocate'd scratch file + fsync per write"}}
+        run = base_run(tier="write", write=wr)
+        run.pop("scan", None)
+        v = cd.compute_verdict(run)
+        self.assertEqual(v["level"], "HEALTHY")                 # 3.7 IOPS would be DEGRADED if it counted
+        self.assertTrue(any("set aside" in n for n in v["notes"]))
+        run["verdict"] = v
+        self.assertEqual(cd.treadwear_row(run)[10], "")         # and it never enters the trend
+        del wr["random_write"]["invalid"]
+        self.assertEqual(cd.compute_verdict(run)["level"], "DEGRADED")
+
     def test_cache_served_random_read_is_flagged_not_scored(self):
         wr = {"sample": {"runner": "python", "gib": 8, "write_mbps": 14.5, "read_mbps": 49.8, "bad_blocks": [], "ok": True},
               "random_write": {"runner": "fio", "iops": 420.0, "p99_ms": 12.0, "errors": 0},
@@ -390,6 +404,62 @@ class WriteProbes(unittest.TestCase):
         self.assertFalse(any("not the card" in n for n in cd.compute_verdict(run)["notes"]))
         wr["random_write_sync"] = {"runner": "fio", "iops": 7.0, "p50_ms": 130.0, "errors": 1}
         self.assertEqual(cd.compute_verdict(run)["level"], "FAIL")
+
+
+class Treadwear(unittest.TestCase):
+    IDENT = {"size_bytes": 255869321216, "partitions": [{"uuid": "AAAA-1111"}, {"uuid": "90729342-a1db"}]}
+
+    def test_card_id_is_stable_and_order_free(self):
+        a = cd.card_id(self.IDENT)
+        b = cd.card_id({"size_bytes": 255869321216, "partitions": [{"uuid": "90729342-a1db"}, {"uuid": "AAAA-1111"}]})
+        self.assertEqual(a, b)
+        self.assertEqual(len(a), 12)
+        self.assertNotEqual(a, cd.card_id({"size_bytes": 255869321216, "partitions": [{"uuid": "AAAA-1111"}, {"uuid": "other"}]}))
+        self.assertEqual(cd.card_id({"size_bytes": 1, "partitions": []}), "unknown")
+
+    def test_row_from_scan_and_write_runs(self):
+        run = base_run()
+        run.update(identity=self.IDENT, card_label="rig card", runid="r1", finished="2026-09-04T21:27:19-0400")
+        run["verdict"] = cd.compute_verdict(run)
+        row = cd.treadwear_row(run)
+        self.assertEqual(row[:5], ["2026-09-04T21:27:19-0400", cd.card_id(self.IDENT), "rig card", "scan", "HEALTHY"])
+        self.assertEqual(row[6], "0.00")          # slow_pct
+        self.assertEqual(row[8], "4.00")          # random read p99
+        self.assertEqual((row[9], row[10]), ("", ""))   # a scan does not measure writes
+        wr = {"sample": {"runner": "f3", "gib": 1, "write_mbps": 12.68, "ok": True, "lost_sectors": 0, "corrupted_sectors": 0,
+                         "changed_sectors": 0, "overwritten_sectors": 0},
+              "random_write": {"runner": "fio", "interrupted": True},
+              "random_write_sync": {"runner": "fio", "iops": 135.9, "p50_ms": 1.1, "p99_ms": 131.6, "errors": 0},
+              "random_read_file": {"runner": "fio", "iops": 945.0, "p99_ms": 2.09, "errors": 0}}
+        run2 = base_run(tier="write", write=wr, identity=self.IDENT, partial=True, finished="2026-09-04T22:24:00-0400")
+        run2.pop("scan", None)
+        run2["verdict"] = cd.compute_verdict(run2)
+        self.assertEqual(run2["verdict"]["level"], "INCONCLUSIVE")     # an interrupted probe is not a failed write
+        self.assertTrue(any("interrupted" in n for n in run2["verdict"]["notes"]))
+        row2 = cd.treadwear_row(run2)
+        self.assertEqual((row2[9], row2[10], row2[11]), ("12.7", "", "131.6"))
+
+    def test_table_from_run_dirs(self):
+        with tempfile.TemporaryDirectory() as d:
+            for name, run in (("20260904-100000-scan-sdz", dict(base_run(), identity=self.IDENT, runid="a", finished="2026-09-04T10:30:00", tier="scan")),
+                              ("20260904-090000-survey-sdz", {"tier": "survey", "verdict": {"level": "INCONCLUSIVE"}, "finished": "2026-09-04T09:00:00"})):
+                p = Path(d, name)
+                p.mkdir()
+                if "verdict" not in run:
+                    run["verdict"] = cd.compute_verdict(run)
+                (p / "run.json").write_text(json.dumps(run))
+            Path(d, "20260904-080000-scan-sdz").mkdir()
+            Path(d, "20260904-080000-scan-sdz", "chunks.csv").write_text("idx\n")
+            rows, skipped = cd.treadwear_table(d)
+            self.assertEqual(len(rows), 1)                    # the survey row is skipped
+            self.assertEqual(rows[0][3], "scan")
+            self.assertEqual(len(skipped), 1)
+            self.assertIn("crashed scan", skipped[0])
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                cd.treadwear_print(rows, skipped, vs="nomatch")
+            self.assertIn("TREADWEAR", out.getvalue())
+            self.assertIn("no card matches", out.getvalue())
 
 
 class Robustness(unittest.TestCase):

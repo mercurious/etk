@@ -5,18 +5,21 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 ## [Unreleased]
 
 ### Added
-- **Card Doctor** (`tools/card_doctor.py`) — an objective health check for the
-  SD card the kit rides on, run from your computer with the card in a USB
-  reader. Four tiers: a quick identity/history survey and a read of every
-  file on the card (no admin rights needed); a full-surface raw read that maps
-  slow regions, localizes unreadable sectors and re-reads the suspects to catch
-  silent corruption; and a free-space write sample that measures write speed
-  and small-write latency (uses `f3` and `fio` when installed). Every run ends
-  in a plain HEALTHY / DEGRADED / FAIL verdict with the evidence behind it, a
-  report you can keep, and a `--baseline` comparison against a known-good card
-  in the same reader so a flaky reader is never blamed on the card. It never
-  writes to the raw device; the write tier only touches free space and cleans
-  up after itself.
+- **Treadwear** (`tools/card_doctor.py`) — SD cards are the tyres of a racing
+  emulation rig: the one consumable. This is the objective wear check, run from
+  your computer with the card in a USB reader. Tiers: a quick identity/history
+  survey and a read of every file on the card (no admin rights needed); a
+  full-surface raw read that maps slow regions, localizes unreadable sectors
+  and re-reads the suspects to catch silent corruption; a three-minute
+  random-read + filesystem check; and a free-space write sample that measures
+  write speed and small-write behaviour (uses `f3` and `fio` when installed).
+  Every run ends in a plain HEALTHY / DEGRADED / FAIL verdict with the
+  evidence behind it and a report you can keep; `treadwear` prints one row per
+  run per card so wear reads as a trend, and `--baseline` / `--vs` set a
+  known-good card in the same reader beside it so a flaky reader is never
+  blamed on the card. It never writes to the raw device; the write tier only
+  touches free space and cleans up after itself, and a stopped run still
+  leaves its report.
 
 ### Fixed
 - **A game installed from the TOOLS tab now records its config seed in the

@@ -167,7 +167,7 @@ etk/
 │   │                           #   binaries committed with .commit/.ldd/.buildinfo provenance
 │   ├── etk_dyno.py · etk_drift.py · vault_doctor.sh · vault_sweep.sh
 │   │                           #   dyno analytics · OS-drift detector · shader-vault surgeons
-│   ├── card_doctor.py          #   SD-card health: survey/files (no root) · scan/write (sudo) → verdict + report
+│   ├── card_doctor.py          #   TREADWEAR: SD-card wear (the rig's tyres) — survey/files (no root) · scan/quick/write (sudo) → verdict, report, wear table
 │   ├── release_sanity.sh · test_installers.py · test_paddock.py
 │   │                           #   the release gates (run at every cut)
 │   └── tui.sh                  #   shared install/uninstall TUI engine

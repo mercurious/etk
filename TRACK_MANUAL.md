@@ -36,7 +36,7 @@ person using it.
 | **installing a game** | **TOOLS** | runs in the background; a game launch outranks an install |
 | **updating from the couch** | **TOOLS → Check for ETK Updates** | every `gtk_stack.json` asset is fetchable from `releases/latest` |
 | **judging whether a change helped** | the ledger · `etk_dyno` · charts | the row is attributable and every claim carries its N |
-| **doubting the card itself** (odd stalls, "is it dying?") | `tools/card_doctor.py` verdict card + `state/card_doctor/<run>/report.md` | the verdict names its evidence (errors · two-pass hash agreement · latency tail · write class); a read-only tier never claims write endurance; `scan`/`write` need `sudo` and the OPERATOR runs them; a reader fault is ruled out with `--baseline` from a known-good card |
+| **doubting the card itself** — TREADWEAR (odd stalls, "is it dying?") | `tools/card_doctor.py` verdict card + `state/card_doctor/<run>/report.md` + the `treadwear` table (a row per run per card) | the verdict names its evidence (errors · two-pass hash agreement · latency tail · write class); a read-only tier never claims write endurance; `scan`/`quick`/`write` need `sudo` and the OPERATOR runs them; a reader fault is ruled out with a known-good card in the same reader (`--baseline`, `treadwear --vs`); wear is a TREND per tyre, never one report |
 
 > **THE RULE THIS TABLE EXISTS FOR: every loop ends at a SURFACE, and a change is not done
 > until that surface shows it.**
@@ -987,7 +987,8 @@ someone could re-run; charts carry their N and their date window.
 Innovations ship under the racing metaphor, mechanism named beside it: **anti-lock**
 (the GPU-wedge net stack), **KERS** (sync-economy cycle reclaim), **DDU** (the HUD),
 **Pitstop / DRIVER / POWER / PADDOCK** (the app surfaces), **the vault** (shader bank),
-**Fable's Challenge** (the KPI), **Garage-to-Car** (the roles). In A/B sections:
+**Fable's Challenge** (the KPI), **Garage-to-Car** (the roles), **TREADWEAR** (SD-card
+wear — the tyres, the rig's one consumable; mechanism `tools/card_doctor.py`). In A/B sections:
 mechanisms before metaphors. In user-facing copy the metaphor leads — it is how expertise
 reads as a feature instead of a warning label.
 
