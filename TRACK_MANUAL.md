@@ -1041,7 +1041,10 @@ SRM-on-disc for the ISO stutter · "mako has no progress widget" (it does — §
 headless install" (`--no-gui` ≠ `--headless`) · zfunc theory for road flicker (retracted;
 console renders black too) · FIFO fetch-accuracy/reordering combos for RR7 (2026-08-21:
 every rung worse than stock Atomic, menus unreachable — the fault is not FIFO ordering;
-the PPU-decoder interpreter A/B is the indicated probe when RR7's turn comes).
+the PPU-decoder interpreter A/B is the indicated probe when RR7's turn comes) ·
+`smartctl` through a USB card reader (2026-09-04: `-d scsi` stalled the Norelsys NS1081
+bridge → kernel USB reset → an 80-minute card_doctor scan died on the probe's timeout; USB
+readers expose no SMART anyway — card health is measured, never queried).
 
 ---
 

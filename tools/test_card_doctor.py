@@ -9,11 +9,16 @@ BROKEN state: every verdict case has a clean twin that must NOT trip.
 
 Run:  python3 tools/test_card_doctor.py
 """
+import contextlib
 import errno
+import hashlib
 import importlib.util
+import io
 import json
 import os
+import shutil
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -357,6 +362,120 @@ class Stats(unittest.TestCase):
 
     def test_merge_ranges(self):
         self.assertEqual(cd.merge_ranges([(8, 4), (0, 4), (4, 4), (20, 4)]), [(0, 12), (20, 4)])
+
+
+class Robustness(unittest.TestCase):
+    def test_run_cmd_timeout_returns_none(self):
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertIsNone(cd.run_cmd(["sleep", "5"], timeout=0.3))
+
+    def test_run_cmd_missing_binary_returns_none(self):
+        self.assertIsNone(cd.run_cmd(["definitely-not-a-binary-xyz-cd"]))
+
+    def test_parse_range(self):
+        size, chunk = 256 << 30, 16 << 20
+        self.assertEqual(cd.parse_range(None, size, chunk), (0, size))
+        s, e = cd.parse_range("175-222", size, chunk)
+        self.assertEqual((s, e), (175 << 30, 222 << 30))
+        self.assertEqual(cd.parse_range("100-999", size, chunk)[1], size)      # clipped to the device
+        self.assertEqual(cd.parse_range("0.5-1", size, chunk)[0] % chunk, 0)   # chunk-aligned
+        for bad in ("abc", "300-400", "20-10"):
+            with self.assertRaises(SystemExit):
+                cd.parse_range(bad, size, chunk)
+
+    def test_chunks_csv_roundtrip_and_zero_chunks(self):
+        rows = rows_uniform(8, chunk=1 << 20)
+        rows[3]["sha"] = hashlib.sha256(bytes(1 << 20)).hexdigest()
+        rows[5].update(err=1, sha="", bad=[(5 << 20, 4096), (5 << 20 + 8192, 4096)], loc_status="ok")
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d, "chunks.csv")
+            cd.write_chunks_csv(rows, p)
+            back = cd.load_chunks_csv(p)
+        self.assertEqual(back, rows)
+        st = cd.chunk_stats(back)
+        self.assertEqual((st["zero_chunks"], st["n_err"], st["n_ok"]), (1, 1, 7))
+
+    def test_runid_regex_covers_range_and_plain(self):
+        self.assertEqual(cd.RUNID_RX.match("20260904-195657-scan-sda").group(3), "sda")
+        self.assertEqual(cd.RUNID_RX.match("20260904-221000-scan-r175-222-sda").group(3), "sda")
+        self.assertEqual(cd.RUNID_RX.match("20260904-221000-scan-_cd_test.img").group(3), "_cd_test.img")
+        self.assertIsNone(cd.RUNID_RX.match("20260904-221000-files-sda"))
+
+
+class FileModeScan(unittest.TestCase):
+    """End to end on a regular file (O_DIRECT works on the repo's filesystem, not on
+    tmpfs): the scan path must always leave a run.json behind, crash or not."""
+
+    def setUp(self):
+        cd.STOP["flag"] = False
+        self.img = HERE / "_cd_test.img"
+        self.img.write_bytes(os.urandom(8 << 20))
+        self.out = tempfile.mkdtemp()
+
+    def tearDown(self):
+        self.img.unlink(missing_ok=True)
+        shutil.rmtree(self.out, ignore_errors=True)
+
+    def run_main(self, argv):
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            rc = cd.main(argv)
+        runs = sorted(Path(self.out).glob("*/run.json"))
+        self.assertEqual(len(runs), 1, runs)
+        return rc, json.loads(runs[-1].read_text()), runs[-1].parent
+
+    def base_argv(self, *extra):
+        return ["scan", "--allow-file", "--device", str(self.img), "--chunk-mib", "1", "--random-reads", "20", "--out", self.out, *extra]
+
+    def test_scan_writes_run_json(self):
+        rc, run, d = self.run_main(self.base_argv())
+        self.assertEqual(rc, 0)
+        self.assertEqual(run["verdict"]["level"], "HEALTHY")
+        self.assertEqual(run["scan"]["stats"]["n_ok"], 8)
+        self.assertEqual(run["scan"]["stats"]["zero_chunks"], 0)
+        self.assertEqual(run["scan"]["verify"]["mismatch"], [])
+        self.assertEqual(run["scan"]["random_read"]["count"], 20)
+        self.assertEqual(run["checkpoint_stage"], "random-read")
+        for f in ("chunks.csv", "latency.svg", "report.md"):
+            self.assertTrue((d / f).exists(), f)
+
+    def test_stage_crash_still_writes_run_json(self):
+        orig = cd.random_read_probe
+
+        def boom(*a, **k):
+            raise RuntimeError("boom-probe")
+        cd.random_read_probe = boom
+        try:
+            rc, run, d = self.run_main(self.base_argv())
+        finally:
+            cd.random_read_probe = orig
+        self.assertEqual(rc, 0)
+        self.assertIn("boom-probe", run["error"])
+        self.assertTrue(run["partial"])
+        self.assertEqual(run["checkpoint_stage"], "verify")            # the last stage that completed
+        self.assertEqual(run["scan"]["stats"]["n_ok"], 8)              # the pass survived the crash
+        self.assertEqual(run["verdict"]["level"], "INCONCLUSIVE")
+        self.assertTrue(any("internal error" in n for n in run["verdict"]["notes"]))
+
+    def test_range_scan(self):
+        rc, run, d = self.run_main(self.base_argv("--range", "0.002-0.005"))   # 2..5 MiB of the 8 MiB image
+        self.assertEqual(run["scan"]["stats"]["n_ok"], 4)   # 2 MiB..6 MiB once aligned to 1 MiB chunks
+        self.assertIn("-scan-r0.002-0.005-", run["runid"])
+        self.assertEqual(run["scan"]["range"]["start"], 2 << 20)
+
+    def test_rebuild_from_crashed_dir(self):
+        rc, run, d = self.run_main(self.base_argv())
+        (d / "run.json").unlink()
+        (d / "report.md").unlink()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            rc = cd.main(["rebuild", str(d), "--note", "verify: 0 mismatch (terminal)", "--card-label", "test card"])
+        self.assertEqual(rc, 0)
+        run2 = json.loads((d / "run.json").read_text())
+        self.assertTrue(run2["rebuilt"])
+        self.assertEqual(run2["scan"]["stats"]["n_ok"], 8)
+        self.assertEqual(run2["card_label"], "test card")
+        self.assertEqual(run2["verdict"]["level"], "INCONCLUSIVE")     # partial by construction
+        self.assertTrue(any("verify: 0 mismatch" in n for n in run2["verdict"]["notes"]))
+        self.assertIn("Rebuilt from", (d / "report.md").read_text())
 
 
 if __name__ == "__main__":

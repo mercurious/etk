@@ -17,13 +17,24 @@ TIERS (each writes state/card_doctor/<runid>/{run.json,report.md,kernel.log}):
                                through the filesystem, per-file timing + errors;
                                verifies ROCKNIX's own KERNEL.md5 / SYSTEM.md5 —
                                a known-good reference for 1.5 GB of the card.
-  scan    (ROOT, ~1 h/256 GB)  raw full-surface O_DIRECT read: per-chunk latency
-                               + sha256 map, EIO localized to 4 KiB, second-pass
-                               re-read of the outliers (+1 in 32) compared by
-                               hash = silent-corruption check, 4 KiB random-read
-                               latency percentiles, read-only fsck when the
-                               partitions can be unmounted. NEVER writes the
-                               device (no fd is ever opened for writing).
+  scan    (ROOT, ~75 min/256 GB) raw full-surface O_DIRECT read: per-chunk
+                               latency + sha256 map, EIO localized to 4 KiB,
+                               second-pass re-read of the outliers (+1 in 32)
+                               compared by hash = silent-corruption check, 4 KiB
+                               random-read latency percentiles, read-only fsck
+                               when the partitions can be unmounted. NEVER
+                               writes the device (no fd is ever opened for
+                               writing). `--range A-B` (GiB) re-checks one
+                               region (is a slow region persistent?) in minutes.
+                               Every stage checkpoints run.json; a late failure
+                               never loses the pass.
+  quick   (ROOT, ~3 min)       4 KiB random-read percentiles + read-only fsck:
+                               the two things a crashed scan loses, and a sanity
+                               check before committing to a long pass.
+  rebuild OUTDIR [--note ..]   reconstruct a crashed scan's run.json/report from
+                               its chunks.csv (later stages are not recovered;
+                               --note records what the terminal showed, labelled
+                               as such).
   write   (ROOT, ~10 min)      writes N GiB of test files into FREE SPACE of the
                                ext4 partition (f3write/f3read when installed,
                                Python fallback), verifies them, measures
@@ -44,6 +55,11 @@ VERDICT LADDER (thresholds are named constants below, each with its basis):
   HEALTHY   none of the above — WITH the honest caveat that a read-only tier
             cannot see write-endurance exhaustion; run `write` for that.
   INCONCLUSIVE  interrupted / partial run with nothing bad seen so far.
+
+NOT DONE, DELIBERATELY: `smartctl`. On 2026-09-04 `smartctl -a -d scsi` stalled
+the Norelsys NS1081 bridge, the kernel reset the reader (`reset SuperSpeed USB
+device`) and the probe's timeout killed the run — a self-inflicted "fault" the
+classifier would have pinned on the card. USB card readers expose no SMART.
 
 WHAT IT CANNOT TELL YOU: the card's own model/serial (the reader's strings are
 all USB exposes) · remaining spare blocks (vendor-private) · reader-vs-card —
@@ -87,6 +103,7 @@ import statistics
 import subprocess
 import sys
 import time
+import traceback
 from pathlib import Path
 
 VERSION = "0.1.0"
@@ -161,13 +178,19 @@ def pct(sorted_vals, p):
 
 
 def run_cmd(argv, timeout=None, check=False, capture=True):
+    """Run a helper; None when it is missing or hangs. A probe's hang must never
+    take the run down with it (2026-09-04: smartctl stalled the USB bridge and
+    its TimeoutExpired killed an 80-minute scan before anything was written)."""
     try:
         cp = subprocess.run(argv, capture_output=capture, text=True, timeout=timeout)
-        if check and cp.returncode != 0:
-            raise RuntimeError(f"{argv[0]} rc={cp.returncode}: {cp.stderr.strip()}")
-        return cp
     except FileNotFoundError:
         return None
+    except subprocess.TimeoutExpired:
+        eprint(f"[card_doctor] {argv[0]} timed out after {timeout}s — skipped")
+        return None
+    if check and cp.returncode != 0:
+        raise RuntimeError(f"{argv[0]} rc={cp.returncode}: {cp.stderr.strip()}")
+    return cp
 
 
 # ----------------------------------------------------------------------------
@@ -302,12 +325,14 @@ def usb_info(props):
 # ----------------------------------------------------------------------------
 # Kernel log
 # ----------------------------------------------------------------------------
-def klog_lines(since_epoch=None, tokens=()):
+def klog_lines(since_epoch=None, tokens=(), until_epoch=None):
     """journalctl -k lines (unprivileged OK for wheel), filtered to this device's
     tokens (sd id, usb port, /dev name). Returns (lines, source_note)."""
     argv = ["journalctl", "-k", "-o", "short-iso", "--no-pager", "-q"]
     if since_epoch is not None:
         argv += ["--since", f"@{int(since_epoch)}"]
+    if until_epoch is not None:
+        argv += ["--until", f"@{int(until_epoch)}"]
     cp = run_cmd(argv, timeout=60)
     if cp is None or cp.returncode != 0:
         cp2 = run_cmd(["dmesg", "-T"], timeout=30)
@@ -441,18 +466,21 @@ class Progress:
             eprint("")
 
 
-def scan_surface(path, size, chunk, on_row=None, label="scan"):
-    """Sequential O_DIRECT pass. Returns list of row dicts:
-    idx, off, n, ms, sha (or ''), err (0/1), bad (list of [start,len]), loc_status."""
+def scan_surface(path, size, chunk, on_row=None, label="scan", start=0, end=None):
+    """Sequential O_DIRECT pass over [start, end) (default: the whole device).
+    Returns list of row dicts: idx (global chunk index), off, n, ms, sha (or ''),
+    err (0/1), bad (list of [start,len]), loc_status."""
+    end = size if end is None else end
     rd = DirectReader(path, chunk)
     rows = []
-    prog = Progress(label, size)
+    prog = Progress(label, end - start)
     errs = 0
     try:
-        for idx, off in enumerate(range(0, size, chunk)):
+        for off in range(start, end, chunk):
             if STOP["flag"]:
                 break
-            n = min(chunk, size - off)
+            idx = off // chunk
+            n = min(chunk, end - off)
             t0 = time.perf_counter()
             try:
                 got = rd.read(off, n)
@@ -476,7 +504,7 @@ def scan_surface(path, size, chunk, on_row=None, label="scan"):
             rows.append(row)
             if on_row:
                 on_row(row)
-            prog.update(off + n, extra=f"err {errs}")
+            prog.update(off + n - start, extra=f"err {errs}")
     finally:
         prog.done()
         rd.close()
@@ -493,8 +521,12 @@ def chunk_stats(rows):
     stalls = [r for r in ok if r["ms"] > STALL_X * med]
     total_bytes = sum(r["n"] for r in ok)
     total_ms = sum(r["ms"] for r in ok)
+    # an all-zero chunk was never written (or was trimmed): the controller answers it
+    # without touching flash, so it says nothing about the cells. Count them.
+    zero_sha = {n: hashlib.sha256(bytes(n)).hexdigest() for n in {r["n"] for r in ok}}
     return {
         "n_ok": len(ok), "n_err": sum(1 for r in rows if r["err"]),
+        "zero_chunks": sum(1 for r in ok if r["sha"] == zero_sha[r["n"]]),
         "median_ms": med, "p95_ms": pct(times, 95), "p99_ms": pct(times, 99), "max_ms": times[-1],
         "min_ms": times[0],
         "slow_count": len(slow), "slow_pct": 100.0 * len(slow) / len(ok),
@@ -556,7 +588,8 @@ def verify_pass(path, rows, indices, chunk):
     return out
 
 
-def random_read_probe(path, size, count, seed=1234, block=4096):
+def random_read_probe(path, size, count, seed=1234, block=4096, start=0, end=None):
+    end = size if end is None else end
     rd = DirectReader(path, block)
     rng = random.Random(seed)
     lat = []
@@ -566,7 +599,7 @@ def random_read_probe(path, size, count, seed=1234, block=4096):
         for i in range(count):
             if STOP["flag"]:
                 break
-            off = rng.randrange(0, (size - block) // block) * block
+            off = start + rng.randrange(0, (end - start - block) // block) * block
             t0 = time.perf_counter()
             try:
                 rd.read(off, block)
@@ -935,6 +968,12 @@ def compute_verdict(run):
             if rw.get("p99_ms") is not None and rw["p99_ms"] > RAND_WRITE_P99_MS_DEGRADED:
                 degr.append(f"4 KiB random-write p99 {rw['p99_ms']:.0f} ms — garbage collection starved of spare blocks")
 
+    for n in run.get("notes") or []:
+        notes.append(f"operator note (terminal, not machine-recorded): {n}")
+    if run.get("error"):
+        notes.append(f"the run ended with an internal error after stage '{run.get('checkpoint_stage')}' — results are what was measured before it")
+    if run.get("rebuilt"):
+        notes.append("rebuilt from chunks.csv: the verify / random-read / fsck stages were not recovered")
     partial = bool(run.get("partial"))
     if fails:
         level = "FAIL"
@@ -1052,31 +1091,42 @@ def render_report(run, baseline=None):
     L.append("")
     sc = run.get("scan")
     if sc:
-        st = sc["stats"]
-        L.append("## Full-surface read (raw, O_DIRECT)")
+        st = sc.get("stats", {})
+        L.append("## Quick probe (no surface pass)" if sc.get("quick") else "## Full-surface read (raw, O_DIRECT)")
         L.append("")
+        if sc.get("range"):
+            L.append(f"Region scanned: **{sc['range']['gib']} GiB** of the device (a `--range` re-check, not a full pass).")
+            L.append("")
+        if sc.get("rebuilt_from"):
+            L.append(f"Rebuilt from `{sc['rebuilt_from']}` after the original run crashed; verify / random-read / fsck results were not recovered.")
+            L.append("")
         L.append("| metric | value |")
         L.append("|---|---|")
-        L.append(f"| chunks read OK / errored | {st.get('n_ok', 0)} / {st.get('n_err', 0)} (chunk {sc['chunk_bytes'] >> 20} MiB) |")
-        L.append(f"| bytes read | {human_bytes(st.get('bytes_ok', 0))} of {human_bytes(ident.get('size_bytes', 0))} |")
-        L.append(f"| sequential read, median chunk | {fmt(st.get('seq_mbps_median'), '.1f', ' MB/s')} |")
-        L.append(f"| sequential read, whole pass | {fmt(st.get('seq_mbps_overall'), '.1f', ' MB/s')} |")
-        L.append(f"| chunk time median / p95 / p99 / max | {fmt(st.get('median_ms'), '.0f')} / {fmt(st.get('p95_ms'), '.0f')} / {fmt(st.get('p99_ms'), '.0f')} / {fmt(st.get('max_ms'), '.0f')} ms |")
-        L.append(f"| slow chunks (>{SLOW_X:g}x median) | {st.get('slow_count', 0)} ({fmt(st.get('slow_pct'), '.2f', '%')}) — DEGRADED above {SLOW_PCT_DEGRADED:g}% |")
-        L.append(f"| stalls (>{STALL_X:g}x median) | {st.get('stall_count', 0)} — DEGRADED at {STALLS_DEGRADED}+ |")
-        vf = sc.get("verify", {})
-        L.append(f"| second-pass re-reads | {vf.get('n', 0)} chunks ({sc.get('verify_mode')}), {len(vf.get('mismatch', []))} hash mismatch, {len(vf.get('err', []))} errors, {vf.get('persistent_slow', 0)} persistently slow |")
+        if st.get("n_ok"):
+            L.append(f"| chunks read OK / errored | {st.get('n_ok', 0)} / {st.get('n_err', 0)} (chunk {sc['chunk_bytes'] >> 20} MiB) |")
+            L.append(f"| bytes read | {human_bytes(st.get('bytes_ok', 0))} of {human_bytes(ident.get('size_bytes', 0))} |")
+            L.append(f"| sequential read, median chunk | {fmt(st.get('seq_mbps_median'), '.1f', ' MB/s')} |")
+            L.append(f"| sequential read, whole pass | {fmt(st.get('seq_mbps_overall'), '.1f', ' MB/s')} |")
+            L.append(f"| chunk time median / p95 / p99 / max | {fmt(st.get('median_ms'), '.0f')} / {fmt(st.get('p95_ms'), '.0f')} / {fmt(st.get('p99_ms'), '.0f')} / {fmt(st.get('max_ms'), '.0f')} ms |")
+            L.append(f"| slow chunks (>{SLOW_X:g}x median) | {st.get('slow_count', 0)} ({fmt(st.get('slow_pct'), '.2f', '%')}) — DEGRADED above {SLOW_PCT_DEGRADED:g}% |")
+            L.append(f"| stalls (>{STALL_X:g}x median) | {st.get('stall_count', 0)} — DEGRADED at {STALLS_DEGRADED}+ |")
+            if st.get("zero_chunks") is not None:
+                L.append(f"| all-zero chunks (never written / trimmed) | {st['zero_chunks']} of {st['n_ok']} — the rest hold data, current or stale, so every read was a real flash read |")
+        vf = sc.get("verify")
+        if vf is not None:
+            L.append(f"| second-pass re-reads | {vf.get('n', 0)} chunks ({sc.get('verify_mode')}), {len(vf.get('mismatch', []))} hash mismatch, {len(vf.get('err', []))} errors, {vf.get('persistent_slow', 0)} persistently slow |")
         rr = sc.get("random_read", {})
         if rr.get("count"):
             L.append(f"| 4 KiB random read (QD1, n={rr['count']}) | p50 {rr['p50_ms']:.2f} · p95 {rr['p95_ms']:.2f} · p99 {rr['p99_ms']:.2f} · max {rr['max_ms']:.1f} ms · {rr['iops_qd1']:.0f} IOPS — DEGRADED at p99 > {RAND_P99_MS_DEGRADED:g} ms |")
         if sc.get("foreign_io_mib") is not None:
             L.append(f"| I/O on the device not issued by this tool | {sc['foreign_io_mib']:.0f} MiB |")
         L.append("")
-        L.append("Surface map (64 buckets, offset 0 → end): `.` normal · `-` >1.5x · `+` >3x · `#` >10x · `X` error")
-        L.append("")
-        L.append("```")
-        L.append(sc.get("surface_map", ""))
-        L.append("```")
+        if st.get("n_ok"):
+            L.append("Surface map (64 buckets, offset 0 → end): `.` normal · `-` >1.5x · `+` >3x · `#` >10x · `X` error")
+            L.append("")
+            L.append("```")
+            L.append(sc.get("surface_map", ""))
+            L.append("```")
         if sc.get("error_rows"):
             L.append("")
             L.append("### Unreadable ranges")
@@ -1087,14 +1137,19 @@ def render_report(run, baseline=None):
             L.append("")
             L.append(f"### fsck -n {fs['device']} ({fs['fstype']}) → rc={fs['rc']}")
             L.append("```")
-            L.append((fs.get("output") or "").strip()[:3000])
+            L.append((fs.get("output") or fs.get("summary") or "").strip()[:3000])
             L.append("```")
-        if sc.get("smartctl"):
-            L.append("")
-            L.append("### smartctl (informational — USB card readers expose no SMART)")
+    if run.get("notes") or run.get("error"):
+        L.append("## Run notes")
+        L.append("")
+        for n in run.get("notes") or []:
+            L.append(f"- operator note (terminal, not machine-recorded): {n}")
+        if run.get("error"):
+            L.append(f"- the run ended with an internal error after stage `{run.get('checkpoint_stage')}`; everything above was measured before it:")
             L.append("```")
-            L.append(sc["smartctl"].strip()[:2000])
+            L.append(run["error"].strip()[-1500:])
             L.append("```")
+        L.append("")
     fl = run.get("files")
     if fl:
         L.append("## Filesystem read of every readable file")
@@ -1201,13 +1256,18 @@ def print_card(run):
     for n in v["notes"]:
         print(f"  [NOTE] {n}")
     sc = run.get("scan")
-    if sc and sc.get("stats", {}).get("n_ok"):
-        st = sc["stats"]
-        print(f"  seq read {fmt(st.get('seq_mbps_median'), '.1f')} MB/s · chunk med/p99/max {fmt(st['median_ms'], '.0f')}/{fmt(st['p99_ms'], '.0f')}/{fmt(st['max_ms'], '.0f')} ms · slow {st['slow_count']} ({st['slow_pct']:.2f}%) · stalls {st['stall_count']} · errors {st['n_err']}")
+    if sc:
+        st = sc.get("stats", {})
+        if st.get("n_ok"):
+            print(f"  seq read {fmt(st.get('seq_mbps_median'), '.1f')} MB/s · chunk med/p99/max {fmt(st['median_ms'], '.0f')}/{fmt(st['p99_ms'], '.0f')}/{fmt(st['max_ms'], '.0f')} ms · slow {st['slow_count']} ({st['slow_pct']:.2f}%) · stalls {st['stall_count']} · errors {st['n_err']}")
+            vf = sc.get("verify") or {}
+            print(f"  verify {vf.get('n', 0)} chunks re-read, {len(vf.get('mismatch', []))} mismatch, {vf.get('persistent_slow', 0)} persistently slow" + (f" · {sc['range']['gib']} GiB range" if sc.get("range") else ""))
+            print(f"  map  {sc.get('surface_map', '')}")
         rr = sc.get("random_read", {})
         if rr.get("count"):
-            print(f"  4K random read p50/p99/max {rr['p50_ms']:.2f}/{rr['p99_ms']:.2f}/{rr['max_ms']:.1f} ms · verify {sc.get('verify', {}).get('n', 0)} chunks, {len(sc.get('verify', {}).get('mismatch', []))} mismatch")
-        print(f"  map  {sc.get('surface_map', '')}")
+            print(f"  4K random read p50/p99/max {rr['p50_ms']:.2f}/{rr['p99_ms']:.2f}/{rr['max_ms']:.1f} ms · {rr['iops_qd1']:.0f} IOPS")
+        for fs in sc.get("fsck", []):
+            print(f"  fsck {fs['device']} ({fs.get('fstype')}): rc={fs.get('rc')} {fs.get('summary', '')[:90]}")
     fl = run.get("files")
     if fl:
         bf = fl["big_files"]
@@ -1340,49 +1400,135 @@ def tier_survey(args, disk, devpath, ident):
                 p["fs_used_pct"] = 100.0 * (1 - st.f_bavail / st.f_blocks) if st.f_blocks else None
             except OSError:
                 pass
-    tools = {t: bool(shutil.which(t)) for t in ("f3write", "f3read", "f3probe", "fio", "badblocks", "smartctl", "e2fsck", "fsck.fat", "hdparm")}
+    tools = {t: bool(shutil.which(t)) for t in ("f3write", "f3read", "f3probe", "fio", "badblocks", "e2fsck", "fsck.fat", "fsck.exfat")}
     survey["tools_present"] = tools
     est_s = ident["size_bytes"] / 1e6 / 60.0   # 60 MB/s planning figure
     survey["scan_estimate"] = f"~{est_s / 60:.0f} min at 60 MB/s for one full read pass"
     return survey, lines, note
 
 
-def tier_scan(args, disk, devpath, ident, outdir):
-    sc = {"chunk_bytes": args.chunk_mib << 20, "verify_mode": args.verify}
-    size = ident["size_bytes"] if not args.allow_file else device_size(devpath)
-    ident["size_bytes"] = size
-    ident["size_human"] = f"{size / 1e9:.2f} GB ({size / 2**30:.1f} GiB)"
+def unmount_partitions(ident):
+    """Quiesce the card: unmount what the desktop auto-mounted. Returns the list
+    of partition paths we unmounted (fsck may run on those). A busy mount is
+    left alone and reported, never forced."""
+    run_cmd(["sync"])
     unmounted = []
-    if not args.allow_file and not args.keep_mounted:
-        run_cmd(["sync"])
-        for p in ident["partitions"]:
-            if p.get("mountpoint"):
-                cp = run_cmd(["umount", p["path"]], timeout=120)
-                if cp is not None and cp.returncode == 0:
-                    unmounted.append(p["path"])
-                    p["unmounted_by_scan"] = True
-                else:
-                    eprint(f"[card_doctor] could not unmount {p['path']} ({(cp.stderr if cp else '').strip()}) — continuing mounted; fsck skipped for it")
-    sc["unmounted"] = unmounted
-    stat0 = sysfs_stat(ident["devname"]) if not args.allow_file else {}
-    rows = scan_surface(devpath, size, sc["chunk_bytes"])
-    sc["stats"] = chunk_stats(rows)
-    sc["error_rows"] = [r for r in rows if r["err"]]
-    sc["surface_map"] = surface_map(rows)
-    with open(outdir / "chunks.csv", "w", newline="") as f:
+    for p in ident["partitions"]:
+        if p.get("mountpoint"):
+            cp = run_cmd(["umount", p["path"]], timeout=120)
+            if cp is not None and cp.returncode == 0:
+                unmounted.append(p["path"])
+                p["unmounted_by_scan"] = True
+            else:
+                eprint(f"[card_doctor] could not unmount {p['path']} ({(cp.stderr if cp else '').strip()}) — continuing mounted; fsck skipped for it")
+    return unmounted
+
+
+def run_fsck(partitions, unmounted):
+    """Read-only filesystem checks on partitions that are not mounted. Never
+    repairs. e2fsck rc&4 / fsck.fat rc 1 = inconsistencies found (WARN-level in
+    the verdict: an unclean rig power-off produces them without media damage)."""
+    out = []
+    for p in partitions:
+        if p.get("mountpoint") and p["path"] not in unmounted:
+            out.append({"device": p["path"], "fstype": p.get("fstype"), "rc": None, "summary": "skipped: mounted"})
+            continue
+        fst = p.get("fstype")
+        if fst == "vfat" and shutil.which("fsck.fat"):
+            cp = run_cmd(["fsck.fat", "-n", p["path"]], timeout=1800)
+        elif fst in ("ext4", "ext3", "ext2") and shutil.which("e2fsck"):
+            cp = run_cmd(["e2fsck", "-fn", p["path"]], timeout=3600)
+        elif fst == "exfat" and shutil.which("fsck.exfat"):
+            cp = run_cmd(["fsck.exfat", "-n", p["path"]], timeout=1800)
+        else:
+            out.append({"device": p["path"], "fstype": fst, "rc": None, "summary": "skipped: no checker"})
+            continue
+        if cp is None:
+            out.append({"device": p["path"], "fstype": fst, "rc": None, "summary": "checker missing or timed out"})
+            continue
+        text = (cp.stdout or "") + (cp.stderr or "")
+        rc = cp.returncode
+        severity = "structural" if (fst and fst.startswith("ext") and rc & 4) or (fst == "vfat" and rc == 1) else "operational"
+        out.append({"device": p["path"], "fstype": fst, "rc": rc, "severity": severity,
+                    "summary": text.strip().splitlines()[-1] if text.strip() else "", "output": text[-6000:]})
+    return out
+
+
+def checkpoint(run, outdir, stage):
+    """Persist what has been measured so far. Paid for on 2026-09-04: an 80-minute
+    read+verify pass was lost when a later probe raised; nothing had been written."""
+    run["checkpoint_stage"] = stage
+    snap = dict(run, partial=True, finished=None)
+    try:
+        (outdir / "run.json").write_text(json.dumps(snap, indent=1, default=str))
+    except OSError as e:
+        eprint(f"[card_doctor] checkpoint {stage} not written: {e}")
+
+
+def parse_range(spec, size, chunk):
+    """'A-B' in GiB -> (start, end) byte offsets aligned to the chunk, clipped to
+    the device. None -> the whole device."""
+    if not spec:
+        return 0, size
+    m = re.match(r"^\s*([\d.]+)\s*-\s*([\d.]+)\s*$", spec)
+    if not m:
+        raise SystemExit(f"--range wants START-END in GiB, e.g. 175-222 (got {spec!r})")
+    a, b = float(m.group(1)) * 2**30, float(m.group(2)) * 2**30
+    start = int(a // chunk) * chunk
+    end = min(size, int(math.ceil(b / chunk)) * chunk)
+    if not (0 <= start < end):
+        raise SystemExit(f"--range {spec} is empty or outside the device ({size / 2**30:.1f} GiB)")
+    return start, end
+
+
+def write_chunks_csv(rows, path):
+    with open(path, "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["idx", "offset", "bytes", "ms", "sha256", "err", "bad_ranges", "loc_status"])
         for r in rows:
             w.writerow([r["idx"], r["off"], r["n"], f"{r['ms']:.3f}", r["sha"], r["err"],
                         ";".join(f"{s}+{l}" for s, l in r["bad"]), r["loc_status"]])
+
+
+def load_chunks_csv(path):
+    rows = []
+    with open(path, newline="") as f:
+        for r in csv.DictReader(f):
+            rows.append({"idx": int(r["idx"]), "off": int(r["offset"]), "n": int(r["bytes"]), "ms": float(r["ms"]),
+                         "sha": r["sha256"], "err": int(r["err"]),
+                         "bad": [tuple(int(x) for x in b.split("+")) for b in r["bad_ranges"].split(";") if b],
+                         "loc_status": r["loc_status"]})
+    return rows
+
+
+def tier_scan(args, disk, devpath, ident, outdir, run):
+    sc = {"chunk_bytes": args.chunk_mib << 20, "verify_mode": args.verify}
+    run["scan"] = sc                       # partial results live in `run` from the first stage on
+    size = ident["size_bytes"] if not args.allow_file else device_size(devpath)
+    ident["size_bytes"] = size
+    ident["size_human"] = f"{size / 1e9:.2f} GB ({size / 2**30:.1f} GiB)"
+    start, end = parse_range(getattr(args, "range", None), size, sc["chunk_bytes"])
+    sc["range"] = ({"start": start, "end": end, "gib": f"{start / 2**30:.1f}-{end / 2**30:.1f}"}
+                   if (start, end) != (0, size) else None)
+    unmounted = [] if (args.allow_file or args.keep_mounted) else unmount_partitions(ident)
+    sc["unmounted"] = unmounted
+    stat0 = sysfs_stat(ident["devname"]) if not args.allow_file else {}
+    rows = scan_surface(devpath, size, sc["chunk_bytes"], start=start, end=end)
+    sc["stats"] = chunk_stats(rows)
+    sc["error_rows"] = [r for r in rows if r["err"]]
+    sc["surface_map"] = surface_map(rows)
+    write_chunks_csv(rows, outdir / "chunks.csv")
     if sc["stats"].get("n_ok"):
         render_svg(rows, sc["stats"], outdir / "latency.svg")
+    checkpoint(run, outdir, "read-pass")
     if not STOP["flag"]:
         idx = pick_verify_indices(rows, args.verify)
         sc["verify"] = verify_pass(devpath, rows, idx, sc["chunk_bytes"]) if idx else {"n": 0, "mismatch": [], "err": [], "persistent_slow": 0}
         sc["verify"].pop("second_ms", None)
-    if not STOP["flag"] and args.random_reads > 0 and size > 1 << 20:
-        sc["random_read"] = random_read_probe(devpath, size, args.random_reads)
+        checkpoint(run, outdir, "verify")
+    if not STOP["flag"] and args.random_reads > 0 and end - start > 1 << 20:
+        sc["random_read"] = random_read_probe(devpath, size, args.random_reads, start=start, end=end)
+        checkpoint(run, outdir, "random-read")
     if not args.allow_file:
         stat1 = sysfs_stat(ident["devname"])
         if stat0 and stat1:
@@ -1390,35 +1536,73 @@ def tier_scan(args, disk, devpath, ident, outdir):
             ours = sc["stats"].get("bytes_ok", 0) + sum(r["n"] for r in sc["error_rows"]) \
                 + sc.get("verify", {}).get("n", 0) * sc["chunk_bytes"] + sc.get("random_read", {}).get("count", 0) * 4096
             sc["foreign_io_mib"] = max(0.0, (dev_bytes - ours) / 2**20)
-        if shutil.which("smartctl"):
-            cp = run_cmd(["smartctl", "-a", "-d", "scsi", devpath], timeout=60)
-            if cp is not None:
-                sc["smartctl"] = (cp.stdout or "") + (cp.stderr or "")
+        # NO smartctl here, deliberately: on 2026-09-04 `smartctl -d scsi` stalled the
+        # Norelsys NS1081 bridge, the kernel reset the reader, and the probe's timeout
+        # killed the run after 80 minutes. USB card readers expose no SMART anyway.
         if not args.skip_fsck:
-            sc["fsck"] = []
-            for p in ident["partitions"]:
-                if p.get("mountpoint") and p["path"] not in unmounted:
-                    sc["fsck"].append({"device": p["path"], "fstype": p.get("fstype"), "rc": None, "summary": "skipped: mounted"})
-                    continue
-                fst = p.get("fstype")
-                if fst == "vfat" and shutil.which("fsck.fat"):
-                    cp = run_cmd(["fsck.fat", "-n", p["path"]], timeout=1800)
-                elif fst in ("ext4", "ext3", "ext2") and shutil.which("e2fsck"):
-                    cp = run_cmd(["e2fsck", "-fn", p["path"]], timeout=3600)
-                elif fst == "exfat" and shutil.which("fsck.exfat"):
-                    cp = run_cmd(["fsck.exfat", "-n", p["path"]], timeout=1800)
-                else:
-                    sc["fsck"].append({"device": p["path"], "fstype": fst, "rc": None, "summary": "skipped: no checker"})
-                    continue
-                if cp is None:
-                    continue
-                out = (cp.stdout or "") + (cp.stderr or "")
-                rc = cp.returncode
-                # e2fsck: 4 = errors left uncorrected (structural). fsck.fat: 1 = errors found.
-                severity = "structural" if (fst and fst.startswith("ext") and rc & 4) or (fst == "vfat" and rc == 1) else "operational"
-                sc["fsck"].append({"device": p["path"], "fstype": fst, "rc": rc, "severity": severity,
-                                   "summary": out.strip().splitlines()[-1] if out.strip() else "", "output": out[-6000:]})
+            sc["fsck"] = run_fsck(ident["partitions"], unmounted)
+            checkpoint(run, outdir, "fsck")
     return sc
+
+
+def tier_quick(args, disk, devpath, ident, outdir, run):
+    """Minutes, root: 4 KiB random-read percentiles + read-only fsck. Fills the
+    two holes a crashed scan leaves, or sanity-checks a card before a long pass."""
+    sc = {"quick": True, "chunk_bytes": 0, "verify_mode": "none", "stats": {"n_ok": 0}, "error_rows": [], "surface_map": ""}
+    run["scan"] = sc
+    size = ident["size_bytes"]
+    unmounted = [] if args.keep_mounted else unmount_partitions(ident)
+    sc["unmounted"] = unmounted
+    sc["random_read"] = random_read_probe(devpath, size, args.random_reads)
+    checkpoint(run, outdir, "random-read")
+    if not args.skip_fsck:
+        sc["fsck"] = run_fsck(ident["partitions"], unmounted)
+        checkpoint(run, outdir, "fsck")
+    return sc
+
+
+RUNID_RX = re.compile(r"^(\d{8})-(\d{6})-scan(?:-r[\d.]+-[\d.]+)?-([A-Za-z0-9_.]+)$")
+
+
+def tier_rebuild(args, baseline):
+    """Reconstruct a scan run's run.json/report from its chunks.csv after a crash.
+    What the later stages measured (verify, random-read, fsck) is NOT recovered;
+    --note records what the operator saw on the terminal, labelled as such."""
+    src = Path(args.outdir)
+    csvp = src / "chunks.csv"
+    if not csvp.exists():
+        raise SystemExit(f"{csvp} not found")
+    rows = load_chunks_csv(csvp)
+    if not rows:
+        raise SystemExit(f"{csvp} is empty")
+    m = RUNID_RX.match(src.name)
+    devname = m.group(3) if m else "unknown"
+    started_epoch = time.mktime(time.strptime(m.group(1) + m.group(2), "%Y%m%d%H%M%S")) if m else None
+    csv_end = csvp.stat().st_mtime
+    try:
+        disk = pick_device(lsblk_tree(), args.device or (f"/dev/{devname}" if devname != "unknown" else None), args.force_device)
+        ident = gather_identity(disk, disk.get("path") or f"/dev/{disk['name']}")
+    except SystemExit:
+        ident = {"device": f"/dev/{devname}", "devname": devname, "size_bytes": sum(r["n"] for r in rows),
+                 "size_human": "", "reader": "(device not present at rebuild time)", "partitions": []}
+    ident["card_label"] = args.card_label or ""
+    chunk = max(r["n"] for r in rows)
+    sc = {"chunk_bytes": chunk, "verify_mode": "not recovered (rebuilt from chunks.csv)", "stats": chunk_stats(rows),
+          "error_rows": [r for r in rows if r["err"]], "surface_map": surface_map(rows),
+          "verify": {"n": 0, "mismatch": [], "err": [], "persistent_slow": 0}, "rebuilt_from": str(csvp)}
+    run = {"tool": "card_doctor", "version": VERSION, "tier": "scan", "runid": src.name + "-rebuilt",
+           "started": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(started_epoch)) if started_epoch else "?",
+           "host": os.uname().nodename, "kernel": os.uname().release, "identity": ident, "card_label": args.card_label or "",
+           "notes": list(args.note or []), "rebuilt": True, "partial": True, "scan": sc}
+    lines, note = klog_lines(started_epoch - 2 if started_epoch else None, klog_tokens(ident), until_epoch=csv_end + 1)
+    run["kernel_log"] = dict(klog_classify(lines), source=f"{note}, read-pass window (start to chunks.csv mtime)")
+    outdir = src if os.access(src, os.W_OK) else src.with_name(src.name + "-rebuilt")
+    outdir.mkdir(parents=True, exist_ok=True)
+    (outdir / "kernel.log").write_text("\n".join(lines))
+    if sc["stats"].get("n_ok"):
+        render_svg(rows, sc["stats"], outdir / "latency.svg")
+    finish_run(run, outdir, baseline)
+    return run
 
 
 def tier_write(args, disk, devpath, ident, outdir):
@@ -1507,7 +1691,7 @@ def main(argv=None):
         p.add_argument("--out", default=str(repo_root() / "state" / "card_doctor"), help="output base dir (default state/card_doctor)")
         p.add_argument("--card-label", default="", help="the label printed on the card (SanDisk Extreme 256GB A2 V30 ...) — recorded in the report")
         p.add_argument("--baseline", help="run.json of the same tier on a known-good card in the same reader; renders report_vs_baseline.md at the end")
-    for name in ("survey", "files", "scan", "write"):
+    for name in ("survey", "files", "scan", "quick", "write"):
         p = sub.add_parser(name)
         common(p)
         if name == "files":
@@ -1515,10 +1699,12 @@ def main(argv=None):
         if name == "scan":
             p.add_argument("--chunk-mib", type=int, default=CHUNK_MIB_DEFAULT)
             p.add_argument("--verify", choices=("outliers", "full", "none"), default="outliers")
+            p.add_argument("--range", help="only this region, START-END in GiB (e.g. 175-222) — re-check a slow region without a full pass")
+            p.add_argument("--allow-file", action="store_true", help=argparse.SUPPRESS)   # tests: scan a regular file
+        if name in ("scan", "quick"):
             p.add_argument("--random-reads", type=int, default=RAND_READS_DEFAULT)
             p.add_argument("--keep-mounted", action="store_true", help="do not unmount the card's partitions (fsck is then skipped)")
             p.add_argument("--skip-fsck", action="store_true")
-            p.add_argument("--allow-file", action="store_true", help=argparse.SUPPRESS)   # tests: scan a regular file
         if name == "write":
             p.add_argument("--gib", type=int, default=8, help="GiB of test files to write into free space (default 8)")
             p.add_argument("--fio-seconds", type=int, default=60)
@@ -1528,6 +1714,13 @@ def main(argv=None):
     rp.add_argument("run_json")
     rp.add_argument("--baseline", help="another run.json to compare against (a known-good card in the same reader)")
     rp.add_argument("--card-label", help="set/correct the card label recorded in this run (rewrites run.json)")
+    rb = sub.add_parser("rebuild", help="reconstruct a crashed scan's run.json/report from its chunks.csv")
+    rb.add_argument("outdir")
+    rb.add_argument("--device", help="the card's device if it is still present (default: from the run dir name)")
+    rb.add_argument("--force-device", action="store_true")
+    rb.add_argument("--card-label", default="")
+    rb.add_argument("--baseline")
+    rb.add_argument("--note", action="append", help="what the operator saw on the terminal for the lost stages (repeatable)")
     args = ap.parse_args(argv)
 
     if args.tier == "report":
@@ -1545,13 +1738,17 @@ def main(argv=None):
         print(f"  wrote {out}")
         return 0
 
-    if "<" in (args.card_label or ""):
-        eprint(f"[card_doctor] --card-label still contains a placeholder ({args.card_label!r}); recorded as-is — fix later with: "
-               f"tools/card_doctor.py report <run.json> --card-label \"...\"")
-
     signal.signal(signal.SIGINT, _sigint)
     signal.signal(signal.SIGTERM, _sigint)
     baseline = load_baseline(getattr(args, "baseline", None))   # fail early on a bad path, not after an hour
+
+    if args.tier == "rebuild":
+        run = tier_rebuild(args, baseline)
+        return 0 if run["verdict"]["level"] in ("HEALTHY", "INCONCLUSIVE") else 1
+
+    if "<" in (args.card_label or ""):
+        eprint(f"[card_doctor] --card-label still contains a placeholder ({args.card_label!r}); recorded as-is — fix later with: "
+               f"tools/card_doctor.py report <run.json> --card-label \"...\"")
 
     if args.tier == "scan" and getattr(args, "allow_file", False):
         devpath = args.device
@@ -1561,11 +1758,14 @@ def main(argv=None):
         tree = lsblk_tree()
         disk = pick_device(tree, args.device, args.force_device)
         devpath = disk.get("path") or f"/dev/{disk['name']}"
-        if args.tier in ("scan", "write"):
+        if args.tier in ("scan", "quick", "write"):
             need_root(args.tier, " ".join(["tools/card_doctor.py"] + (argv if argv is not None else sys.argv[1:])))
         ident = gather_identity(disk, devpath)
     ident["card_label"] = args.card_label
-    runid, outdir = make_outdir(args.out, args.tier, ident["devname"])
+    tag = args.tier
+    if args.tier == "scan" and getattr(args, "range", None):
+        tag += "-r" + re.sub(r"[^0-9.]+", "-", args.range.strip()).strip("-")
+    runid, outdir = make_outdir(args.out, tag, ident["devname"])
     t_start = time.time()
     run = {"tool": "card_doctor", "version": VERSION, "tier": args.tier, "runid": runid, "started": now_iso(),
            "host": os.uname().nodename, "kernel": os.uname().release, "identity": ident, "card_label": args.card_label,
@@ -1580,30 +1780,41 @@ def main(argv=None):
         finish_run(run, outdir, baseline)
         return 0
 
-    if args.tier == "files":
-        mps = [p["mountpoint"] for p in ident["partitions"] if p.get("mountpoint")]
-        if not mps:
-            raise SystemExit("no partition of the card is mounted; mount it (file manager / udisksctl mount -b /dev/sdX2) and re-run")
-        stat0 = sysfs_stat(ident["devname"])
-        fl = files_tier(mps, int(args.limit_gib * 2**30) if args.limit_gib else None)
-        results = fl.pop("_results")
-        with open(outdir / "files.csv", "w", newline="") as f:
-            w = csv.writer(f)
-            w.writerow(["path", "bytes", "ms", "mbps"])
-            for r in results:
-                w.writerow([r["path"], r["bytes"], f"{r['ms']:.3f}", f"{r['mbps']:.2f}" if r.get("mbps") else ""])
-        stat1 = sysfs_stat(ident["devname"])
-        if stat0 and stat1 and fl["bytes_read"]:
-            # honesty check: the device should have moved about what we read. Much less =
-            # the page cache answered (throughput overstated); much more = foreign I/O.
-            fl["device_read_mib"] = (stat1["rd_sectors"] - stat0["rd_sectors"]) * 512 / 2**20
-            fl["device_read_ratio"] = fl["device_read_mib"] / (fl["bytes_read"] / 2**20)
-        run["files"] = fl
-        run["partial"] = fl.get("partial", False)
-    elif args.tier == "scan":
-        run["scan"] = tier_scan(args, disk, devpath, ident, outdir)
-    elif args.tier == "write":
-        run["write"] = tier_write(args, disk, devpath, ident, outdir)
+    try:
+        if args.tier == "files":
+            mps = [p["mountpoint"] for p in ident["partitions"] if p.get("mountpoint")]
+            if not mps:
+                raise SystemExit("no partition of the card is mounted; mount it (file manager / udisksctl mount -b /dev/sdX2) and re-run")
+            stat0 = sysfs_stat(ident["devname"])
+            fl = files_tier(mps, int(args.limit_gib * 2**30) if args.limit_gib else None)
+            results = fl.pop("_results")
+            with open(outdir / "files.csv", "w", newline="") as f:
+                w = csv.writer(f)
+                w.writerow(["path", "bytes", "ms", "mbps"])
+                for r in results:
+                    w.writerow([r["path"], r["bytes"], f"{r['ms']:.3f}", f"{r['mbps']:.2f}" if r.get("mbps") else ""])
+            stat1 = sysfs_stat(ident["devname"])
+            if stat0 and stat1 and fl["bytes_read"]:
+                # honesty check: the device should have moved about what we read. Much less =
+                # the page cache answered (throughput overstated); much more = foreign I/O.
+                fl["device_read_mib"] = (stat1["rd_sectors"] - stat0["rd_sectors"]) * 512 / 2**20
+                fl["device_read_ratio"] = fl["device_read_mib"] / (fl["bytes_read"] / 2**20)
+            run["files"] = fl
+            run["partial"] = fl.get("partial", False)
+        elif args.tier == "scan":
+            tier_scan(args, disk, devpath, ident, outdir, run)
+        elif args.tier == "quick":
+            tier_quick(args, disk, devpath, ident, outdir, run)
+        elif args.tier == "write":
+            run["write"] = tier_write(args, disk, devpath, ident, outdir)
+    except KeyboardInterrupt:
+        run["partial"] = True
+    except SystemExit:
+        raise
+    except Exception as e:                  # never lose an hour of measurements to a late failure
+        run["error"] = traceback.format_exc()
+        run["partial"] = True
+        eprint(f"[card_doctor] stage failed: {e!r} — writing what was measured (see run.json 'error')")
 
     if not getattr(args, "allow_file", False):
         lines, note = klog_lines(t_start - 2, klog_tokens(ident))
@@ -1612,8 +1823,8 @@ def main(argv=None):
     else:
         run["kernel_log"] = {"total": 0, "fatal": [], "source": "skipped (file mode)"}
     finish_run(run, outdir, baseline)
-    if args.tier == "scan" and run["scan"].get("unmounted"):
-        print(f"  the card's partitions were unmounted for the scan; re-seat the card or run (no sudo):  udisksctl mount -b {run['scan']['unmounted'][-1]}")
+    if args.tier in ("scan", "quick") and (run.get("scan") or {}).get("unmounted"):
+        print(f"  the card's partitions were unmounted for the {args.tier}; re-seat the card or run (no sudo):  udisksctl mount -b {run['scan']['unmounted'][-1]}")
     return 0 if run["verdict"]["level"] in ("HEALTHY", "INCONCLUSIVE") else 1
 
 
