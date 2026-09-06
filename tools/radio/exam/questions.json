@@ -1,0 +1,91 @@
+[
+ {"id": "Q1",
+  "q": "Which ledger column is THE KPI for Fable's Challenge, and at which resolution scale is it honest?",
+  "key": {"all": ["perfect", "\\b100\\b"]},
+  "exemplar": "perfect_pct (column 29), honest only at res 100 (native 720p).",
+  "counter": "fps_med, averaged across all resolutions."},
+
+ {"id": "Q2",
+  "q": "The ledger's epoch column (col 1) is stamped at which moment of a session, and what time interval does a row cover?",
+  "key": {"all": ["\\bend\\b|session end|at the end|when the session ends|on exit|close", "duration"]},
+  "exemplar": "At session END; a row covers [epoch − duration_s, epoch].",
+  "counter": "At ignition; the row covers epoch to epoch plus duration."},
+
+ {"id": "Q3",
+  "q": "What is the minimum N per arm before a knob verdict (a 'crown') is allowed, and which statistic replaces means?",
+  "key": {"all": ["\\b3\\b|three", "median"]},
+  "exemplar": "N ≥ 3 per arm; medians (IQR), never means.",
+  "counter": "One good run is enough if it is long; use the mean fps."},
+
+ {"id": "Q4",
+  "q": "How does a SURVIVED:* row count in the status ladder, and why?",
+  "key": {"all": ["clean", "keepalive|absorb|rescue|anti-lock|\\bnet\\b"]},
+  "exemplar": "As clean — the anti-lock net (keepalive) absorbed every hang, the session finished.",
+  "counter": "As a crash, because the GPU faulted during the session."},
+
+ {"id": "Q5",
+  "q": "A GPU fault status of 00E5xxxx means which wedge class number and which kind of park, and which net catches it?",
+  "key": {"all": ["#\\s?2|class\\s?2|\\btwo\\b|second", "fence", "keepalive|GTK_FENCE_FORCE_SIGNAL"]},
+  "exemplar": "Class #2, a fence park (the dominant one); caught by the kernel msm.context_keepalive plus GTK_FENCE_FORCE_SIGNAL.",
+  "counter": "Class #1, a query park, handled by TU_ETK_QUERY_SURVIVE in the driver."},
+
+ {"id": "Q6",
+  "q": "Which two kinds of sessions are excluded from fps/feel verdicts and from all denominators?",
+  "key": {"all": ["bake|shader|compil|warm", "aborted"]},
+  "exemplar": "Bake sessions (shader-compile storms; only warm runs with shd≈0 count) and ABORTED rows (under 60 s).",
+  "counter": "Sessions on GT HD and sessions longer than an hour."},
+
+ {"id": "Q7",
+  "q": "Is lowering Resolution Scale below 100 a valid lever toward the KPI? Answer yes or no and why.",
+  "key": {"all": ["\\bno\\b|\\bnot\\b|never|cheat"], "none": ["^\\s*\"?yes"]},
+  "exemplar": "No — resolution-lowering is cheating; the KPI is defined at native res 100.",
+  "counter": "Yes, 66% is the most crash-stable and gives the best fps."},
+
+ {"id": "Q8",
+  "q": "Name three items from the falsified list that must never be re-proposed.",
+  "key": {"any_n": {"n": 3, "patterns": ["ramoops|pstore", "autostart|mangohud race", "boss-?avoidance|rtalign|ccu cache|dsbypass|dsany|\\bwfi\\b|discriminator", "spurs", "thread scheduler", "noconstcheck", "max_map_count", "eviocsabs|trigger cal", "\\bgrid\\b", "teardown murderer|mangohud as the", "android survives", "latin-?1|glyph|non-latin", "mako image|image render", "attract", "\\bsrm\\b|strict rendering", "progress widget", "headless install|no-gui", "zfunc", "fifo", "smartctl"]}},
+  "exemplar": "ramoops/pstore on SM8250, max_map_count, and Thread Scheduler config on ARM.",
+  "counter": "Lowering resolution, the anti-lock net, and medians."},
+
+ {"id": "Q9",
+  "q": "What is the GT5P clean-run duration range that defines the noise floor?",
+  "key": {"all": ["\\b77\\b", "2886"]},
+  "exemplar": "77 to 2886 seconds.",
+  "counter": "About 5 to 30 minutes."},
+
+ {"id": "Q10",
+  "q": "Where does a session's tune_tag come from, and which Pitstop action writes that source?",
+  "key": {"all": ["active_tune", "driver|apply"]},
+  "exemplar": "session_postmortem reads active_tune.txt, which the DRIVER tab APPLY writes atomically together with the profile.d dials.",
+  "counter": "RPCS3 writes it into its log at launch and the Sentry copies it."},
+
+ {"id": "Q11",
+  "q": "From the session_postmortem.sh excerpt: how many bytes does the bounded tail read from RPCS3.log, and why is the whole log not run through strings?",
+  "key": {"all": ["4\\s?MiB|4\\s?MB|4,?194,?304|four meg", "288|multi-hundred|hundreds of meg|budget|\\b2\\s?s\\b|two second|RR7|too (big|large|slow)"]},
+  "exemplar": "The last 4 MiB (4194304 bytes); RR7's log reaches ~288 MB and the postmortem has a <2 s budget.",
+  "counter": "It reads about 288 MB, which is the whole log, so nothing is lost."},
+
+ {"id": "Q12",
+  "q": "From the etk_install_worker.py excerpt: when a real game launches mid-install, what does the worker do with the job, and why is that safe?",
+  "key": {"all": ["requeue|re-queue|back (at|to) the head|head of the queue|put(s)? (it|the job) back", "re-?runnable|overwrit|part-installed|resum"]},
+  "exemplar": "It terminates its own emulator by PID and requeues the job at the head; a part-installed PKG is re-runnable because RPCS3 overwrites, so requeue is safe and abandoning it would not be.",
+  "counter": "It aborts the job because a corrupted install cannot be recovered."},
+
+ {"id": "Q13",
+  "q": "In the manual, 'don't burn a call confirming reachability' refers to what kind of call?",
+  "key": {"all": ["tool|ssh|command|probe|check|api|turn|request"], "none": ["phone|telephone|voice call"]},
+  "exemplar": "A tool/ssh call — the rig is always ready, so don't spend a command just checking it is reachable.",
+  "counter": "A phone call to the operator to confirm the rig is switched on."},
+
+ {"id": "Q14",
+  "q": "Name the three bytes-to-atoms thresholds where a human must act.",
+  "key": {"all": ["deploy|install", "mint|forge|build", "publish|release"]},
+  "exemplar": "Deploy (install.sh), mint (forge.sh builds on etk-cloud), publish (gh release / tags).",
+  "counter": "Reboot, tune, and telemetry."},
+
+ {"id": "Q15",
+  "q": "What is the HUD glyph law, and why does it exist?",
+  "key": {"all": ["latin-?1", "tofu|font|render"]},
+  "exemplar": "Latin-1 only — anything beyond renders as tofu on the rig font.",
+  "counter": "UTF-8 emoji are fine as long as they are small."}
+]

@@ -1,0 +1,17 @@
+{
+ "id": "F6_env_bomb",
+ "title": "The Sentry that dies at one hour forty-five",
+ "provenance": "Real: commit 23df9d2 (2026-07-03) 'defuse the Sentry env bomb — PYTHONPATH absolute, never self-append'; the offending line and the mechanism (+42 bytes per 2 s tick until the 128 KiB per-variable execve limit → E2BIG at ~1h45m) are quoted from that commit. The journal lines are reconstructed to that commit's description.",
+ "evidence": "Symptom, recurring since the kit's 2-second Sentry loop was introduced: about 1 h 45 min after every boot the HUD reads \"WAITING FOR IGNITION\" forever, games launch but no telemetry row is written, and the pgrep checks inside the Sentry stop seeing any process. A reboot fixes it for another ~1 h 45 min.\njournalctl -u etk.service around the failure:\n  Jul 03 10:11:02 SM8250 01-etk-sentry.sh[1234]: /usr/bin/pgrep: Argument list too long\n  Jul 03 10:11:04 SM8250 01-etk-sentry.sh[1234]: /bin/sh: line 1: /usr/bin/cat: Argument list too long\n  Jul 03 10:11:06 SM8250 01-etk-sentry.sh[1234]: /usr/bin/pgrep: Argument list too long\n  (repeats every 2 s)\nscripts/env.sh at the time — a file the Sentry and mango_bridge re-source on EVERY tick:\n  export PYTHONPATH=\"${PYTHONPATH}:/storage/etk/lib/python3.13/site-packages\"\nFacts: the appended path is 42 bytes; Linux limits a single environment variable passed to execve to 128 KiB (MAX_ARG_STRLEN); the Sentry ticks every 2 s.",
+ "question": "Why does the Sentry die at about 1 h 45 min, what is the mechanism down to the kernel limit, and what is the fix?",
+ "key": {
+  "all": ["E2BIG|argument list|MAX_ARG_STRLEN|128",
+          "PYTHONPATH",
+          "append|grow|accumulat|each tick|every tick|per tick|longer and longer",
+          "absolute|idempotent|:-|default|once|not append|never append|assign|replace the export|fixed value|constant"],
+  "verdict_allowed": false
+ },
+ "rubric": "Self-appending export re-sourced every 2 s grows PYTHONPATH by 42 bytes per tick; 128 KiB / 42 B ≈ 3,120 ticks ≈ 1h44m; then every execve fails E2BIG; fix = absolute assignment, never a ${VAR}:… self-append in a re-sourced file.",
+ "exemplar": {"diagnosis": "The Sentry re-sources env.sh every 2 s and the PYTHONPATH line appends to itself each time, so the variable grows 42 bytes per tick until it passes the kernel's 128 KiB per-variable execve limit at about 1 h 45 min, after which every exec fails with E2BIG (Argument list too long).", "mechanism": "kit/config layer: a self-appending export in a file that is re-sourced per tick; 128 KiB / 42 B ≈ 3,120 ticks ≈ 1 h 44 min.", "evidence_used": ["Argument list too long from pgrep and cat", "export PYTHONPATH=\"${PYTHONPATH}:...\"", "recurs at ~1h45m uptime"], "verdict_allowed": false, "next_action": "Make the export absolute (PYTHONPATH=\"/storage/etk/lib/python3.13/site-packages\"), never a ${VAR}:... self-append in a re-sourced file.", "confidence": "high"},
+ "counter": {"diagnosis": "The rig runs out of memory after two hours of telemetry logging.", "mechanism": "kernel OOM killer", "evidence_used": ["cat fails"], "verdict_allowed": false, "next_action": "Add swap and restart the Sentry hourly.", "confidence": "low"}
+}

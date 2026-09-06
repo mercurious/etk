@@ -1,0 +1,18 @@
+{
+ "id": "F5_class4_watchdog",
+ "title": "The freeze after the rescue, with no new GPU fault",
+ "provenance": "Wedge class #4 (post-rescue guest-state deadlock) per TRACK_MANUAL §2.4: fingerprint = mango CSV mtime freezes while live_stat stays fresh; net = GTK_RSX_WATCHDOG; found twice in one evening (defeat_1783367968, hslrev_wedge_1783369769). The spotter-loop timeline below is reconstructed from that description; times are illustrative.",
+ "evidence": "Title: GT HD Concept (NPEA90002), Eiger. The spotter loop was armed at IDLE before launch. Timeline from its log:\n  T+0:00   RUNNING; live_stat fresh; mango CSV growing\n  T+11:42  dmesg: a6xx gpu fault ... hangcheck recover ... context_keepalive: surviving hang (session count 1)\n  T+11:44  live_stat fresh (mtime age 1 s); mango CSV mtime age 1 s; fps resumes at 39\n  T+13:05  live_stat fresh (mtime age 1 s); mango CSV mtime age 41 s and not advancing; HUD frozen on screen; audio silent\n  T+13:35  live_stat fresh (mtime age 2 s); mango CSV mtime age 71 s; dmesg: NO new a6xx fault and NO hangcheck since T+11:42\n  T+14:10  RPCS3 threads: rsx::thread S (sleeping), PPU[0x1000000] S, cellAudio S; process alive; GPU devfreq at its floor\n  T+14:30  operator pressed L1+R3; recovery.sh killed the emulator; ledger row: RECOVERY:Adreno, fault 00E59005, rescues 1\nThe operator: \"the keepalive caught the first hang, then a minute later everything froze anyway, but there is no new GPU fault.\"",
+ "question": "Which wedge class is the second freeze, what is its fingerprint, is it a new GPU fault, and which net addresses it?",
+ "key": {
+  "all": ["#\\s?4|class\\s?4|\\bfour\\b|fourth|post-rescue|guest[- ]state",
+          "watchdog|GTK_RSX_WATCHDOG",
+          "csv|mango|live_stat",
+          "no (new |second |further |additional )?(gpu |a6xx )?fault|without a (new )?fault|never faulted again|not a (new )?(gpu |driver )?fault"],
+  "none": ["second gpu fault|another (gpu|a6xx) fault|driver bug|driver is broken", "switch the driver dial|change the (driver )?dial|\\bsddepth\\b"],
+  "verdict_allowed": false
+ },
+ "rubric": "Class #4 post-rescue guest-state deadlock; fingerprint is the mango CSV mtime freezing while live_stat stays fresh with no new a6xx fault; not a driver fault; the emulator-side GTK_RSX_WATCHDOG net is the answer, so check it is enabled rather than reaching for a driver dial.",
+ "exemplar": {"diagnosis": "Class #4: a post-rescue guest-state deadlock — after the keepalive absorbed the fence park, the emulated guest never resumed, so the game froze with no new GPU fault.", "mechanism": "emulator layer: the RSX/guest state deadlocks after the rescue; the fingerprint is the mango CSV mtime freezing while live_stat stays fresh; the GTK_RSX_WATCHDOG net in the fork addresses it.", "evidence_used": ["CSV mtime age 41→71 s while live_stat age 1–2 s", "no new a6xx fault after T+11:42", "rsx::thread sleeping, GPU at floor"], "verdict_allowed": false, "next_action": "Confirm GTK_RSX_WATCHDOG is enabled (its =0 kill-switch not set) and capture the next occurrence with the loop armed; it is not a driver dial problem.", "confidence": "high"},
+ "counter": {"diagnosis": "A second GPU fault wedged the Adreno; the driver's fence handling is broken.", "mechanism": "driver: a new a6xx fault after the first one", "evidence_used": ["fault 00E59005 in the ledger row"], "verdict_allowed": true, "next_action": "Switch the driver dial to sddepth.", "confidence": "medium"}
+}

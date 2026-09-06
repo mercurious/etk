@@ -1,0 +1,16 @@
+{
+ "id": "F4_bake_session_lies",
+ "title": "Three dials, one number: 30.8 fps after a vault clear",
+ "provenance": "Real ledger rows: warm GT5P runs 1782179730 / 1782180504 / 1782227726 (2026-06-22/23, shd 0–2, fps 19.9–20.0) and the 06-24 bake trio 1782312123 (ccuhalf), 1782314935 (dsbypass), 1782317484 (dsany), each ~7,422 shaders and 30.4–30.9 fps. The manual's own example in §B.3: 'a 7,423-shader run logged fps 30.8 that was really compile-stall cadence (real warm run: 20.0)'.",
+ "evidence": "Title: GT5P Spec III (NPEA00050), same track, same power profile, res 100 throughout.\nThe operator: \"The new dial tu_debug=ccuhalf made GT5P run at 30.8 fps median — up from 20. Ship it?\"\nLedger rows (epoch, local time, duration, status, shaders_harvested, fps_med / fps_1low, tune):\n  1782179730  06-22 21:55  315 s  CLEAN  shd 2      fps 20.0 / 7.5   autotune=prefer_gmem\n  1782180504  06-22 22:08  350 s  CLEAN  shd 0      fps 20.0 / 8.0   autotune=prefer_gmem\n  1782227726  06-23 11:15  583 s  CLEAN  shd 2      fps 19.9 / 8.5   autotune=prefer_gmem\n  1782312123  06-24 10:42  285 s  CLEAN  shd 7423   fps 30.8 / 6.9   tu_debug=ccuhalf\n  1782314935  06-24 11:28  284 s  CLEAN  shd 7422   fps 30.4 / 4.4   tu_debug=dsbypass\n  1782317484  06-24 12:11  286 s  CLEAN  shd 7422   fps 30.9 / 5.4   tu_debug=dsany\nNote: the shader vault was cleared on the morning of 06-24 before those three runs; each of them harvested about 7,400 new shaders.",
+ "question": "Did the ccuhalf dial improve GT5P's frame rate? What explains 30.8 against 20.0, and what run would actually settle it?",
+ "key": {
+  "all": ["bake|shader|compil|vault",
+          "warm|shd\\s*[≈~=]?\\s*0|zero new shaders|no new shaders|saturated|cache is (warm|full)"],
+  "none": ["ccuhalf (improved|works|is a win|is better|helped)|ship it|about 50% (better|faster)"],
+  "verdict_allowed": false
+ },
+ "rubric": "Calls the three 06-24 rows bake sessions (≈7,400 shaders each, 30.x under three different dials) and the 30.8 a compile-stall artefact; asks for warm (shd≈0) runs of ccuhalf, N≥3, medians against the 20.0 warm baseline.",
+ "exemplar": {"diagnosis": "No: all three 06-24 runs are bake sessions (about 7,400 shaders compiled each) and read 30.4–30.9 regardless of the dial; the fps median is compile-stall cadence, not racing.", "mechanism": "statistics/kit: shader-compile storms distort the fps sample; only warm runs (shd≈0) count for feel and fps.", "evidence_used": ["shd 7423/7422/7422 on the 06-24 rows", "three different dials, same 30.x", "warm rows read 20.0 with shd 0–2"], "verdict_allowed": false, "next_action": "Re-run ccuhalf on a warm vault (shd≈0), same track, N≥3, and compare medians against the 20.0 warm baseline.", "confidence": "high"},
+ "counter": {"diagnosis": "Yes, ccuhalf improved GT5P by about 50%.", "mechanism": "driver: halving the CCU cache reduced stalls", "evidence_used": ["30.8 vs 20.0"], "verdict_allowed": true, "next_action": "Ship it as the default dial.", "confidence": "high"}
+}

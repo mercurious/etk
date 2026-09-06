@@ -1,0 +1,17 @@
+{
+ "id": "F3_career_pollution",
+ "title": "A career anchor that says 347,725 hours on one game",
+ "provenance": "Real: state/etk_telemetry/career/NPEA00050.txt and ledger row 1784083208 (2026-07-14 22:40, PANIC, duration_s 1251432772); neighbouring rows real. Lesson from §B.2 (medians; a 4 h idle row drags any mean) and §2.3 (PANIC rows synthesized from the orphaned anchor; epoch stamped at END).",
+ "evidence": "The TELEMETRY tab's career anchor for GT5P Spec III (NPEA00050), read from etk_telemetry/career/NPEA00050.txt:\n  total_sessions=732  clean_rate_pct=56  crash_count=320  recov_count=317  panic_count=3\n  total_duration_s=1251813356  total_duration_human=347725h 55m\n  avg_duration_s=1710128  avg_duration_human=28502m 8s\n  avg_fps=25.1  current_streak=24  best_streak=25\nThe operator: \"347,725 hours on one game? I have owned the device since May.\"\nLedger rows around 2026-07-14 (epoch, duration_s, game, status, shaders, fps_med, tune):\n  1783946619        711  NPEA00050  SURVIVED:Adreno  shd 0   fps 24.5  default\n  1783971607        637  NPEA00050  SURVIVED:Adreno  shd 0   fps 24.4  default\n  1784083208 1251432772  NPEA00050  PANIC            shd 0   fps 27.4  default     <- 2026-07-14 22:40\n  1784138493        211  NPEA00502  RECOVERY:Adreno  shd 26  fps 30.3  default\nFrom the manual: a row's epoch is stamped at session END and covers [epoch − duration_s, epoch]; PANIC rows are synthesized at the next boot from an orphaned session_anchor.txt breadcrumb; env.sh exports TELEMETRY_MAX_SESSION_S=86400.",
+ "question": "What is wrong with the career numbers, which single row causes it and why does that row carry that value, and what should be done about the row and about the statistic itself?",
+ "key": {
+  "all": ["1251432772|1784083208|39 years|1\\.25e9|1,251,432,772|1\\.25 billion",
+          "epoch|start|anchor|zero|missing|absent|synthesi|seed",
+          "median|exclude|clamp|cap\\b|filter|repair|drop|discard|TELEMETRY_MAX_SESSION_S|86400"],
+  "none": ["genuinely|really ran|actually ran for|numbers are correct"],
+  "verdict_allowed": false
+ },
+ "rubric": "Names the 1251432772 s PANIC row, explains it as a synthesized row whose start anchor was zero/absent (duration = epoch − 0), and proposes repairing/excluding/clamping the row (86400 cap) and reporting medians in the career anchor.",
+ "exemplar": {"diagnosis": "One PANIC row carries duration_s 1251432772 (about 39 years): its start epoch was zero or absent when the row was synthesized after the panic, so duration became epoch minus zero, and it now dominates every mean in the career file.", "mechanism": "kit/statistics: a synthesized PANIC row with no reliable session-start anchor; a mean is dragged by one outlier, a median is not.", "evidence_used": ["duration_s 1251432772 on epoch 1784083208", "avg_duration_s 1710128 against ~700 s neighbours", "TELEMETRY_MAX_SESSION_S=86400 exists"], "verdict_allowed": false, "next_action": "Repair or exclude that row (clamp at 86400 as the postmortem cap intends) and report medians/IQR in the career anchor instead of means.", "confidence": "high"},
+ "counter": {"diagnosis": "The device genuinely ran GT5P for a very long session on July 14; the career numbers are correct.", "mechanism": "operator left the game running for weeks", "evidence_used": ["total_duration_s"], "verdict_allowed": true, "next_action": "Nothing to do.", "confidence": "medium"}
+}

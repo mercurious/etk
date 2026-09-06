@@ -1,0 +1,16 @@
+{
+ "id": "F2_sysmem_no_crown",
+ "title": "A knob that looked 4–7× better after one run",
+ "provenance": "EtkDynoDossier.md §1 (2026-06-17): the near-crowning of TU_DEBUG=sysmem; durations reconstructed from the dossier narrative (185 s, ~117 s cold; run 4 906 s after attract warm-up; baseline med 154 s, p90 426 s). The ledger predates tune_tag, so rows are not quoted.",
+ "evidence": "Title: GT5P Spec III (NPEA00050). A candidate driver knob, TU_DEBUG=sysmem, is being tried against the GPU wedge (fault class: fence park).\nKnown noise floor for this title with NO knob change: clean-run duration ranges 77–2886 s (median 154 s, p90 426 s).\nManual sweep, one condition per launch, 2026-06-17:\n  run 1  baseline           cold start   crashed at 141 s   RECOVERY:Adreno\n  run 2  TU_DEBUG=sysmem    cold start   crashed at 185 s   RECOVERY:Adreno\n  run 3  TU_DEBUG=sysmem    cold start   crashed at 117 s   RECOVERY:Adreno\n  run 4  TU_DEBUG=sysmem    launched, left in attract-mode replays for ~3 minutes, then raced: 906 s CLEAN\n  run 5  baseline           froze in the boot menu with no input at 60 s   RECOVERY:Adreno\nThe operator's message: \"sysmem run 4 went 906 seconds clean — that's 4 to 7 times the baseline. Bake it into install.sh as the default?\"",
+ "question": "Is TU_DEBUG=sysmem a validated fix? What is the honest reading of run 4, and what do you tell the operator to do?",
+ "key": {
+  "all": ["\\bN\\b|three|3 runs|more runs|insufficient|not enough|variance|noise|single run|one run|n\\s?=\\s?1|tagged|per condition",
+          "warm|attract"],
+  "none": ["sysmem is a fix|is a validated fix|is a genuine fix", "4[-–]7×|4 to 7 times (better|faster)"],
+  "verdict_allowed": false
+ },
+ "rubric": "Refuses the crown: one 906 s run sits inside the 77–2886 s range and differed by a 3-minute attract warm-up, not only by the knob; asks for tagged trials, N≥3 per condition, matched warm-up, medians and time-to-crash.",
+ "exemplar": {"diagnosis": "No verdict: one 906 s run sits inside the title's natural 77–2886 s range, and run 4 differed from the others by a 3-minute attract warm-up, not only by the knob.", "mechanism": "statistics/operator: a warm-up confound plus N=1 per condition; the fence wedge fires without input, so trials are valid but each condition needs N.", "evidence_used": ["77–2886 s noise floor", "run 4 followed attract-mode replays", "runs 2 and 3 were cold and baseline-like"], "verdict_allowed": false, "next_action": "Keep it out of install.sh; run tagged trials (N≥3 per condition, matched warm-up) and compare medians and time-to-crash.", "confidence": "high"},
+ "counter": {"diagnosis": "sysmem is a fix: 906 s versus a 141 s baseline is a 4 to 7 times improvement.", "mechanism": "driver: sysmem avoids the GMEM path that wedges", "evidence_used": ["run 4 906 s clean"], "verdict_allowed": true, "next_action": "Bake it into install.sh as the default.", "confidence": "high"}
+}

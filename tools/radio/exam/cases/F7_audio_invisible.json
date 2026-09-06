@@ -1,0 +1,16 @@
+{
+ "id": "F7_audio_invisible",
+ "title": "The crackle the log cannot hear",
+ "provenance": "Real ledger row 1788491152 (2026-09-03, NPUB31195, CLEAN, aud cell skip=116 ur=2 urb=16384 rmin=0.890); the archived RPCS3.log for that row is 11 MB with no audio lines. Lesson from §B.3: audio underruns are forensically invisible — RPCS3 zero-fills silently; only the fork-side counters (the aud cell) can measure them.",
+ "evidence": "Ledger row (2026-09-03, title NPUB31195):\n  epoch 1788491152  duration 100 s  CLEAN  fps_med 30.7  fps_1low 6.7  ft_p99 139.8 ms  lock_pct 28.0  perfect_pct 0.0  snd ok\n  aud cell: up_s=71.7,ur=2,urb=16384,skip=116,sil=1796,ratio=1.000,rmin=0.890,enq_ms=237.4,buf_ms=250\nField meanings (the fork's audio perfstat channel, /dev/shm/rpcs3_audio_stat): up_s = seconds the audio backend was up; ur = underrun events counted by the backend; urb = bytes zero-filled on underrun; skip = audio callback periods skipped (the discriminator); sil = silent periods; ratio / rmin = time-stretch ratio, current / minimum seen; enq_ms = enqueue latency; buf_ms = desired buffer.\nThe archived RPCS3.log for this session: 11 MB; grep for \"audio\", \"underrun\", \"XRUN\", \"cellAudio\" at any log level returns 0 lines.\nThe operator: \"It sounded a bit crackly at the start but I am not sure. The log has nothing, so audio was fine, right?\"",
+ "question": "Did this session have audio underruns? What is the evidence, and why can the RPCS3 log not settle it?",
+ "key": {
+  "all": ["skip\\s*=?\\s*116|116 (skip|period)|skipped periods|urb|zero-?fill|ur\\s*=\\s*2|two underrun",
+          "silent|no (log )?line|zero-?fill|invisible|not logged|does not log|never logs|cannot|can't|nothing in the log|log (is|stays) (silent|blind|empty)|absence of (a )?log"],
+  "none": ["audio was fine|no underruns occurred|no audio (issue|problem)s? (occurred|detected|happened)|the session had no underruns"],
+  "verdict_allowed": false
+ },
+ "rubric": "Yes: cites skip=116, ur=2, urb=16384 and rmin=0.89 as positive evidence; explains that RPCS3 zero-fills underruns silently at every log level so log silence is not absence; points to skip/s as the discriminator and to buffer/time-stretch settings for the next step.",
+ "exemplar": {"diagnosis": "Yes: the fork's audio counters show 116 skipped periods, 2 underrun events and 16 KB zero-filled in 72 s of audio uptime, with the stretch ratio dipping to 0.89 — consistent with the crackle at the start.", "mechanism": "emulator/audio: RPCS3 zero-fills underruns silently at every log level, so the log cannot show them; only the fork's perfstat counters (the aud cell) can.", "evidence_used": ["skip=116, ur=2, urb=16384", "rmin=0.890", "0 audio lines in an 11 MB log"], "verdict_allowed": false, "next_action": "Treat skip per second as the discriminator (116 / 72 s ≈ 1.6/s), review buffer and time-stretch settings, compare against other titles' skip rates; never read log silence as absence.", "confidence": "high"},
+ "counter": {"diagnosis": "No underruns: the log shows nothing and the session was CLEAN.", "mechanism": "audio was fine", "evidence_used": ["0 log lines"], "verdict_allowed": true, "next_action": "Nothing.", "confidence": "high"}
+}
