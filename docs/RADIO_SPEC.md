@@ -286,7 +286,7 @@ Long prompt = ~4,000 tokens, `num_ctx 8192`.
 
 | Model | On disk | RAM peak | Prompt-eval, long | Gen short / long | TTFT long | Load (cold) |
 |---|---|---|---|---|---|---|
-| `qwen3.5:4b` | ~3 GB | ~4 GiB | (not measured long; ~2× the 9b expected) | 10.2 / — | — | 6.4 s warm |
+| `qwen3.5:4b` | 3.4 GB | 3.9 GiB resident | **27.7–29.9 tok/s** (4.1k and 7.2k prompts, 2026-09-06, §10.1) | 10.2 / 6.4–7.6 | 137–259 s | 7 s warm |
 | **`qwen3.5:9b`** | 6.3 GB | 8.1 GiB | **17.9 tok/s** | 5.9 / 5.0 | 225 s | 91 s |
 | `qwen3:8b` | 6.7 GB | 7.3 GiB | 15.4 | 6.4–7.0 / 3.3 | ~240 s | 122 s |
 | `qwen3:14b` | 10.9 GB | 11.4 GiB | 8.8 | 3.7 / 2.1 | 457 s | 90 s |
@@ -294,13 +294,20 @@ Long prompt = ~4,000 tokens, `num_ctx 8192`.
 
 Cold weights load at ~43 MB/s off the free-tier boot volume; a model already in the
 page cache loads in seconds. The MoE reads like an 8B and writes like a 14B once the
-context is long, and leaves no room for the forge — rejected. The 14B is batch-only.
+context is long, and leaves no room for the forge — rejected (on 2026-09-06 it also cold-loaded for
+225–240 s before each of two reviews, 8¼ minutes wall apiece; §10.1). The 14B is
+batch-only.
 
 **Debrief arithmetic on the 9b:** doctrine 1,200 (cached after the first call of the
 evening) + briefing 1,000 + evidence 1,500 + task 300 ≈ 4,000 tokens → ~140 s prefill
 warm (~225 s cold) + ~450 output tokens at 5 tok/s ≈ 90 s → **4–5.5 min per debrief**,
-async, toasted when ready. The 4b should land near **2–3 min** and is the radio-check
-model (interactive; the `_ProgressCard` shows elapsed time, which is honest movement).
+async, toasted when ready. The 4b, at its measured 28 tok/s prefill and 6.4–7.6 tok/s
+generation, lands near **3.5 min** for the same pack (143 s + 64 s) and is the
+radio-check model (interactive; the `_ProgressCard` shows elapsed time, which is honest
+movement); a 7,170-token prompt cost it 259 s of prefill alone, which is why the pack
+budget is a hard cap. With `OLLAMA_MAX_LOADED_MODELS=1`, every 4b↔9b switch pays a
+reload (7 s from page cache for the 4b; up to 91 s cold for the 9b) — Phase 1 measures
+whether the two-model split is worth it or one model should do both jobs.
 Measure both on the node with `bench.py`-style timing before choosing; the eval (§10)
 scores them. If the tenancy is ever cut to 2 OCPU / 12 GB (§12), the 9b still fits at
 roughly half the speed and the 4b becomes the default.
@@ -321,6 +328,8 @@ Each guard names the law it enforces and what `tools/test_radio.py` asserts.
 | **Attribution before narrative** | §B.3 | a `keepalive_absent` or `stack_change` tag forces an `investigate` recommendation ahead of any tune advice ("rule out our own code before blaming hardware") |
 | **Data, never commands** | §12 security | the debrief is JSON validated against the schema; prose fields are rendered as text; nothing in it is ever executed, sourced, or written to a config by the service or the rig |
 | **ASCII surfaces** | §A.3 glyph law, notification law | `radio`/`headline` are transliterated to ASCII before any toast or `pit_note.txt` write; over-length is truncated at a word boundary |
+| **Evidence beside every claim** | §B.3 "attribution outranks narrative"; the 2026-09-06 pre-prototype (§10.1) | every finding's `evidence[]` must resolve to a pack field or a quoted pack line; the renderer prints the resolved line verbatim under the claim, so a semantic flip ("abort" for "requeue", 4 MB read as 288 MB) is visible at a glance; a finding whose evidence does not resolve is demoted to `observation` and tagged `uncited` |
+| **Never truncate silently** | §10.1: three of four prompts were cut at 4,098 tokens and the models judged fragments as whole files | the service sets `num_ctx` explicitly, counts the prompt before the call, and REJECTS a pack that would not fit (`failed: over budget`, logged, toasted only for operator-pressed sends); Ollama's own truncation is never allowed to decide what the model saw |
 
 A rules-only debrief (no model) is produced by the same pipeline with the model stage
 skipped: crash-signature text + dyno arms + computed tags + the run sheet's `next`. It
@@ -521,6 +530,46 @@ verdict the ledger already paid for.
 | `panic_silent` | BCUS98114 PANIC rows with no kmsg lead-up | `panic_silent`; investigate; no config change |
 | `hallucinated_key` (service test, fake Ollama) | synthetic model output with a foreign key and an out-of-range value | both dropped; debrief still valid |
 
+### 10.1 Pre-prototype evidence — four code reviews through generic RAG (2026-09-06)
+
+Before any RADIO code existed, four ETK files were reviewed on an identically-shaped
+node through Open WebUI's attached-file retrieval (generated queries → chunk retrieval →
+prompt; the prompt was cut at 4,098 tokens in three of four runs and ran at `num_ctx`
+8192 in the fourth). `qwen3.5:4b` reviewed `blackbox_d.py` (with the manual attached) and
+`session_postmortem.sh`; `qwen3-coder:30b-a3b` reviewed `etk_install_worker.py` and
+answered "which file first" over the manual. Every claim was checked against the source.
+
+| Run | Model | Prompt → prefill · generation | Wall | Verified right | Wrong or invented |
+|---|---|---|---|---|---|
+| `blackbox_d.py` + manual | 4b | 4,098 tok @ 29.9 tok/s = 137 s · 1,038 tok @ 7.6 | 4m40s | `parse_psi` −1.0 fallback · `/proc/self/fd` re-open after an unlink · `cur.close()` · the pstore path · the SSX campaign shape · the 2026-06-23 "armed 25 s late" incident · `_driver_apply` writing both files atomically — all real, correctly paraphrased | `tripwire` "has no implementation" (it does; chunk artifact) · `idle_ticks` "incomplete in context" (chunk artifact) · a daemon's `while True` called an infinite-loop risk · "burn a call" read as a phone call · `cffdump --once` given an invented rationale · ETK described as game-development telemetry |
+| `session_postmortem.sh` | 4b | 7,170 @ 27.7 = 259 s · 457 @ 6.4 | 5m37s | the bounded `tail -c` read · the epoch comparison · the "Defense-in-depth alongside the Sentry's -x fix" comment | 4,194,304 bytes "≈ 288 MB" (288 MB is the RR7 log size on the next comment line) · "PC and RPCS3 logs" · "PS5 debug sessions" · `$HAYSTACK` "never used" (grepped three times in a chunk it did not get) · "hard-coded paths" for `${RPCS3_LOG:-…}` · a race condition that is not in the code |
+| `etk_install_worker.py` | 30B MoE | 4,098 @ 20.1 = 204 s · 254 @ 3.8 · cold load 225 s | 8m15s | the docstring restated accurately: out-of-process, the SHM queue files, the game-launch yield | "aborting jobs if a game is launched" — the file requeues at the head and says abandoning would be unsafe · no code-level finding at all |
+| "first file to review" over the manual | 30B MoE | 4,098 @ 19.9 = 206 s · 203 @ 3.9 · cold load 240 s | 8m19s | cites the §A.3 install-worker laws correctly | the "first file" is whichever chunk the generated queries retrieved, not a judgment |
+
+What it says for RADIO, each mapped to a decision above:
+
+- **Retrieval decided the answers, and truncation hid the loss.** The models judged
+  fragments as whole files ("incomplete", "no implementation"). Decision 4 stands
+  (a complete, bounded pack, deterministic briefing) and gains the never-truncate guard.
+- **The 4b paraphrases real mechanisms well and invents when it concludes.** Its
+  strengths sections verified line for line; its issues sections carried arithmetic
+  errors, domain confabulation and advice against stated design (env-derived paths,
+  fail-soft `2>/dev/null`, a daemon that runs forever). Decision 3 stands: findings from
+  the model, verdicts in code — and the doctrine must state the kit's design intent
+  explicitly (fail-soft, BusyBox, env.sh paths, daemons) or it gets "reviewed" as a
+  defect; the pack carries computed numbers and the prompt forbids deriving new ones.
+- **Semantic flips are the dangerous class**: abort/requeue, phone/tool call, 4 MB/288
+  MB. The guards catch schema, N and §F, not a flipped sentence — hence the
+  evidence-beside-every-claim guard and flip traps among the eval cases.
+- **The cost matches §5.** The 4b at 28 tok/s prefill is ~3.5 min per 4k-token pack;
+  the 30B cold-loaded for four minutes before each review and produced no findings —
+  rejected on quality as well as RAM.
+- **The next cheap probe, operator-run in Open WebUI:** the same two small files
+  (`blackbox_d.py`, `etk_install_worker.py`, each under 8k tokens) on `qwen3.5:9b` with
+  full-context mode instead of chunk retrieval — the direct A/B for the rung decision
+  before any code is written. The 42 KB postmortem script is ~11k tokens and would cost
+  the 9b ten minutes of prefill; it is the case for the pack budget, not a review target.
+
 Scoring: the deterministic assertions pass or fail per case for the **rules-only
 baseline** (must be 12/12 — it is the pipeline's contract) and for each model. Then the
 operator reads both debriefs per case blind and marks the model's as *more useful /
@@ -575,6 +624,10 @@ Every handoff in the phases below ends with one command in a `bash` block.
   with the argv line dropped and paths reduced to `dev_hdd0/game/<ID>`; the node is the
   operator's own tenancy; nothing is shared onward. `tools/release_sanity.sh`'s
   pseudonym/PII sweep covers `tools/radio/` like any other tree.
+- **Semantic flips in prose.** The 2026-09-06 reviews (§10.1) flipped requeue to abort
+  and a tool call to a phone call; a flipped mechanism sentence in a debrief is a wrong
+  recommendation carrying a correct N. Mitigation: the evidence-beside-every-claim
+  guard, flip traps in the eval, and the 9b over the 4b unless the eval says otherwise.
 - **The rejected alternative — inference on the rig.** Measured on 2026-09-06: 7.5 GB
   RAM (6.2 GB free idle), 4×A77 @2.42 + prime @2.84 + 4×A55, NEON + dotprod, no
   i8mm/SVE, 4 KB pages, python 3.14, read-only root (a binary would live under
