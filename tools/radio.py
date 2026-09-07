@@ -298,6 +298,54 @@ def cmd_inspect(args):
     return 0
 
 
+def cmd_debrief(args):
+    """Phase 0's second exit: a rules-only debrief rendered in a terminal.
+
+    No node, no network, no model -- the same pipeline with the model stage skipped
+    (spec 6), so the guards, the schema and the renderer are all exercised by the run
+    the operator can do today. The model path is Phase 1 and says so."""
+    if not args.rules_only:
+        # The model path is Phase 1 and says so in both vocabularies: the spec's
+        # ("needs the node") and the wave-1 CLI stub's ("not built yet").
+        sys.stderr.write("radio debrief: model debrief needs the node (Phase 1) - %s\n"
+                         % NOT_BUILT)
+        return 2
+    if not args.target:
+        sys.stderr.write("radio debrief: which row? "
+                         "usage: debrief <epoch|path/to.pack.json> --rules-only\n")
+        return 2
+    sys.path.insert(0, os.path.join(HERE, "radio"))
+    import rules_only                                          # noqa: PLC0415
+
+    pack, src = load_pack(args.target, args.ledger)
+    debrief = rules_only.build(pack)
+    if args.json:
+        print(json.dumps(debrief, indent=1, ensure_ascii=True))
+    else:
+        print(rules_only.render(debrief, pack))
+        print("source: %s" % src)
+
+    if args.no_write:
+        return 0
+    out_dir = os.path.join(os.path.dirname(os.path.abspath(args.ledger)), "radio")
+    path = os.path.join(out_dir, "%s.debrief.json" % debrief.get("epoch"))
+    try:
+        os.makedirs(out_dir, exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(debrief, fh, indent=1, ensure_ascii=True)
+            fh.write("\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)                       # atomic tmp+mv, the house rule
+    except OSError as exc:
+        sys.stderr.write("radio debrief: could not write %s: %s\n" % (path, exc))
+        return 1
+    if not args.json:
+        print("wrote %s" % path)
+    return 0
+
+
 def cmd_stub(args):
     sys.stderr.write("radio %s: %s\n" % (args.verb, NOT_BUILT))
     return 2
@@ -325,8 +373,19 @@ def main(argv=None):
                    help="override the global --ledger")
     p.set_defaults(func=cmd_inspect)
 
-    for verb, helptext in (("debrief", "ask the node for a debrief"),
-                           ("ask", "one question about the last pack"),
+    p = sub.add_parser("debrief", help="build a debrief for one epoch "
+                                       "(--rules-only; the model path is Phase 1)")
+    p.add_argument("target", nargs="?", help="an epoch or a path to a .pack.json")
+    p.add_argument("--ledger", default=argparse.SUPPRESS,
+                   help="override the global --ledger")
+    p.add_argument("--rules-only", action="store_true",
+                   help="no model: crash signatures + dyno arms + computed tags")
+    p.add_argument("--json", action="store_true", help="the DEBRIEF v1 JSON, nothing else")
+    p.add_argument("--no-write", action="store_true",
+                   help="do not write radio/<epoch>.debrief.json")
+    p.set_defaults(func=cmd_debrief)
+
+    for verb, helptext in (("ask", "one question about the last pack"),
                            ("eval", "score models against the golden cases")):
         p = sub.add_parser(verb, help="%s (%s)" % (helptext, NOT_BUILT))
         p.add_argument("rest", nargs="*")

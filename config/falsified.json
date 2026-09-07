@@ -1,0 +1,262 @@
+{
+  "schema": "ETK-FALSIFIED v1",
+  "source": "TRACK_MANUAL.md section F (FALSIFIED & RETIRED - never re-propose; the disproof is the asset)",
+  "note": "Section F made machine-readable for the RADIO 'never re-propose section F' guard (spec 6). Each entry names WHERE the fuller account lives, HOW a proposal to re-open it is recognised, and WHAT killed it. The guard reads `match` against RECOMMENDATIONS only - config_changes[].yaml_key, driver_dial, and the text of a config/dial/power recommendation - never against findings prose, because refusing an item by name is the point (the eval's falsified_tempt case says 'max_map_count is retired' and must pass). `scope.game_id`, when present, limits the entry to those titles.",
+  "match_keys": {
+    "tu_debug": "TU_DEBUG dial tokens; matched against driver_dial and recommendation prose",
+    "yaml_key": "config_changes[].yaml_key, compared with surrounding whitespace stripped",
+    "env": "environment / sysctl knob names",
+    "power": "power rung or GRID mask names",
+    "text": "regexes over the recommendation's own prose"
+  },
+  "entries": [
+    {
+      "id": "ramoops_pstore",
+      "anchor": "TRACK_MANUAL.md section F; section 2.4 (panic forensics are kmsg + PANIC rows + deterministic narrowing, not backtraces)",
+      "match": {
+        "env": ["ramoops", "pstore", "efi_pstore", "pstore.backend"],
+        "text": ["\\bramoops\\b", "\\bpstore\\b", "ram-backed panic", "ram backed pstore"]
+      },
+      "disproof": "On SM8250 the DDR scrambler re-keys on every reset, so a RAM-backed pstore region never survives the reboot, and efi_pstore persists nothing.",
+      "date": null
+    },
+    {
+      "id": "autostart_mangohud_race",
+      "anchor": "TRACK_MANUAL.md section F; section A.2 (autostart is for none of this; a supervisor belongs in its own systemd unit)",
+      "match": {
+        "text": ["autostart[^.]{0,40}mangohud", "mangohud[^.]{0,40}autostart",
+                 "autostart race"]
+      },
+      "disproof": "Disproven 2026-06-01: autostart and MangoHud never share a time window, so there is no race to lose; tools/probe_autostart_race.sh re-runs the falsifier.",
+      "date": "2026-06-01"
+    },
+    {
+      "id": "boss_avoidance_rtalign",
+      "anchor": "TRACK_MANUAL.md section F (the five boss-avoidance angles); section 2.4 (the 787B boss, N>=9 live bosses)",
+      "match": {
+        "tu_debug": ["rtalign"],
+        "text": ["\\brtalign\\b"]
+      },
+      "disproof": "One of the five boss-avoidance angles: the wedge is a depth-CCU-resolve, and render-target alignment never moved it.",
+      "date": null
+    },
+    {
+      "id": "boss_avoidance_ccu_cache_cap",
+      "anchor": "TRACK_MANUAL.md section F (the five boss-avoidance angles); section 2.4 (the 787B boss, N>=9 live bosses)",
+      "match": {
+        "text": ["ccu[ _-]?cache[ _-]?cap", "cache[ _-]cap[^.]{0,20}ccu"]
+      },
+      "disproof": "One of the five boss-avoidance angles: capping the CCU cache did not avoid the boss wedge.",
+      "date": null
+    },
+    {
+      "id": "boss_avoidance_dsbypass_dsany",
+      "anchor": "TRACK_MANUAL.md section F (the five boss-avoidance angles); section 2.4 (the 787B boss, N>=9 live bosses)",
+      "match": {
+        "tu_debug": ["dsbypass", "dsany"],
+        "text": ["\\bdsbypass\\b", "\\bdsany\\b"]
+      },
+      "disproof": "One of the five boss-avoidance angles: bypassing the depth-stencil path did not avoid the boss wedge.",
+      "date": null
+    },
+    {
+      "id": "boss_avoidance_patch1_wfi",
+      "anchor": "TRACK_MANUAL.md section F (the five boss-avoidance angles); section 2.4 (the 787B boss, N>=9 live bosses)",
+      "match": {
+        "text": ["patch ?#?1[^.]{0,30}wfi", "\\bwfi\\b[^.]{0,30}patch", "wfi patch"]
+      },
+      "disproof": "One of the five boss-avoidance angles: the WFI patch (#1) did not avoid the boss wedge.",
+      "date": null
+    },
+    {
+      "id": "boss_avoidance_patch2_discriminator",
+      "anchor": "TRACK_MANUAL.md section F (the five boss-avoidance angles); section 2.4 (the 787B boss, N>=9 live bosses)",
+      "match": {
+        "text": ["patch ?#?2[^.]{0,40}discriminator", "discriminator patch"]
+      },
+      "disproof": "One of the five boss-avoidance angles: the discriminator patch (#2) did not avoid the boss wedge.",
+      "date": null
+    },
+    {
+      "id": "spurs_ladder_for_audio",
+      "anchor": "TRACK_MANUAL.md section F; section A.4 (witness-first: the SPURS paradox - the operator felt better while every instrument read worse)",
+      "match": {
+        "yaml_key": ["Max SPURS Threads"],
+        "text": ["spurs[ -]?ladder", "spurs[^.]{0,40}audio", "audio[^.]{0,40}spurs"]
+      },
+      "disproof": "The SPURS-thread ladder was climbed for audio and every rung read worse on the instruments; the felt improvement was the SPURS paradox, not a fix.",
+      "date": null
+    },
+    {
+      "id": "thread_scheduler_on_arm",
+      "anchor": "TRACK_MANUAL.md section F (Thread Scheduler config on ARM - source-proven no-op)",
+      "match": {
+        "yaml_key": ["Thread Scheduler"],
+        "text": ["thread scheduler"]
+      },
+      "disproof": "Source-proven no-op: the emulator's thread-scheduler option is not wired on aarch64, so setting it changes nothing at all.",
+      "date": null
+    },
+    {
+      "id": "noconstcheck",
+      "anchor": "TRACK_MANUAL.md section F",
+      "match": {
+        "env": ["noconstcheck"],
+        "text": ["\\bnoconstcheck\\b"]
+      },
+      "disproof": "Retired: noconstcheck bought nothing measurable on this stack.",
+      "date": null
+    },
+    {
+      "id": "max_map_count",
+      "anchor": "TRACK_MANUAL.md section F",
+      "match": {
+        "env": ["vm.max_map_count", "max_map_count"],
+        "text": ["max_map_count"]
+      },
+      "disproof": "Retired: raising vm.max_map_count never changed the wedge rate on this rig - the map count was never the ceiling.",
+      "date": null
+    },
+    {
+      "id": "eviocsabs_trigger_cal",
+      "anchor": "TRACK_MANUAL.md section F; section A.3 (TOOLS tab carries Trigger Calibration - the shipped path)",
+      "match": {
+        "text": ["\\beviocsabs\\b"]
+      },
+      "disproof": "Retired: EVIOCSABS trigger calibration did not stick on this kernel; the TOOLS-tab calibration is the shipped path.",
+      "date": null
+    },
+    {
+      "id": "grid_as_the_gt5p_pack_fix",
+      "anchor": "TRACK_MANUAL.md section F; section 2.4 (GRID mode - standing: GRID-B for GT HD, and the rung moves contention, not throughput)",
+      "scope": {"game_id": ["NPEA00050", "NPEA00502", "NPUA70087", "NPUA70095"]},
+      "match": {
+        "power": ["grid", "gA", "gB", "gC", "race+gA", "race+gB", "race+gC"],
+        "text": ["grid[^.]{0,60}(pack|gt5p|fix)", "(pack|gt5p)[^.]{0,60}grid"]
+      },
+      "disproof": "GRID is not the GT5P pack fix: on the pack the rungs separate on rescues per hour while the frame numbers do not move - it buys contention, not speed.",
+      "date": "2026-07-10"
+    },
+    {
+      "id": "mangohud_as_teardown_murderer",
+      "anchor": "TRACK_MANUAL.md section F; section B.3 (the format axis - a teardown-save cache fix appears correct on .iso and fails on .pkg)",
+      "match": {
+        "text": ["mangohud[^.]{0,40}teardown", "teardown[^.]{0,40}mangohud",
+                 "disable mangohud[^.]{0,40}(save|teardown)"]
+      },
+      "disproof": "MangoHud was cleared as the teardown murderer: the save loss reproduced with the overlay off.",
+      "date": null
+    },
+    {
+      "id": "android_survives_as_a_solution",
+      "anchor": "TRACK_MANUAL.md section F (\"Android survives\" as a solution - diagnostic only)",
+      "match": {
+        "text": ["android survives", "boot(ing)? (into )?android[^.]{0,40}(fix|solution|instead)",
+                 "run it (on|under) android"]
+      },
+      "disproof": "That Android survives a case is a DIAGNOSTIC, never a solution: the deliverable is the ROCKNIX stack, so the finding only narrows the fault.",
+      "date": null
+    },
+    {
+      "id": "non_latin1_hud_glyphs",
+      "anchor": "TRACK_MANUAL.md section F; section 2.4 (GLYPH LAW: Latin-1 ONLY on the HUD)",
+      "match": {
+        "text": ["non-latin-?1", "utf-?8 glyph", "unicode glyph", "emoji[^.]{0,20}hud",
+                 "hud[^.]{0,20}emoji"]
+      },
+      "disproof": "GLYPH LAW: the HUD renders Latin-1 only; anything outside it comes out as garbage on the overlay.",
+      "date": null
+    },
+    {
+      "id": "mako_image_rendering",
+      "anchor": "TRACK_MANUAL.md section F; section A.3 notification laws (mako renders TEXT ONLY on this build - the gdk-pixbuf loader .so files are stripped)",
+      "match": {
+        "text": ["mako[^.]{0,40}(image|icon|pixbuf|thumbnail)",
+                 "(image|icon|pixbuf)[^.]{0,30}notification"]
+      },
+      "disproof": "mako on this build renders TEXT ONLY: the gdk-pixbuf loader shared objects are stripped, so an image hint draws nothing.",
+      "date": null
+    },
+    {
+      "id": "attract_mode_trials_for_crash_classes",
+      "anchor": "TRACK_MANUAL.md section F; section B.3 (attract-mode runs are invalid for crash-class studies - attract survived 1200 s+ where racing crashed in ~2 min)",
+      "match": {
+        "text": ["attract[- ]?mode[^.]{0,50}(trial|test|study|repro|crash|class)",
+                 "(trial|test|study|repro)[^.]{0,30}attract[- ]?mode"]
+      },
+      "disproof": "Attract-mode runs are invalid for crash-class work: the fault is live-race-path-specific, and attract survived 1200 s+ where racing wedged in about two minutes.",
+      "date": null
+    },
+    {
+      "id": "srm_on_disc_for_iso_stutter",
+      "anchor": "TRACK_MANUAL.md section F",
+      "match": {
+        "text": ["srm[- ]on[- ]disc", "\\bsrm\\b[^.]{0,40}(iso|stutter)",
+                 "(iso|stutter)[^.]{0,30}\\bsrm\\b"]
+      },
+      "disproof": "SRM-on-disc did not move the ISO stutter; the stutter is not an SRM placement problem.",
+      "date": null
+    },
+    {
+      "id": "mako_has_no_progress_widget",
+      "anchor": "TRACK_MANUAL.md section F; section A.3 (mako 1.10.0 DOES render a progress bar - standard `value` hint)",
+      "match": {
+        "text": ["mako has no progress", "no progress (bar|widget)[^.]{0,30}mako",
+                 "mako[^.]{0,30}cannot (show|render)[^.]{0,20}progress"]
+      },
+      "disproof": "False belief, retired: mako 1.10.0 does render a progress bar from the standard `value` hint, and the installer's ETK INSTALL card uses it.",
+      "date": null
+    },
+    {
+      "id": "no_headless_install",
+      "anchor": "TRACK_MANUAL.md section F; section A.3 (the discrimination law - both installers are headless and log-first)",
+      "match": {
+        "text": ["no headless install", "headless install[^.]{0,30}(impossible|not possible|cannot)",
+                 "--no-gui[^.]{0,30}headless"]
+      },
+      "disproof": "False belief, retired: --no-gui is not --headless, and both installers already run headless with a log-first verdict.",
+      "date": null
+    },
+    {
+      "id": "zfunc_theory_for_road_flicker",
+      "anchor": "TRACK_MANUAL.md section F; section 2.4 (the #11912 road-flicker fix, GTK_REMAP0_ONE)",
+      "match": {
+        "text": ["\\bzfunc\\b", "depth (func|function)[^.]{0,30}flicker"]
+      },
+      "disproof": "Retracted: the console renders the road black too, so the flicker was never a depth-function mismatch; #11912 was fixed by GTK_REMAP0_ONE.",
+      "date": null
+    },
+    {
+      "id": "fifo_combos_for_rr7",
+      "anchor": "TRACK_MANUAL.md section F (FIFO fetch-accuracy/reordering combos for RR7; the PPU-decoder interpreter A/B is the indicated probe)",
+      "scope": {"game_id": ["NPUB30457"]},
+      "match": {
+        "yaml_key": ["RSX FIFO Fetch Accuracy", "RSX FIFO Accuracy",
+                     "Disable FIFO Reordering"],
+        "text": ["fifo[^.]{0,40}(fetch|reorder)", "(fetch|reorder)[^.]{0,30}fifo"]
+      },
+      "disproof": "2026-08-21: every FIFO fetch/reorder rung read worse than stock Atomic and left the menus unreachable - the RR7 fault is not FIFO ordering.",
+      "date": "2026-08-21"
+    },
+    {
+      "id": "smartctl_through_a_usb_card_reader",
+      "anchor": "TRACK_MANUAL.md section F; section Q and section 0 (TREADWEAR: card health is MEASURED by tools/card_doctor.py, never queried)",
+      "match": {
+        "text": ["\\bsmartctl\\b", "\\bs\\.?m\\.?a\\.?r\\.?t\\.? (data|attributes|health)"]
+      },
+      "disproof": "2026-09-04: -d scsi stalled the Norelsys NS1081 bridge into a kernel USB reset and killed an 80-minute card scan; USB readers expose no SMART registers at all.",
+      "date": "2026-09-04"
+    },
+    {
+      "id": "sysmem_as_a_verdict",
+      "anchor": "TRACK_MANUAL.md section F (the disproof is the asset); section B.3 (the noise floor is huge - GT5P clean-run range 77-2886 s, N>=3 before any crown); RADIO_SPEC section 10 case sysmem_no_crown",
+      "match": {
+        "tu_debug": ["sysmem"],
+        "text": ["sysmem[^.]{0,50}(fix|verdict|default|validated|proven|win|crown)",
+                 "(bake|ship|default)[^.]{0,30}sysmem"]
+      },
+      "disproof": "2026-06-17/18: the one 906 s clean run that looked like a 4-7x win sat inside the title's own 77-2886 s noise floor and differed by an attract warm-up, not only by the knob; the crown was refused.",
+      "date": "2026-06-18"
+    }
+  ]
+}

@@ -11,8 +11,10 @@ from the operator's screen, mechanism from the log.
 
 THE KPI - FABLE'S CHALLENGE
 A locked 60 FPS / 16.7 ms at NATIVE 720p, res 100, judged by perfect_pct (frames inside the
-title's lock window), never by fps averages and never across titles. Lowering resolution is
-CHEATING toward the KPI: a Resolution Scale drop is a crash-net move only, allowed when a
+title's lock window), never by fps averages and never across titles. The lock window is PER TITLE and never compared across titles: GT HD locked-60 =
+[15.5, 18.0] ms; the GT5P family locked-30 = [31.0, 36.0] ms; the pack's
+timeline.lock_window_ms says which one applied. perfect_windows in the timeline is a per-bin
+share inside that window, not perfect_pct. Lowering resolution is CHEATING toward the KPI: a Resolution Scale drop is a crash-net move only, allowed when a
 matched crash signature lists it, never as a KPI recommendation.
 
 THE LEDGER METHOD

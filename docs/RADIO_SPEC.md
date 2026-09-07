@@ -1,6 +1,6 @@
 # RADIO — `etk-cloud-ai`, the race engineer on the pit radio
 
-**Experimental spec · 2026-09-06 · branch `radio` off `main` @ `76d8769` · STATUS: SPEC — exam harness built + qwen3.5 credentialed (§10.3, `docs/RADIO_CREDENTIAL.md`); core loop (pack / service / rig) unbuilt**
+**Experimental spec · 2026-09-06 · branch `radio` off `main` @ `76d8769` · STATUS: PHASE 0 BUILT (2026-09-07) — host harness complete: contracts, packer, briefing, guards, rules-only debrief, service under a fake Ollama, sender, 12 eval fixtures (rules-only 12/12); exam + credential (§10.3); nothing on the node or the rig yet (Phase 1/2a are operator-run)**
 
 The kit records every session (2,464 ledger rows on 2026-09-06), judges knob A/Bs with
 `etk_dyno`, and explains crashes from `crash_signatures.json`. What it does not have is
@@ -132,18 +132,18 @@ Naming (§C.3): the mechanism is the `etk-cloud-ai` service; the metaphor is the
 | # | Piece | Lang / runs on | Notes |
 |---|---|---|---|
 | 1 | `bin/radio_pack.py` **(BUILT 2026-09-07)** | python stdlib, rig | reduces one session into PACK v1 (§3.1); allowlisted fields only; ≤ 64 KB; runnable by hand for any epoch — a one-file forensic bundle is useful without any model. Self-validates against `pack.v1` and keeps the newest 50 packs/debriefs; `tools/radio.py inspect <epoch>` renders it |
-| 2 | `bin/radio_send.sh` | POSIX sh + curl + jq, rig | `debrief <epoch>` · `drain` · `ask <question-id>`; header-file token; submit/poll/store/toast; `RADIO_WAIT_S` (default 720) then `pending/` |
+| 2 | `bin/radio_send.sh` **(BUILT 2026-09-07)** | POSIX sh + curl + jq, rig | `debrief <epoch>` · `drain` · `ask <question-id>`; header-file token; submit/poll/store/toast; `RADIO_WAIT_S` (default 720) then `pending/` |
 | 3 | `tools/etk_dyno.py --json` **(BUILT 2026-09-07)** | python, host + rig | arms as JSON keyed by dyno's grouping (stack, tune, res, clk, pwr); no behaviour change to the text report |
-| 4 | `tools/radio/service.py` | python 3.12 stdlib, node | `POST /v1/debrief`, `GET /v1/jobs/<id>`, `POST /v1/ask`, `GET /v1/health`; bearer on every route; 64 KB body cap; sqlite job table; one worker thread; forge-lock wait; structured-output call to Ollama; schema validation; guards; result retention 30 days |
-| 5 | `tools/radio/briefing.py` | python, node | deterministic selection (§4.2); unit-tested against fixture packs |
-| 6 | `tools/radio/guards.py` + `config/falsified.json` | python, node (+ repo) | §6; `falsified.json` is §F made machine-readable, each entry naming its manual anchor |
-| 7 | `tools/radio/prompts/engineer.md`, `Modelfile.debrief`, `Modelfile.fast` | node | the system prompt (doctrine, voice, output contract); `prompt_sha256` stamped into every debrief — the tune_tag of advice |
+| 4 | `tools/radio/service.py` **(BUILT 2026-09-07)** | python 3.12 stdlib, node | `POST /v1/debrief`, `GET /v1/jobs/<id>`, `POST /v1/ask`, `GET /v1/health`; bearer on every route; 64 KB body cap; sqlite job table; one worker thread; forge-lock wait; structured-output call to Ollama; schema validation; guards; result retention 30 days |
+| 5 | `tools/radio/briefing.py` **(BUILT 2026-09-07)** | python, node | deterministic selection (§4.2); unit-tested against fixture packs |
+| 6 | `tools/radio/guards.py` + `config/falsified.json` **(BUILT 2026-09-07)** | python, node (+ repo) | §6; `falsified.json` is §F made machine-readable, each entry naming its manual anchor |
+| 7 | `tools/radio/prompts/engineer.md`, `Modelfile.debrief`, `Modelfile.fast` **(BUILT 2026-09-07)** | node | the system prompt (doctrine, voice, output contract); `prompt_sha256` stamped into every debrief — the tune_tag of advice |
 | 8 | `tools/radio/schema/{pack,debrief}.v1.json` + `tools/radio/schemas.py` **(BUILT 2026-09-07)** | repo; debrief schema also pushed to the rig | contracts (§3); Ollama `format:` takes the debrief schema for constrained decoding. `schemas.py` is the stdlib validator both ends use — `load("pack.v1")` / `validate(obj, schema) -> [errors]`, empty means valid |
-| 9 | `tools/radio/provision_etk_cloud_ai.sh` | bash, node — **OPERATOR RUNS IT** | installs ollama (script fetched and read first, per the checked runbook steps), writes the systemd drop-in, pulls the two models, creates the Modelfiles, installs `etk-radio.service`, brings up Caddy, mints the token (printed once), prints the doors to open (OCI security list + iptables 80/443) |
-| 10 | `tools/radio/Caddyfile`, `docker-compose.yml` | node | forked from the proven kit; `reverse_proxy 127.0.0.1:8737`; `SITE_ADDRESS` from `.env` |
-| 11 | `tools/radio.py` | python, host | `debrief --epoch N` (host mirror), `ask`, `pack --inspect`, `eval`; reaches the node through `ssh -L`; §11 ruling applies |
+| 9 | `tools/radio/provision_etk_cloud_ai.sh` **(BUILT 2026-09-07)** | bash, node — **OPERATOR RUNS IT** | installs ollama (script fetched and read first, per the checked runbook steps), writes the systemd drop-in, pulls the two models, creates the Modelfiles, installs `etk-radio.service`, brings up Caddy, mints the token (printed once), prints the doors to open (OCI security list + iptables 80/443) |
+| 10 | `tools/radio/Caddyfile`, `docker-compose.yml` **(BUILT 2026-09-07)** | node | forked from the proven kit; `reverse_proxy 127.0.0.1:8737`; `SITE_ADDRESS` from `.env` |
+| 11 | `tools/radio.py` **(BUILT 2026-09-07)** | python, host | `debrief --epoch N` (host mirror), `ask`, `pack --inspect`, `eval`; reaches the node through `ssh -L`; §11 ruling applies |
 | 12 | `tools/radio/exam.py` + `exam/{questions.json,cases/*.json}` + `exam_stability.py` **(BUILT 2026-09-06; 3-seed stability + credential 09-07)** | python, host (needs the node) | §10 golden cases + comprehension quiz + self-test (21/21) + N-seed stability; run against 4b/9b (§10.2/§10.3) → `docs/RADIO_CREDENTIAL.md`. Still to add: the rules-only baseline arm and the model-vs-rules blind read |
-| 13 | `tools/test_radio.py`, `tools/radio/test_service.py` | python, host, no network | packer on fixture telemetry, schema, guards, toast copy ASCII, token-never-in-argv, service loop with a fake Ollama |
+| 13 | `tools/test_radio.py`, `tools/radio/test_service.py` **(BUILT 2026-09-07)** | python, host, no network | packer on fixture telemetry, schema, guards, toast copy ASCII, token-never-in-argv, service loop with a fake Ollama |
 | 14 | Pitstop | python, rig | pit_note writer contract; detail-card RADIO DEBRIEF block; RADIO tab (§7); LOAD FIX staging; ACCEPT RUN SHEET; `source` column on config rows |
 | 15 | install.sh | bash, host | STEP 3: `etk_dyno.py` push + chmod; STEP 5: `radio_debrief.v1.json`; **STEP 7b RADIO LINK** (`RADIO_URL`+`RADIO_TOKEN` → preflight `/v1/health` → `radio.json` chmod 600); `etk.conf.example` block; uninstall removes `radio.json` |
 | 16 | `session_postmortem.sh` | sh, rig — locked-down core | ONE line at the very end, after the breadcrumb consume, Phase 2b only (§9) |
@@ -746,7 +746,21 @@ Every handoff in the phases below ends with one command in a `bash` block.
 
 ## 14. Phases — each ends at a surface and a handoff
 
-**Phase 0 — host harness, no node, no rig (Claude builds; operator reviews).**
+**Phase 0 — host harness, no node, no rig (Claude builds; operator reviews). BUILT 2026-09-07
+(five Opus agents in three waves; every piece committed with its discriminating test).**
+Integration notes: the node token file ships `0640 root:ubuntu` (the unit runs as `ubuntu`;
+`0600 root:root` would 401 every route); the service hands Ollama a MODEL VIEW of
+`debrief.v1` (provenance fields removed so constrained decoding cannot be forced to invent a
+`prompt_sha256`) and validates the stamped result against the full schema; whether Ollama's
+`format:` resolves the schema's local `$ref` is a **Phase 1 falsifier** on the real node;
+`manual` is not a resolvable evidence source (a doctrine quotation is not a citation of the
+row — such findings demote to `observation` + `uncited`); `RADIO_INTERACTIVE=1` is set only
+by the TOOLS "send last session" entry (Phase 2a), never by the postmortem hook; the eval's
+`hallucinated_key` case is graded through `guards.apply` on the synthetic model output, the
+other eleven through `rules_only.build`; the 4,500-token budget applies to the whole prompt
+even though the doctrine (≈1,500 tokens) is prefix-cached — revisit with measured Phase 1
+timings. Host-side host-mirror facts: `rig.os` and the dmesg window are rig-only and null off
+the rig; row 1788491975 packs at 8,659 B.
 Contracts (`schema/*.json`), `radio_pack.py` run against the host mirror
 `state/etk_telemetry/` for any epoch, `etk_dyno.py --json`, `briefing.py`, `guards.py`,
 `falsified.json`, `engineer.md`, `service.py` under a fake Ollama, `test_radio.py` +
