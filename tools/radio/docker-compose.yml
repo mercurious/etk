@@ -1,0 +1,35 @@
+# ETK RADIO -- Caddy in front of etk-radio.service (spec 1.6, 2, 9).
+#
+# ONE container, and it is not the model: Ollama runs from systemd on the host so the
+# forge and the radio share one memory budget under one keep-alive. Caddy is here
+# because docker is already on the node and because a pinned image is the cheapest way
+# to get automatic Let's Encrypt renewal.
+#
+# The operator brings this up:  docker compose up -d caddy
+# provision_etk_cloud_ai.sh prints that command; it does not run docker for you.
+
+services:
+  caddy:
+    image: caddy:2
+    container_name: etk-radio-caddy
+    restart: unless-stopped
+    # Host networking so Caddy can reach 127.0.0.1:8737 -- the service is bound to
+    # loopback and must stay there. It also means ports 80/443 are the HOST's; the
+    # two doors (tenancy security list + node iptables) are the operator's to open.
+    network_mode: host
+    env_file:
+      - .env
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data          # certificates and ACME account: LOSING THIS
+                                  # re-issues certs and can hit rate limits
+      - caddy_config:/config
+    healthcheck:
+      test: ["CMD", "caddy", "version"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  caddy_data:
+  caddy_config:

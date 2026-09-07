@@ -1,0 +1,43 @@
+[Unit]
+# ETK RADIO -- the race engineer on the pit radio (docs/RADIO_SPEC.md section 9).
+# Installed by tools/radio/provision_etk_cloud_ai.sh, which the OPERATOR runs.
+Description=ETK RADIO debrief service (etk-cloud-ai)
+Documentation=https://github.com/mercurious/etk/blob/radio/docs/RADIO_SPEC.md
+After=network-online.target ollama.service
+Wants=network-online.target
+# Not Requires=: if Ollama is down the service must still answer /v1/health with
+# "ollama": false, which is exactly the reading the rig needs (spec 12, cold weights).
+After=ollama.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=%h/etk/tools/radio
+Environment=RADIO_CONFIG=/etc/etk-radio/config.json
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 service.py --config /etc/etk-radio/config.json
+Restart=always
+RestartSec=5
+# Logs go to stderr and journald reads them: journalctl -u etk-radio -f
+StandardOutput=journal
+StandardError=journal
+
+# COEXISTENCE (spec 9): there is deliberately NO MemoryHigh here. The weights are
+# held by ollama.service, not by this process, so a cap on this unit would throttle
+# the 3 MB of python that schedules the work and leave the 8 GB untouched -- an
+# honest-looking knob that does nothing. The real guard is the forge lock the worker
+# waits on (~/forge-runs/active_*) plus OLLAMA_KEEP_ALIVE=30m.
+
+# The service reads a pack, writes JSON under ~/etk-radio, and talks to 127.0.0.1.
+# It never needs privilege, so it is not given any.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=no
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+
+[Install]
+WantedBy=multi-user.target

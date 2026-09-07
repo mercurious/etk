@@ -1,0 +1,46 @@
+# ETK RADIO -- the only thing on this node the rig can reach (spec 1.6, 2, 9).
+#
+# Caddy terminates TLS on 443 and proxies to the service on loopback. Ollama
+# (127.0.0.1:11434) is NOT proxied and must never be: the model is reachable only
+# through /v1/*, where the bearer check and the 64 KB body cap live.
+#
+# SITE_ADDRESS comes from .env (see .env.example): <reserved-ip-dashes>.sslip.io, so
+# Let's Encrypt issues a real certificate and the rig's curl verifies it against the
+# system bundle. No -k on the rig, ever.
+
+{$SITE_ADDRESS} {
+	reverse_proxy 127.0.0.1:8737 {
+		# A debrief is async and the rig polls, so no request should ever be long.
+		# /v1/ask is the exception: synchronous on the fast model, bounded at 180 s
+		# by the service itself, so give the proxy a little more than that.
+		transport http {
+			response_header_timeout 200s
+			read_timeout 200s
+		}
+	}
+
+	# The pack is capped at 64 KB by the packer and by the service; say so at the
+	# edge too, so an oversized body never reaches python.
+	request_body {
+		max_size 64KB
+	}
+
+	encode gzip
+
+	log {
+		output stdout
+		# The bearer arrives in the Authorization header. Caddy does not log request
+		# headers by default; do not add one here (paddock_sync law: never in a log).
+		format console
+	}
+}
+
+# FALLBACK when the doors are shut or ACME cannot reach this host: an internal CA.
+# The rig would then need Caddy's root in its trust store, which is a deploy step
+# nobody has taken -- so this is a diagnostic, not a shipping mode. Comment out the
+# block above and uncomment this one to prove the proxy works without ACME:
+#
+# {$SITE_ADDRESS} {
+# 	tls internal
+# 	reverse_proxy 127.0.0.1:8737
+# }

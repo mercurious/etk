@@ -1,0 +1,41 @@
+{
+  "_": "ETK RADIO service config. provision_etk_cloud_ai.sh writes /etc/etk-radio/config.json from this file with the node's home directory filled in. Keys starting with _ are comments; ANY OTHER unknown key is a hard error, because a typo'd retention_days that silently kept its default would delete nothing for thirty days before anyone noticed.",
+  "_bind": "loopback only. Caddy is the only thing in front of this service; ss -ltn must never show 0.0.0.0:8737.",
+  "bind": "127.0.0.1",
+  "port": 8737,
+  "token_file": "/etc/etk-radio/token",
+
+  "_ollama": "Ollama is pinned to 127.0.0.1 by the systemd drop-in and is never exposed. keep_alive holds the weights (and the prefix-cached doctrine) between calls; spec 5 measured 82-118 tok/s warm against 17.9 cold on the 9b.",
+  "ollama_url": "http://127.0.0.1:11434",
+  "model_debrief": "etk-radio:9b",
+  "model_fast": "etk-radio:4b",
+  "keep_alive": "30m",
+  "think": false,
+
+  "_state": "~ is expanded against the service user's home (the unit runs as ubuntu).",
+  "jobs_db": "~/etk-radio/jobs.db",
+  "results_dir": "~/etk-radio/results",
+  "packs_dir": "~/etk-radio/packs",
+  "corpus_root": "~/etk",
+  "forge_runs_dir": "~/forge-runs",
+  "retention_days": 30,
+
+  "_budget": "spec 6 never-truncate: the prompt is counted before the call and a job that would not fit num_ctx - num_predict - budget_slack is FAILED, not truncated.",
+  "max_body": 65536,
+  "num_ctx": 8192,
+  "num_predict": 700,
+  "temperature": 0.2,
+  "budget_slack": 64,
+
+  "_timeouts": "chat_timeout_s has to cover a cold 9b weight load (91 s) plus a long prefill; ask_timeout_s is the spec 9 synchronous bound on /v1/ask.",
+  "chat_timeout_s": 900,
+  "ask_timeout_s": 180,
+  "forge_poll_s": 30,
+
+  "_corpus": "git pull before each debrief keeps corpus_commit honest (spec 4); a pull failure uses the checkout as it is.",
+  "git_pull": true,
+  "git_timeout_s": 20,
+
+  "_rules_only": "true = skip the model stage entirely and answer from rules_only.build. The eval baseline, and the honest fallback while a rung is unproven (spec 10.3).",
+  "rules_only": false
+}
