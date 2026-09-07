@@ -194,6 +194,16 @@ def _num(v):
 def _short(v):
     if isinstance(v, float):
         v = ("%.3f" % v).rstrip("0").rstrip(".")
+    if isinstance(v, list) and v and all(isinstance(x, dict) for x in v):
+        # a table (dyno arms, history rows, error lines): summarize, never truncate
+        # mid-object -- a half-printed JSON list is not evidence anyone can read
+        ns = [x.get("n") for x in v if isinstance(x.get("n"), (int, float))]
+        if ns:
+            return "%d arm(s), highest N %s" % (len(v), int(max(ns)))
+        return "%d row(s); first: %s" % (
+            len(v), to_ascii(json.dumps(v[0]))[:36] + ("..." if len(json.dumps(v[0])) > 36 else ""))
+    if isinstance(v, list) and len(v) > 3:
+        return "%d item(s): %s ..." % (len(v), to_ascii(json.dumps(v[:3]))[:40])
     s = to_ascii(v if not isinstance(v, (dict, list)) else json.dumps(v))
     return s if len(s) <= 60 else s[:57] + "..."
 

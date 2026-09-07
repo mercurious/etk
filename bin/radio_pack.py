@@ -333,8 +333,10 @@ def career(careerdir, game_id, notes):
     return out
 
 
-def last_debrief_epoch(radiodir, game_id):
-    """Epoch of the newest radio/<epoch>.debrief.json belonging to this game."""
+def last_debrief_epoch(radiodir, game_id, before=None):
+    """Epoch of the newest radio/<epoch>.debrief.json belonging to this game, older
+    than `before` when given -- re-packing an already-debriefed row must not close its
+    own change window (found 2026-09-07: a second pack of 1788491975 reported 0 changes)."""
     if not radiodir.exists():
         return None
     best = None
@@ -351,6 +353,8 @@ def last_debrief_epoch(radiodir, game_id):
             continue
         if isinstance(d.get("epoch"), int):
             ep = d["epoch"]
+        if before is not None and ep >= before:
+            continue
         if best is None or ep > best:
             best = ep
     return best
@@ -374,7 +378,7 @@ def changes_since_last_debrief(telem, game_id, epoch, notes):
             continue
         if c[1] == game_id and int(c[0]) <= epoch:
             rows.append({"epoch": int(c[0]), "field": c[2], "old": c[3], "new": c[4]})
-    since = last_debrief_epoch(sib(telem, "radio"), game_id)
+    since = last_debrief_epoch(sib(telem, "radio"), game_id, before=int(epoch))
     if since is None:
         notes.append(f"no prior debrief for {game_id}: last {MAX_HISTORY} config changes")
         return rows[-MAX_HISTORY:]

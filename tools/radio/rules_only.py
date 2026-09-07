@@ -154,6 +154,20 @@ def _falsified_in_note(pack):
     return hits
 
 
+
+def _clip(line, n):
+    line = str(line or "").strip()
+    return line if len(line) <= n else line[:n - 3] + "..."
+
+
+def _needle(line):
+    """A stable substring for the evidence resolver: the line after its timestamp."""
+    line = str(line or "").strip()
+    m = re.match(r"^[EF] \d+:\d+:\d+\.\d+ (.*)$", line)
+    body = m.group(1) if m else line
+    return body[:60]
+
+
 def _findings(pack, tg):
     out, cat = [], _catalog()
     ses, crash = _sess(pack), (pack.get("crash") or {})
@@ -255,6 +269,26 @@ def _findings(pack, tg):
             [{"source": "aud", "field": "skip", "value": aud.get("skip")},
              {"source": "aud", "field": "ur", "value": aud.get("ur")},
              {"source": "aud", "field": "rmin", "value": aud.get("rmin")}]))
+
+    fatals = [e for e in (crash.get("rpcs3_errors") or [])
+              if isinstance(e, dict) and re.match(r"^F ", str(e.get("line") or ""))]
+    exits = [e for e in (crash.get("rpcs3_errors") or [])
+             if isinstance(e, dict) and "did not react to the exit request"
+             in str(e.get("line") or "")]
+    if fatals or exits:
+        parts = []
+        if fatals:
+            parts.append("%d fatal (F) line%s in the RPCS3 log that no crash signature "
+                         "covers: %s" % (len(fatals), "" if len(fatals) == 1 else "s",
+                                          _clip(fatals[0].get("line"), 110)))
+        if exits:
+            parts.append("the session ended by an exit request the game did not answer "
+                         "in time")
+        text = ("Uncatalogued: " + "; ".join(parts) + ". Not a diagnosis - the catalog "
+                "has no entry for this, so the engineer reads the log window.")
+        ev = [{"source": "rpcs3", "line": _needle(e.get("line"))}
+              for e in (fatals[:2] + exits[:1])]
+        out.append(_finding(pack, "anomaly", text, ev))
 
     if "low_n" in tg:
         arms = tagmod.session_arms(pack)

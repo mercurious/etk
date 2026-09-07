@@ -18,6 +18,9 @@ share inside that window, not perfect_pct. Lowering resolution is CHEATING towar
 matched crash signature lists it, never as a KPI recommendation.
 
 THE LEDGER METHOD
+Two temperatures, two sensors: session.peak_temp / avg_temp are the rig's thermal zone
+as the kit's thermal daemon reads it; timeline.temp_c is the HUD's GPU probe. They
+disagree by design; the gap is not a contradiction and not a finding.
 The headline is duration and time-to-crash - the ceiling - never a raw crash rate. Medians,
 never means. Every claim carries its N. SURVIVED:* counts CLEAN by the ladder: the anti-lock
 net caught a hang and the race finished. Bake sessions (many new shaders compiled) and

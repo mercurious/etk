@@ -105,7 +105,7 @@ def render(pack):
         _s(ses.get("res_scale"))))
     L.append(_rule())
 
-    L.append("SESSION  %-22s %8s   shd %-5s drain %-5s temp %s/%s C" % (
+    L.append("SESSION  %-22s %8s   shd %-5s drain %-5s soc %s/%s C" % (
         _s(ses.get("status")), _dur(ses.get("duration_s")),
         _s(ses.get("shaders_harvested")), _s(ses.get("drain_pct")),
         _s(ses.get("avg_temp")), _s(ses.get("peak_temp"))))
@@ -178,7 +178,7 @@ def render(pack):
             else ""))
         L.append(_series("fps_med", tl.get("fps_med")))
         L.append(_series("ft_p99 ms", tl.get("ft_p99_ms")))
-        L.append(_series("temp C", tl.get("temp_c")))
+        L.append(_series("gpu temp C", tl.get("temp_c")))
         L.append(_series("locked %", tl.get("perfect_windows")))
     elif tl:
         L.append("TIMELINE trimmed to fit the byte cap")
