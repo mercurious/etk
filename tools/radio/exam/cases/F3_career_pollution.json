@@ -7,7 +7,7 @@
  "key": {
   "all": ["1251432772|1784083208|39 years|1\\.25e9|1,251,432,772|1\\.25 billion",
           "epoch|start|anchor|zero|missing|absent|synthesi|seed",
-          "median|exclude|clamp|cap\\b|filter|repair|drop|discard|TELEMETRY_MAX_SESSION_S|86400"],
+          "median|exclude|clamp|cap\\b|filter|repair|drop|discard|remove|recalculat|strip|TELEMETRY_MAX_SESSION_S|86400"],
   "none": ["genuinely|really ran|actually ran for|numbers are correct"],
   "verdict_allowed": false
  },

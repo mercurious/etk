@@ -142,7 +142,7 @@ Naming (§C.3): the mechanism is the `etk-cloud-ai` service; the metaphor is the
 | 9 | `tools/radio/provision_etk_cloud_ai.sh` | bash, node — **OPERATOR RUNS IT** | installs ollama (script fetched and read first, per the checked runbook steps), writes the systemd drop-in, pulls the two models, creates the Modelfiles, installs `etk-radio.service`, brings up Caddy, mints the token (printed once), prints the doors to open (OCI security list + iptables 80/443) |
 | 10 | `tools/radio/Caddyfile`, `docker-compose.yml` | node | forked from the proven kit; `reverse_proxy 127.0.0.1:8737`; `SITE_ADDRESS` from `.env` |
 | 11 | `tools/radio.py` | python, host | `debrief --epoch N` (host mirror), `ask`, `pack --inspect`, `eval`; reaches the node through `ssh -L`; §11 ruling applies |
-| 12 | `tools/radio/eval.py` + `eval_cases/*.json` | python, host (needs the node) | §10 golden cases + rules-only baseline + scorecard |
+| 12 | `tools/radio/exam.py` + `exam/{questions.json,cases/*.json}` **(BUILT 2026-09-06)** | python, host (needs the node) | §10 golden cases + comprehension quiz + self-test + scorecard; run against 4b/9b (§10.2). Still to add: the rules-only baseline arm and the model-vs-rules blind read |
 | 13 | `tools/test_radio.py`, `tools/radio/test_service.py` | python, host, no network | packer on fixture telemetry, schema, guards, toast copy ASCII, token-never-in-argv, service loop with a fake Ollama |
 | 14 | Pitstop | python, rig | pit_note writer contract; detail-card RADIO DEBRIEF block; RADIO tab (§7); LOAD FIX staging; ACCEPT RUN SHEET; `source` column on config rows |
 | 15 | install.sh | bash, host | STEP 3: `etk_dyno.py` push + chmod; STEP 5: `radio_debrief.v1.json`; **STEP 7b RADIO LINK** (`RADIO_URL`+`RADIO_TOKEN` → preflight `/v1/health` → `radio.json` chmod 600); `etk.conf.example` block; uninstall removes `radio.json` |
@@ -298,10 +298,14 @@ context is long, and leaves no room for the forge — rejected (on 2026-09-06 it
 225–240 s before each of two reviews, 8¼ minutes wall apiece; §10.1). The 14B is
 batch-only.
 
-**Debrief arithmetic on the 9b:** doctrine 1,200 (cached after the first call of the
-evening) + briefing 1,000 + evidence 1,500 + task 300 ≈ 4,000 tokens → ~140 s prefill
-warm (~225 s cold) + ~450 output tokens at 5 tok/s ≈ 90 s → **4–5.5 min per debrief**,
-async, toasted when ready. The 4b, at its measured 28 tok/s prefill and 6.4–7.6 tok/s
+**Debrief arithmetic on the 9b, corrected by the 2026-09-06 exam (§10.2):** the doctrine +
+packet is the same system message every call and is prefix-cached, so after the first call
+of a session prefill runs at 82–118 tok/s, not 17 cold. A real debrief (packet ~5.3k
+cached + evidence ~1.5k fresh + ~300 tokens out at 4.5 tok/s) lands at **~2 min warm** on
+the 9b and **~1.5 min** on the 4b, async, toasted when ready; the first call of a session
+pays the cold prefill (~225 s on the 9b) and the weight load if the keep-alive lapsed. The
+budget cap now protects generation as much as prefill: 630 output tokens cost ten minutes
+on the 9b, so the debrief schema caps `num_predict` and the prose fields are short. The 4b, at its measured 28 tok/s prefill and 6.4–7.6 tok/s
 generation, lands near **3.5 min** for the same pack (143 s + 64 s) and is the
 radio-check model (interactive; the `_ProgressCard` shows elapsed time, which is honest
 movement); a 7,170-token prompt cost it 259 s of prefill alone, which is why the pack
@@ -330,6 +334,7 @@ Each guard names the law it enforces and what `tools/test_radio.py` asserts.
 | **ASCII surfaces** | §A.3 glyph law, notification law | `radio`/`headline` are transliterated to ASCII before any toast or `pit_note.txt` write; over-length is truncated at a word boundary |
 | **Evidence beside every claim** | §B.3 "attribution outranks narrative"; the 2026-09-06 pre-prototype (§10.1) | every finding's `evidence[]` must resolve to a pack field or a quoted pack line; the renderer prints the resolved line verbatim under the claim, so a semantic flip ("abort" for "requeue", 4 MB read as 288 MB) is visible at a glance; a finding whose evidence does not resolve is demoted to `observation` and tagged `uncited` |
 | **Never truncate silently** | §10.1: three of four prompts were cut at 4,098 tokens and the models judged fragments as whole files | the service sets `num_ctx` explicitly, counts the prompt before the call, and REJECTS a pack that would not fit (`failed: over budget`, logged, toasted only for operator-pressed sends); Ollama's own truncation is never allowed to decide what the model saw |
+| **Diagnosis is not prescription** | §10.2: both models diagnosed the env bomb precisely, then prescribed a fix that would break Law #2 | a recommendation whose `next_action` or `config_changes` would touch anything outside `pitstop_fields.json` (a script, `env.sh`, a daemon, the kernel) is tagged `review_only` and rendered as "engineer to review", never staged by LOAD FIX; only schema-vocabulary `config_changes` can be staged. The model's diagnosis is surfaced; its fix for kit internals is not trusted |
 
 A rules-only debrief (no model) is produced by the same pipeline with the model stage
 skipped: crash-signature text + dyno arms + computed tags + the run sheet's `next`. It
@@ -569,6 +574,47 @@ What it says for RADIO, each mapped to a decision above:
   full-context mode instead of chunk retrieval — the direct A/B for the rung decision
   before any code is written. The 42 KB postmortem script is ~11k tokens and would cost
   the 9b ten minutes of prefill; it is the case for the pack budget, not a review target.
+
+### 10.2 First exam results — 4b vs 9b (2026-09-06)
+
+The harness (`tools/radio/exam.py`, 15 comprehension questions + 6 forensics cases, the
+self-test at 21/21) was run against both candidate rungs on an identically-shaped node
+over the tunnel. Full detail: dossier `RadioExam_Results_20260906.md`. Adjudicated after
+fixing three over-strict grader keys (found by human read, then the stored answers
+re-graded — the reason the eval keeps a human-read column):
+
+| Model | Comprehension | Forensics | Only misses | Exam wall |
+|---|---|---|---|---|
+| qwen3.5:4b | 14/15 | 5/6 | Q13, **F6** | 13.1 min |
+| qwen3.5:9b | 14/15 | 5/6 | Q13, **F6** | 22.2 min |
+
+The result that matters most is the comparison with §10.1: **giving the model the whole
+doctrine plus bounded evidence plus a JSON contract fixed every dangerous failure the RAG
+reviews showed.** The 4 MB / 288 MB flip, the requeue / abort flip and the phone-call flip
+did not recur; `verdict_allowed` was correctly `false` on all six cases for both models;
+no §F re-proposal, no invented config key, no resolution-lowering, no bake/attract fps
+claim. The N-discipline and the anti-crown stance landed.
+
+Both models share exactly two misses. Q13 read "don't burn a call" as a reachability
+check rather than a tool/ssh command — mild, not the phone-call flip. **F6 is the
+load-bearing finding:** both diagnosed the Sentry env bomb precisely (self-append,
+`MAX_ARG_STRLEN` 128 KiB, `execve` fails at ~105 min) and then prescribed the wrong fix,
+the 9b's version ("don't re-source every tick") directly breaking Law #2. Accurate
+diagnosis, wrong prescription — which is why the fix stays in the operator's hand and why
+§6 gained the "diagnosis is not prescription" guard.
+
+Timing changed the budget in RADIO's favour: the 5,343-token packet is prefix-cached, so
+after the first call prefill jumps to 131–186 tok/s (4b) / 82–118 (9b) and the debrief is
+generation-bound. A ~300-token debrief is ~70–90 s warm on the 4b and ~110–155 s on the
+9b — under the §5 cold estimate, provided `keep_alive` holds the packet. Section A's
+long generation (630 tokens at 4.5 tok/s ≈ 10 min on the 9b) is the reminder that the
+pack budget caps generation as much as prefill.
+
+Rung decision: **9b for the debrief** (richer, more precise — it named both dial files in
+Q10 where the 4b named one), **4b for the interactive radio-check** and a legitimate
+single-model fallback (identical adjudicated score, ~40 % faster). Neither is trusted on
+the fix. Both clear the "no dangerous flips, correct verdict discipline" bar the §10
+scoring exists to enforce; the model-vs-rules-only blind read below remains the ship gate.
 
 Scoring: the deterministic assertions pass or fail per case for the **rules-only
 baseline** (must be 12/12 — it is the pipeline's contract) and for each model. Then the

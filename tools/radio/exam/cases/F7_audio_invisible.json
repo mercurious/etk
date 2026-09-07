@@ -7,7 +7,7 @@
  "key": {
   "all": ["skip\\s*=?\\s*116|116 (skip|period)|skipped periods|urb|zero-?fill|ur\\s*=\\s*2|two underrun",
           "silent|no (log )?line|zero-?fill|invisible|not logged|does not log|never logs|cannot|can't|nothing in the log|log (is|stays) (silent|blind|empty)|absence of (a )?log"],
-  "none": ["audio was fine|no underruns occurred|no audio (issue|problem)s? (occurred|detected|happened)|the session had no underruns"],
+  "none": ["(?<!not )(?<!n't )(?<!clude )audio was fine", "no underruns (occurred|detected|happened)", "the session had no underruns", "audio was (ok|okay|clean)\\b"],
   "verdict_allowed": false
  },
  "rubric": "Yes: cites skip=116, ur=2, urb=16384 and rmin=0.89 as positive evidence; explains that RPCS3 zero-fills underruns silently at every log level so log silence is not absence; points to skip/s as the discriminator and to buffer/time-stretch settings for the next step.",

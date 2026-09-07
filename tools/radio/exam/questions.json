@@ -55,7 +55,7 @@
 
  {"id": "Q10",
   "q": "Where does a session's tune_tag come from, and which Pitstop action writes that source?",
-  "key": {"all": ["active_tune", "driver|apply"]},
+  "key": {"all": ["driver", "apply"], "any_n": {"n": 1, "patterns": ["active_tune", "097-etk-turnip", "profile\\.d", "tune_tag"]}, "none": ["rpcs3 writes it|sentry copies|from the rpcs3 log"]},
   "exemplar": "session_postmortem reads active_tune.txt, which the DRIVER tab APPLY writes atomically together with the profile.d dials.",
   "counter": "RPCS3 writes it into its log at launch and the Sentry copies it."},
 
