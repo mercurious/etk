@@ -244,14 +244,14 @@ def selftest():
 
 
 # ----------------------------------------------------------------------------- ollama
-def chat(host, model, system, user, num_ctx, think, num_predict, timeout):
+def chat(host, model, system, user, num_ctx, think, num_predict, timeout, seed=7):
     body = {
         "model": model,
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
         "stream": False,
         "format": "json",
         "keep_alive": "30m",
-        "options": {"num_ctx": num_ctx, "temperature": 0.1, "num_predict": num_predict, "seed": 7},
+        "options": {"num_ctx": num_ctx, "temperature": 0.1, "num_predict": num_predict, "seed": seed},
     }
     if think is not None:
         body["think"] = think
@@ -265,7 +265,7 @@ def chat(host, model, system, user, num_ctx, think, num_predict, timeout):
     except urllib.error.HTTPError as e:
         msg = e.read().decode(errors="replace")
         if think is not None and "think" in msg.lower():
-            return chat(host, model, system, user, num_ctx, None, num_predict, timeout)
+            return chat(host, model, system, user, num_ctx, None, num_predict, timeout, seed)
         raise RuntimeError(f"HTTP {e.code}: {msg[:300]}")
     wall = time.time() - t0
     content = (resp.get("message") or {}).get("content", "")
@@ -324,7 +324,8 @@ def run_model(model, args, packet, manifest, questions, cases, out_dir):
         print(f"  [{model}] {section}/{cid}: sending ~{est} tokens …", flush=True)
         try:
             content, usage, wall = chat(args.host, model, packet, user, args.num_ctx,
-                                        (True if args.think else False), args.num_predict, args.timeout)
+                                        (True if args.think else False), args.num_predict,
+                                        args.timeout, args.seed)
         except Exception as e:  # noqa: BLE001 — record the failure, keep the run alive
             print(f"  [{model}] {section}/{cid}: FAILED {e}")
             record({"section": section, "id": cid, "model": model, "error": str(e), "est_tokens": est})
@@ -437,6 +438,7 @@ def main():
     ap.add_argument("--cases", nargs="*", help="run only these case ids")
     ap.add_argument("--num-ctx", type=int, default=16384)
     ap.add_argument("--num-predict", type=int, default=1200)
+    ap.add_argument("--seed", type=int, default=7, help="Ollama sampling seed; vary across runs for a stability check")
     ap.add_argument("--think", action="store_true", help="leave thinking on (default: off)")
     ap.add_argument("--timeout", type=int, default=2400, help="seconds per call")
     ap.add_argument("--out", help="run directory (default: state/radio_exam/<UTC stamp>)")
