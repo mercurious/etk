@@ -102,5 +102,21 @@
     "suggested_changes": [
       {"yaml_key": "  Resolution Scale", "new_value": "75"}
     ]
+  },
+  {
+    "id": "KEEPALIVE_SURVIVE",
+    "label": "Anti-lock",
+    "patterns": [],
+    "severity": "low",
+    "summary": "Anti-lock caught a hang and the race kept going",
+    "explanation": "Not a crash - this is the safety net working. The GPU wedged for a moment and the kernel keepalive net absorbed it, so the emulator recovered on its own and the session finished. The rescues count is how many times it fired this run; a high count just means the track hit the danger zone often, not that anything is broken. Nothing to fix."
+  },
+  {
+    "id": "PANIC_REBOOT",
+    "label": "Panic",
+    "patterns": [],
+    "severity": "critical",
+    "summary": "The rig reset; this row was rebuilt afterward",
+    "explanation": "A kernel panic reset the device, so nothing survived to log at the moment it happened. ETK rebuilt this row at the next boot from the breadcrumb it left before the race. There is no backtrace to read - the diagnosis comes from the kernel messages leading up to the reset (the panic black box), not from this row. A panic with no lead-up in those messages is the undiagnosed silent-reset class."
   }
 ]
