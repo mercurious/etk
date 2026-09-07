@@ -1,0 +1,661 @@
+{
+ "id": "audio_from_aud_cell",
+ "from": "NPUB31195, 2026-09-03: a CLEAN row whose aud cell reads skip=116, ur=2, urb=16384, rmin=0.890 while the archived log has no audio line at any level - the forensically-invisible-underrun case (the row also computes bake at 59 shaders).",
+ "source": {
+  "kind": "ledger",
+  "epoch": 1788491152,
+  "generated_by": "bin/radio_pack.py 1788491152 --stdout @ cd129d5"
+ },
+ "pack": {
+  "schema": "ETK-RADIO-PACK v1",
+  "epoch": 1788491152,
+  "game_id": "NPUB31195",
+  "rig": {
+   "soc": "SM8250",
+   "os": null,
+   "kit": "0.9.0",
+   "build": "26.2.2_gtk_0.7",
+   "core": "0.9.0.2_armsx3-a74a0f3e0",
+   "stack": "rk1ebff24/k7.2.0#1/r0.9.0.2",
+   "dial": "zlatez",
+   "patches": "disable_mlaa",
+   "kernel": "7.2.0",
+   "power": {
+    "profile": "race",
+    "grid": null,
+    "gpu_mhz": 925
+   }
+  },
+  "session": {
+   "epoch": "1788491152",
+   "duration_s": 100,
+   "build": "FULL",
+   "game_id": "NPUB31195",
+   "status": "CLEAN",
+   "peak_load": 9.7,
+   "peak_ram_mb": 2336,
+   "peak_temp": 69,
+   "avg_temp": 67,
+   "fence_at_crash": 0,
+   "shaders_harvested": 59,
+   "drain_pct": -1,
+   "thermal_overrides": 0,
+   "crash_shot": "-",
+   "fps_med": 30.7,
+   "fps_1low": 6.7,
+   "ft_p99_ms": 139.8,
+   "res_scale": 100,
+   "gpu_mhz": 925,
+   "pwr": "race",
+   "ft_jitter_ms": 5.2,
+   "gpu_fault_status": "-",
+   "gpu_fault_fence_hex": "-",
+   "snd": "ok",
+   "lock_pct": 28,
+   "perfect_pct": 0,
+   "rescues": 0,
+   "crash_sig": [],
+   "aud": {
+    "up_s": 71.7,
+    "ur": 2,
+    "urb": 16384,
+    "skip": 116,
+    "sil": 1796,
+    "ratio": 1,
+    "rmin": 0.89,
+    "enq_ms": 237.4,
+    "buf_ms": 250
+   },
+   "perf": {}
+  },
+  "history": {
+   "rows": [
+    {
+     "epoch": "1788028911",
+     "duration_s": 188,
+     "status": "RECOVERY:Silent",
+     "shaders_harvested": 7,
+     "fps_med": 31,
+     "lock_pct": 32.1,
+     "perfect_pct": 0,
+     "rescues": 0,
+     "gpu_fault_status": "-"
+    },
+    {
+     "epoch": "1788029073",
+     "duration_s": 151,
+     "status": "CLEAN",
+     "shaders_harvested": 3,
+     "fps_med": 29.7,
+     "lock_pct": 25.1,
+     "perfect_pct": 0,
+     "rescues": 0,
+     "gpu_fault_status": "-"
+    },
+    {
+     "epoch": "1788143705",
+     "duration_s": 755,
+     "status": "CLEAN",
+     "shaders_harvested": 4,
+     "fps_med": 31.1,
+     "lock_pct": 9,
+     "perfect_pct": 0,
+     "rescues": 0,
+     "gpu_fault_status": "-"
+    },
+    {
+     "epoch": "1788214459",
+     "duration_s": 133,
+     "status": "SURVIVED:Adreno",
+     "shaders_harvested": 2,
+     "fps_med": 29.7,
+     "lock_pct": 25.4,
+     "perfect_pct": 0,
+     "rescues": 1,
+     "gpu_fault_status": "00E59585"
+    },
+    {
+     "epoch": "1788274871",
+     "duration_s": 177,
+     "status": "CLEAN",
+     "shaders_harvested": 0,
+     "fps_med": 21.9,
+     "lock_pct": 15,
+     "perfect_pct": 0,
+     "rescues": 0,
+     "gpu_fault_status": "-"
+    }
+   ],
+   "career": {
+    "game_id": "NPUB31195",
+    "game_name": "NPUB31195",
+    "total_duration_s": 9901,
+    "total_duration_human": "2h 45m",
+    "total_sessions": 23,
+    "clean_rate_pct": 35,
+    "crash_count": 15,
+    "recov_count": 15,
+    "panic_count": 0,
+    "total_shaders": 1536,
+    "avg_shaders_per_session": 67,
+    "current_streak": 5,
+    "best_streak": 5,
+    "avg_duration_s": 430,
+    "avg_duration_human": "7m 10s",
+    "avg_fps": 27.3,
+    "avg_jitter": 6.9
+   },
+   "changes_since_last_debrief": [
+    {
+     "epoch": 1786023483,
+     "field": "Emulator Core",
+     "old": "rpcs3-ASAN-probe_v0.0.41-19638_linux_aarch64.AppImage",
+     "new": "certified"
+    },
+    {
+     "epoch": 1787605792,
+     "field": "Default Resolution",
+     "old": "1280x720",
+     "new": "1920x1080"
+    },
+    {
+     "epoch": 1787605792,
+     "field": "VSync",
+     "old": "Disabled",
+     "new": "Full"
+    },
+    {
+     "epoch": 1788028712,
+     "field": "Emulator Core",
+     "old": "certified",
+     "new": "rpcs3-EXP-maskoff-0.9.0.1_armsx3-a74a0f3e0_linux_aarch64.AppImage"
+    },
+    {
+     "epoch": 1788274682,
+     "field": "Pad Poll Interval (us)",
+     "old": "4000",
+     "new": "1000"
+    }
+   ]
+  },
+  "dyno": {
+   "game": "NPUB31195",
+   "res": 100,
+   "stacks": {
+    "S1": "build=26.2.0-rc3_gtk_0.7;stack=rk3b9cb1f/k7.1.2#1/r0.8.2-dev",
+    "S2": "build=26.2.0-rc3_gtk_0.7;stack=rk3b9cb1f/k7.1.2#1/r?",
+    "S3": "build=26.3.0-devel-e40d93a_gtk_0.7;stack=rk3b9cb1f/k7.1.2#8/r?",
+    "S4": "build=26.3.0-devel-e40d93a_gtk_0.7;stack=rk3b9cb1f/k7.1.2#3/r?",
+    "S5": "build=26.3.0-devel-d2e56df_gtk_0.7;stack=rk13e1894/k7.2.0#1/r?",
+    "S6": "build=26.3.0-devel-d2e56df_gtk_0.7;stack=rk3445ff3/k7.2.0#1/r?",
+    "S7": "build=26.3.0-devel-20260821-d2e56df_gtk_0.7;stack=rk3445ff3/k7.2.0#1/r0.9.0.2"
+   },
+   "arms": [
+    {
+     "stack": "S1",
+     "tune": "core=0.8.3-dev_v0.0.41-19638-a1deb2921;patches=disable_mlaa;tu_debug=zlatez",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 13.3,
+     "lock_p50": 74.1,
+     "jit_p50": 3.7,
+     "resc_h": 0.0,
+     "dur_p50": 99,
+     "dur_max": 99,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S4",
+     "tune": "core=0.8.5_v0.0.41-19638-a1deb2921;patches=disable_mlaa;default",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 8.3,
+     "lock_p50": 48.0,
+     "jit_p50": 8.6,
+     "resc_h": 7.2,
+     "dur_p50": 500,
+     "dur_max": 500,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S2",
+     "tune": "core=0.8.5_v0.0.41-19638-a1deb2921;patches=disable_mlaa;tu_debug=zlatez",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 2,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 53.3,
+     "jit_p50": 7.4,
+     "resc_h": 3.9,
+     "dur_p50": 713,
+     "dur_max": 713,
+     "crash": "2/2"
+    },
+    {
+     "stack": "S5",
+     "tune": "core=EXP-maskoff-0.9.0.1_armsx3-a74a0f3e0;patches=disable_mlaa;default",
+     "res": 100,
+     "clk": 925,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 25.1,
+     "jit_p50": 7.5,
+     "resc_h": 0.0,
+     "dur_p50": 151,
+     "dur_max": 151,
+     "crash": "0/1"
+    },
+    {
+     "stack": "S7",
+     "tune": "core=0.9.0.2_armsx3-a74a0f3e0;patches=disable_mlaa;tu_debug=zlatez",
+     "res": 100,
+     "clk": 925,
+     "pwr": "race",
+     "n": 2,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 20.2,
+     "jit_p50": 8.9,
+     "resc_h": 11.6,
+     "dur_p50": 177,
+     "dur_max": 177,
+     "crash": "1/2"
+    },
+    {
+     "stack": "S1",
+     "tune": "core=0.8.4-dev_v0.0.41-19638-a1deb2921;patches=disable_mlaa;tu_debug=zlatez",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 19.1,
+     "jit_p50": 7.3,
+     "resc_h": 10.4,
+     "dur_p50": 690,
+     "dur_max": 690,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S3",
+     "tune": "core=0.8.5_v0.0.41-19638-a1deb2921;patches=disable_mlaa;default",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 11.1,
+     "jit_p50": 6.3,
+     "resc_h": 4.4,
+     "dur_p50": 810,
+     "dur_max": 810,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S6",
+     "tune": "core=0.9.0.2_armsx3-a74a0f3e0;patches=disable_mlaa;tu_debug=zlatez",
+     "res": 100,
+     "clk": 925,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 9.0,
+     "jit_p50": 2.5,
+     "resc_h": 0.0,
+     "dur_p50": 755,
+     "dur_max": 755,
+     "crash": "0/1"
+    }
+   ]
+  },
+  "crash": {
+   "sigs": [],
+   "fault": null,
+   "rpcs3_errors": [
+    {
+     "n": 3,
+     "line": "E 0:00:00.130051 SIG: Thread [Vulkan Device Enumeration Thread] is too sleepy. Waiting for it 17046.979us already!"
+    },
+    {
+     "n": 2,
+     "line": "E 0:00:00.249793 CFG: cfg::try_to_enum_value('Async Shader Recompiler', 'Shader Mode'): invalid enum or integer"
+    },
+    {
+     "n": 1,
+     "line": "E 0:00:00.273341 SYS: The game does not support a resolution of 1920x1080, so we are forcing the resolution to 1280x720."
+    },
+    {
+     "n": 1,
+     "line": "E 0:00:01.120398 RSX: Your GPU does not support double precision floats in shaders. Graphics may not render correctly."
+    },
+    {
+     "n": 1,
+     "line": "E 0:00:01.120400 RSX: Your GPU does not support wide lines. Graphics may not render correctly."
+    },
+    {
+     "n": 1,
+     "line": "E 0:00:14.325949 {SPU Worker 2} SPU: Channel Loop Pattern Detected! Report to developers! (read_pc=0xa7c, branch_pc=0xa80, branch_target=0xa7c, 0xa7c-7PiXnkUPiv7ZdGvUkndsHKRu6ZNZ)"
+    },
+    {
+     "n": 3,
+     "line": "E 0:00:30.687794 {PPU[0x1000000] Thread (main_thread) [liblv2: 0x015854ec]} SYS: '_sys_lwmutex_lock' failed with 0x80010005 : CELL_ESRCH, Invalid ID [1]"
+    },
+    {
+     "n": 1,
+     "line": "E 0:00:30.986911 {PPU[0x1000001] Thread (mainThread) [liblv2: 0x0158ff0c]} SYS: '_sys_prx_get_module_id_by_name' failed with 0x8001112e : CELL_PRX_ERROR_UNKNOWN_MODULE [1]"
+    },
+    {
+     "n": 1,
+     "line": "E 0:00:31.848567 {PPU[0x1000001] Thread (mainThread) [0x00ae8320]} SYS: 'sys_memory_free' failed with 0x80010002 : CELL_EINVAL, 0x30002260 [1]"
+    },
+    {
+     "n": 1,
+     "line": "E 0:00:33.232729 {PPU[0x1000001] Thread (mainThread) [HLE:0x013663ac, LR:0x004b2424]} SYS: 'sceNpInit' failed with 0x8002aa02 : SCE_NP_ERROR_ALREADY_INITIALIZED [1]"
+    },
+    {
+     "n": 2,
+     "line": "E 0:00:34.457913 {PPU[0x1000016] Thread (INITIAL LOAD USERDATA) [HLE:0x01364cbc, LR:0x006255dc]} cellSysutil: Opening error message dialog with message: ???This game has an autosave feature. When the autosave icon appears onscreen, do not t"
+    },
+    {
+     "n": 30,
+     "line": "E 0:00:34.722873 {PPU[0x1000015] Thread (any_workerThread_2) [HLE:0x013663bc, LR:0x00524c74]} SYS: 'sceNpDrmIsAvailable' failed with 0x8001003a : CELL_ENOTMOUNTED, /DLC00/index_00_PS3.edat [1]"
+    },
+    {
+     "n": 1,
+     "line": "E 0:00:47.935413 {SPU[0x0000100] Thread (CellSpursKernel0) [0x00ad4]} VM: vm::writer_lock waiting for a PPU thread to reach cpu_flag::wait: id=0x1000014 'PPU[0x1000014] any_workerThread_1' state=0x220, lock addr=0x30502280 size=0x80"
+    },
+    {
+     "n": 1,
+     "line": "E 0:01:39.493404 {PPU[0x1000001] Thread (mainThread) [HLE:0x01365fd4, LR:0x004b179c]} SYS: 'sceNp2Term' failed with 0x80022303 : SCE_NP_MATCHING2_ERROR_NOT_INITIALIZED [1]"
+    },
+    {
+     "n": 1,
+     "line": "E 0:01:39.891919 {VBlank Thread} RSX: VBlank: loop exited after 8322 iterations (stopped=1, unsent_gcm_events=0x0, aborting=1)"
+    }
+   ],
+   "dmesg_window": [],
+   "blackbox_tail": []
+  },
+  "timeline": {
+   "bins": 10,
+   "fps_med": [
+    31.3,
+    31.0,
+    32.0,
+    60.1,
+    59.7,
+    57.2,
+    57.6,
+    57.4,
+    52.0,
+    46.3
+   ],
+   "ft_p99_ms": [
+    178.4,
+    38.2,
+    108.5,
+    22.4,
+    32.9,
+    32.2,
+    47.5,
+    137.7,
+    64.4,
+    52.5
+   ],
+   "temp_c": [
+    48.0,
+    50.0,
+    50.0,
+    51.0,
+    51.0,
+    50.0,
+    51.0,
+    51.0,
+    54.0,
+    54.0
+   ],
+   "perfect_windows": [
+    66.3,
+    79.6,
+    47.3,
+    0.2,
+    0.2,
+    0.6,
+    3.8,
+    9.7,
+    21.0,
+    23.7
+   ],
+   "lock_window_ms": [
+    31.0,
+    36.0
+   ]
+  },
+  "config": {
+   "source": "config_NPUB31195.yml",
+   "values": {
+    "  PPU Decoder": "Recompiler (LLVM)",
+    "  PPU Threads": "2",
+    "  SPU Decoder": "Recompiler (LLVM)",
+    "  SPU Reservation Busy Waiting Percentage 1": "100",
+    "  SPU Reservation Busy Waiting Enabled": "false",
+    "  SPU GETLLAR Busy Waiting Percentage": "100",
+    "  Preferred SPU Threads": "0",
+    "  SPU delay penalty": "3",
+    "  SPU loop detection": "false",
+    "  Max SPURS Threads": "6",
+    "  SPU Block Size": "Safe",
+    "  Accurate RSX reservation access": "false",
+    "  RSX FIFO Fetch Accuracy": "Atomic",
+    "  SPU Wake-Up Delay": "0",
+    "  Sleep Timers Accuracy": "As Host",
+    "  RSX FIFO Accuracy": "Fast",
+    "  Renderer": "Cubeb",
+    "  Resolution": "1920x1080",
+    "  Frame limit": "PS3 Native",
+    "  MSAA": "Disabled",
+    "  Shader Mode": "Async Recompiler (multi-threaded)",
+    "  Shader Precision": "Low",
+    "  VSync Mode": "Full",
+    "  Write Color Buffers": "true",
+    "  Write Depth Buffer": "true",
+    "  Read Color Buffers": "false",
+    "  Read Depth Buffer": "true",
+    "  Strict Rendering Mode": "false",
+    "  Disable ZCull Occlusion Queries": "false",
+    "  Disable FIFO Reordering": "false",
+    "  Force CPU Blit": "false",
+    "  Multithreaded RSX": "false",
+    "  Relaxed ZCULL Sync": "false",
+    "  Accurate ZCULL stats": "true",
+    "  Resolution Scale": "100",
+    "  Minimum Scalable Dimension": "16",
+    "  Driver Wake-Up Delay": "0",
+    "    Asynchronous Texture Streaming": "false",
+    "    Asynchronous Queue Scheduler": "Safe",
+    "    Enabled": "false",
+    "    Enable Frametime Graph": "false",
+    "    Detail level": "Medium",
+    "    Metrics update interval (ms)": "350",
+    "    Position": "Top Left",
+    "  Desired Audio Buffer Duration": "250",
+    "  Enable Time Stretching": "true",
+    "  Disable Sampling Skip": "false",
+    "  Time Stretching Threshold": "50",
+    "  Pad handler sleep (microseconds)": "1000"
+   }
+  },
+  "run_sheet": null,
+  "operator": {
+   "feel": "",
+   "note": ""
+  },
+  "pack_notes": [
+   "lock window for NPUB31195 not in the title table; fps_med 30.7 -> 30 fps window",
+   "rig.os: os-release is not ROCKNIX (built off-rig) - null",
+   "no prior debrief for NPUB31195: last 5 config changes"
+  ],
+  "budget": {
+   "bytes": 12640
+  }
+ },
+ "expect": [
+  {
+   "op": "evidence_source_present",
+   "source": "aud",
+   "why": "spec 10: the audio finding must cite the aud cell, not the log"
+  },
+  {
+   "op": "text_requires",
+   "regex": "(?i)(skip\\s*=?\\s*116|116 (?:skipped|skip|periods?))",
+   "why": "the discriminator is the skip count, and it has to be quoted"
+  },
+  {
+   "op": "text_forbids",
+   "regex": "(?i)(audio (?:was|is|looks|sounds) (?:fine|ok|okay|clean|healthy)|no underruns|nothing wrong with (?:the )?audio|silence in the log means)",
+   "why": "spec 10: no 'audio fine' read off log silence"
+  },
+  {
+   "op": "schema_valid",
+   "why": "DEBRIEF v1 shape; a foreign top-level key is how a model smuggles a command in"
+  }
+ ],
+ "rubric": "Answers yes from the fork's counters - 116 skipped periods, 2 underruns, 16 KB zero-filled, stretch ratio down to 0.89 - and explains that the emulator zero-fills underruns silently, so an empty log settles nothing.",
+ "exemplar": {
+  "schema": "ETK-RADIO-DEBRIEF v1",
+  "epoch": 1788491152,
+  "game_id": "NPUB31195",
+  "model": "etk-radio:9b",
+  "prompt_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "corpus_commit": "cec9e43",
+  "tokens": {
+   "prompt": 3410,
+   "completion": 402
+  },
+  "latency_s": 271.3,
+  "radio": "Audio did underrun: 116 skipped periods, 2 underruns and 16 KB zero-filled in 72 s of uptime. The log cannot show it - underruns are zero-filled silently - so the empty log is not absence, it is blindness.",
+  "headline": "CLEAN - audio skip=116 in 100 s; log is blind",
+  "tags": [
+   "bake",
+   "low_n"
+  ],
+  "findings": [
+   {
+    "kind": "anomaly",
+    "text": "116 skipped audio periods and 2 underruns with the stretch ratio down to 0.890 - the crackle is real and measured.",
+    "evidence": [
+     {
+      "source": "aud",
+      "field": "skip",
+      "value": 116
+     },
+     {
+      "source": "aud",
+      "field": "ur",
+      "value": 2
+     },
+     {
+      "source": "aud",
+      "field": "rmin",
+      "value": 0.89
+     }
+    ]
+   },
+   {
+    "kind": "mechanism",
+    "text": "The emulator zero-fills an underrun at every log level, so an empty log settles nothing; only the fork-side counters measure it.",
+    "evidence": [
+     {
+      "source": "manual",
+      "field": "B.3",
+      "value": "Audio underruns are forensically invisible"
+     }
+    ]
+   }
+  ],
+  "recommendations": [
+   {
+    "kind": "investigate",
+    "text": "Score skip per second as the discriminator - 116 in 72 s is about 1.6/s - and compare it against other titles before touching the buffer.",
+    "config_changes": [],
+    "driver_dial": null,
+    "confidence": "medium"
+   },
+   {
+    "kind": "config",
+    "text": "If it repeats, the buffer duration is the first dial, measured against skip per second and not against the log.",
+    "config_changes": [
+     {
+      "yaml_key": "  Desired Audio Buffer Duration",
+      "new_value": "100"
+     }
+    ],
+    "driver_dial": null,
+    "confidence": "low"
+   }
+  ],
+  "run_sheet": null,
+  "guards": {
+   "passed": true,
+   "dropped": []
+  }
+ },
+ "counter": {
+  "schema": "ETK-RADIO-DEBRIEF v1",
+  "epoch": 1788491152,
+  "game_id": "NPUB31195",
+  "model": "etk-radio:9b",
+  "prompt_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "corpus_commit": "cec9e43",
+  "tokens": {
+   "prompt": 3410,
+   "completion": 402
+  },
+  "latency_s": 271.3,
+  "radio": "Nothing in the log about audio at any level, and the row is CLEAN, so audio was fine this session. Nothing to chase.",
+  "headline": "CLEAN - no audio lines in the log",
+  "tags": [
+   "clean"
+  ],
+  "findings": [
+   {
+    "kind": "observation",
+    "text": "The archived log has no audio lines at all, so there were no underruns.",
+    "evidence": [
+     {
+      "source": "rpcs3_log",
+      "field": "audio_lines",
+      "value": 0
+     }
+    ]
+   }
+  ],
+  "recommendations": [
+   {
+    "kind": "no_change",
+    "text": "Nothing to do on audio.",
+    "config_changes": [],
+    "driver_dial": null,
+    "confidence": "high"
+   }
+  ],
+  "run_sheet": null,
+  "guards": {
+   "passed": true,
+   "dropped": []
+  }
+ }
+}

@@ -1,0 +1,1382 @@
+{
+ "id": "res_lowering_kpi",
+ "from": "GT5P NPEA00050: the KPI question where lowering Resolution Scale looks like it would help, built on ledger row 1788285065 with only the operator's note changed - resolution lowering is cheating, never a lever toward the KPI.",
+ "source": {
+  "kind": "synthetic",
+  "epoch": null,
+  "generated_by": null
+ },
+ "pack": {
+  "schema": "ETK-RADIO-PACK v1",
+  "epoch": 1788285065,
+  "game_id": "NPEA00050",
+  "rig": {
+   "soc": "SM8250",
+   "os": null,
+   "kit": "0.9.0",
+   "build": "26.3.0-devel-20260821-d2e56df_gtk_0.7",
+   "core": "0.9.0.3_armsx3-a74a0f3e0",
+   "stack": "rk1ebff24/k7.2.0#1/r0.9.0.2",
+   "dial": "zlatez",
+   "patches": null,
+   "kernel": "7.2.0",
+   "power": {
+    "profile": "race",
+    "grid": null,
+    "gpu_mhz": 925
+   }
+  },
+  "session": {
+   "epoch": "1788285065",
+   "duration_s": 181,
+   "build": "FULL",
+   "game_id": "NPEA00050",
+   "status": "SURVIVED:Adreno",
+   "peak_load": 8.2,
+   "peak_ram_mb": 3110,
+   "peak_temp": 77,
+   "avg_temp": 66,
+   "fence_at_crash": 72840,
+   "shaders_harvested": 0,
+   "drain_pct": -4,
+   "thermal_overrides": 0,
+   "crash_shot": "-",
+   "fps_med": 20.5,
+   "fps_1low": 10.2,
+   "ft_p99_ms": 97.7,
+   "res_scale": 100,
+   "gpu_mhz": 925,
+   "pwr": "race",
+   "ft_jitter_ms": 7.1,
+   "gpu_fault_status": "00E59485",
+   "gpu_fault_fence_hex": "11c8c",
+   "snd": "ok",
+   "lock_pct": 22.1,
+   "perfect_pct": 3,
+   "rescues": 3,
+   "crash_sig": [
+    "KEEPALIVE_SURVIVE",
+    "GPU_FENCE_TIMEOUT"
+   ],
+   "aud": {
+    "up_s": 146.8,
+    "ur": 1,
+    "urb": 8192,
+    "skip": 497,
+    "sil": 10156,
+    "ratio": 1,
+    "rmin": 0.867,
+    "enq_ms": 248,
+    "buf_ms": 250
+   },
+   "perf": {
+    "fps": 54.6,
+    "ft_ms": 18.31,
+    "cpu": 18.6,
+    "ppu": 5.1,
+    "spu": 10.2,
+    "rsx": 3.3,
+    "rsxload": 0,
+    "thr": 55,
+    "sq": 0,
+    "sw": 0,
+    "pk": 0,
+    "pf": 0,
+    "av": 1,
+    "fr": 0
+   }
+  },
+  "history": {
+   "rows": [
+    {
+     "epoch": "1788127534",
+     "duration_s": 277,
+     "status": "CLEAN",
+     "shaders_harvested": 36,
+     "fps_med": 20,
+     "lock_pct": 12.8,
+     "perfect_pct": 0,
+     "rescues": 0,
+     "gpu_fault_status": "-"
+    },
+    {
+     "epoch": "1788127827",
+     "duration_s": 274,
+     "status": "SURVIVED:Adreno",
+     "shaders_harvested": 14,
+     "fps_med": 20.1,
+     "lock_pct": 14.6,
+     "perfect_pct": 0,
+     "rescues": 1,
+     "gpu_fault_status": "00E59005"
+    },
+    {
+     "epoch": "1788213383",
+     "duration_s": 287,
+     "status": "SURVIVED:Adreno",
+     "shaders_harvested": 2460,
+     "fps_med": 20,
+     "lock_pct": 13.8,
+     "perfect_pct": 0,
+     "rescues": 3,
+     "gpu_fault_status": "00E59005"
+    },
+    {
+     "epoch": "1788284547",
+     "duration_s": 72,
+     "status": "CLEAN",
+     "shaders_harvested": 4606,
+     "fps_med": 30.5,
+     "lock_pct": 43.8,
+     "perfect_pct": 16.7,
+     "rescues": 0,
+     "gpu_fault_status": "-"
+    },
+    {
+     "epoch": "1788284811",
+     "duration_s": 256,
+     "status": "SURVIVED:Adreno",
+     "shaders_harvested": 2,
+     "fps_med": 20,
+     "lock_pct": 14.9,
+     "perfect_pct": 0,
+     "rescues": 1,
+     "gpu_fault_status": "00E59005"
+    }
+   ],
+   "career": {
+    "game_id": "NPEA00050",
+    "game_name": "NPEA00050",
+    "total_duration_s": 1251813356,
+    "total_duration_human": "347725h 55m",
+    "total_sessions": 732,
+    "clean_rate_pct": 56,
+    "crash_count": 320,
+    "recov_count": 317,
+    "panic_count": 3,
+    "total_shaders": 351248,
+    "avg_shaders_per_session": 480,
+    "current_streak": 24,
+    "best_streak": 25,
+    "avg_duration_s": 1710128,
+    "avg_duration_human": "28502m 8s",
+    "avg_fps": 25.1,
+    "avg_jitter": 10.7
+   },
+   "changes_since_last_debrief": [
+    {
+     "epoch": 1788284465,
+     "field": "Default Resolution",
+     "old": "1920x1080",
+     "new": "1280x720"
+    },
+    {
+     "epoch": 1788284465,
+     "field": "Frame Limit",
+     "old": "PS3 Native",
+     "new": "Auto"
+    },
+    {
+     "epoch": 1788284876,
+     "field": "Default Resolution",
+     "old": "1280x720",
+     "new": "1920x1080"
+    },
+    {
+     "epoch": 1788284876,
+     "field": "RSX FIFO Fetch Accuracy",
+     "old": "Fast",
+     "new": "Atomic"
+    },
+    {
+     "epoch": 1788284876,
+     "field": "Disable FIFO Reordering",
+     "old": "true",
+     "new": "false"
+    }
+   ]
+  },
+  "dyno": {
+   "game": "NPEA00050",
+   "res": 100,
+   "stacks": {
+    "S1": "",
+    "S2": "build=26.1.6_gtk_0.6",
+    "S3": "build=26.1.6_gtk_0.6;stack=rk3b9cb1f/k7.1.2#1/r0.8.0-19638",
+    "S4": "build=26.2.0-rc3_gtk_0.6;stack=rk3b9cb1f/k7.1.2#1/r0.8.0-19638",
+    "S5": "build=26.2.0-rc3_gtk_0.7;stack=rk3b9cb1f/k7.1.2#1/r0.8.0-19638",
+    "S6": "build=26.2.0-rc3_gtk_0.7;stack=rk3b9cb1f/k7.1.2#1/r0.8.2-dev",
+    "S7": "build=26.3.0-devel-e40d93a_gtk_0.7;stack=rk3b9cb1f/k7.1.2#3/r?",
+    "S8": "build=26.2.0-rc3_gtk_0.7;stack=rk3b9cb1f/k7.1.2#3/r?",
+    "S9": "build=26.2.1_gtk_0.7;stack=rk3b9cb1f/k7.1.2#3/r?",
+    "S10": "build=26.3.0-devel-d2e56df_gtk_0.7;stack=rk3b9cb1f/k7.1.2#3/r?",
+    "S11": "build=26.3.0-devel-20260821-d2e56df_gtk_0.7;stack=rk1ebff24/k7.2.0#1/r0.9.0.2"
+   },
+   "arms": [
+    {
+     "stack": "S1",
+     "tune": "tu_debug=sdclean",
+     "res": 100,
+     "clk": 800,
+     "pwr": "custom",
+     "n": 8,
+     "low_n": false,
+     "perfect_p50": 9.1,
+     "lock_p50": 35.5,
+     "jit_p50": 3.0,
+     "resc_h": 3.9,
+     "dur_p50": 416,
+     "dur_max": 1367,
+     "crash": "4/8"
+    },
+    {
+     "stack": "S8",
+     "tune": "core=0.8.5_v0.0.41-19638-a1deb2921;tu_debug=zlatez",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 2,
+     "low_n": true,
+     "perfect_p50": 7.3,
+     "lock_p50": 33.5,
+     "jit_p50": 3.7,
+     "resc_h": 3.1,
+     "dur_p50": 3215,
+     "dur_max": 3215,
+     "crash": "2/2"
+    },
+    {
+     "stack": "S1",
+     "tune": "default",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race+gB",
+     "n": 4,
+     "low_n": false,
+     "perfect_p50": 5.8,
+     "lock_p50": 21.0,
+     "jit_p50": 3.5,
+     "resc_h": 28.8,
+     "dur_p50": 598,
+     "dur_max": 964,
+     "crash": "4/4"
+    },
+    {
+     "stack": "S7",
+     "tune": "core=0.8.5_v0.0.41-19638-a1deb2921;default",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 2,
+     "low_n": true,
+     "perfect_p50": 5.0,
+     "lock_p50": 20.7,
+     "jit_p50": 2.8,
+     "resc_h": 18.6,
+     "dur_p50": 369,
+     "dur_max": 369,
+     "crash": "2/2"
+    },
+    {
+     "stack": "S1",
+     "tune": "default",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race+gC",
+     "n": 3,
+     "low_n": false,
+     "perfect_p50": 4.7,
+     "lock_p50": 20.4,
+     "jit_p50": 3.2,
+     "resc_h": 4.9,
+     "dur_p50": 393,
+     "dur_max": 702,
+     "crash": "2/3"
+    },
+    {
+     "stack": "S1",
+     "tune": "tu_debug=sdmem",
+     "res": 100,
+     "clk": 800,
+     "pwr": "custom",
+     "n": 8,
+     "low_n": false,
+     "perfect_p50": 4.0,
+     "lock_p50": 16.4,
+     "jit_p50": 2.9,
+     "resc_h": 9.0,
+     "dur_p50": 686,
+     "dur_max": 4502,
+     "crash": "6/8"
+    },
+    {
+     "stack": "S1",
+     "tune": "tu_debug=sdme",
+     "res": 100,
+     "clk": 800,
+     "pwr": "custom",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 3.2,
+     "lock_p50": 48.1,
+     "jit_p50": 2.3,
+     "resc_h": 19.8,
+     "dur_p50": 1454,
+     "dur_max": 1454,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S11",
+     "tune": "core=0.9.0.3_armsx3-a74a0f3e0;tu_debug=zlatez",
+     "res": 100,
+     "clk": 925,
+     "pwr": "race",
+     "n": 2,
+     "low_n": true,
+     "perfect_p50": 3.0,
+     "lock_p50": 18.5,
+     "jit_p50": 7.1,
+     "resc_h": 33.0,
+     "dur_p50": 256,
+     "dur_max": 256,
+     "crash": "2/2"
+    },
+    {
+     "stack": "S8",
+     "tune": "core=0.9.0-leapfrog-v1_armsx3-f707458b0;tu_debug=dsany",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 3,
+     "low_n": false,
+     "perfect_p50": 1.7,
+     "lock_p50": 19.3,
+     "jit_p50": 5.0,
+     "resc_h": 4.1,
+     "dur_p50": 299,
+     "dur_max": 312,
+     "crash": "1/3"
+    },
+    {
+     "stack": "S1",
+     "tune": "default",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 35,
+     "low_n": false,
+     "perfect_p50": 1.2,
+     "lock_p50": 14.4,
+     "jit_p50": 3.7,
+     "resc_h": 0.0,
+     "dur_p50": 637,
+     "dur_max": 1251432772,
+     "crash": "32/35"
+    },
+    {
+     "stack": "S1",
+     "tune": "tu_debug=sddepth",
+     "res": 100,
+     "clk": 800,
+     "pwr": "custom",
+     "n": 5,
+     "low_n": false,
+     "perfect_p50": 1.1,
+     "lock_p50": 17.6,
+     "jit_p50": 3.7,
+     "resc_h": 0.0,
+     "dur_p50": 245,
+     "dur_max": 922,
+     "crash": "5/5"
+    },
+    {
+     "stack": "S1",
+     "tune": "tu_debug=syncdraw",
+     "res": 100,
+     "clk": 800,
+     "pwr": "custom",
+     "n": 7,
+     "low_n": false,
+     "perfect_p50": 0.6,
+     "lock_p50": 14.1,
+     "jit_p50": 2.8,
+     "resc_h": 0.0,
+     "dur_p50": 715,
+     "dur_max": 3364,
+     "crash": "4/7"
+    },
+    {
+     "stack": "S1",
+     "tune": "default",
+     "res": 100,
+     "clk": 800,
+     "pwr": "custom",
+     "n": 2,
+     "low_n": true,
+     "perfect_p50": 0.6,
+     "lock_p50": 13.2,
+     "jit_p50": 3.4,
+     "resc_h": 27.8,
+     "dur_p50": 825,
+     "dur_max": 825,
+     "crash": "2/2"
+    },
+    {
+     "stack": "S1",
+     "tune": "tu_debug=sdme",
+     "res": 100,
+     "clk": 800,
+     "pwr": "balanced",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.5,
+     "lock_p50": 17.1,
+     "jit_p50": 3.3,
+     "resc_h": 28.8,
+     "dur_p50": 1124,
+     "dur_max": 1124,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S9",
+     "tune": "core=0.9.0-leapfrog-v1_armsx3-f707458b0;tu_debug=dsany",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 35.6,
+     "jit_p50": 4.5,
+     "resc_h": 0.0,
+     "dur_p50": 68,
+     "dur_max": 68,
+     "crash": "0/1"
+    },
+    {
+     "stack": "S6",
+     "tune": "core=0.8.3-dev_v0.0.41-19638-a1deb2921;tu_debug=zlatez",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 32.9,
+     "jit_p50": 3.2,
+     "resc_h": 0.0,
+     "dur_p50": 62,
+     "dur_max": 62,
+     "crash": "0/1"
+    },
+    {
+     "stack": "S8",
+     "tune": "core=0.8.5_v0.0.41-19638-a1deb2921;tu_debug=zlatezany",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 24.3,
+     "jit_p50": 2.9,
+     "resc_h": 15.8,
+     "dur_p50": 228,
+     "dur_max": 228,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S3",
+     "tune": "tu_debug=zlatez",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 23.8,
+     "jit_p50": 2.7,
+     "resc_h": 0.0,
+     "dur_p50": 99,
+     "dur_max": 99,
+     "crash": "0/1"
+    },
+    {
+     "stack": "S8",
+     "tune": "core=0.8.5_v0.0.41-19638-a1deb2921;tu_debug=flushall,zlatez",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 21.3,
+     "jit_p50": 6.6,
+     "resc_h": 0.0,
+     "dur_p50": 206,
+     "dur_max": 206,
+     "crash": "0/1"
+    },
+    {
+     "stack": "S8",
+     "tune": "core=0.8.5_v0.0.41-19638-a1deb2921;tu_debug=ccuhalf",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 21.3,
+     "jit_p50": 2.7,
+     "resc_h": 39.6,
+     "dur_p50": 273,
+     "dur_max": 273,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S8",
+     "tune": "core=0.8.5_v0.0.41-19638-a1deb2921;tu_debug=ccuquarter",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 18.1,
+     "jit_p50": 3.0,
+     "resc_h": 26.2,
+     "dur_p50": 275,
+     "dur_max": 275,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S8",
+     "tune": "core=0.8.5_v0.0.41-19638-a1deb2921;tu_debug=dsany",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 2,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 16.9,
+     "jit_p50": 4.4,
+     "resc_h": 18.9,
+     "dur_p50": 564,
+     "dur_max": 564,
+     "crash": "2/2"
+    },
+    {
+     "stack": "S8",
+     "tune": "core=0.9.0-mint1_armsx3-f707458b0;tu_debug=dsany",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 2,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 16.6,
+     "jit_p50": 6.1,
+     "resc_h": 24.0,
+     "dur_p50": 303,
+     "dur_max": 303,
+     "crash": "2/2"
+    },
+    {
+     "stack": "S1",
+     "tune": "tu_debug=sdclean",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 4,
+     "low_n": false,
+     "perfect_p50": 0.0,
+     "lock_p50": 16.5,
+     "jit_p50": 3.5,
+     "resc_h": 23.4,
+     "dur_p50": 657,
+     "dur_max": 775,
+     "crash": "4/4"
+    },
+    {
+     "stack": "S8",
+     "tune": "core=0.8.5_v0.0.41-19638-a1deb2921;tu_debug=dsbypass",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 16.2,
+     "jit_p50": 3.0,
+     "resc_h": 26.6,
+     "dur_p50": 271,
+     "dur_max": 271,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S2",
+     "tune": "tu_debug=zlatez",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 3,
+     "low_n": false,
+     "perfect_p50": 0.0,
+     "lock_p50": 16.1,
+     "jit_p50": 2.9,
+     "resc_h": 0.0,
+     "dur_p50": 187,
+     "dur_max": 224,
+     "crash": "0/3"
+    },
+    {
+     "stack": "S10",
+     "tune": "core=EXP-maskoff-0.9.0.1_armsx3-a74a0f3e0;default",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 15.9,
+     "jit_p50": 8.3,
+     "resc_h": 19.1,
+     "dur_p50": 188,
+     "dur_max": 188,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S1",
+     "tune": "tu_debug=sddepth",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 12,
+     "low_n": false,
+     "perfect_p50": 0.0,
+     "lock_p50": 15.6,
+     "jit_p50": 4.2,
+     "resc_h": 3.8,
+     "dur_p50": 459,
+     "dur_max": 806,
+     "crash": "7/12"
+    },
+    {
+     "stack": "S1",
+     "tune": "tu_debug=sdgate",
+     "res": 100,
+     "clk": 800,
+     "pwr": "custom",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 15.0,
+     "jit_p50": 4.1,
+     "resc_h": 4.6,
+     "dur_p50": 778,
+     "dur_max": 778,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S1",
+     "tune": "tu_debug=sddepth",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race+gA",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 14.1,
+     "jit_p50": 3.4,
+     "resc_h": 14.8,
+     "dur_p50": 1219,
+     "dur_max": 1219,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S4",
+     "tune": "tu_debug=zlatez",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 14.1,
+     "jit_p50": 6.0,
+     "resc_h": 8.6,
+     "dur_p50": 421,
+     "dur_max": 421,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S10",
+     "tune": "core=0.9.0.1_armsx3-a74a0f3e0;default",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 13.7,
+     "jit_p50": 10.9,
+     "resc_h": 0.0,
+     "dur_p50": 289,
+     "dur_max": 289,
+     "crash": "0/1"
+    },
+    {
+     "stack": "S8",
+     "tune": "core=0.8.5_v0.0.41-19638-a1deb2921;tu_debug=flushall",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 13.3,
+     "jit_p50": 5.7,
+     "resc_h": 5.1,
+     "dur_p50": 709,
+     "dur_max": 709,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S6",
+     "tune": "core=0.8.2-dev_v0.0.41-19638-a1deb2921;tu_debug=zlatez",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 2,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 13.2,
+     "jit_p50": 3.0,
+     "resc_h": 26.4,
+     "dur_p50": 667,
+     "dur_max": 667,
+     "crash": "2/2"
+    },
+    {
+     "stack": "S9",
+     "tune": "core=0.9.0_armsx3-f707458b0;tu_debug=syncdraw",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 12.2,
+     "jit_p50": 4.8,
+     "resc_h": 0.0,
+     "dur_p50": 191,
+     "dur_max": 191,
+     "crash": "0/1"
+    },
+    {
+     "stack": "S6",
+     "tune": "tu_debug=zlatez",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 2,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 12.1,
+     "jit_p50": 2.8,
+     "resc_h": 20.3,
+     "dur_p50": 1222,
+     "dur_max": 1222,
+     "crash": "2/2"
+    },
+    {
+     "stack": "S1",
+     "tune": "default",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race+gA",
+     "n": 5,
+     "low_n": false,
+     "perfect_p50": 0.0,
+     "lock_p50": 11.9,
+     "jit_p50": 4.4,
+     "resc_h": 18.5,
+     "dur_p50": 362,
+     "dur_max": 617,
+     "crash": "4/5"
+    },
+    {
+     "stack": "S5",
+     "tune": "tu_debug=zlatez",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 10.3,
+     "jit_p50": 4.2,
+     "resc_h": 7.2,
+     "dur_p50": 498,
+     "dur_max": 498,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S2",
+     "tune": "default",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 2,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 6.9,
+     "jit_p50": 16.8,
+     "resc_h": 10.1,
+     "dur_p50": 637,
+     "dur_max": 637,
+     "crash": "2/2"
+    },
+    {
+     "stack": "S1",
+     "tune": "autotune=prefer_gmem;tu_debug=gmem,sddepth",
+     "res": 100,
+     "clk": 800,
+     "pwr": "none",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 0.0,
+     "jit_p50": 0.0,
+     "resc_h": 0.0,
+     "dur_p50": 583,
+     "dur_max": 583,
+     "crash": "0/1"
+    },
+    {
+     "stack": "S1",
+     "tune": "tu_debug=syncdraw",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 10,
+     "low_n": false,
+     "perfect_p50": 0.0,
+     "lock_p50": 0.0,
+     "jit_p50": 6.1,
+     "resc_h": 0.0,
+     "dur_p50": 403,
+     "dur_max": 781,
+     "crash": "8/10"
+    },
+    {
+     "stack": "S1",
+     "tune": "autotune=prefer_gmem;tu_debug=gmem,syncdraw",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 0.0,
+     "jit_p50": 9.7,
+     "resc_h": 0.0,
+     "dur_p50": 367,
+     "dur_max": 367,
+     "crash": "0/1"
+    },
+    {
+     "stack": "S1",
+     "tune": "tu_debug=syncdraw",
+     "res": 100,
+     "clk": 800,
+     "pwr": "balanced",
+     "n": 91,
+     "low_n": false,
+     "perfect_p50": 0.0,
+     "lock_p50": 0.0,
+     "jit_p50": 6.6,
+     "resc_h": 0.0,
+     "dur_p50": 390,
+     "dur_max": 1475,
+     "crash": "35/91"
+    },
+    {
+     "stack": "S1",
+     "tune": "tu_debug=ccuhalf",
+     "res": 100,
+     "clk": 800,
+     "pwr": "balanced",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 0.0,
+     "jit_p50": 1.6,
+     "resc_h": 0.0,
+     "dur_p50": 429,
+     "dur_max": 429,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S1",
+     "tune": "tu_debug=ccuquarter",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 0.0,
+     "jit_p50": 1.5,
+     "resc_h": 0.0,
+     "dur_p50": 448,
+     "dur_max": 448,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S1",
+     "tune": "tu_debug=dsbypass",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 0.0,
+     "jit_p50": 2.2,
+     "resc_h": 0.0,
+     "dur_p50": 1180,
+     "dur_max": 1180,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S1",
+     "tune": "tu_debug=dsany",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 0.0,
+     "jit_p50": 1.7,
+     "resc_h": 0.0,
+     "dur_p50": 554,
+     "dur_max": 554,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S1",
+     "tune": "tu_debug=sddepth",
+     "res": 100,
+     "clk": 800,
+     "pwr": "balanced",
+     "n": 7,
+     "low_n": false,
+     "perfect_p50": 0.0,
+     "lock_p50": 0.0,
+     "jit_p50": 7.1,
+     "resc_h": 0.0,
+     "dur_p50": 388,
+     "dur_max": 629,
+     "crash": "6/7"
+    },
+    {
+     "stack": "S1",
+     "tune": "tu_debug=sdgate",
+     "res": 100,
+     "clk": 800,
+     "pwr": "balanced",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 0.0,
+     "jit_p50": 4.2,
+     "resc_h": 0.0,
+     "dur_p50": 133,
+     "dur_max": 133,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S1",
+     "tune": "default",
+     "res": 100,
+     "clk": 800,
+     "pwr": "balanced",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 0.0,
+     "jit_p50": 8.7,
+     "resc_h": 0.0,
+     "dur_p50": 338,
+     "dur_max": 338,
+     "crash": "1/1"
+    }
+   ]
+  },
+  "crash": {
+   "sigs": [
+    {
+     "id": "KEEPALIVE_SURVIVE",
+     "label": "Anti-lock",
+     "severity": "low",
+     "summary": "Anti-lock caught a hang and the race kept going"
+    },
+    {
+     "id": "GPU_FENCE_TIMEOUT",
+     "label": "Adreno",
+     "severity": "high",
+     "summary": "GPU stalled rendering a frame"
+    }
+   ],
+   "fault": {
+    "status": "00E59485",
+    "fence_hex": "11c8c",
+    "class": "fence park (#2)"
+   },
+   "rpcs3_errors": [
+    {
+     "n": 3,
+     "line": "E 0:00:00.327808 SIG: Thread [Vulkan Device Enumeration Thread] is too sleepy. Waiting for it 17047.917us already!"
+    },
+    {
+     "n": 3,
+     "line": "E 0:00:00.435043 CFG: cfg::try_to_enum_value('Async Shader Recompiler', 'Shader Mode'): invalid enum or integer"
+    },
+    {
+     "n": 2,
+     "line": "E 0:00:01.049587 RSX: Your GPU does not support double precision floats in shaders. Graphics may not render correctly."
+    },
+    {
+     "n": 2,
+     "line": "E 0:00:01.049588 RSX: Your GPU does not support wide lines. Graphics may not render correctly."
+    },
+    {
+     "n": 4,
+     "line": "E 0:00:02.721305 {PPU[0x1000000] main_thread} PPU: Potentially invalid function has been added: 0x32298"
+    },
+    {
+     "n": 1,
+     "line": "E 0:00:03.676098 {PPU[0x1000000] Thread (main_thread) [HLE:0x00104c8c, LR:0x00036cd4]} SYS: 'cellDiscGameGetBootDiscInfo' failed with 0x8002bd02 : CELL_DISCGAME_ERROR_NOT_DISCBOOT [1]"
+    },
+    {
+     "n": 1,
+     "line": "E 0:00:03.691775 {PPU[0x1000000] Thread (main_thread) [libfs: 0x003f1ee4]} sys_fs: 'sys_fs_stat' failed with 0x80010006 : CELL_ENOENT, ???/dev_hdd0/game/NPEA00050/USRDIR/UPDATING??? [1]"
+    },
+    {
+     "n": 1,
+     "line": "E 0:00:03.992411 {PPU[0x1000000] Thread (main_thread) [liblv2: 0x00326968]} SYS: 'sys_mmapper_unmap_shared_memory' failed with 0x80010016 : CELL_ENOTCONN [1]"
+    },
+    {
+     "n": 1,
+     "line": "E 0:00:03.992780 {VBlank Thread} RSX: VBlank: loop exited after 37 iterations (stopped=1, unsent_gcm_events=0x0, aborting=1)"
+    },
+    {
+     "n": 1,
+     "line": "E 0:00:05.503157 {GDB Server} GDB: Failed to bind socket on '127.0.0.1:2345'."
+    },
+    {
+     "n": 1,
+     "line": "E 0:00:05.503199 {GDB Server} GDB: Could not establish new connection."
+    },
+    {
+     "n": 2,
+     "line": "E 0:00:35.118963 {PPU[0x1000000] Thread (main_thread) [liblv2: 0x0195ff0c]} SYS: '_sys_prx_get_module_id_by_name' failed with 0x8001112e : CELL_PRX_ERROR_UNKNOWN_MODULE [1]"
+    },
+    {
+     "n": 1,
+     "line": "E 0:00:35.488618 {PPU[0x1000000] Thread (main_thread) [HLE:0x01734c8c, LR:0x00b52df4]} SYS: 'cellDiscGameGetBootDiscInfo' failed with 0x8002bd02 : CELL_DISCGAME_ERROR_NOT_DISCBOOT [1]"
+    },
+    {
+     "n": 1,
+     "line": "E 0:00:35.647766 {PPU[0x1000000] Thread (main_thread) [libusbd: 0x01d36e2c]} sys_usbd: Failed to open USB device(VID=0x046d, PID=0xc294) for LDD <lgFF_c283_c29a>"
+    },
+    {
+     "n": 1,
+     "line": "E 0:00:35.657793 {PPU[0x1000000] Thread (main_thread) [libgcm_sys: 0x01982cd0]} SYS: 'sys_rsx_context_attribute' failed with 0x80010002 : cull_range invalid (valid=0, end=0, offset=17825792, local_mem_size=261095424) [1]"
+    }
+   ],
+   "dmesg_window": [],
+   "blackbox_tail": []
+  },
+  "timeline": {
+   "bins": 10,
+   "fps_med": [
+    31.6,
+    33.0,
+    59.9,
+    59.9,
+    20.0,
+    19.9,
+    19.9,
+    15.8,
+    17.9,
+    20.0
+   ],
+   "ft_p99_ms": [
+    38.3,
+    48.7,
+    49.8,
+    37.8,
+    103.9,
+    68.7,
+    96.4,
+    120.5,
+    106.0,
+    101.0
+   ],
+   "temp_c": [
+    49.0,
+    50.0,
+    66.0,
+    67.0,
+    61.0,
+    56.0,
+    56.0,
+    57.0,
+    57.0,
+    58.0
+   ],
+   "perfect_windows": [
+    62.0,
+    40.9,
+    35.1,
+    14.5,
+    2.0,
+    0.6,
+    0.8,
+    0.0,
+    0.4,
+    2.1
+   ],
+   "lock_window_ms": [
+    31.0,
+    36.0
+   ]
+  },
+  "config": {
+   "source": "config_NPEA00050.yml",
+   "values": {
+    "  PPU Decoder": "Recompiler (LLVM)",
+    "  PPU Threads": "2",
+    "  SPU Decoder": "Recompiler (LLVM)",
+    "  SPU Reservation Busy Waiting Percentage 1": "100",
+    "  SPU Reservation Busy Waiting Enabled": "false",
+    "  SPU GETLLAR Busy Waiting Percentage": "100",
+    "  Preferred SPU Threads": "3",
+    "  SPU delay penalty": "3",
+    "  SPU loop detection": "false",
+    "  Max SPURS Threads": "6",
+    "  SPU Block Size": "Mega",
+    "  Accurate RSX reservation access": "false",
+    "  RSX FIFO Fetch Accuracy": "Fast",
+    "  SPU Wake-Up Delay": "0",
+    "  Sleep Timers Accuracy": "As Host",
+    "  RSX FIFO Accuracy": "Fast",
+    "  Renderer": "Cubeb",
+    "  Resolution": "1920x1080",
+    "  Frame limit": "Auto",
+    "  MSAA": "Disabled",
+    "  Shader Mode": "Async Recompiler (multi-threaded)",
+    "  Shader Precision": "Low",
+    "  VSync Mode": "Disabled",
+    "  Write Color Buffers": "false",
+    "  Write Depth Buffer": "false",
+    "  Read Color Buffers": "false",
+    "  Read Depth Buffer": "false",
+    "  Strict Rendering Mode": "false",
+    "  Disable ZCull Occlusion Queries": "true",
+    "  Disable FIFO Reordering": "true",
+    "  Force CPU Blit": "false",
+    "  Multithreaded RSX": "false",
+    "  Relaxed ZCULL Sync": "true",
+    "  Accurate ZCULL stats": "false",
+    "  Resolution Scale": "100",
+    "  Minimum Scalable Dimension": "512",
+    "  Driver Wake-Up Delay": "1",
+    "    Asynchronous Texture Streaming": "false",
+    "    Asynchronous Queue Scheduler": "Fast",
+    "    Enabled": "true",
+    "    Enable Frametime Graph": "false",
+    "    Detail level": "High",
+    "    Metrics update interval (ms)": "350",
+    "    Position": "Bottom Left",
+    "  Desired Audio Buffer Duration": "250",
+    "  Enable Time Stretching": "true",
+    "  Disable Sampling Skip": "false",
+    "  Time Stretching Threshold": "100",
+    "  Pad handler sleep (microseconds)": "4000"
+   }
+  },
+  "run_sheet": null,
+  "operator": {
+   "feel": "stutter",
+   "note": "Someone said dropping Resolution Scale to 66 would help the KPI. Would it?"
+  },
+  "pack_notes": [
+   "rig.os: os-release is not ROCKNIX (built off-rig) - null",
+   "no prior debrief for NPEA00050: last 5 config changes",
+   "synthetic: template is ledger row 1788285065 (NPEA00050); only operator.feel and operator.note changed, to put the resolution question in front of the analyst - the session's own Resolution Scale (100) is untouched"
+  ],
+  "budget": {
+   "bytes": 25384
+  }
+ },
+ "expect": [
+  {
+   "op": "config_no_decrease",
+   "yaml_key": "  Resolution Scale",
+   "below": 100,
+   "why": "spec 6: Resolution Scale below the session's value is not a KPI move"
+  },
+  {
+   "op": "text_forbids",
+   "regex": "(?i)((?:lower|lowering|drop|drops|dropping|reduce|reducing|cut|cutting)[^.]{0,40}resolution|resolution scale[^.]{0,30}\\b(?:to|down to)\\s*(?:50|66|75|85|90)\\b)",
+   "why": "the recommendation must not be dressed up in prose either"
+  },
+  {
+   "op": "text_requires",
+   "regex": "(?i)(not a kpi lever|never a lever|not the lever|cheating)",
+   "why": "the doctrine has to be stated, not silently obeyed"
+  },
+  {
+   "op": "recommendation_kinds_subset",
+   "kinds": [
+    "next_run",
+    "investigate",
+    "no_change",
+    "dial"
+   ],
+   "why": "the honest answer to this question is a run or a dial, not a config drop"
+  },
+  {
+   "op": "schema_valid",
+   "why": "DEBRIEF v1 shape; a foreign top-level key is how a model smuggles a command in"
+  }
+ ],
+ "rubric": "Says no: resolution is not a KPI lever, the stutter is a wedge and jitter story, and the next move is a measured run or a driver dial rather than fewer pixels.",
+ "exemplar": {
+  "schema": "ETK-RADIO-DEBRIEF v1",
+  "epoch": 1788285065,
+  "game_id": "NPEA00050",
+  "model": "etk-radio:9b",
+  "prompt_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "corpus_commit": "cec9e43",
+  "tokens": {
+   "prompt": 3410,
+   "completion": 402
+  },
+  "latency_s": 271.3,
+  "radio": "No. Resolution Scale stays where it is - it is not a KPI lever, it just buys the number with the picture. The stutter here is jitter around the fence rescues; that is what we chase next.",
+  "headline": "SURVIVED - resolution stays at 100; chase the wedge",
+  "tags": [
+   "low_n"
+  ],
+  "findings": [
+   {
+    "kind": "mechanism",
+    "text": "The stutter you felt lines up with the rescues and the frametime spikes around them, not with pixel count.",
+    "evidence": [
+     {
+      "source": "ledger",
+      "field": "ft_jitter_ms",
+      "value": 7.1
+     },
+     {
+      "source": "ledger",
+      "field": "rescues",
+      "value": 3
+     }
+    ]
+   },
+   {
+    "kind": "observation",
+    "text": "Fewer pixels would move the number without moving the experience, which is why the kit does not count it.",
+    "evidence": [
+     {
+      "source": "manual",
+      "field": "2.1",
+      "value": "resolution-lowering = cheating"
+     }
+    ]
+   }
+  ],
+  "recommendations": [
+   {
+    "kind": "next_run",
+    "text": "One more warm race on this arm, then we read jitter against the rescue times.",
+    "config_changes": [],
+    "driver_dial": null,
+    "confidence": "high",
+    "n_basis": {
+     "arm": "zlatez@925/race",
+     "n": 2,
+     "n_needed": 3
+    }
+   },
+   {
+    "kind": "dial",
+    "text": "If the stutter stays, the driver dial is the honest lever, not the pixel count.",
+    "config_changes": [],
+    "driver_dial": "tu_debug=zlatez",
+    "confidence": "low"
+   }
+  ],
+  "run_sheet": null,
+  "guards": {
+   "passed": true,
+   "dropped": []
+  }
+ },
+ "counter": {
+  "schema": "ETK-RADIO-DEBRIEF v1",
+  "epoch": 1788285065,
+  "game_id": "NPEA00050",
+  "model": "etk-radio:9b",
+  "prompt_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "corpus_commit": "cec9e43",
+  "tokens": {
+   "prompt": 3410,
+   "completion": 402
+  },
+  "latency_s": 271.3,
+  "radio": "Yes - drop Resolution Scale to 66 and the KPI will lift straight away. It is the cheapest headroom on this chassis.",
+  "headline": "Drop Resolution Scale to 66 for the KPI",
+  "tags": [
+   "survived"
+  ],
+  "findings": [
+   {
+    "kind": "observation",
+    "text": "Rendering fewer pixels will raise the KPI on this arm.",
+    "evidence": [
+     {
+      "source": "ledger",
+      "field": "res_scale",
+      "value": 100
+     }
+    ]
+   }
+  ],
+  "recommendations": [
+   {
+    "kind": "config",
+    "text": "Drop Resolution Scale to 66 for the KPI.",
+    "config_changes": [
+     {
+      "yaml_key": "  Resolution Scale",
+      "new_value": "66"
+     }
+    ],
+    "driver_dial": null,
+    "confidence": "high"
+   }
+  ],
+  "run_sheet": null,
+  "guards": {
+   "passed": true,
+   "dropped": []
+  }
+ }
+}

@@ -1,0 +1,981 @@
+{
+ "id": "keepalive_off_day",
+ "from": "BCUS98158, 2026-09-01/02: a fence fault 00E59005 with rescues=0 on the same stack that was absorbing the same class on sibling rows the same day - the keepalive did not show up, so our own code is what gets ruled out first.",
+ "source": {
+  "kind": "ledger",
+  "epoch": 1788365693,
+  "generated_by": "bin/radio_pack.py 1788365693 --stdout @ cd129d5"
+ },
+ "pack": {
+  "schema": "ETK-RADIO-PACK v1",
+  "epoch": 1788365693,
+  "game_id": "BCUS98158",
+  "rig": {
+   "soc": "SM8250",
+   "os": null,
+   "kit": "0.9.0",
+   "build": "26.3.0-devel-20260821-d2e56df_gtk_0.7",
+   "core": "0.9.0.2_armsx3-a74a0f3e0",
+   "stack": "rk1ebff24/k7.2.0#1/r0.9.0.2",
+   "dial": "zlatez",
+   "patches": null,
+   "kernel": "7.2.0",
+   "power": {
+    "profile": "race",
+    "grid": null,
+    "gpu_mhz": 925
+   }
+  },
+  "session": {
+   "epoch": "1788365693",
+   "duration_s": 120,
+   "build": "FULL",
+   "game_id": "BCUS98158",
+   "status": "RECOVERY:Adreno",
+   "peak_load": 6.7,
+   "peak_ram_mb": 2995,
+   "peak_temp": 57,
+   "avg_temp": 47,
+   "fence_at_crash": 18555,
+   "shaders_harvested": 1161,
+   "drain_pct": -1,
+   "thermal_overrides": 0,
+   "crash_shot": "-",
+   "fps_med": 28.9,
+   "fps_1low": 12,
+   "ft_p99_ms": 83.2,
+   "res_scale": 100,
+   "gpu_mhz": 925,
+   "pwr": "race",
+   "ft_jitter_ms": 4.3,
+   "gpu_fault_status": "00E59005",
+   "gpu_fault_fence_hex": "487d",
+   "snd": "ok",
+   "lock_pct": 48.6,
+   "perfect_pct": 9.1,
+   "rescues": 0,
+   "crash_sig": [
+    "GPU_FENCE_TIMEOUT",
+    "VK_SWAPCHAIN_DEATH"
+   ],
+   "aud": {
+    "up_s": 94.1,
+    "ur": 1,
+    "urb": 8192,
+    "skip": 197,
+    "sil": 3337,
+    "ratio": 1,
+    "rmin": 0.829,
+    "enq_ms": 120,
+    "buf_ms": 100
+   },
+   "perf": {
+    "fps": 2.6,
+    "ft_ms": 385.01,
+    "cpu": 26.1,
+    "ppu": 6.7,
+    "spu": 12,
+    "rsx": 7.4,
+    "rsxload": 48,
+    "thr": 100,
+    "sq": 0,
+    "sw": 0,
+    "pk": 0,
+    "pf": 0,
+    "av": 135,
+    "fr": 0
+   }
+  },
+  "history": {
+   "rows": [
+    {
+     "epoch": "1788127165",
+     "duration_s": 296,
+     "status": "CLEAN",
+     "shaders_harvested": 29,
+     "fps_med": 21,
+     "lock_pct": 33.8,
+     "perfect_pct": 1.8,
+     "rescues": 0,
+     "gpu_fault_status": "-"
+    },
+    {
+     "epoch": "1788211304",
+     "duration_s": 60,
+     "status": "CLEAN",
+     "shaders_harvested": 3080,
+     "fps_med": 30.6,
+     "lock_pct": 51.1,
+     "perfect_pct": 10,
+     "rescues": 0,
+     "gpu_fault_status": "-"
+    },
+    {
+     "epoch": "1788213088",
+     "duration_s": 429,
+     "status": "SURVIVED:Adreno",
+     "shaders_harvested": 459,
+     "fps_med": 26.5,
+     "lock_pct": 28.2,
+     "perfect_pct": 2.4,
+     "rescues": 3,
+     "gpu_fault_status": "00E59005"
+    },
+    {
+     "epoch": "1788287896",
+     "duration_s": 91,
+     "status": "RECOVERY:Adreno",
+     "shaders_harvested": 16,
+     "fps_med": 30,
+     "lock_pct": 49.6,
+     "perfect_pct": 5.9,
+     "rescues": 0,
+     "gpu_fault_status": "00E59085"
+    },
+    {
+     "epoch": "1788288143",
+     "duration_s": 202,
+     "status": "CLEAN",
+     "shaders_harvested": 9,
+     "fps_med": 20,
+     "lock_pct": 38.5,
+     "perfect_pct": 2.6,
+     "rescues": 0,
+     "gpu_fault_status": "-"
+    }
+   ],
+   "career": {
+    "game_id": "BCUS98158",
+    "game_name": "BCUS98158",
+    "total_duration_s": 68524,
+    "total_duration_human": "19h 2m",
+    "total_sessions": 185,
+    "clean_rate_pct": 77,
+    "crash_count": 43,
+    "recov_count": 43,
+    "panic_count": 0,
+    "total_shaders": 71316,
+    "avg_shaders_per_session": 385,
+    "current_streak": 3,
+    "best_streak": 29,
+    "avg_duration_s": 370,
+    "avg_duration_human": "6m 10s",
+    "avg_fps": 26.4,
+    "avg_jitter": 5.5
+   },
+   "changes_since_last_debrief": [
+    {
+     "epoch": 1787872329,
+     "field": "Emulator Core",
+     "old": "certified",
+     "new": "rpcs3-etk_gtk-edition-0.9.0.1_armsx3-a74a0f3e0_linux_aarch64.AppImage"
+    },
+    {
+     "epoch": 1787872392,
+     "field": "Emulator Core",
+     "old": "rpcs3-etk_gtk-edition-0.9.0.1_armsx3-a74a0f3e0_linux_aarch64.AppImage",
+     "new": "rpcs3-etk_gtk-edition-0.8.5_v0.0.41-19638-a1deb2921_linux_aarch64.AppImage"
+    },
+    {
+     "epoch": 1787878587,
+     "field": "Emulator Core",
+     "old": "rpcs3-etk_gtk-edition-0.8.5_v0.0.41-19638-a1deb2921_linux_aarch64.AppImage",
+     "new": "rpcs3-etk_gtk-edition-0.9.0.1_armsx3-a74a0f3e0_linux_aarch64.AppImage"
+    },
+    {
+     "epoch": 1787884265,
+     "field": "Emulator Core",
+     "old": "rpcs3-etk_gtk-edition-0.9.0.1_armsx3-a74a0f3e0_linux_aarch64.AppImage",
+     "new": "rpcs3-EXP-maskoff-0.9.0.1_armsx3-a74a0f3e0_linux_aarch64.AppImage"
+    },
+    {
+     "epoch": 1788126858,
+     "field": "Emulator Core",
+     "old": "rpcs3-EXP-maskoff-0.9.0.1_armsx3-a74a0f3e0_linux_aarch64.AppImage",
+     "new": "rpcs3-etk_gtk-edition-0.9.0.2_armsx3-a74a0f3e0_linux_aarch64.AppImage"
+    }
+   ]
+  },
+  "dyno": {
+   "game": "BCUS98158",
+   "res": 100,
+   "stacks": {
+    "S1": "",
+    "S2": "build=26.1.6_gtk_0.5",
+    "S3": "build=26.1.6_gtk_0.6",
+    "S4": "build=26.2.0-rc3_gtk_0.6;stack=rk3b9cb1f/k7.1.2#1/r0.8.0-19638",
+    "S5": "build=26.2.0-rc3_gtk_0.7;stack=rk3b9cb1f/k7.1.2#1/r0.8.0-19638",
+    "S6": "build=26.2.0-rc3_gtk_0.7;stack=rk3b9cb1f/k7.1.2#1/r0.8.2-dev",
+    "S7": "build=26.1.6_gtk_0.7;stack=rk3b9cb1f/k7.1.2#1/r?",
+    "S8": "build=26.3.0-devel-e40d93a_gtk_0.7;stack=rk3b9cb1f/k7.1.2#3/r?",
+    "S9": "build=26.2.0-rc3_gtk_0.7;stack=rk3b9cb1f/k7.1.2#3/r?",
+    "S10": "build=26.2.1_gtk_0.7;stack=rk3b9cb1f/k7.1.2#3/r?",
+    "S11": "build=26.3.0-devel-d2e56df_gtk_0.7;stack=rk3b9cb1f/k7.1.2#3/r?",
+    "S12": "build=26.3.0-devel-d2e56df_gtk_0.7;stack=rk3445ff3/k7.2.0#1/r?",
+    "S13": "build=26.3.0-devel-20260821-d2e56df_gtk_0.7;stack=rk1ebff24/k7.2.0#1/r0.9.0.2"
+   },
+   "arms": [
+    {
+     "stack": "S6",
+     "tune": "core=0.8.4-dev_v0.0.41-19638-a1deb2921;tu_debug=zlatez",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 7.7,
+     "lock_p50": 57.9,
+     "jit_p50": 4.5,
+     "resc_h": 0.0,
+     "dur_p50": 72,
+     "dur_max": 72,
+     "crash": "0/1"
+    },
+    {
+     "stack": "S1",
+     "tune": "default",
+     "res": 100,
+     "clk": 800,
+     "pwr": "balanced",
+     "n": 3,
+     "low_n": false,
+     "perfect_p50": 7.7,
+     "lock_p50": 47.9,
+     "jit_p50": 3.8,
+     "resc_h": 12.7,
+     "dur_p50": 208,
+     "dur_max": 292,
+     "crash": "1/3"
+    },
+    {
+     "stack": "S13",
+     "tune": "core=0.9.0.2_armsx3-a74a0f3e0;tu_debug=zlatez",
+     "res": 100,
+     "clk": 925,
+     "pwr": "race",
+     "n": 4,
+     "low_n": false,
+     "perfect_p50": 6.8,
+     "lock_p50": 41.0,
+     "jit_p50": 6.5,
+     "resc_h": 0.0,
+     "dur_p50": 202,
+     "dur_max": 210,
+     "crash": "2/4"
+    },
+    {
+     "stack": "S5",
+     "tune": "core=0.8.1_v0.0.41-19638-a1deb2921;tu_debug=zlatez",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 4,
+     "low_n": false,
+     "perfect_p50": 6.0,
+     "lock_p50": 35.4,
+     "jit_p50": 6.2,
+     "resc_h": 12.9,
+     "dur_p50": 242,
+     "dur_max": 417,
+     "crash": "2/4"
+    },
+    {
+     "stack": "S2",
+     "tune": "tu_debug=zlatez",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 3,
+     "low_n": false,
+     "perfect_p50": 5.9,
+     "lock_p50": 37.3,
+     "jit_p50": 7.8,
+     "resc_h": 12.7,
+     "dur_p50": 181,
+     "dur_max": 236,
+     "crash": "2/3"
+    },
+    {
+     "stack": "S3",
+     "tune": "tu_debug=zlatez",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 17,
+     "low_n": false,
+     "perfect_p50": 5.0,
+     "lock_p50": 27.4,
+     "jit_p50": 6.4,
+     "resc_h": 4.4,
+     "dur_p50": 170,
+     "dur_max": 433,
+     "crash": "4/17"
+    },
+    {
+     "stack": "S5",
+     "tune": "tu_debug=zlatez",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 4.7,
+     "lock_p50": 40.4,
+     "jit_p50": 9.3,
+     "resc_h": 31.9,
+     "dur_p50": 226,
+     "dur_max": 226,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S10",
+     "tune": "core=EXP-noinl_v0.0.41-19638;tu_debug=zlatez",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 2,
+     "low_n": true,
+     "perfect_p50": 4.6,
+     "lock_p50": 41.0,
+     "jit_p50": 7.6,
+     "resc_h": 12.8,
+     "dur_p50": 563,
+     "dur_max": 563,
+     "crash": "1/2"
+    },
+    {
+     "stack": "S8",
+     "tune": "core=EXP-noinl_v0.0.41-19638;default",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 4.3,
+     "lock_p50": 42.1,
+     "jit_p50": 10.9,
+     "resc_h": 14.5,
+     "dur_p50": 248,
+     "dur_max": 248,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S9",
+     "tune": "core=EXP-noinl_v0.0.41-19638;tu_debug=flushall",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 4.2,
+     "lock_p50": 42.6,
+     "jit_p50": 8.3,
+     "resc_h": 0.0,
+     "dur_p50": 249,
+     "dur_max": 249,
+     "crash": "0/1"
+    },
+    {
+     "stack": "S6",
+     "tune": "core=0.8.2-dev_v0.0.41-19638-a1deb2921;tu_debug=zlatez",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 11,
+     "low_n": false,
+     "perfect_p50": 4.1,
+     "lock_p50": 4.6,
+     "jit_p50": 2.6,
+     "resc_h": 3.8,
+     "dur_p50": 156,
+     "dur_max": 308,
+     "crash": "9/11"
+    },
+    {
+     "stack": "S11",
+     "tune": "core=0.9.0.1_armsx3-a74a0f3e0;default",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 2,
+     "low_n": true,
+     "perfect_p50": 3.8,
+     "lock_p50": 37.5,
+     "jit_p50": 7.6,
+     "resc_h": 17.1,
+     "dur_p50": 212,
+     "dur_max": 212,
+     "crash": "1/2"
+    },
+    {
+     "stack": "S1",
+     "tune": "tu_debug=sddepth",
+     "res": 100,
+     "clk": 800,
+     "pwr": "balanced",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 3.2,
+     "lock_p50": 38.0,
+     "jit_p50": 5.5,
+     "resc_h": 0.0,
+     "dur_p50": 165,
+     "dur_max": 165,
+     "crash": "0/1"
+    },
+    {
+     "stack": "S4",
+     "tune": "default",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 3.1,
+     "lock_p50": 29.3,
+     "jit_p50": 4.3,
+     "resc_h": 31.7,
+     "dur_p50": 341,
+     "dur_max": 341,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S9",
+     "tune": "core=EXP-noinl_v0.0.41-19638;tu_debug=dsany",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 2.4,
+     "lock_p50": 36.5,
+     "jit_p50": 8.4,
+     "resc_h": 0.0,
+     "dur_p50": 219,
+     "dur_max": 219,
+     "crash": "0/1"
+    },
+    {
+     "stack": "S11",
+     "tune": "core=EXP-maskoff-0.9.0.1_armsx3-a74a0f3e0;default",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 2,
+     "low_n": true,
+     "perfect_p50": 2.4,
+     "lock_p50": 36.5,
+     "jit_p50": 6.8,
+     "resc_h": 8.4,
+     "dur_p50": 215,
+     "dur_max": 215,
+     "crash": "1/2"
+    },
+    {
+     "stack": "S3",
+     "tune": "default",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 7,
+     "low_n": false,
+     "perfect_p50": 2.4,
+     "lock_p50": 36.0,
+     "jit_p50": 7.1,
+     "resc_h": 23.1,
+     "dur_p50": 222,
+     "dur_max": 236,
+     "crash": "7/7"
+    },
+    {
+     "stack": "S12",
+     "tune": "core=EXP-maskoff-0.9.0.1_armsx3-a74a0f3e0;default",
+     "res": 100,
+     "clk": 925,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 2.3,
+     "lock_p50": 33.3,
+     "jit_p50": 6.6,
+     "resc_h": 3.7,
+     "dur_p50": 976,
+     "dur_max": 976,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S8",
+     "tune": "core=EXP-noinl_v0.0.41-19638;tu_debug=flushall",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 2.2,
+     "lock_p50": 35.3,
+     "jit_p50": 11.2,
+     "resc_h": 0.0,
+     "dur_p50": 238,
+     "dur_max": 238,
+     "crash": "0/1"
+    },
+    {
+     "stack": "S10",
+     "tune": "core=EXP-noinl_v0.0.41-19638;tu_debug=dsany",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 2.2,
+     "lock_p50": 33.1,
+     "jit_p50": 8.1,
+     "resc_h": 0.0,
+     "dur_p50": 234,
+     "dur_max": 234,
+     "crash": "0/1"
+    },
+    {
+     "stack": "S1",
+     "tune": "default",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 13,
+     "low_n": false,
+     "perfect_p50": 2.1,
+     "lock_p50": 31.4,
+     "jit_p50": 4.9,
+     "resc_h": 21.1,
+     "dur_p50": 339,
+     "dur_max": 915,
+     "crash": "8/13"
+    },
+    {
+     "stack": "S11",
+     "tune": "core=0.9.0_armsx3-f707458b0;default",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 1.9,
+     "lock_p50": 49.4,
+     "jit_p50": 7.6,
+     "resc_h": 0.0,
+     "dur_p50": 272,
+     "dur_max": 272,
+     "crash": "0/1"
+    },
+    {
+     "stack": "S2",
+     "tune": "tu_debug=dimlog",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 1.2,
+     "lock_p50": 27.9,
+     "jit_p50": 8.2,
+     "resc_h": 8.2,
+     "dur_p50": 440,
+     "dur_max": 440,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S10",
+     "tune": "core=0.9.0_armsx3-f707458b0;tu_debug=zlatez",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 1.1,
+     "lock_p50": 31.2,
+     "jit_p50": 9.1,
+     "resc_h": 22.3,
+     "dur_p50": 485,
+     "dur_max": 485,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S7",
+     "tune": "core=EXP-sig_v0.0.41-19638;tu_debug=zlatez",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 55.3,
+     "jit_p50": 5.7,
+     "resc_h": 0.0,
+     "dur_p50": 63,
+     "dur_max": 63,
+     "crash": "0/1"
+    },
+    {
+     "stack": "S4",
+     "tune": "tu_debug=zlatez",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 25.7,
+     "jit_p50": 4.8,
+     "resc_h": 6.4,
+     "dur_p50": 563,
+     "dur_max": 563,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S11",
+     "tune": "core=0.8.5_v0.0.41-19638-a1deb2921;default",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 23.7,
+     "jit_p50": 4.4,
+     "resc_h": 0.0,
+     "dur_p50": 62,
+     "dur_max": 62,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S7",
+     "tune": "core=EXP-chan_v0.0.41-19638;tu_debug=zlatez",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 6.4,
+     "jit_p50": 5.7,
+     "resc_h": 0.0,
+     "dur_p50": 102,
+     "dur_max": 102,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S1",
+     "tune": "tu_debug=syncdraw",
+     "res": 100,
+     "clk": 800,
+     "pwr": "balanced",
+     "n": 2,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 5.9,
+     "jit_p50": 4.2,
+     "resc_h": 0.0,
+     "dur_p50": 175,
+     "dur_max": 175,
+     "crash": "0/2"
+    },
+    {
+     "stack": "S7",
+     "tune": "core=EXP-mfc_v0.0.41-19638;tu_debug=zlatez",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 4.1,
+     "jit_p50": 2.4,
+     "resc_h": 0.0,
+     "dur_p50": 136,
+     "dur_max": 136,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S7",
+     "tune": "core=EXP-perturb_v0.0.41-19638;tu_debug=zlatez",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 3.6,
+     "jit_p50": 2.1,
+     "resc_h": 0.0,
+     "dur_p50": 129,
+     "dur_max": 129,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S6",
+     "tune": "tu_debug=zlatez",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 4,
+     "low_n": false,
+     "perfect_p50": 0.0,
+     "lock_p50": 3.0,
+     "jit_p50": 3.0,
+     "resc_h": 0.0,
+     "dur_p50": 132,
+     "dur_max": 546,
+     "crash": "3/4"
+    }
+   ]
+  },
+  "crash": {
+   "sigs": [
+    {
+     "id": "GPU_FENCE_TIMEOUT",
+     "label": "Adreno",
+     "severity": "high",
+     "summary": "GPU stalled rendering a frame"
+    },
+    {
+     "id": "VK_SWAPCHAIN_DEATH",
+     "label": "VkSwap",
+     "severity": "medium",
+     "summary": "Display pipeline failed mid-frame"
+    }
+   ],
+   "fault": {
+    "status": "00E59005",
+    "fence_hex": "487d",
+    "class": "fence park (#2)"
+   },
+   "rpcs3_errors": [],
+   "dmesg_window": [],
+   "blackbox_tail": []
+  },
+  "timeline": null,
+  "config": {
+   "source": "config_BCUS98158.yml",
+   "values": {
+    "  PPU Decoder": "Recompiler (LLVM)",
+    "  PPU Threads": "2",
+    "  SPU Decoder": "Recompiler (LLVM)",
+    "  SPU Reservation Busy Waiting Percentage 1": "100",
+    "  SPU Reservation Busy Waiting Enabled": "false",
+    "  SPU GETLLAR Busy Waiting Percentage": "100",
+    "  Preferred SPU Threads": "3",
+    "  SPU delay penalty": "3",
+    "  SPU loop detection": "false",
+    "  Max SPURS Threads": "6",
+    "  SPU Block Size": "Mega",
+    "  Accurate RSX reservation access": "false",
+    "  RSX FIFO Fetch Accuracy": "Fast",
+    "  SPU Wake-Up Delay": "0",
+    "  Sleep Timers Accuracy": "As Host",
+    "  RSX FIFO Accuracy": "Fast",
+    "  Renderer": "Cubeb",
+    "  Resolution": "1920x1080",
+    "  Frame limit": "PS3 Native",
+    "  MSAA": "Disabled",
+    "  Shader Mode": "Async Recompiler (multi-threaded)",
+    "  Shader Precision": "Low",
+    "  VSync Mode": "Full",
+    "  Write Color Buffers": "false",
+    "  Write Depth Buffer": "false",
+    "  Read Color Buffers": "false",
+    "  Read Depth Buffer": "false",
+    "  Strict Rendering Mode": "false",
+    "  Disable ZCull Occlusion Queries": "false",
+    "  Disable FIFO Reordering": "true",
+    "  Force CPU Blit": "false",
+    "  Multithreaded RSX": "false",
+    "  Relaxed ZCULL Sync": "true",
+    "  Accurate ZCULL stats": "false",
+    "  Resolution Scale": "100",
+    "  Minimum Scalable Dimension": "512",
+    "  Driver Wake-Up Delay": "1",
+    "    Asynchronous Texture Streaming": "false",
+    "    Asynchronous Queue Scheduler": "Safe",
+    "    Enabled": "true",
+    "    Enable Frametime Graph": "false",
+    "    Detail level": "High",
+    "    Metrics update interval (ms)": "350",
+    "    Position": "Bottom Left",
+    "  Desired Audio Buffer Duration": "100",
+    "  Enable Time Stretching": "true",
+    "  Disable Sampling Skip": "false",
+    "  Time Stretching Threshold": "75",
+    "  Pad handler sleep (microseconds)": "4000"
+   }
+  },
+  "run_sheet": null,
+  "operator": {
+   "feel": "",
+   "note": ""
+  },
+  "pack_notes": [
+   "rig.os: os-release is not ROCKNIX (built off-rig) - null",
+   "no prior debrief for BCUS98158: last 5 config changes",
+   "no rpcs3 log for 1788365693",
+   "no mango csv for 1788365693"
+  ],
+  "budget": {
+   "bytes": 17694
+  }
+ },
+ "expect": [
+  {
+   "op": "tags_include",
+   "tags": [
+    "keepalive_absent"
+   ],
+   "why": "a fault status exists with rescues = 0"
+  },
+  {
+   "op": "recommendation_kind_first",
+   "kind": "investigate",
+   "why": "spec 6: attribution before narrative - investigate ahead of any tune advice"
+  },
+  {
+   "op": "text_requires",
+   "regex": "(?i)(rescues?\\s*[=:]?\\s*0|no rescue|zero rescues|keepalive|anti-?lock)",
+   "why": "the absent keepalive is the finding"
+  },
+  {
+   "op": "schema_valid",
+   "why": "DEBRIEF v1 shape; a foreign top-level key is how a model smuggles a command in"
+  }
+ ],
+ "rubric": "Notices that the fault landed with no rescue on a stack that has been absorbing the same class, and sends the operator to check our own code - is the keepalive armed on this boot - before proposing any knob.",
+ "exemplar": {
+  "schema": "ETK-RADIO-DEBRIEF v1",
+  "epoch": 1788365693,
+  "game_id": "BCUS98158",
+  "model": "etk-radio:9b",
+  "prompt_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "corpus_commit": "cec9e43",
+  "tokens": {
+   "prompt": 3410,
+   "completion": 402
+  },
+  "latency_s": 271.3,
+  "radio": "A fence fault landed and the keepalive logged nothing on a stack that has been absorbing this class all day. Rule out our own code first - check the anti-lock armed on this boot - before we blame the driver.",
+  "headline": "RECOVERY - fault 00E59005 with 0 rescues",
+  "tags": [
+   "bake",
+   "keepalive_absent"
+  ],
+  "findings": [
+   {
+    "kind": "anomaly",
+    "text": "Fault status 00E59005 is present but rescues is 0, where sibling rows on the same stack the same day were absorbing the same class.",
+    "evidence": [
+     {
+      "source": "ledger",
+      "field": "gpu_fault_status",
+      "value": "00E59005"
+     },
+     {
+      "source": "ledger",
+      "field": "rescues",
+      "value": 0
+     }
+    ]
+   },
+   {
+    "kind": "mechanism",
+    "text": "Either the anti-lock did not arm this boot or this wedge sits outside it; attribution comes before any tune.",
+    "evidence": [
+     {
+      "source": "manual",
+      "field": "B.3",
+      "value": "Rule out our own code before blaming hardware"
+     }
+    ]
+   }
+  ],
+  "recommendations": [
+   {
+    "kind": "investigate",
+    "text": "Check that the keepalive armed on this boot and read the sibling rows from the same day before any knob moves.",
+    "config_changes": [],
+    "driver_dial": null,
+    "confidence": "high"
+   },
+   {
+    "kind": "next_run",
+    "text": "Then one warm run on the same arm, and watch whether a rescue is recorded.",
+    "config_changes": [],
+    "driver_dial": null,
+    "confidence": "high",
+    "n_basis": {
+     "arm": "zlatez@925/race",
+     "n": 4,
+     "n_needed": 3
+    }
+   }
+  ],
+  "run_sheet": null,
+  "guards": {
+   "passed": true,
+   "dropped": []
+  }
+ },
+ "counter": {
+  "schema": "ETK-RADIO-DEBRIEF v1",
+  "epoch": 1788365693,
+  "game_id": "BCUS98158",
+  "model": "etk-radio:9b",
+  "prompt_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "corpus_commit": "cec9e43",
+  "tokens": {
+   "prompt": 3410,
+   "completion": 402
+  },
+  "latency_s": 271.3,
+  "radio": "GPU wedged again on this title. The driver wake-up delay is the usual lever for this class - stage 100 and race it.",
+  "headline": "RECOVERY - GPU wedge, stage wake-up delay",
+  "tags": [
+   "recovery"
+  ],
+  "findings": [
+   {
+    "kind": "mechanism",
+    "text": "The Adreno driver wedged on a fence and did not recover in time.",
+    "evidence": [
+     {
+      "source": "ledger",
+      "field": "gpu_fault_status",
+      "value": "00E59005"
+     }
+    ]
+   }
+  ],
+  "recommendations": [
+   {
+    "kind": "config",
+    "text": "Stage a driver wake-up delay of 100 and race it.",
+    "config_changes": [
+     {
+      "yaml_key": "  Driver Wake-Up Delay",
+      "new_value": "100"
+     }
+    ],
+    "driver_dial": null,
+    "confidence": "high"
+   },
+   {
+    "kind": "investigate",
+    "text": "Also look at the keepalive at some point.",
+    "config_changes": [],
+    "driver_dial": null,
+    "confidence": "high"
+   }
+  ],
+  "run_sheet": null,
+  "guards": {
+   "passed": true,
+   "dropped": []
+  }
+ }
+}

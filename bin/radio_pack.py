@@ -304,9 +304,9 @@ def read_config(config_dir, game_id, fields_json, notes):
     want = {}
     if fields_json.exists():
         for fld in json.loads(fields_json.read_text()):
-            key = (fld.get("yaml_key") or "").strip()
-            if key:
-                want[key] = fld.get("label", key)
+            raw = fld.get("yaml_key") or ""
+            if raw.strip():
+                want[raw.strip()] = raw      # stripped -> the schema's own (indented) key
     text = cfg.read_text(errors="replace")
     out = {}
     for ln in text.splitlines():
@@ -315,7 +315,9 @@ def read_config(config_dir, game_id, fields_json, notes):
             continue
         k = m.group(1).strip()
         if not want or k in want:
-            out[k] = m.group(2).strip('"')
+            # keys are emitted in pitstop_fields.json's own form so a guard's
+            # vocabulary check is a direct lookup (spec 6: schema vocabulary only)
+            out[want.get(k, k)] = m.group(2).strip('"')
     return {"source": str(cfg.name), "values": out}
 
 

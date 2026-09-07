@@ -1,0 +1,538 @@
+{
+ "id": "panic_silent",
+ "from": "BCUS98114, 2026-09-02: a PANIC row rebuilt after the reset whose kept kmsg tail carries no fault, oops or trace - wifi association and thermal-zone housekeeping only, so there is no lead-up in the pack to attribute anything to.",
+ "source": {
+  "kind": "ledger",
+  "epoch": 1788447694,
+  "generated_by": "bin/radio_pack.py 1788447694 --stdout @ cd129d5"
+ },
+ "pack": {
+  "schema": "ETK-RADIO-PACK v1",
+  "epoch": 1788447694,
+  "game_id": "BCUS98114",
+  "rig": {
+   "soc": "SM8250",
+   "os": null,
+   "kit": "0.9.0",
+   "build": "26.2.2_gtk_0.7",
+   "core": "0.9.0.2_armsx3-a74a0f3e0",
+   "stack": "rk1ebff24/k7.2.0#1/r0.9.0.2",
+   "dial": "zlatez",
+   "patches": null,
+   "kernel": "7.2.0",
+   "power": {
+    "profile": null,
+    "grid": null,
+    "gpu_mhz": null
+   }
+  },
+  "session": {
+   "epoch": "1788447694",
+   "duration_s": 137,
+   "build": "FULL",
+   "game_id": "BCUS98114",
+   "status": "PANIC",
+   "peak_load": 0,
+   "peak_ram_mb": 3067,
+   "peak_temp": 0,
+   "avg_temp": 0,
+   "fence_at_crash": 0,
+   "shaders_harvested": 0,
+   "drain_pct": 0,
+   "thermal_overrides": 0,
+   "crash_shot": "",
+   "fps_med": null,
+   "fps_1low": null,
+   "ft_p99_ms": null,
+   "res_scale": null,
+   "gpu_mhz": null,
+   "pwr": "",
+   "ft_jitter_ms": null,
+   "gpu_fault_status": "",
+   "gpu_fault_fence_hex": "",
+   "snd": "",
+   "lock_pct": null,
+   "perfect_pct": null,
+   "rescues": null,
+   "crash_sig": [
+    "PANIC_REBOOT"
+   ],
+   "aud": {},
+   "perf": {}
+  },
+  "history": {
+   "rows": [
+    {
+     "epoch": "1788058363",
+     "duration_s": 890,
+     "status": "RECOVERY:Silent",
+     "shaders_harvested": 0,
+     "fps_med": 31.2,
+     "lock_pct": 8.2,
+     "perfect_pct": 2.9,
+     "rescues": 0,
+     "gpu_fault_status": "-"
+    },
+    {
+     "epoch": "1788058502",
+     "duration_s": 129,
+     "status": "PANIC",
+     "shaders_harvested": 0,
+     "fps_med": null,
+     "lock_pct": null,
+     "perfect_pct": null,
+     "rescues": null,
+     "gpu_fault_status": ""
+    },
+    {
+     "epoch": "1788132095",
+     "duration_s": 138,
+     "status": "PANIC",
+     "shaders_harvested": 0,
+     "fps_med": null,
+     "lock_pct": null,
+     "perfect_pct": null,
+     "rescues": null,
+     "gpu_fault_status": ""
+    },
+    {
+     "epoch": "1788132266",
+     "duration_s": 128,
+     "status": "PANIC",
+     "shaders_harvested": 0,
+     "fps_med": null,
+     "lock_pct": null,
+     "perfect_pct": null,
+     "rescues": null,
+     "gpu_fault_status": ""
+    },
+    {
+     "epoch": "1788213779",
+     "duration_s": 186,
+     "status": "RECOVERY:Silent",
+     "shaders_harvested": 0,
+     "fps_med": 30.9,
+     "lock_pct": 70.2,
+     "perfect_pct": 44.8,
+     "rescues": 0,
+     "gpu_fault_status": "-"
+    }
+   ],
+   "career": {
+    "game_id": "BCUS98114",
+    "game_name": "BCUS98114",
+    "total_duration_s": 24480,
+    "total_duration_human": "6h 48m",
+    "total_sessions": 86,
+    "clean_rate_pct": 15,
+    "crash_count": 73,
+    "recov_count": 27,
+    "panic_count": 46,
+    "total_shaders": 108405,
+    "avg_shaders_per_session": 1261,
+    "current_streak": 0,
+    "best_streak": 4,
+    "avg_duration_s": 285,
+    "avg_duration_human": "4m 45s",
+    "avg_fps": 28.8,
+    "avg_jitter": 10
+   },
+   "changes_since_last_debrief": [
+    {
+     "epoch": 1787587608,
+     "field": "Accurate ZCULL stats",
+     "old": "false",
+     "new": "true"
+    },
+    {
+     "epoch": 1787613543,
+     "field": "VSync",
+     "old": "Full",
+     "new": "Disabled"
+    },
+    {
+     "epoch": 1787613543,
+     "field": "Perf Overlay",
+     "old": "true",
+     "new": "false"
+    },
+    {
+     "epoch": 1787883755,
+     "field": "Emulator Core",
+     "old": "certified",
+     "new": "rpcs3-etk_gtk-edition-0.9.0.1_armsx3-a74a0f3e0_linux_aarch64.AppImage"
+    },
+    {
+     "epoch": 1788022348,
+     "field": "Emulator Core",
+     "old": "rpcs3-etk_gtk-edition-0.9.0.1_armsx3-a74a0f3e0_linux_aarch64.AppImage",
+     "new": "rpcs3-EXP-maskoff-0.9.0.1_armsx3-a74a0f3e0_linux_aarch64.AppImage"
+    }
+   ]
+  },
+  "dyno": {
+   "game": "BCUS98114",
+   "res": 100,
+   "stacks": {
+    "S1": "",
+    "S2": "build=26.2.0-rc3_gtk_0.7;stack=rk3b9cb1f/k7.1.2#1/r0.8.2-dev",
+    "S3": "build=26.3.0-devel-d2e56df_gtk_0.7;stack=rk3445ff3/k7.2.0#1/r?",
+    "S4": "build=26.3.0-devel-20260821-d2e56df_gtk_0.7;stack=rk3445ff3/k7.2.0#1/r0.9.0.2"
+   },
+   "arms": [
+    {
+     "stack": "S4",
+     "tune": "core=0.9.0.2_armsx3-a74a0f3e0;tu_debug=zlatez",
+     "res": 100,
+     "clk": 925,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 44.8,
+     "lock_p50": 70.2,
+     "jit_p50": 2.2,
+     "resc_h": 0.0,
+     "dur_p50": 186,
+     "dur_max": 186,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S1",
+     "tune": "default",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 11.1,
+     "lock_p50": 49.5,
+     "jit_p50": 2.4,
+     "resc_h": 0.0,
+     "dur_p50": 99,
+     "dur_max": 99,
+     "crash": "0/1"
+    },
+    {
+     "stack": "S3",
+     "tune": "core=EXP-maskoff-0.9.0.1_armsx3-a74a0f3e0;tu_debug=zlatez",
+     "res": 100,
+     "clk": 925,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 2.9,
+     "lock_p50": 8.2,
+     "jit_p50": 0.8,
+     "resc_h": 0.0,
+     "dur_p50": 890,
+     "dur_max": 890,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S2",
+     "tune": "tu_debug=zlatez",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 0.0,
+     "jit_p50": 3.1,
+     "resc_h": 0.0,
+     "dur_p50": 702,
+     "dur_max": 702,
+     "crash": "1/1"
+    }
+   ]
+  },
+  "crash": {
+   "sigs": [
+    {
+     "id": "PANIC_REBOOT",
+     "label": "Panic",
+     "severity": "critical",
+     "summary": "The rig reset; this row was rebuilt afterward"
+    }
+   ],
+   "fault": null,
+   "rpcs3_errors": [],
+   "dmesg_window": [],
+   "blackbox_tail": [
+    "6,1131,16304918,-;wlan0: send auth to 3c:bd:c5:35:79:54 (try 1/3)",
+    "6,1132,16308826,-;wlan0: authenticated",
+    "6,1133,16311434,-;wlan0: associate with 3c:bd:c5:35:79:54 (try 1/3)",
+    "6,1134,16313950,-;wlan0: RX AssocResp from 3c:bd:c5:35:79:54 (capab=0x1011 status=0 aid=16)",
+    "6,1135,16330505,-;wlan0: associated",
+    "7,1136,16377798,-;wlan0: Limiting TX power to 30 (30 - 0) dBm as advertised by 3c:bd:c5:35:79:54",
+    "6,1137,18655494,-;gcc-sm8250 100000.clock-controller: sync_state() pending due to 3d6a000.gmu",
+    " SUBSYSTEM=platform",
+    " DEVICE=+platform:100000.clock-controller",
+    "6,1138,18655501,-;sm8250-gpucc 3d90000.clock-controller: sync_state() pending due to 3d6a000.gmu",
+    " SUBSYSTEM=platform",
+    " DEVICE=+platform:3d90000.clock-controller",
+    "6,1139,20358631,-;wlan0: deauthenticated from 3c:bd:c5:35:79:54 (Reason: 15=4WAY_HANDSHAKE_TIMEOUT)",
+    "6,1140,23450360,-;wlan0: authenticate with 3c:bd:c5:35:79:54 (local address=00:03:7f:30:57:18)",
+    "6,1141,23450366,-;wlan0: send auth to 3c:bd:c5:35:79:54 (try 1/3)",
+    "6,1142,23454484,-;wlan0: authenticated",
+    "6,1143,23455430,-;wlan0: associate with 3c:bd:c5:35:79:54 (try 1/3)",
+    "6,1144,23457525,-;wlan0: RX AssocResp from 3c:bd:c5:35:79:54 (capab=0x1011 status=0 aid=30)",
+    "6,1145,23475036,-;wlan0: associated",
+    "7,1146,23534559,-;wlan0: Limiting TX power to 30 (30 - 0) dBm as advertised by 3c:bd:c5:35:79:54",
+    "46,1147,39523635,-;systemd-journald[375]: Time jumped backwards, rotating.",
+    "3,1148,226157800,-;thermal thermal_zone27: Unable to get temperature, disabling!",
+    " SUBSYSTEM=thermal",
+    " DEVICE=+thermal:thermal_zone27",
+    "3,1149,226157876,-;thermal thermal_zone30: Unable to get temperature, disabling!",
+    " SUBSYSTEM=thermal",
+    " DEVICE=+thermal:thermal_zone30",
+    "3,1150,226157896,-;thermal thermal_zone28: Unable to get temperature, disabling!",
+    " SUBSYSTEM=thermal",
+    " DEVICE=+thermal:thermal_zone28",
+    "2,1151,226157914,-;thermal thermal_zone28: Disabled thermal zone with critical trip point",
+    " SUBSYSTEM=thermal",
+    " DEVICE=+thermal:thermal_zone28",
+    "3,1152,228205876,-;thermal thermal_zone29: Unable to get temperature, disabling!",
+    " SUBSYSTEM=thermal",
+    " DEVICE=+thermal:thermal_zone29",
+    "3,1153,230253966,-;thermal thermal_zone26: Unable to get temperature, disabling!",
+    " SUBSYSTEM=thermal",
+    " DEVICE=+thermal:thermal_zone26",
+    "6,1154,2516639774,-;zram0: detected capacity change from 7735296 to 0"
+   ]
+  },
+  "timeline": null,
+  "config": {
+   "source": "config_BCUS98114.yml",
+   "values": {
+    "  PPU Decoder": "Recompiler (LLVM)",
+    "  PPU Threads": "2",
+    "  SPU Decoder": "Recompiler (LLVM)",
+    "  SPU Reservation Busy Waiting Percentage 1": "100",
+    "  SPU Reservation Busy Waiting Enabled": "false",
+    "  SPU GETLLAR Busy Waiting Percentage": "100",
+    "  Preferred SPU Threads": "3",
+    "  SPU delay penalty": "3",
+    "  SPU loop detection": "false",
+    "  Max SPURS Threads": "6",
+    "  SPU Block Size": "Mega",
+    "  Accurate RSX reservation access": "false",
+    "  RSX FIFO Fetch Accuracy": "Ordered & Atomic",
+    "  SPU Wake-Up Delay": "0",
+    "  Sleep Timers Accuracy": "As Host",
+    "  RSX FIFO Accuracy": "Fast",
+    "  Renderer": "Cubeb",
+    "  Resolution": "1920x1080",
+    "  Frame limit": "PS3 Native",
+    "  MSAA": "Disabled",
+    "  Shader Mode": "Async Recompiler (multi-threaded)",
+    "  Shader Precision": "Low",
+    "  VSync Mode": "Disabled",
+    "  Write Color Buffers": "false",
+    "  Write Depth Buffer": "false",
+    "  Read Color Buffers": "false",
+    "  Read Depth Buffer": "false",
+    "  Strict Rendering Mode": "false",
+    "  Disable ZCull Occlusion Queries": "false",
+    "  Disable FIFO Reordering": "false",
+    "  Force CPU Blit": "false",
+    "  Multithreaded RSX": "false",
+    "  Relaxed ZCULL Sync": "false",
+    "  Accurate ZCULL stats": "true",
+    "  Resolution Scale": "100",
+    "  Minimum Scalable Dimension": "512",
+    "  Driver Wake-Up Delay": "0",
+    "    Asynchronous Texture Streaming": "false",
+    "    Asynchronous Queue Scheduler": "Safe",
+    "    Enabled": "false",
+    "    Enable Frametime Graph": "false",
+    "    Detail level": "High",
+    "    Metrics update interval (ms)": "350",
+    "    Position": "Bottom Left",
+    "  Desired Audio Buffer Duration": "100",
+    "  Enable Time Stretching": "true",
+    "  Disable Sampling Skip": "false",
+    "  Time Stretching Threshold": "75",
+    "  Pad handler sleep (microseconds)": "4000"
+   }
+  },
+  "run_sheet": null,
+  "operator": {
+   "feel": "",
+   "note": ""
+  },
+  "pack_notes": [
+   "rig.os: os-release is not ROCKNIX (built off-rig) - null",
+   "no prior debrief for BCUS98114: last 5 config changes",
+   "no rpcs3 log for 1788447694",
+   "no mango csv for 1788447694"
+  ],
+  "budget": {
+   "bytes": 10037
+  }
+ },
+ "expect": [
+  {
+   "op": "tags_include",
+   "tags": [
+    "panic_silent"
+   ],
+   "why": "PANIC with no kmsg lead-up in the blackbox tail"
+  },
+  {
+   "op": "recommendation_kind_first",
+   "kind": "investigate",
+   "why": "spec 10: investigate, and it leads"
+  },
+  {
+   "op": "recommendation_kinds_subset",
+   "kinds": [
+    "investigate",
+    "next_run",
+    "no_change"
+   ],
+   "why": "spec 10: no config change off a silent panic"
+  },
+  {
+   "op": "text_requires",
+   "regex": "(?i)(no (?:kmsg|kernel|lead-?up|precursor|trace)|nothing in the (?:kmsg|blackbox|kernel log)|no lead-?up|silent)",
+   "why": "the absence is the finding and has to be stated"
+  },
+  {
+   "op": "schema_valid",
+   "why": "DEBRIEF v1 shape; a foreign top-level key is how a model smuggles a command in"
+  }
+ ],
+ "rubric": "Says the tail is silent - no fault, no oops, no trace before the reset - refuses to name a cause, and sends the operator to arm the recorder and reproduce.",
+ "exemplar": {
+  "schema": "ETK-RADIO-DEBRIEF v1",
+  "epoch": 1788447694,
+  "game_id": "BCUS98114",
+  "model": "etk-radio:9b",
+  "prompt_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "corpus_commit": "cec9e43",
+  "tokens": {
+   "prompt": 3410,
+   "completion": 402
+  },
+  "latency_s": 271.3,
+  "radio": "PANIC with a silent tail. The kept kernel lines are wifi and thermal housekeeping, then the reset - no fault, no trace, nothing to attribute. Arm the blackbox and reproduce before any knob moves.",
+  "headline": "PANIC - no kmsg lead-up; recorder first",
+  "tags": [
+   "low_n",
+   "panic_silent"
+  ],
+  "findings": [
+   {
+    "kind": "anomaly",
+    "text": "The row was rebuilt after a reset and the kept kernel tail carries no fault, oops or trace - there is no lead-up at all.",
+    "evidence": [
+     {
+      "source": "ledger",
+      "field": "status",
+      "value": "PANIC"
+     },
+     {
+      "source": "blackbox",
+      "field": "blackbox_tail",
+      "value": 40
+     }
+    ]
+   },
+   {
+    "kind": "mechanism",
+    "text": "Nothing in the pack attributes this reset, and RAM-backed pstore on this SoC keeps nothing across one, so the recorder has to be armed in advance.",
+    "evidence": [
+     {
+      "source": "manual",
+      "field": "F",
+      "value": "ramoops/RAM-backed pstore on SM8250"
+     }
+    ]
+   }
+  ],
+  "recommendations": [
+   {
+    "kind": "investigate",
+    "text": "Arm the blackbox recorder, then reproduce on the same title and stack; without a lead-up there is nothing here to tune against.",
+    "config_changes": [],
+    "driver_dial": null,
+    "confidence": "high"
+   },
+   {
+    "kind": "next_run",
+    "text": "One warm run on the same arm once the recorder is armed.",
+    "config_changes": [],
+    "driver_dial": null,
+    "confidence": "medium",
+    "n_basis": {
+     "arm": "zlatez@925/race",
+     "n": 1,
+     "n_needed": 3
+    }
+   }
+  ],
+  "run_sheet": null,
+  "guards": {
+   "passed": true,
+   "dropped": []
+  }
+ },
+ "counter": {
+  "schema": "ETK-RADIO-DEBRIEF v1",
+  "epoch": 1788447694,
+  "game_id": "BCUS98114",
+  "model": "etk-radio:9b",
+  "prompt_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "corpus_commit": "cec9e43",
+  "tokens": {
+   "prompt": 3410,
+   "completion": 402
+  },
+  "latency_s": 271.3,
+  "radio": "Thermal runaway took the rig down - the zones went unreadable just before the reset. Drop Resolution Scale to 85 to take the heat out and try again.",
+  "headline": "PANIC - thermal runaway; lower the render scale",
+  "tags": [
+   "panic"
+  ],
+  "findings": [
+   {
+    "kind": "mechanism",
+    "text": "Thermal runaway caused the panic; the zones failed first.",
+    "evidence": [
+     {
+      "source": "blackbox",
+      "field": "blackbox_tail",
+      "value": "thermal thermal_zone26: Unable to get temperature, disabling!"
+     }
+    ]
+   }
+  ],
+  "recommendations": [
+   {
+    "kind": "config",
+    "text": "Drop Resolution Scale to 85 to take heat out of the run.",
+    "config_changes": [
+     {
+      "yaml_key": "  Resolution Scale",
+      "new_value": "85"
+     }
+    ],
+    "driver_dial": null,
+    "confidence": "high"
+   },
+   {
+    "kind": "investigate",
+    "text": "Maybe arm the recorder later.",
+    "config_changes": [],
+    "driver_dial": null,
+    "confidence": "high"
+   }
+  ],
+  "run_sheet": null,
+  "guards": {
+   "passed": true,
+   "dropped": []
+  }
+ }
+}

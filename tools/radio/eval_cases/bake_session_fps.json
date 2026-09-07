@@ -1,0 +1,599 @@
+{
+ "id": "bake_session_fps",
+ "from": "BCUS98296, 2026-09-02: a CLEAN row that harvested 4,800 shaders and logged a frame median anyway - the bake-sessions-lie case (a 7,423-shader run once logged 30.8 where the real warm run was 20.0).",
+ "source": {
+  "kind": "ledger",
+  "epoch": 1788392429,
+  "generated_by": "bin/radio_pack.py 1788392429 --stdout @ cd129d5"
+ },
+ "pack": {
+  "schema": "ETK-RADIO-PACK v1",
+  "epoch": 1788392429,
+  "game_id": "BCUS98296",
+  "rig": {
+   "soc": "SM8250",
+   "os": null,
+   "kit": "0.9.0",
+   "build": "26.2.2_gtk_0.7",
+   "core": "0.9.0.2_armsx3-a74a0f3e0",
+   "stack": "rk1ebff24/k7.2.0#1/r0.9.0.2",
+   "dial": "zlatez",
+   "patches": null,
+   "kernel": "7.2.0",
+   "power": {
+    "profile": "race",
+    "grid": null,
+    "gpu_mhz": 925
+   }
+  },
+  "session": {
+   "epoch": "1788392429",
+   "duration_s": 277,
+   "build": "FULL",
+   "game_id": "BCUS98296",
+   "status": "CLEAN",
+   "peak_load": 10.7,
+   "peak_ram_mb": 3323,
+   "peak_temp": 85,
+   "avg_temp": 74,
+   "fence_at_crash": 0,
+   "shaders_harvested": 4800,
+   "drain_pct": -3,
+   "thermal_overrides": 0,
+   "crash_shot": "-",
+   "fps_med": 29.8,
+   "fps_1low": 4.8,
+   "ft_p99_ms": 210.1,
+   "res_scale": 100,
+   "gpu_mhz": 925,
+   "pwr": "race",
+   "ft_jitter_ms": 3.2,
+   "gpu_fault_status": "-",
+   "gpu_fault_fence_hex": "-",
+   "snd": "ok",
+   "lock_pct": 34.1,
+   "perfect_pct": 3.8,
+   "rescues": 0,
+   "crash_sig": [],
+   "aud": {
+    "up_s": 56.2,
+    "ur": 2,
+    "urb": 16384,
+    "skip": 32,
+    "sil": 232,
+    "ratio": 1,
+    "rmin": 0.869,
+    "enq_ms": 258.7,
+    "buf_ms": 250
+   },
+   "perf": {}
+  },
+  "history": {
+   "rows": [
+    {
+     "epoch": "1788052797",
+     "duration_s": 996,
+     "status": "SURVIVED:Adreno",
+     "shaders_harvested": 40,
+     "fps_med": 30.6,
+     "lock_pct": 47.1,
+     "perfect_pct": 2.9,
+     "rescues": 2,
+     "gpu_fault_status": "00E51005"
+    },
+    {
+     "epoch": "1788131892",
+     "duration_s": 155,
+     "status": "CLEAN",
+     "shaders_harvested": 1268,
+     "fps_med": 30.9,
+     "lock_pct": 48,
+     "perfect_pct": 17.2,
+     "rescues": 0,
+     "gpu_fault_status": "-"
+    },
+    {
+     "epoch": "1788140491",
+     "duration_s": 855,
+     "status": "RECOVERY:Adreno",
+     "shaders_harvested": 2142,
+     "fps_med": 30.4,
+     "lock_pct": 37.8,
+     "perfect_pct": 10.1,
+     "rescues": 1,
+     "gpu_fault_status": "00E51485"
+    },
+    {
+     "epoch": "1788213578",
+     "duration_s": 172,
+     "status": "CLEAN",
+     "shaders_harvested": 0,
+     "fps_med": 30.7,
+     "lock_pct": 35.8,
+     "perfect_pct": 9.4,
+     "rescues": 0,
+     "gpu_fault_status": "-"
+    },
+    {
+     "epoch": "1788273698",
+     "duration_s": 718,
+     "status": "CLEAN",
+     "shaders_harvested": 1134,
+     "fps_med": 16.6,
+     "lock_pct": 23.3,
+     "perfect_pct": 1.4,
+     "rescues": 0,
+     "gpu_fault_status": "-"
+    }
+   ],
+   "career": {
+    "game_id": "BCUS98296",
+    "game_name": "BCUS98296",
+    "total_duration_s": 55068,
+    "total_duration_human": "15h 17m",
+    "total_sessions": 92,
+    "clean_rate_pct": 51,
+    "crash_count": 45,
+    "recov_count": 30,
+    "panic_count": 15,
+    "total_shaders": 95225,
+    "avg_shaders_per_session": 1035,
+    "current_streak": 3,
+    "best_streak": 7,
+    "avg_duration_s": 599,
+    "avg_duration_human": "9m 59s",
+    "avg_fps": 21.7,
+    "avg_jitter": 11.2
+   },
+   "changes_since_last_debrief": [
+    {
+     "epoch": 1787620889,
+     "field": "Default Resolution",
+     "old": "1280x720",
+     "new": "1920x1080"
+    },
+    {
+     "epoch": 1787858023,
+     "field": "Emulator Core",
+     "old": "rpcs3-etk_gtk-edition-0.8.5_v0.0.41-19638-a1deb2921_linux_aarch64.AppImage",
+     "new": "rpcs3-etk_gtk-edition-0.9.0.1_armsx3-a74a0f3e0_linux_aarch64.AppImage"
+    },
+    {
+     "epoch": 1787924275,
+     "field": "Emulator Core",
+     "old": "rpcs3-etk_gtk-edition-0.9.0.1_armsx3-a74a0f3e0_linux_aarch64.AppImage",
+     "new": "certified"
+    },
+    {
+     "epoch": 1787924307,
+     "field": "Emulator Core",
+     "old": "certified",
+     "new": "rpcs3-etk_gtk-edition-0.9.0.1_armsx3-a74a0f3e0_linux_aarch64.AppImage"
+    },
+    {
+     "epoch": 1788021526,
+     "field": "Emulator Core",
+     "old": "rpcs3-etk_gtk-edition-0.9.0.1_armsx3-a74a0f3e0_linux_aarch64.AppImage",
+     "new": "rpcs3-EXP-maskoff-0.9.0.1_armsx3-a74a0f3e0_linux_aarch64.AppImage"
+    }
+   ]
+  },
+  "dyno": {
+   "game": "BCUS98296",
+   "res": 100,
+   "stacks": {
+    "S1": "",
+    "S2": "build=26.1.6_gtk_0.6",
+    "S3": "build=26.2.0-rc3_gtk_0.7;stack=rk3b9cb1f/k7.1.2#1/r0.8.2-dev",
+    "S4": "build=26.3.0-devel-e40d93a_gtk_0.7;stack=rk3b9cb1f/k7.1.2#9/r?",
+    "S5": "build=26.3.0-devel-e40d93a_gtk_0.7;stack=rk3b9cb1f/k7.1.2#3/r?",
+    "S6": "build=26.2.0-rc3_gtk_0.7;stack=rk3b9cb1f/k7.1.2#3/r?",
+    "S7": "build=26.3.0-devel-d2e56df_gtk_0.7;stack=rk3b9cb1f/k7.1.2#3/r?",
+    "S8": "build=26.3.0-devel-20260821-d2e56df_gtk_0.7;stack=rk3445ff3/k7.2.0#1/r0.9.0.2"
+   },
+   "arms": [
+    {
+     "stack": "S7",
+     "tune": "core=0.8.5_v0.0.41-19638-a1deb2921;default",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 34.1,
+     "lock_p50": 75.4,
+     "jit_p50": 2.9,
+     "resc_h": 0.0,
+     "dur_p50": 226,
+     "dur_max": 226,
+     "crash": "0/1"
+    },
+    {
+     "stack": "S8",
+     "tune": "core=0.9.0.2_armsx3-a74a0f3e0;tu_debug=zlatez",
+     "res": 100,
+     "clk": 925,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 9.4,
+     "lock_p50": 35.8,
+     "jit_p50": 2.5,
+     "resc_h": 0.0,
+     "dur_p50": 172,
+     "dur_max": 172,
+     "crash": "0/1"
+    },
+    {
+     "stack": "S4",
+     "tune": "core=0.8.5_v0.0.41-19638-a1deb2921;default",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 5.9,
+     "lock_p50": 30.2,
+     "jit_p50": 4.1,
+     "resc_h": 0.0,
+     "dur_p50": 93,
+     "dur_max": 93,
+     "crash": "0/1"
+    },
+    {
+     "stack": "S1",
+     "tune": "default",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 4,
+     "low_n": false,
+     "perfect_p50": 5.6,
+     "lock_p50": 45.6,
+     "jit_p50": 3.4,
+     "resc_h": 0.0,
+     "dur_p50": 112,
+     "dur_max": 435,
+     "crash": "4/4"
+    },
+    {
+     "stack": "S2",
+     "tune": "tu_debug=zlatez",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 5.3,
+     "lock_p50": 38.0,
+     "jit_p50": 4.6,
+     "resc_h": 0.0,
+     "dur_p50": 104,
+     "dur_max": 104,
+     "crash": "0/1"
+    },
+    {
+     "stack": "S6",
+     "tune": "core=0.8.5_v0.0.41-19638-a1deb2921;tu_debug=flushall",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 4.8,
+     "lock_p50": 36.7,
+     "jit_p50": 3.9,
+     "resc_h": 0.0,
+     "dur_p50": 123,
+     "dur_max": 123,
+     "crash": "1/1"
+    },
+    {
+     "stack": "S5",
+     "tune": "core=0.8.5_v0.0.41-19638-a1deb2921;default",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 1,
+     "low_n": true,
+     "perfect_p50": 4.3,
+     "lock_p50": 28.1,
+     "jit_p50": 4.1,
+     "resc_h": 0.0,
+     "dur_p50": 123,
+     "dur_max": 123,
+     "crash": "0/1"
+    },
+    {
+     "stack": "S3",
+     "tune": "tu_debug=zlatez",
+     "res": 100,
+     "clk": 800,
+     "pwr": "race",
+     "n": 2,
+     "low_n": true,
+     "perfect_p50": 0.0,
+     "lock_p50": 5.3,
+     "jit_p50": 3.0,
+     "resc_h": 0.0,
+     "dur_p50": 538,
+     "dur_max": 538,
+     "crash": "2/2"
+    }
+   ]
+  },
+  "crash": {
+   "sigs": [],
+   "fault": null,
+   "rpcs3_errors": [],
+   "dmesg_window": [],
+   "blackbox_tail": []
+  },
+  "timeline": {
+   "bins": 10,
+   "fps_med": [
+    59.1,
+    59.7,
+    59.5,
+    66.9,
+    59.8,
+    31.3,
+    31.1,
+    31.1,
+    60.1,
+    60.1
+   ],
+   "ft_p99_ms": [
+    177.1,
+    230.9,
+    197.6,
+    199.4,
+    193.6,
+    168.0,
+    38.8,
+    42.1,
+    72.6,
+    66.0
+   ],
+   "temp_c": [
+    54.0,
+    54.0,
+    55.0,
+    55.0,
+    55.0,
+    55.0,
+    56.0,
+    57.0,
+    55.0,
+    55.0
+   ],
+   "perfect_windows": [
+    8.3,
+    10.9,
+    10.4,
+    9.6,
+    8.9,
+    68.0,
+    85.8,
+    77.1,
+    0.9,
+    0.2
+   ],
+   "lock_window_ms": [
+    31.0,
+    36.0
+   ]
+  },
+  "config": {
+   "source": "config_BCUS98296.yml",
+   "values": {
+    "  Desired Audio Buffer Duration": "250",
+    "  Disable Sampling Skip": "false",
+    "  Enable Time Stretching": "true",
+    "  Renderer": "Vulkan",
+    "  Time Stretching Threshold": "100",
+    "  Accurate RSX reservation access": "false",
+    "  Max SPURS Threads": "6",
+    "  PPU Decoder": "Recompiler (LLVM)",
+    "  PPU Threads": "2",
+    "  Preferred SPU Threads": "3",
+    "  RSX FIFO Fetch Accuracy": "Fast",
+    "  SPU Block Size": "Mega",
+    "  SPU Decoder": "Recompiler (LLVM)",
+    "  SPU GETLLAR Busy Waiting Percentage": "100",
+    "  SPU Reservation Busy Waiting Enabled": "false",
+    "  SPU Reservation Busy Waiting Percentage 1": "100",
+    "  SPU Wake-Up Delay": "0",
+    "  SPU delay penalty": "3",
+    "  SPU loop detection": "false",
+    "  Sleep Timers Accuracy": "As Host",
+    "  RSX FIFO Accuracy": "Fast",
+    "  Pad handler sleep (microseconds)": "4000",
+    "  Accurate ZCULL stats": "true",
+    "  Disable FIFO Reordering": "true",
+    "  Disable ZCull Occlusion Queries": "false",
+    "  Driver Wake-Up Delay": "0",
+    "  Force CPU Blit": "true",
+    "  Frame limit": "PS3 Native",
+    "  MSAA": "Disabled",
+    "  Minimum Scalable Dimension": "16",
+    "  Multithreaded RSX": "false",
+    "    Detail level": "Medium",
+    "    Enable Frametime Graph": "false",
+    "    Enabled": "false",
+    "    Metrics update interval (ms)": "350",
+    "    Position": "Top Left",
+    "  Read Color Buffers": "false",
+    "  Read Depth Buffer": "false",
+    "  Relaxed ZCULL Sync": "false",
+    "  Resolution": "1920x1080",
+    "  Resolution Scale": "100",
+    "  Shader Mode": "Async Recompiler (multi-threaded)",
+    "  Shader Precision": "Low",
+    "  Strict Rendering Mode": "false",
+    "  VSync Mode": "Full",
+    "    Asynchronous Queue Scheduler": "Fast",
+    "    Asynchronous Texture Streaming": "false",
+    "  Write Color Buffers": "false",
+    "  Write Depth Buffer": "false"
+   }
+  },
+  "run_sheet": null,
+  "operator": {
+   "feel": "",
+   "note": ""
+  },
+  "pack_notes": [
+   "lock window for BCUS98296 not in the title table; fps_med 29.8 -> 30 fps window",
+   "rig.os: os-release is not ROCKNIX (built off-rig) - null",
+   "no prior debrief for BCUS98296: last 5 config changes",
+   "no rpcs3 log for 1788392429"
+  ],
+  "budget": {
+   "bytes": 9771
+  }
+ },
+ "expect": [
+  {
+   "op": "tags_include",
+   "tags": [
+    "bake"
+   ],
+   "why": "shaders_harvested 4800 > 5 - the node computes bake"
+  },
+  {
+   "op": "recommendation_kinds_subset",
+   "kinds": [
+    "next_run"
+   ],
+   "why": "spec 6: on a bake pack the model may only recommend a warm run"
+  },
+  {
+   "op": "text_forbids",
+   "regex": "(?i)(\\b29\\.8\\b|\\bfps_med\\b|(?:fps|frame ?rate|framerate|perfect(?:_pct)?)[^.]{0,30}\\b(?:good|fine|healthy|solid|steady|strong|holds?|held|improv\\w*|gain\\w*)\\b)",
+   "why": "spec 6: bake rows forbid fps/perfect claims - quoting the number is the claim"
+  },
+  {
+   "op": "text_requires",
+   "regex": "(?i)(bake|shader (?:compile|storm|harvest)|compil\\w+|4,?800 shaders)",
+   "why": "the mechanism has to be named, not just the verdict withheld"
+  },
+  {
+   "op": "schema_valid",
+   "why": "DEBRIEF v1 shape; a foreign top-level key is how a model smuggles a command in"
+  }
+ ],
+ "rubric": "Names the bake: 4,800 shaders compiled in the session, so the speed columns measure the compiler, not the game; asks for a warm relaunch and quotes no frame number.",
+ "exemplar": {
+  "schema": "ETK-RADIO-DEBRIEF v1",
+  "epoch": 1788392429,
+  "game_id": "BCUS98296",
+  "model": "etk-radio:9b",
+  "prompt_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "corpus_commit": "cec9e43",
+  "tokens": {
+   "prompt": 3410,
+   "completion": 402
+  },
+  "latency_s": 271.3,
+  "radio": "Bake row - 4,800 shaders compiled during the session, so the speed columns are compile cadence and not feel. Relaunch warm on the same arm and race it before anything gets read off this one.",
+  "headline": "BAKE - 4800 shaders, speed data is not feel",
+  "tags": [
+   "bake",
+   "low_n"
+  ],
+  "findings": [
+   {
+    "kind": "mechanism",
+    "text": "4,800 new shaders were compiled here; the emulator stalls on compile, so this row's speed columns measure the compiler rather than the game.",
+    "evidence": [
+     {
+      "source": "ledger",
+      "field": "shaders_harvested",
+      "value": 4800
+     }
+    ]
+   },
+   {
+    "kind": "observation",
+    "text": "By the ledger method a bake session is excluded from feel evidence outright.",
+    "evidence": [
+     {
+      "source": "manual",
+      "field": "B.3",
+      "value": "Bake sessions lie"
+     }
+    ]
+   }
+  ],
+  "recommendations": [
+   {
+    "kind": "next_run",
+    "text": "Relaunch warm on the same arm, graceful-exit first to bank the cache, then race; only a shd~0 run counts for feel.",
+    "config_changes": [],
+    "driver_dial": null,
+    "confidence": "high",
+    "n_basis": {
+     "arm": "zlatez@925/race",
+     "n": 0,
+     "n_needed": 3
+    }
+   }
+  ],
+  "run_sheet": null,
+  "guards": {
+   "passed": true,
+   "dropped": []
+  }
+ },
+ "counter": {
+  "schema": "ETK-RADIO-DEBRIEF v1",
+  "epoch": 1788392429,
+  "game_id": "BCUS98296",
+  "model": "etk-radio:9b",
+  "prompt_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "corpus_commit": "cec9e43",
+  "tokens": {
+   "prompt": 3410,
+   "completion": 402
+  },
+  "latency_s": 271.3,
+  "radio": "Clean run holding fps 29.8 the whole way - the frame rate is healthy at this clock and the shader cache is filling nicely. Good arm, keep it.",
+  "headline": "CLEAN - fps 29.8, frame rate healthy",
+  "tags": [
+   "clean"
+  ],
+  "findings": [
+   {
+    "kind": "observation",
+    "text": "The session held fps 29.8 with the frame rate steady, so feel is good on this arm.",
+    "evidence": [
+     {
+      "source": "ledger",
+      "field": "fps_med",
+      "value": 29.8
+     }
+    ]
+   }
+  ],
+  "recommendations": [
+   {
+    "kind": "config",
+    "text": "Move Shader Mode up now that the arm is proven.",
+    "config_changes": [
+     {
+      "yaml_key": "  Shader Mode",
+      "new_value": "Async Recompiler with Shader Interpreter"
+     }
+    ],
+    "driver_dial": null,
+    "confidence": "high"
+   }
+  ],
+  "run_sheet": null,
+  "guards": {
+   "passed": true,
+   "dropped": []
+  }
+ }
+}
