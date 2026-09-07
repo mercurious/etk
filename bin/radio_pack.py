@@ -37,7 +37,16 @@ MAX_RPCS3_ERRORS = 15
 MAX_DMESG = 25
 MAX_BLACKBOX = 40
 MAX_HISTORY = 5
+MAX_CHANGES = 20          # cap on changes_since_last_debrief (budget guard)
 TIMELINE_BINS = 10
+RETAIN = 50               # newest N packs / debriefs kept in radio/ (spec 8)
+
+# Fable's Challenge lock windows, verbatim from session_postmortem.sh's KPI block
+# (the authority: "a row's target is implied by game_id"). The GT5P family and the
+# GT6 digital title race a locked 30; the console lock is 60.
+LOCK_30 = (31.0, 36.0)
+LOCK_60 = (15.5, 18.0)
+LOCK_30_GAMES = ("NPEA00050", "NPUA80075", "NPEA00502")
 
 HEADER = ["epoch", "duration_s", "build", "game_id", "status", "peak_load", "peak_ram_mb",
           "peak_temp", "avg_temp", "crash_sig", "fence_at_crash", "shaders_harvested",
@@ -110,9 +119,18 @@ def fault_class(status_hex):
 
 
 def redact(line, game_id):
-    """Drop the argv line; reduce any absolute path to dev_hdd0/game/<ID> (spec §3.1)."""
+    """Drop the argv line; reduce any absolute path to dev_hdd0/game/<ID> (spec §3.1).
+
+    Also forces the survivor to ASCII. RPCS3 writes the severity as a '·' glyph, which
+    is two bytes of UTF-8 and therefore two characters once the 4 MB tail is decoded
+    latin-1 (latin-1 because a tail seek can land mid-character and latin-1 never
+    raises). Left in, it reaches a pack as \\u00c2\\u00b7 and a toast as mojibake, so
+    the leading glyph is cut and any other non-printable becomes '?'.
+    """
     if "argv:" in line or "AppRun.wrapped" in line:
         return None
+    line = re.sub(r"^[^\x20-\x7e]+", "", line)
+    line = re.sub(r"[^\x20-\x7e]", "?", line)
     line = re.sub(r"/[^\s'\"]*/(dev_hdd0/game/[A-Z0-9]+)", r"\1", line)
     line = re.sub(r"/tmp/\.mount_[^\s'\"]*", "<mount>", line)
     return line.strip()
@@ -141,8 +159,12 @@ def rpcs3_errors(logdir, epoch, game_id, notes):
     text = blob.decode("latin-1", "replace")
     seen, out = {}, []
     for ln in text.splitlines():
-        # postmortem reads the '·'-severity glyph as a bare E/F at column 0 after strings
-        if re.match(r"^.?[EF] \d", ln) or re.match(r"^[EF] ", ln):
+        # postmortem reads the '·'-severity glyph as a bare E/F at column 0 after
+        # `strings`; a RAW archived log still carries it, and latin-1 turns those two
+        # UTF-8 bytes into TWO characters - so allow up to three lead characters
+        # before the E/F. (Found 2026-09-07: row 1788491975 has 372 E lines in an
+        # 11 MB log and the one-character form collected none of them.)
+        if re.match(r"^.{0,3}[EF] \d", ln) or re.match(r"^[EF] ", ln):
             r = redact(ln, game_id)
             if not r:
                 continue
@@ -157,7 +179,28 @@ def rpcs3_errors(logdir, epoch, game_id, notes):
     return out
 
 
-def timeline(mangodir, epoch, notes):
+def lock_window(game_id, fps_med, notes):
+    """The title's Fable's-Challenge lock window in ms, as postmortem computes it.
+
+    Primary source is the per-title table above (the ledger's own lock_pct /
+    perfect_pct were computed with it, so the pack's per-bin shares are on the same
+    footing). A title that is NOT in that table has no derived window — postmortem
+    falls back to a blanket 60-fps default there, which would score a 30-fps title
+    against a 16.7 ms lock — so the pack keys the fallback on the measured cadence
+    instead and records the window it used in `timeline.lock_window_ms`.
+    """
+    if game_id in LOCK_30_GAMES:
+        return LOCK_30
+    if fps_med and float(fps_med) < 45:
+        notes.append(f"lock window for {game_id} not in the title table; "
+                     f"fps_med {fps_med} -> 30 fps window")
+        return LOCK_30
+    notes.append(f"lock window for {game_id} not in the title table; "
+                 f"fps_med {fps_med} -> 60 fps window")
+    return LOCK_60
+
+
+def timeline(mangodir, epoch, notes, window=LOCK_60):
     p = sib(mangodir, f"{epoch}.csv")
     if not p.exists():
         notes.append(f"no mango csv for {epoch}")
@@ -203,11 +246,35 @@ def timeline(mangodir, epoch, notes):
             return round(vals[-1], 1)
         return None
 
+    lo, hi = window
+
+    def locked_share(b):
+        """Share (0-100) of this bin's GAMEPLAY frames inside the lock window.
+
+        Gameplay frame = fps > 0 and 4 <= frametime <= 500 ms, the same gate
+        session_postmortem.sh applies before lock_pct/perfect_pct, so a bin's
+        share is comparable with the row's own lock_pct.
+        """
+        fi, ti = idx.get("fps"), idx.get("frametime")
+        if fi is None or ti is None:
+            return None
+        n = ok = 0
+        for r in b:
+            fps, ft = r[fi], r[ti]
+            if fps <= 0 or ft < 4 or ft > 500:
+                continue
+            n += 1
+            if lo <= ft <= hi:
+                ok += 1
+        return round(ok / n * 100, 1) if n else None
+
     return {
         "bins": TIMELINE_BINS,
         "fps_med": [col(b, "fps", "med") for b in bins],
         "ft_p99_ms": [col(b, "frametime", "p99") for b in bins],
-        "gpu_temp_c": [col(b, "gpu_temp", "max") for b in bins],
+        "temp_c": [col(b, "gpu_temp", "max") for b in bins],
+        "perfect_windows": [locked_share(b) for b in bins],
+        "lock_window_ms": [lo, hi],
     }
 
 
@@ -264,18 +331,150 @@ def career(careerdir, game_id, notes):
     return out
 
 
-def recent_changes(telem, game_id, epoch, notes):
+def last_debrief_epoch(radiodir, game_id):
+    """Epoch of the newest radio/<epoch>.debrief.json belonging to this game."""
+    if not radiodir.exists():
+        return None
+    best = None
+    for p in radiodir.glob("*.debrief.json"):
+        m = re.match(r"^(\d+)\.debrief\.json$", p.name)
+        if not m:
+            continue
+        ep = int(m.group(1))
+        try:
+            d = json.loads(p.read_text(errors="replace"))
+        except (OSError, ValueError):
+            continue
+        if d.get("game_id") != game_id:
+            continue
+        if isinstance(d.get("epoch"), int):
+            ep = d["epoch"]
+        if best is None or ep > best:
+            best = ep
+    return best
+
+
+def changes_since_last_debrief(telem, game_id, epoch, notes):
+    """config_changes.tsv rows for this game the engineer has not been told about.
+
+    The window opens at the newest debrief this game already has; with no debrief
+    on file it degrades to the last MAX_HISTORY rows at or before the pack epoch.
+    Columns are read POSITIONALLY 0-4 so the `source` column §1 adds is safe.
+    """
     p = sib(telem, "config_changes.tsv")
     if not p.exists():
+        notes.append("no config_changes.tsv beside the ledger")
         return []
-    out = []
+    rows = []
     for ln in p.read_text(errors="replace").splitlines()[1:]:
         c = ln.split("\t")
         if len(c) < 5 or not c[0].isdigit():
             continue
         if c[1] == game_id and int(c[0]) <= epoch:
-            out.append({"epoch": int(c[0]), "field": c[2], "old": c[3], "new": c[4]})
-    return out[-MAX_HISTORY:]
+            rows.append({"epoch": int(c[0]), "field": c[2], "old": c[3], "new": c[4]})
+    since = last_debrief_epoch(sib(telem, "radio"), game_id)
+    if since is None:
+        notes.append(f"no prior debrief for {game_id}: last {MAX_HISTORY} config changes")
+        return rows[-MAX_HISTORY:]
+    out = [r for r in rows if r["epoch"] > since]
+    if len(out) > MAX_CHANGES:
+        notes.append(f"changes_since_last_debrief truncated to {MAX_CHANGES} "
+                     f"of {len(out)} rows")
+        out = out[-MAX_CHANGES:]
+    return out
+
+
+def run_sheet(telem, game_id, notes):
+    """Pass through the accepted run sheet (radio/run_sheet.json) for THIS game."""
+    p = sib(telem, "radio") / "run_sheet.json"
+    if not p.exists():
+        return None
+    try:
+        d = json.loads(p.read_text(errors="replace"))
+    except (OSError, ValueError) as e:
+        notes.append(f"run_sheet.json unreadable: {e}")
+        return None
+    if d.get("game_id") != game_id:
+        notes.append(f"run_sheet is for {d.get('game_id')}, not {game_id} - dropped")
+        return None
+    return d
+
+
+def rig_os(notes, path="/etc/os-release"):
+    """The ROCKNIX version string, or None off-rig.
+
+    etk_drift.py's precedent: ROCKNIX stamps the nightly date in OS_VERSION (e.g.
+    20260901) with VERSION_ID as the fallback. A read-only probe; the host's own
+    os-release is a different OS entirely, so unless it names ROCKNIX this is null
+    and says so rather than reporting the laptop's distro as the rig's.
+    """
+    try:
+        text = Path(path).read_text(errors="replace")
+    except OSError:
+        notes.append("rig.os: no os-release readable")
+        return None
+    kv = {}
+    for ln in text.splitlines():
+        k, sep, v = ln.partition("=")
+        if sep:
+            kv[k.strip()] = v.strip().strip('"')
+    if "ROCKNIX" not in (kv.get("NAME", "") + kv.get("ID", "")).upper():
+        notes.append("rig.os: os-release is not ROCKNIX (built off-rig) - null")
+        return None
+    ver = kv.get("OS_VERSION") or kv.get("VERSION_ID")
+    if not ver:
+        notes.append("rig.os: ROCKNIX os-release carries no OS_VERSION/VERSION_ID")
+    return ver or None
+
+
+def rig_kit(notes, repo_root):
+    """The kit version = bin/etk_pitstop.py's APP_VERSION.
+
+    install.sh reads it the same way for the GTK boot-identity line ("the
+    tag-aligned single source; never hand-write either"); the kit writes no
+    version file under ETK_ROOT, so this IS the record. $ETK_ROOT first (the
+    deployed copy is the truth on the rig), the repo checkout second.
+    """
+    cands = []
+    root = os.environ.get("ETK_ROOT")
+    if root:
+        cands.append(Path(root) / "bin" / "etk_pitstop.py")
+    cands.append(Path(repo_root) / "bin" / "etk_pitstop.py")
+    for p in cands:
+        try:
+            with open(p, errors="replace") as fh:
+                for i, ln in enumerate(fh):
+                    if i > 400:
+                        break
+                    m = re.match(r'^APP_VERSION\s*=\s*"([^"]+)"', ln)
+                    if m:
+                        return m.group(1)
+        except OSError:
+            continue
+    notes.append("rig.kit: no APP_VERSION found in bin/etk_pitstop.py")
+    return None
+
+
+def retain(radiodir, keep=RETAIN):
+    """Keep the newest `keep` packs and debriefs (spec 8: rotation, not a stream).
+
+    Only *.pack.json / *.debrief.json are ever removed: .feel, run_sheet.json,
+    pending/ and asks.log are operator state and are never touched.
+    """
+    dropped = []
+    for suffix in (".pack.json", ".debrief.json"):
+        found = []
+        for p in radiodir.glob("*" + suffix):
+            m = re.match(r"^(\d+)\.", p.name)
+            if m:
+                found.append((int(m.group(1)), p))
+        for _, p in sorted(found, reverse=True)[keep:]:
+            try:
+                p.unlink()
+                dropped.append(p.name)
+            except OSError:
+                pass
+    return dropped
 
 
 def dyno_arms(dyno, ledger, game_id, res, notes):
@@ -292,8 +491,9 @@ def dyno_arms(dyno, ledger, game_id, res, notes):
         return None
 
 
-def build(epoch, ledger, config_dir, dyno, notes):
+def build(epoch, ledger, config_dir, dyno, notes, repo_root=None):
     telem = ledger.parent
+    repo_root = repo_root or Path(__file__).resolve().parent.parent
     rows = load_rows(ledger)
     match = [r for r in rows if r and r[0] == str(epoch)]
     if not match:
@@ -318,10 +518,15 @@ def build(epoch, ledger, config_dir, dyno, notes):
         notes.append("crash_sig not in catalog: " + ",".join(unknown))
 
     is_panic = row.get("status") == "PANIC"
+    # The window note is only worth a line when there is a curve to score against it.
+    mangodir = sib(telem, "mango_logs")
+    win = lock_window(gid, row.get("fps_med"),
+                      notes if (mangodir / f"{epoch}.csv").exists() else [])
     pack = {
         "schema": SCHEMA, "epoch": int(epoch), "game_id": gid,
         "rig": {
             "soc": os.environ.get("ETK_CHIPSET", "SM8250"),
+            "os": rig_os(notes), "kit": rig_kit(notes, repo_root),
             "build": tune.get("build"), "core": tune.get("core"),
             "stack": tune.get("stack"), "dial": tune.get("tu_debug"),
             "patches": tune.get("patches"),
@@ -342,7 +547,8 @@ def build(epoch, ledger, config_dir, dyno, notes):
                                         "fps_med", "lock_pct", "perfect_pct", "rescues",
                                         "gpu_fault_status")} for h in hist],
             "career": career(sib(telem, "career"), gid, notes),
-            "recent_changes": recent_changes(telem, gid, int(epoch), notes),
+            "changes_since_last_debrief":
+                changes_since_last_debrief(telem, gid, int(epoch), notes),
         },
         "dyno": dyno_arms(dyno, ledger, gid, res, notes),
         "crash": {
@@ -355,8 +561,9 @@ def build(epoch, ledger, config_dir, dyno, notes):
             "dmesg_window": [],   # host mirror carries no per-row dmesg; rig fills this
             "blackbox_tail": blackbox_tail(sib(telem, "blackbox"), int(epoch), notes) if is_panic else [],
         },
-        "timeline": timeline(sib(telem, "mango_logs"), epoch, notes),
+        "timeline": timeline(mangodir, epoch, notes, win),
         "config": read_config(config_dir, gid, config_dir / "pitstop_fields.json", notes),
+        "run_sheet": run_sheet(telem, gid, notes),
         "operator": {"feel": (sib(telem, "radio") / f"{epoch}.feel").read_text().strip()
                      if (sib(telem, "radio") / f"{epoch}.feel").exists() else "",
                      "note": ""},
@@ -383,6 +590,31 @@ def trim_to_cap(pack, cap):
     return pack
 
 
+def self_check(pack, repo_root):
+    """Validate the finished pack against pack.v1 and REPORT, never abort.
+
+    A pack that fails its own contract is still the most useful thing on disk when
+    something has gone wrong, so the failure travels inside it as a pack_note. The
+    validator lives beside the schemas (tools/radio/schemas.py); on a rig that has
+    not been given them the check is skipped and says so.
+    """
+    for base in (Path(repo_root), Path(os.environ.get("ETK_ROOT", repo_root))):
+        d = base / "tools" / "radio"
+        if (d / "schemas.py").exists() and (d / "schema" / "pack.v1.json").exists():
+            if str(d) not in sys.path:
+                sys.path.insert(0, str(d))
+            try:
+                import schemas
+                errs = schemas.validate(pack, schemas.load("pack.v1"))
+            except Exception as e:                      # a broken validator is a note
+                pack["pack_notes"].append(f"schema: validator failed ({e})")
+                return
+            if errs:
+                pack["pack_notes"].append(f"schema: {errs[0]}")
+            return
+    pack["pack_notes"].append("schema: self-check skipped (schemas.py not deployed)")
+
+
 def main():
     here = Path(__file__).resolve().parent
     default_ledger = (Path(os.environ["TELEMETRY_DIR"]) / "sessions.tsv"
@@ -401,12 +633,20 @@ def main():
     if not args.ledger.exists():
         sys.exit(f"ledger not found: {args.ledger}")
     notes = []
-    pack = build(args.epoch, args.ledger, args.config_dir, args.dyno, notes)
+    root = here.parent
+    pack = build(args.epoch, args.ledger, args.config_dir, args.dyno, notes, root)
     pack = trim_to_cap(pack, args.max_bytes)
+    pack["budget"] = {"bytes": 0}
+    self_check(pack, root)          # must see the FINISHED pack; its note costs bytes
+    blob, size = json.dumps(pack, indent=1), 0
+    for _ in range(4):              # budget.bytes counts itself: settle on a fixed point
+        blob = json.dumps(pack, indent=1)
+        if len(blob.encode()) == size:
+            break
+        size = len(blob.encode())
+        pack["budget"]["bytes"] = size
     blob = json.dumps(pack, indent=1)
     size = len(blob.encode())
-    pack["budget"] = {"bytes": size}
-    blob = json.dumps(pack, indent=1)
 
     if args.stdout:
         sys.stdout.write(blob + "\n")
@@ -416,7 +656,10 @@ def main():
         tmp = out.with_suffix(".tmp")
         tmp.write_text(blob)
         tmp.replace(out)
+        dropped = retain(out.parent)
         print(f"wrote {out}  ({size} B, {'OK' if size <= args.max_bytes else 'OVER CAP'})")
+        if dropped:
+            print(f"retention: dropped {len(dropped)} old file(s) beyond the newest {RETAIN}")
     if notes:
         sys.stderr.write("notes: " + " · ".join(notes) + "\n")
 

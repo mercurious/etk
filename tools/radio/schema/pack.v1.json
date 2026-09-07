@@ -1,0 +1,204 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "etk-radio-pack.v1",
+  "title": "ETK RADIO PACK v1",
+  "description": "One session reduced to a bounded, allowlisted bundle (RADIO spec 3.1). Written by bin/radio_pack.py, validated by that packer against itself, and again by the node before a job is queued.",
+  "$comment": "Written FROM the packer's real output for row 1788491975. Required is deliberately short - every archive is optional and a missing one degrades to null/[] with a line in pack_notes, so a pack with only its identity is still a legal pack. Strictness lives where drift actually happened: additionalProperties:false on the root, on `history` and on `timeline` pins the decided names (changes_since_last_debrief, temp_c, perfect_windows) so a rename is caught by the self-check instead of by the model.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "epoch", "game_id", "session"],
+  "properties": {
+    "schema": {"enum": ["ETK-RADIO-PACK v1"]},
+    "epoch": {"type": "integer", "minimum": 0,
+              "description": "the ledger row's $NOW - the join key of every archive"},
+    "game_id": {"type": "string", "pattern": "\\A[A-Za-z0-9_-]{1,32}\\Z"},
+
+    "rig": {
+      "type": "object",
+      "description": "who the machine was for this row; nulls are honest unknowns",
+      "properties": {
+        "soc": {"type": ["string", "null"]},
+        "os": {"type": ["string", "null"],
+               "description": "ROCKNIX OS_VERSION (nightly date) or VERSION_ID; null off-rig"},
+        "kit": {"type": ["string", "null"],
+                "description": "bin/etk_pitstop.py APP_VERSION - the tag-aligned single source"},
+        "build": {"type": ["string", "null"]},
+        "core": {"type": ["string", "null"]},
+        "stack": {"type": ["string", "null"]},
+        "dial": {"type": ["string", "null"]},
+        "patches": {"type": ["string", "null"]},
+        "kernel": {"type": ["string", "null"]},
+        "tune_bare": {"type": "array", "items": {"type": "string"}},
+        "power": {
+          "type": "object",
+          "properties": {
+            "profile": {"type": ["string", "null"]},
+            "grid": {"type": ["string", "null"]},
+            "gpu_mhz": {"type": ["number", "null"]}
+          }
+        }
+      }
+    },
+
+    "session": {
+      "type": "object",
+      "description": "the ledger row decoded: every column except tune_tag (split into rig) and the k=v cells (parsed)",
+      "required": ["status"],
+      "properties": {
+        "epoch": {"type": ["integer", "string"]},
+        "duration_s": {"type": ["number", "null"]},
+        "build": {"type": ["string", "null"]},
+        "game_id": {"type": ["string", "null"]},
+        "status": {"type": "string"},
+        "crash_sig": {"type": "array", "items": {"type": "string"}},
+        "gpu_fault_status": {"type": ["string", "null"]},
+        "gpu_fault_fence_hex": {"type": ["string", "null"]},
+        "fps_med": {"type": ["number", "null"]},
+        "lock_pct": {"type": ["number", "null"]},
+        "perfect_pct": {"type": ["number", "null"]},
+        "rescues": {"type": ["number", "null"]},
+        "shaders_harvested": {"type": ["number", "null"]},
+        "res_scale": {"type": ["number", "null"]},
+        "gpu_mhz": {"type": ["number", "null"]},
+        "aud": {"type": "object"},
+        "perf": {"type": "object"}
+      }
+    },
+
+    "history": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rows": {"type": "array", "items": {"type": "object"},
+                 "description": "the last 5 rows of this game, decoded, compact"},
+        "career": {"type": ["object", "null"]},
+        "changes_since_last_debrief": {
+          "type": "array",
+          "description": "config_changes.tsv rows this game's newest debrief has not seen; with no debrief on file, the last 5 at or before the pack epoch",
+          "items": {"$ref": "#/definitions/change"}
+        }
+      }
+    },
+
+    "dyno": {
+      "type": ["object", "null"],
+      "description": "tools/etk_dyno.py --json: the arms table, N computed there and never guessed here",
+      "properties": {
+        "game": {"type": ["string", "null"]},
+        "res": {"type": ["integer", "null"]},
+        "stacks": {"type": "object"},
+        "arms": {"type": "array", "items": {"$ref": "#/definitions/arm"}}
+      }
+    },
+
+    "crash": {
+      "type": "object",
+      "properties": {
+        "sigs": {"type": "array", "items": {"type": "object"}},
+        "fault": {
+          "type": ["object", "null"],
+          "properties": {
+            "status": {"type": ["string", "null"]},
+            "fence_hex": {"type": ["string", "null"]},
+            "class": {"type": ["string", "null"]}
+          }
+        },
+        "rpcs3_errors": {"type": "array", "items": {"$ref": "#/definitions/log_line"},
+                         "maxItems": 15},
+        "dmesg_window": {"type": "array", "items": {"type": "string"}, "maxItems": 25},
+        "blackbox_tail": {"type": "array", "items": {"type": "string"}, "maxItems": 40,
+                          "description": "only on a PANIC row; [] otherwise"}
+      }
+    },
+
+    "timeline": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "bins": {"type": "integer", "minimum": 1},
+        "fps_med": {"$ref": "#/definitions/series"},
+        "ft_p99_ms": {"$ref": "#/definitions/series"},
+        "temp_c": {"$ref": "#/definitions/series"},
+        "perfect_windows": {
+          "type": "array",
+          "items": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+          "description": "per bin, the share of gameplay frames inside the title's lock window"
+        },
+        "lock_window_ms": {"type": "array", "items": {"type": "number"},
+                           "minItems": 2, "maxItems": 2},
+        "trimmed": {"type": "boolean",
+                    "description": "set when the whole series was shed to fit the cap"}
+      }
+    },
+
+    "config": {
+      "type": ["object", "null"],
+      "properties": {
+        "source": {"type": "string"},
+        "values": {"type": "object", "additionalProperties": {"type": "string"}}
+      }
+    },
+
+    "run_sheet": {"type": ["object", "null"],
+                  "description": "the accepted sheet for THIS game (spec 3.3), else null"},
+
+    "operator": {
+      "type": "object",
+      "properties": {
+        "feel": {"type": "string"},
+        "note": {"type": "string"}
+      }
+    },
+
+    "pack_notes": {"type": "array", "items": {"type": "string"},
+                   "description": "every degradation, in the pack: never an abort"},
+    "budget": {
+      "type": "object",
+      "properties": {"bytes": {"type": "integer", "minimum": 0, "maximum": 65536}}
+    }
+  },
+
+  "definitions": {
+    "series": {"type": "array", "items": {"type": ["number", "null"]}},
+    "change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["epoch", "field", "old", "new"],
+      "properties": {
+        "epoch": {"type": "integer"},
+        "field": {"type": "string"},
+        "old": {"type": "string"},
+        "new": {"type": "string"}
+      }
+    },
+    "log_line": {
+      "type": "object",
+      "required": ["n", "line"],
+      "properties": {
+        "n": {"type": "integer", "minimum": 1,
+              "description": "how many times this line repeated (collapsed)"},
+        "line": {"type": "string", "maxLength": 240}
+      }
+    },
+    "arm": {
+      "type": "object",
+      "required": ["n"],
+      "properties": {
+        "stack": {"type": "string"},
+        "tune": {"type": "string"},
+        "res": {"type": ["integer", "string"]},
+        "clk": {"type": ["integer", "string"]},
+        "pwr": {"type": "string"},
+        "n": {"type": "integer", "minimum": 0},
+        "low_n": {"type": "boolean"},
+        "perfect_p50": {"type": "number"},
+        "lock_p50": {"type": "number"},
+        "jit_p50": {"type": "number"},
+        "resc_h": {"type": "number"},
+        "dur_p50": {"type": "number"},
+        "dur_max": {"type": "number"},
+        "crash": {"type": "string"}
+      }
+    }
+  }
+}

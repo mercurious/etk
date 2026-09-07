@@ -131,14 +131,14 @@ Naming (§C.3): the mechanism is the `etk-cloud-ai` service; the metaphor is the
 
 | # | Piece | Lang / runs on | Notes |
 |---|---|---|---|
-| 1 | `bin/radio_pack.py` | python stdlib, rig | reduces one session into PACK v1 (§3.1); allowlisted fields only; ≤ 64 KB; runnable by hand for any epoch — a one-file forensic bundle is useful without any model |
+| 1 | `bin/radio_pack.py` **(BUILT 2026-09-07)** | python stdlib, rig | reduces one session into PACK v1 (§3.1); allowlisted fields only; ≤ 64 KB; runnable by hand for any epoch — a one-file forensic bundle is useful without any model. Self-validates against `pack.v1` and keeps the newest 50 packs/debriefs; `tools/radio.py inspect <epoch>` renders it |
 | 2 | `bin/radio_send.sh` | POSIX sh + curl + jq, rig | `debrief <epoch>` · `drain` · `ask <question-id>`; header-file token; submit/poll/store/toast; `RADIO_WAIT_S` (default 720) then `pending/` |
-| 3 | `tools/etk_dyno.py --json` | python, host + rig | arms as JSON keyed by dyno's grouping (stack, tune, res, clk, pwr); no behaviour change to the text report |
+| 3 | `tools/etk_dyno.py --json` **(BUILT 2026-09-07)** | python, host + rig | arms as JSON keyed by dyno's grouping (stack, tune, res, clk, pwr); no behaviour change to the text report |
 | 4 | `tools/radio/service.py` | python 3.12 stdlib, node | `POST /v1/debrief`, `GET /v1/jobs/<id>`, `POST /v1/ask`, `GET /v1/health`; bearer on every route; 64 KB body cap; sqlite job table; one worker thread; forge-lock wait; structured-output call to Ollama; schema validation; guards; result retention 30 days |
 | 5 | `tools/radio/briefing.py` | python, node | deterministic selection (§4.2); unit-tested against fixture packs |
 | 6 | `tools/radio/guards.py` + `config/falsified.json` | python, node (+ repo) | §6; `falsified.json` is §F made machine-readable, each entry naming its manual anchor |
 | 7 | `tools/radio/prompts/engineer.md`, `Modelfile.debrief`, `Modelfile.fast` | node | the system prompt (doctrine, voice, output contract); `prompt_sha256` stamped into every debrief — the tune_tag of advice |
-| 8 | `tools/radio/schema/{pack,debrief}.v1.json` | repo; debrief schema also pushed to the rig | contracts (§3); Ollama `format:` takes the debrief schema for constrained decoding |
+| 8 | `tools/radio/schema/{pack,debrief}.v1.json` + `tools/radio/schemas.py` **(BUILT 2026-09-07)** | repo; debrief schema also pushed to the rig | contracts (§3); Ollama `format:` takes the debrief schema for constrained decoding. `schemas.py` is the stdlib validator both ends use — `load("pack.v1")` / `validate(obj, schema) -> [errors]`, empty means valid |
 | 9 | `tools/radio/provision_etk_cloud_ai.sh` | bash, node — **OPERATOR RUNS IT** | installs ollama (script fetched and read first, per the checked runbook steps), writes the systemd drop-in, pulls the two models, creates the Modelfiles, installs `etk-radio.service`, brings up Caddy, mints the token (printed once), prints the doors to open (OCI security list + iptables 80/443) |
 | 10 | `tools/radio/Caddyfile`, `docker-compose.yml` | node | forked from the proven kit; `reverse_proxy 127.0.0.1:8737`; `SITE_ADDRESS` from `.env` |
 | 11 | `tools/radio.py` | python, host | `debrief --epoch N` (host mirror), `ask`, `pack --inspect`, `eval`; reaches the node through `ssh -L`; §11 ruling applies |
@@ -157,28 +157,44 @@ Naming (§C.3): the mechanism is the `etk-cloud-ai` service; the metaphor is the
 Built from an allowlist, never from raw files. Caps per section keep the whole pack near
 10 KB ≈ 2.5k tokens; the hard cap is 64 KB (the service rejects larger).
 
+Below is the REAL shape, abridged from `bin/radio_pack.py 1788491975 --stdout` against
+the host mirror on 2026-09-07 (8,659 B). The contract is
+`tools/radio/schema/pack.v1.json`; the packer validates its own output against it and
+records any failure as a `pack_notes` line rather than aborting. Values are shown as
+they read ON THE RIG: built off-rig, `rig.os` is `null` with a `pack_notes` line saying
+so (`/etc/os-release` is the laptop's, not the rig's), and `crash.dmesg_window` is `[]`.
+
 ```json
 {"schema": "ETK-RADIO-PACK v1", "epoch": 1788491975, "game_id": "NPUB31245",
  "rig": {"soc": "SM8250", "os": "20260901", "kernel": "7.2.0", "kit": "0.9.0",
          "build": "26.2.2_gtk_0.7", "core": "0.9.0.3_armsx3-a74a0f3e0", "stack": "rk1ebff24/k7.2.0#1/r0.9.0.3",
-         "dial": "tu_debug=zlatez", "power": {"profile": "race", "grid": "off", "gpu_mhz": 925}},
- "session": {"status": "SURVIVED:Adreno", "duration_s": 724, "crash_sig": ["KEEPALIVE_SURVIVE", "GPU_FENCE_TIMEOUT"],
-             "...every ledger column decoded k=v, aud/perf cells parsed...": "..."},
+         "dial": "zlatez", "patches": null,
+         "power": {"profile": "race", "grid": null, "gpu_mhz": 925}},
+ "session": {"epoch": "1788491975", "status": "SURVIVED:Adreno", "duration_s": 724,
+             "crash_sig": ["KEEPALIVE_SURVIVE", "GPU_FENCE_TIMEOUT"],
+             "gpu_fault_status": "00E59005", "fps_med": 30.3, "lock_pct": 1.2, "perfect_pct": 0, "rescues": 1,
+             "aud": {"up_s": 333.7, "ur": 0, "skip": 38, "buf_ms": 34}, "perf": {},
+             "...every ledger column decoded; tune_tag split into rig; aud/perf cells parsed...": "..."},
  "history": {"rows": ["last 5 rows of this game, decoded, compact"],
-             "career": {"total_sessions": 732, "clean_rate_pct": 56, "current_streak": 24},
+             "career": {"total_sessions": 14, "clean_rate_pct": 50, "current_streak": 2, "...": "..."},
              "changes_since_last_debrief": [{"epoch": 1788285097, "field": "Disable FIFO Reordering", "old": "false", "new": "true"}]},
- "dyno": {"stack": "S11", "res": 100, "arms": [{"tune": "tu_debug=zlatez", "clk": 925, "pwr": "race", "n": 2, "low_n": true,
-                                                "perfect_p50": 3.0, "lock_p50": 18.5, "jit_p50": 7.1, "resc_h": 33.0, "dur_p50": 256, "crash": "2/2"}]},
+ "dyno": {"game": "NPUB31245", "res": 100, "stacks": {"S1": "", "S2": "build=...;stack=..."},
+          "arms": [{"stack": "S2", "tune": "tu_debug=zlatez", "res": 100, "clk": 800, "pwr": "race", "n": 2, "low_n": true,
+                    "perfect_p50": 3.9, "lock_p50": 13.0, "jit_p50": 15.6, "resc_h": 0.0, "dur_p50": 679, "dur_max": 679, "crash": "1/2"}]},
  "crash": {"sigs": [{"id": "GPU_FENCE_TIMEOUT", "label": "Adreno", "severity": "high", "summary": "GPU stalled rendering a frame"}],
            "fault": {"status": "00E59005", "fence_hex": "575bf", "class": "fence park (#2)"},
-           "dmesg_window": ["<= 25 lines around the fault, strings-shielded"],
+           "dmesg_window": ["<= 25 lines around the fault, strings-shielded; the rig fills this, the host mirror carries none"],
            "rpcs3_errors": [{"n": 14, "line": "E ... RSX: ..."}, "<= 15 unique E/F lines from the last 4 MB, repeats collapsed"],
            "blackbox_tail": ["<= 40 kmsg lines before a PANIC; only on PANIC rows"]},
- "timeline": {"bins": 10, "fps_med": [30.1, 30.0, "..."], "ft_p99_ms": ["..."], "temp_c": ["..."], "perfect_windows": ["..."]},
- "config": {"yaml": {"  Resolution Scale": "100", "  Preferred SPU Threads": "3", "...the 50 schema fields' current values...": "..."}},
- "run_sheet": {"...the accepted sheet, if any (§3.3)...": "..."},
+ "timeline": {"bins": 10, "fps_med": [8.6, 9.6, "..."], "ft_p99_ms": ["..."], "temp_c": ["..."],
+              "perfect_windows": [6.2, 0.0, "...share of gameplay frames inside the lock window, per bin..."],
+              "lock_window_ms": [31.0, 36.0]},
+ "config": {"source": "config_NPUB31245.yml",
+            "values": {"Resolution Scale": "100", "Preferred SPU Threads": "0", "...the 50 schema fields' current values...": "..."}},
+ "run_sheet": null,
  "operator": {"feel": "stutter", "note": ""},
- "budget": {"bytes": 9800}}
+ "pack_notes": ["every degradation, in the pack: a missing archive is a line here, never an abort"],
+ "budget": {"bytes": 8659}}
 ```
 
 Reduction rules: the timeline is 10 equal-duration bins over `[epoch − duration_s, epoch]`

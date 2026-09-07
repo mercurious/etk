@@ -1,0 +1,180 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "etk-radio-debrief.v1",
+  "title": "ETK RADIO DEBRIEF v1",
+  "description": "What the engineer says back (RADIO spec 3.2). Ollama takes this schema as `format:` for constrained decoding; tools/radio/schemas.py validates the answer again afterwards, because constrained decoding is not a guarantee.",
+  "$comment": "additionalProperties:false on the root and on every nested object is the point: a hallucinated field is a wrong answer wearing the right shape, and it must be caught here rather than rendered on the rig. ASCII patterns are anchored \\A..\\Z, not ^..$: python's $ also matches before a trailing newline, and `radio`/`headline` land in a toast and in pit_note.txt where a newline is a broken surface.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "epoch", "game_id", "model", "prompt_sha256", "corpus_commit",
+               "tokens", "latency_s", "radio", "headline", "tags", "findings",
+               "recommendations", "run_sheet", "guards"],
+  "properties": {
+    "schema": {"enum": ["ETK-RADIO-DEBRIEF v1"]},
+    "epoch": {"type": "integer", "minimum": 0,
+              "description": "the pack's epoch - the row this debrief is about"},
+    "game_id": {"type": "string", "pattern": "\\A[A-Za-z0-9_-]{1,32}\\Z"},
+
+    "model": {"type": "string", "maxLength": 64,
+              "description": "the Modelfile tag that answered, e.g. etk-radio:9b"},
+    "prompt_sha256": {"type": "string", "pattern": "\\A[0-9a-f]{64}\\Z",
+                      "description": "the tune_tag of advice: which system prompt said this"},
+    "corpus_commit": {"type": "string", "pattern": "\\A[0-9a-f]{7,40}\\Z",
+                      "description": "which manual the briefing read"},
+    "tokens": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prompt", "completion"],
+      "properties": {
+        "prompt": {"type": "integer", "minimum": 0},
+        "completion": {"type": "integer", "minimum": 0}
+      }
+    },
+    "latency_s": {"type": "number", "minimum": 0},
+
+    "radio": {
+      "type": "string", "maxLength": 280, "pattern": "\\A[\\x20-\\x7E]*\\Z",
+      "description": "what the engineer says over the radio: short, calm, useful. ASCII only - it becomes a toast."
+    },
+    "headline": {
+      "type": "string", "maxLength": 60, "pattern": "\\A[\\x20-\\x7E]*\\Z",
+      "description": "the PIT NOTE line on TELEMETRY. ASCII only, one line."
+    },
+    "tags": {
+      "type": "array",
+      "items": {"type": "string", "maxLength": 32, "pattern": "\\A[a-z0-9_]+\\Z"},
+      "maxItems": 12,
+      "description": "computed on the node from the pack and merged with the model's; the tests assert on the computed ones"
+    },
+
+    "findings": {
+      "type": "array", "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "text", "evidence"],
+        "properties": {
+          "kind": {"enum": ["observation", "mechanism", "anomaly"],
+                   "$comment": "a crown is NOT a kind - a comparison verdict is a finding whose evidence carries both arms' N >= 3, or the guard drops it"},
+          "text": {"type": "string", "maxLength": 400, "pattern": "\\A[\\x20-\\x7E]*\\Z"},
+          "evidence": {"type": "array", "items": {"$ref": "#/definitions/evidence"},
+                       "maxItems": 6}
+        }
+      }
+    },
+
+    "recommendations": {
+      "type": "array", "maxItems": 6,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "text", "config_changes", "driver_dial", "confidence"],
+        "properties": {
+          "kind": {"enum": ["next_run", "config", "dial", "power", "no_change",
+                            "investigate"]},
+          "text": {"type": "string", "maxLength": 400, "pattern": "\\A[\\x20-\\x7E]*\\Z"},
+          "n_basis": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["arm", "n", "n_needed"],
+            "properties": {
+              "arm": {"type": "string", "maxLength": 120},
+              "n": {"type": "integer", "minimum": 0},
+              "n_needed": {"type": "integer", "minimum": 0}
+            }
+          },
+          "config_changes": {
+            "type": "array", "maxItems": 5,
+            "description": "pitstop_fields.json vocabulary ONLY; the guard drops anything else",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["yaml_key", "new_value"],
+              "properties": {
+                "yaml_key": {"type": "string", "maxLength": 120},
+                "new_value": {"type": ["string", "number", "boolean"]}
+              }
+            }
+          },
+          "driver_dial": {"type": ["string", "null"], "maxLength": 120,
+                          "description": "a ROAD FEEL dial or a TU_DEBUG token; null when the recommendation is not a dial"},
+          "confidence": {"enum": ["low", "medium", "high"]},
+          "review_only": {"type": "boolean",
+                          "description": "show it, never stage it"}
+        }
+      }
+    },
+
+    "run_sheet": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "description": "the PROPOSED sheet (spec 3.3); null when there is nothing to propose. n_have is never stored - it is recounted from the ledger on every pack and every render.",
+      "required": ["schema", "game_id", "arms"],
+      "properties": {
+        "schema": {"enum": ["ETK-RADIO-RUNSHEET v1"]},
+        "accepted_epoch": {"type": ["integer", "null"]},
+        "game_id": {"type": "string", "pattern": "\\A[A-Za-z0-9_-]{1,32}\\Z"},
+        "stack": {"type": ["string", "null"]},
+        "res": {"type": ["integer", "null"]},
+        "hypothesis": {"type": "string", "maxLength": 280,
+                       "pattern": "\\A[\\x20-\\x7E]*\\Z"},
+        "arms": {
+          "type": "array", "maxItems": 4, "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["label", "n_target"],
+            "properties": {
+              "label": {"type": "string", "maxLength": 8},
+              "tune": {"type": ["string", "null"], "maxLength": 120},
+              "clk": {"type": ["integer", "null"]},
+              "pwr": {"type": ["string", "null"], "maxLength": 32},
+              "n_target": {"type": "integer", "minimum": 3,
+                           "$comment": "no crown below N=3 (manual B.3)"}
+            }
+          }
+        },
+        "stop_rule": {"type": "string", "maxLength": 280,
+                      "pattern": "\\A[\\x20-\\x7E]*\\Z"},
+        "next": {"type": "string", "maxLength": 280, "pattern": "\\A[\\x20-\\x7E]*\\Z"}
+      }
+    },
+
+    "guards": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "dropped"],
+      "properties": {
+        "passed": {"type": "boolean"},
+        "dropped": {
+          "type": "array", "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "reason"],
+            "properties": {
+              "kind": {"type": "string", "maxLength": 40},
+              "reason": {"type": "string", "maxLength": 240,
+                         "pattern": "\\A[\\x20-\\x7E]*\\Z"}
+            }
+          }
+        }
+      }
+    }
+  },
+
+  "definitions": {
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source"],
+      "description": "where the claim comes from: a ledger field, a dyno arm, a log line",
+      "properties": {
+        "source": {"type": "string", "maxLength": 40},
+        "field": {"type": "string", "maxLength": 60},
+        "value": {"type": ["string", "number", "boolean", "null"]},
+        "line": {"type": "string", "maxLength": 240}
+      }
+    }
+  }
+}
