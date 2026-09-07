@@ -1,6 +1,6 @@
 # RADIO — `etk-cloud-ai`, the race engineer on the pit radio
 
-**Experimental spec · 2026-09-06 · branch `radio` off `main` @ `76d8769` · STATUS: SPEC (not built)**
+**Experimental spec · 2026-09-06 · branch `radio` off `main` @ `76d8769` · STATUS: SPEC — exam harness built + qwen3.5 credentialed (§10.3, `docs/RADIO_CREDENTIAL.md`); core loop (pack / service / rig) unbuilt**
 
 The kit records every session (2,464 ledger rows on 2026-09-06), judges knob A/Bs with
 `etk_dyno`, and explains crashes from `crash_signatures.json`. What it does not have is
