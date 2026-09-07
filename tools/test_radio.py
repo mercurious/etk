@@ -433,11 +433,15 @@ try:
     check("the render is ASCII", ins.stdout.isascii(), True)
     check("the render stays inside 80 columns",
           max(len(l) for l in ins.stdout.splitlines()) <= 80, True)
-    for verb in ("debrief", "ask", "eval"):
+    for verb in ("debrief", "ask"):
         st = subprocess.run([sys.executable, RADIO_CLI, verb],
                             capture_output=True, text=True)
-        check("radio.py %s is a registered stub, exit 2" % verb,
+        check("radio.py %s without the node is a registered stub, exit 2" % verb,
               (st.returncode, "not built yet" in st.stderr), (2, True))
+    st = subprocess.run([sys.executable, RADIO_CLI, "eval", "--list"],
+                        capture_output=True, text=True)
+    check("radio.py eval delegates to tools/radio/eval.py (--list exits 0, names a case)",
+          (st.returncode, "sysmem_no_crown" in st.stdout), (0, True))
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 

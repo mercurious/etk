@@ -403,6 +403,11 @@ def main(argv=None):
     p.add_argument("rest", nargs="*")
     p.set_defaults(func=cmd_stub)
 
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv[:1] == ["eval"]:
+        # eval's flags (--selftest, --debriefs DIR, ...) belong to tools/radio/eval.py;
+        # argparse would claim them here, so hand the rest over untouched
+        return cmd_eval(argparse.Namespace(rest=argv[1:]))
     args = ap.parse_args(argv)
     return args.func(args)
 
