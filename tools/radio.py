@@ -346,6 +346,15 @@ def cmd_debrief(args):
     return 0
 
 
+def cmd_eval(args):
+    """Delegate to tools/radio/eval.py -- one runner, two front doors (spec 2.2 row 11)."""
+    sys.path.insert(0, os.path.join(HERE, "radio"))
+    import eval as radio_eval                                  # noqa: PLC0415
+    sys.argv = ["tools/radio/eval.py"] + list(args.rest or [])
+    rc = radio_eval.main()
+    return 0 if rc is None else rc
+
+
 def cmd_stub(args):
     sys.stderr.write("radio %s: %s\n" % (args.verb, NOT_BUILT))
     return 2
@@ -385,11 +394,14 @@ def main(argv=None):
                    help="do not write radio/<epoch>.debrief.json")
     p.set_defaults(func=cmd_debrief)
 
-    for verb, helptext in (("ask", "one question about the last pack"),
-                           ("eval", "score models against the golden cases")):
-        p = sub.add_parser(verb, help="%s (%s)" % (helptext, NOT_BUILT))
-        p.add_argument("rest", nargs="*")
-        p.set_defaults(func=cmd_stub)
+    p = sub.add_parser("eval", help="the golden cases: --selftest | --list | "
+                                    "--debriefs DIR | --refresh-packs (tools/radio/eval.py)")
+    p.add_argument("rest", nargs=argparse.REMAINDER)
+    p.set_defaults(func=cmd_eval)
+
+    p = sub.add_parser("ask", help="one question about the last pack (%s)" % NOT_BUILT)
+    p.add_argument("rest", nargs="*")
+    p.set_defaults(func=cmd_stub)
 
     args = ap.parse_args(argv)
     return args.func(args)
