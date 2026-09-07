@@ -1,0 +1,47 @@
+# ETK RADIO -- the debrief rung (spec 4, layer 1).
+#
+#   ollama create etk-radio:9b -f tools/radio/Modelfile.debrief
+#
+# qwen3.5:9b is the credentialed analyst rung (docs/RADIO_CREDENTIAL.md, spec 10.3):
+# richer and more precise than the 4b on mechanism, at ~40% more wall clock. Async,
+# toasted when ready, so the wall clock is affordable; the 4b (Modelfile.fast) is the
+# interactive radio-check rung and the legitimate single-model fallback.
+#
+# NO `SYSTEM` LINE HERE, DELIBERATELY. The doctrine (prompts/engineer.md) is sent by the
+# service as the system message of every call, and `prompt_sha256` in the debrief is
+# hashed over exactly the bytes that were sent. Baking the doctrine into the model would
+# make that hash a lie -- the debrief would claim a prompt the model never received as a
+# message -- and it would put a corpus refresh (`git -C ~/etk pull`) out of step with the
+# model until someone remembered to re-run `ollama create`. Sending it every call costs
+# nothing: it is the same bytes each time, so Ollama's prefix cache carries it (82-118
+# tok/s cached vs 17.9 cold on this node, spec 10.2), which is the whole reason the
+# doctrine is FIRST in the prompt and the per-pack briefing is last.
+#
+# THINKING IS OFF. Ollama's Modelfile has no `think` directive, so it cannot be set here:
+# the service passes `"think": false` in the /api/chat body (tools/radio/exam.py does the
+# same, and falls back to omitting the key if the endpoint rejects it). Deliberate --
+# a 4B spent 2,766 tokens deliberating over a two-sentence question on this node, and
+# generation is the budget: 630 output tokens is ten minutes on the 9b.
+#
+# The service still sends `options` explicitly on every call (num_ctx from
+# briefing.build()'s `num_ctx`, which rises to 16384 when the prompt needs it) and
+# `format:` = tools/radio/schema/debrief.v1.json for constrained decoding. These
+# PARAMETER lines are the floor, not the contract -- they make `ollama run etk-radio:9b`
+# behave the same way by hand as it does through the service.
+
+FROM qwen3.5:9b
+
+# Near-deterministic. This is forensics, not prose: the same pack should read the same way
+# twice, and the eval re-runs cases across seeds to check that it does.
+PARAMETER temperature 0.2
+
+# The doctrine (~1.5k) + briefing + pack fit inside 8192 by construction: briefing.py
+# refuses to build over 4,500 prompt tokens (spec 12 -- every 1,000 tokens of evidence is
+# a minute on the 9b), and the never-truncate guard rejects a pack that would not fit
+# rather than letting Ollama silently decide what the model saw.
+PARAMETER num_ctx 8192
+
+# Generation cap. A debrief is a headline, a radio line, a few findings and a run sheet;
+# ~300 tokens in practice. 700 is the ceiling that keeps a runaway answer from costing
+# the operator ten minutes of wall clock.
+PARAMETER num_predict 700

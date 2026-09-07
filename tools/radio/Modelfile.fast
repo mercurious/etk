@@ -1,0 +1,30 @@
+# ETK RADIO -- the fast rung: the interactive RADIO CHECK, and the fallback (spec 4/5).
+#
+#   ollama create etk-radio:4b -f tools/radio/Modelfile.fast
+#
+# qwen3.5:4b answers the pad-menu questions the operator presses on the couch ("why did it
+# crash?", "is arm B ahead yet?") behind a _ProgressCard that shows elapsed time. It is
+# ~40% faster than the 9b and, on the credential exam, scored identically after
+# adjudication and never flapped across three seeds -- so it is also the honest
+# single-model fallback if the node is ever halved (spec 12). With
+# OLLAMA_MAX_LOADED_MODELS=1 every 4b<->9b switch costs a reload; Phase 1 measures whether
+# the split earns it.
+#
+# NO `SYSTEM` LINE HERE, DELIBERATELY -- same reason as Modelfile.debrief: the service
+# sends prompts/engineer.md as the system message of every call so that `prompt_sha256`
+# is hashed over the bytes the model actually received, and so a `git pull` on the node
+# refreshes the doctrine without an `ollama create`.
+#
+# THINKING IS OFF, and the Modelfile cannot say so: the service passes `"think": false`
+# in the /api/chat body. This rung is the one that most needs it -- a 4B on this node
+# spent 2,766 tokens deliberating over a two-sentence question.
+
+FROM qwen3.5:4b
+
+PARAMETER temperature 0.2
+
+PARAMETER num_ctx 8192
+
+# Shorter than the debrief rung on purpose: a radio check is one answer to one question
+# with the operator sitting there watching a timer, not a full debrief.
+PARAMETER num_predict 400
