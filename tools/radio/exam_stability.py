@@ -78,7 +78,7 @@ def main():
                   f"- Section A per run: {a_scores}  (of {len(a_items)})",
                   f"- Section B per run: {b_scores}  (of {len(b_items)})",
                   f"- wall per run: {', '.join(f'{w:.0f}m' for w in walls)}",
-                  f"- **STABLE-PASS** (every run): {n - len(flapped) - len(stable_fail)} of {len(a_items) + len(b_items)} items",
+                  f"- **STABLE-PASS** (every run): {len(a_items) + len(b_items) - len(flapped) - len(stable_fail)} of {len(a_items) + len(b_items)} items",
                   f"- **FLAPPED** (some runs only): {', '.join(flapped) or 'none'}",
                   f"- **STABLE-FAIL** (no run): {', '.join(stable_fail) or 'none'}", ""]
         lines += ["| item | " + " | ".join(f"r{i+1}" for i in range(n)) + " | verdict |",

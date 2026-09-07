@@ -7,7 +7,7 @@
  "key": {
   "all": ["\\bN\\b|three|3 runs|more runs|insufficient|not enough|variance|noise|single run|one run|n\\s?=\\s?1|tagged|per condition",
           "warm|attract"],
-  "none": ["sysmem is a fix|is a validated fix|is a genuine fix", "4[-–]7×|4 to 7 times (better|faster)"],
+  "none": ["sysmem is a fix|is a validated fix|is a genuine fix|sysmem works\\b"],
   "verdict_allowed": false
  },
  "rubric": "Refuses the crown: one 906 s run sits inside the 77–2886 s range and differed by a 3-minute attract warm-up, not only by the knob; asks for tagged trials, N≥3 per condition, matched warm-up, medians and time-to-crash.",

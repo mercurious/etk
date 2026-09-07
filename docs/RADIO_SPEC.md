@@ -142,7 +142,7 @@ Naming (§C.3): the mechanism is the `etk-cloud-ai` service; the metaphor is the
 | 9 | `tools/radio/provision_etk_cloud_ai.sh` | bash, node — **OPERATOR RUNS IT** | installs ollama (script fetched and read first, per the checked runbook steps), writes the systemd drop-in, pulls the two models, creates the Modelfiles, installs `etk-radio.service`, brings up Caddy, mints the token (printed once), prints the doors to open (OCI security list + iptables 80/443) |
 | 10 | `tools/radio/Caddyfile`, `docker-compose.yml` | node | forked from the proven kit; `reverse_proxy 127.0.0.1:8737`; `SITE_ADDRESS` from `.env` |
 | 11 | `tools/radio.py` | python, host | `debrief --epoch N` (host mirror), `ask`, `pack --inspect`, `eval`; reaches the node through `ssh -L`; §11 ruling applies |
-| 12 | `tools/radio/exam.py` + `exam/{questions.json,cases/*.json}` **(BUILT 2026-09-06)** | python, host (needs the node) | §10 golden cases + comprehension quiz + self-test + scorecard; run against 4b/9b (§10.2). Still to add: the rules-only baseline arm and the model-vs-rules blind read |
+| 12 | `tools/radio/exam.py` + `exam/{questions.json,cases/*.json}` + `exam_stability.py` **(BUILT 2026-09-06; 3-seed stability + credential 09-07)** | python, host (needs the node) | §10 golden cases + comprehension quiz + self-test (21/21) + N-seed stability; run against 4b/9b (§10.2/§10.3) → `docs/RADIO_CREDENTIAL.md`. Still to add: the rules-only baseline arm and the model-vs-rules blind read |
 | 13 | `tools/test_radio.py`, `tools/radio/test_service.py` | python, host, no network | packer on fixture telemetry, schema, guards, toast copy ASCII, token-never-in-argv, service loop with a fake Ollama |
 | 14 | Pitstop | python, rig | pit_note writer contract; detail-card RADIO DEBRIEF block; RADIO tab (§7); LOAD FIX staging; ACCEPT RUN SHEET; `source` column on config rows |
 | 15 | install.sh | bash, host | STEP 3: `etk_dyno.py` push + chmod; STEP 5: `radio_debrief.v1.json`; **STEP 7b RADIO LINK** (`RADIO_URL`+`RADIO_TOKEN` → preflight `/v1/health` → `radio.json` chmod 600); `etk.conf.example` block; uninstall removes `radio.json` |
@@ -615,6 +615,31 @@ Q10 where the 4b named one), **4b for the interactive radio-check** and a legiti
 single-model fallback (identical adjudicated score, ~40 % faster). Neither is trusted on
 the fix. Both clear the "no dangerous flips, correct verdict discipline" bar the §10
 scoring exists to enforce; the model-vs-rules-only blind read below remains the ship gate.
+
+### 10.3 Stability + the credential (2026-09-06/07)
+
+The exam was re-run at three seeds (7/17/27) and re-graded with the final keys
+(`tools/radio/exam_stability.py`) — the kit's N≥3 rule turned on the model itself.
+
+| Model | Comprehension ×3 | Forensics ×3 | Stable-pass | Flapped | Stable-fail |
+|---|---|---|---|---|---|
+| qwen3.5:4b | 14/14/14 | 5/5/5 | 19/21 | none | Q13, F6 |
+| qwen3.5:9b | 14/14/14 | 5/6/5 | 19/21 | F6 | Q13 |
+
+Every discipline and mechanism case (F2 crown-refusal, F3, F4, F5, F7) passed on all
+three seeds for both rungs, with `verdict_allowed` correctly `false` every time. The
+properties RADIO relies on are stable, not lucky. The 4b never flapped. The 9b's only
+instability is F6, the kit-internals fix, which the guards already hold back. A fourth
+grader bug surfaced here (the F2 key forbade "4–7×" and so failed a 9b answer that quoted
+the operator's claim to refute it) and was fixed; same substring-context class as the
+Q10/F3/F7 fixes, and the reason the eval keeps a human-read column.
+
+On that evidence, **qwen3.5 is credentialed as the RADIO analyst — both rungs, under the
+§6 guards, cleared to integrate and to run operator-triggered on the rig** (9b for
+debriefs, 4b for the radio-check and as the stable, faster fallback). The fix half stays
+with the operator by design. The full record, scope and standing conditions are in
+`docs/RADIO_CREDENTIAL.md`. The remaining gate before the model ships ahead of the
+rules-only fallback is the blind read below.
 
 Scoring: the deterministic assertions pass or fail per case for the **rules-only
 baseline** (must be 12/12 — it is the pipeline's contract) and for each model. Then the
