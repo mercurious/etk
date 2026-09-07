@@ -24,6 +24,7 @@ only honest at 100). --all includes crash rows in scoring (default: they count
 toward N and duration but their fps/lock stats are still real — kept).
 """
 import argparse
+import json
 import statistics
 import sys
 from collections import defaultdict
@@ -149,6 +150,8 @@ def main():
     ap.add_argument("--min-n", type=int, default=1, help="hide arms below this N")
     ap.add_argument("--audio", action="store_true",
                     help="rank titles by audio skip-per-second instead of scoring arms")
+    ap.add_argument("--json", action="store_true",
+                    help="emit the scored arms as JSON (for radio_pack.py) instead of the table")
     args = ap.parse_args()
 
     path = Path(args.ledger)
@@ -193,7 +196,7 @@ def main():
         if attr not in stacks:
             stacks[attr] = f"S{len(order) + 1}"
             order.append(attr)
-    if len(order) > 1 or (order and order[0]):
+    if not args.json and (len(order) > 1 or (order and order[0])):
         print("STACKS")
         for attr in order:
             print(f"  {stacks[attr]:<3} {attr or '(unattributed — pre-stack-tag rows)'}")
@@ -201,13 +204,36 @@ def main():
             print("  !! more than one stack present — arms below are NOT comparable across S-ids")
         print()
 
-    print(f"{'ARM (stack | tune | res | clk | pwr)':<46} {'N':>3} {'PERFECT%':>8} "
-          f"{'LOCK%':>6} {'JIT ms':>6} {'RESC/h':>6} {'DUR p50':>8} {'DUR max':>8}  CRASH")
+    if not args.json:
+        print(f"{'ARM (stack | tune | res | clk | pwr)':<46} {'N':>3} {'PERFECT%':>8} "
+              f"{'LOCK%':>6} {'JIT ms':>6} {'RESC/h':>6} {'DUR p50':>8} {'DUR max':>8}  CRASH")
     scored = []
     for arm, rows in arms.items():
         n = len(rows)
         crashes = sum(1 for r in rows if s(r, "status") != "CLEAN")
         scored.append((med(rows, "perfect"), med(rows, "lock"), arm, rows, n, crashes))
+
+    if args.json:
+        out_arms = []
+        for perfect, lock, arm, rows, n, crashes in sorted(
+                scored, key=lambda t: (t[0], t[1]), reverse=True):
+            attr, dials = split_attr(arm[0])
+            durs = sorted(f(r, "dur") for r in rows)
+            total_dur = sum(durs)
+            out_arms.append({
+                "stack": stacks[attr], "tune": dials, "res": arm[1], "clk": arm[2],
+                "pwr": arm[3], "n": n, "low_n": n < 3,
+                "perfect_p50": round(perfect, 1), "lock_p50": round(lock, 1),
+                "jit_p50": round(med(rows, "ft_jit"), 1),
+                "resc_h": round(sum(f(r, "rescues") for r in rows) / total_dur * 3600, 1) if total_dur else 0.0,
+                "dur_p50": round(durs[len(durs) // 2]), "dur_max": round(durs[-1]),
+                "crash": f"{crashes}/{n}"})
+        json.dump({"game": args.game, "res": args.res,
+                   "stacks": {v: k for k, v in stacks.items()}, "arms": out_arms},
+                  sys.stdout, indent=1)
+        print()
+        return
+
     # rank by THE KPI, then lock share
     for perfect, lock, arm, rows, n, crashes in sorted(
             scored, key=lambda t: (t[0], t[1]), reverse=True):
