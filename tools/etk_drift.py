@@ -197,6 +197,21 @@ def turnip_driver():
         hits += glob.glob(os.path.join(d, "libvulkan_freedreno*"))
     return os.path.basename(hits[0]) if hits else None
 
+_TURNIP_RE = re.compile(r"Found Vulkan-compatible GPU: '([^']+)' running on driver (\S+)")
+_LOGSTAMP_RE = re.compile(r"^\S+\s+\d+:\d{2}:\d{2}\.\d+\s+")
+
+def norm_turnip(line):
+    # RPCS3.log lines lead with a per-launch elapsed stamp ("·A 0:00:00.118745 ..."),
+    # so the raw line made every RPCS3 launch read as driver drift (2026-09-26, the
+    # 0.5.1 gate's only WARN). Compare adapter + driver version only. Also applied
+    # to banked baselines at diff time, so old raw-line profiles compare cleanly.
+    if not line:
+        return line
+    m = _TURNIP_RE.search(line)
+    if m:
+        return "%s / driver %s" % m.groups()
+    return _LOGSTAMP_RE.sub("", line)
+
 def turnip_version():
     # only available after RPCS3 has run once and written its log
     txt = read_text("/storage/.cache/rpcs3/RPCS3.log", limit=200000)
@@ -205,7 +220,7 @@ def turnip_version():
     for line in txt.splitlines():
         low = line.lower()
         if "turnip" in low or ("mesa" in low and "adreno" in low):
-            return line.strip()[:160]
+            return norm_turnip(line.strip())[:160]
     return None
 
 # ---- input devices -----------------------------------------------------------
@@ -463,9 +478,12 @@ def diff_profiles(base, cur):
     _diff_scalar(out, base, cur, "gpu.turnip_driver", "CRITICAL",
                  "shader vault validity, install.sh Mesa fingerprint",
                  "run tools/vault_sweep.sh; confirm soname unchanged")
-    _diff_scalar(out, base, cur, "gpu.turnip_version", "WARN",
-                 "Turnip rendering behavior",
-                 "re-test per-game RPCS3 settings on the new driver")
+    bt = norm_turnip(((base or {}).get("gpu") or {}).get("turnip_version"))
+    ct = norm_turnip(((cur or {}).get("gpu") or {}).get("turnip_version"))
+    if bt != ct:
+        out.append(Finding("WARN", "gpu.turnip_version", bt, ct,
+                           "Turnip rendering behavior",
+                           "re-test per-game RPCS3 settings on the new driver"))
     _diff_scalar(out, base, cur, "gpu.max_clk", "WARN",
                  "GPU clock headroom",
                  "re-check thermal/perf assumptions")
