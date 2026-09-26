@@ -14,6 +14,8 @@ Verdict discipline baked in (feedback_* memories):
   - medians, never means-of-fps
   - SHM-contaminated audio cells are dropped, and the count is printed (see
     aud_stale) — a poisoned cell is never silently scored
+  - an audio cell without `drop=` (a build before the drop counter) is UNKNOWN,
+    never zero (see aud_drop_per_min) — its own N is printed beside it
 
 Usage:
   tools/etk_dyno.py [--game NPEA00050] [--ledger PATH] [--res 100] [--all]
@@ -85,6 +87,24 @@ def aud_stale(row, aud):
     return aud.get("up_s", 0.0) > f(row, "dur") + AUD_SLACK_S
 
 
+def aud_drop_per_min(aud):
+    """Whole audio blocks discarded per minute of audio uptime, or None.
+
+    ARMSX3 14e740513 found cellAudio's commit_data silently discarding any
+    5.33 ms block that did not fit the ring — a click with ur=0 and nothing in
+    the log, the same clean-delivery-layer signature GT5P recorded. The GTK
+    Edition exports the per-guest-boot count as `drop=` (appended after
+    buf_ms; every earlier key unchanged). A cell from an older build has no
+    such key, and that is UNKNOWN, not a clean session — so None, never 0.0.
+    Per minute rather than per second: a handful of clicks in a session would
+    otherwise print as 0.00.
+    """
+    if "drop" not in aud:
+        return None
+    up = aud.get("up_s", 0.0)
+    return aud["drop"] / up * 60 if up > 0 else None
+
+
 def eligible(path, args):
     """Warm, non-ABORTED, long-enough rows — the shared intake discipline."""
     for line in path.read_text().splitlines()[1:]:
@@ -108,8 +128,12 @@ def audio_report(path, args):
     What separates operator-perceived stutterers from clean titles is the skip
     RATE; `ur` (underruns) is noise. Rate is per second of AUDIO uptime, not of
     wall-clock session, so a title is not penalised for a long menu sit.
+
+    DROP/min rides alongside as context, NOT a ranking key: its p50 is taken
+    over only the cells that carry `drop=`, and DROP N says how many that was
+    ('-' when none did). Older cells are unknown, not clean.
     """
-    per_game, dropped, seen = defaultdict(list), 0, 0
+    per_game, dropped, seen, with_drop = defaultdict(list), 0, 0, 0
     for row in eligible(path, args):
         aud = parse_kv(s(row, "aud"))
         if not aud:
@@ -121,24 +145,30 @@ def audio_report(path, args):
         up = aud.get("up_s", 0.0)
         if up <= 0:
             continue
+        drop = aud_drop_per_min(aud)
+        with_drop += drop is not None
         per_game[s(row, "game")].append(
-            (aud.get("skip", 0.0) / up, aud.get("ur", 0.0), up))
+            (aud.get("skip", 0.0) / up, aud.get("ur", 0.0), up, drop))
 
     if not per_game:
         sys.exit(f"no scoreable audio rows ({seen} seen, {dropped} SHM-stale)")
 
     print(f"{'GAME':<12} {'N':>3} {'SKIP/s p50':>10} {'SKIP/s max':>10} "
-          f"{'UR p50':>7} {'AUDIO s':>8}")
+          f"{'UR p50':>7} {'AUDIO s':>8} {'DROP/min p50':>12} {'DROP N':>6}")
     for game, vals in sorted(per_game.items(),
                              key=lambda kv: statistics.median(v[0] for v in kv[1]),
                              reverse=True):
         rates = sorted(v[0] for v in vals)
+        drops = [v[3] for v in vals if v[3] is not None]
+        drop_str = f"{statistics.median(drops):.2f}" if drops else "-"
         print(f"{game:<12} {len(vals):>3} {statistics.median(rates):>10.2f} "
               f"{rates[-1]:>10.2f} {statistics.median(v[1] for v in vals):>7.1f} "
-              f"{sum(v[2] for v in vals):>8.0f}")
+              f"{sum(v[2] for v in vals):>8.0f} {drop_str:>12} {len(drops):>6}")
     print(f"\n{seen} audio cells seen; {dropped} dropped as SHM-stale "
           f"(pre-63ba621 cross-contamination; lower bound — see aud_stale).")
     print("skip/s is the discriminator; ur is noise. No verdicts below N=3.")
+    print(f"{with_drop} scored cells carry drop= (drop-counter builds); DROP/min is "
+          f"over those alone — '-' is unknown, never zero.")
 
 
 def main():

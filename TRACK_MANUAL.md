@@ -894,7 +894,7 @@ empty; RPCS3.log `DeviceID: "auto_null"`.
 | `contact_sheet.sh` | one tar-over-ssh pull → labeled montage of a run's screenshots |
 | `grab_bog_sample.sh` | pulls newest bog perf samples + named-hotspot summary |
 | `session_postmortem.sh` + `sessions.tsv` | the evidence spine; every claim scores against it |
-| `etk_dyno.py` | knob A/B judge over the ledger (KPI-scored, N-disciplined) |
+| `etk_dyno.py` | knob A/B judge over the ledger (KPI-scored, N-disciplined); `--audio` ranks titles by skip/s, DROP/min alongside |
 | `blackbox_d.py` + `arm_blackbox.sh` | panic lead-up recorder |
 | `bog_profile.sh` | in-race CPU flame-graph, symbolized at capture |
 | `etk_drift.py` | OS-migration drift detector (build_id-keyed profile of every ROCKNIX surface ETK touches) |
@@ -951,7 +951,11 @@ list too long` → one-line fix onto the live wedge, Sentry resurrected mid-game
   live-race-path-specific (attract survived 1200 s+ where racing crashed in ~2 min).
 - **Audio underruns are forensically invisible:** RPCS3 zero-fills silently (no log line
   at any level). Audible stutter leaves NO trace; objective measurement requires the
-  fork-side counters (`aud=` col).
+  fork-side counters (`aud=` col). **So are whole-block drops** (ARMSX3 `14e740513`): a
+  5.33 ms block that does not fit the ring is discarded — a click with `ur=0`, the GT5P
+  signature. Drop-counter builds append `drop=` (per guest boot, after `buf_ms`); a cell
+  without it is UNKNOWN, never 0. `etk_dyno.py --audio` prints DROP/min over the carrying
+  cells only, with their own N; `tools/test_audio_stat.py` pins both line formats.
 - **Observability bias (operator doctrine, 2026-06-12):** shader-storm pain filters which
   games stay in player rotation, so community evidence systematically under-represents
   exactly the titles ETK exists for. Absence of community reports on a shader-heavy-title
