@@ -852,13 +852,20 @@ postmortem/ledger verdict. The engineering doctrine, each rule bought with an in
    node blocks until the *next* wedge; a post-hoc cat captures 0 bytes. A dmesg-only watch
    can never capture the redump — arming is the capture.
 2. **Watch dmesg** — the dominant crash class is dmesg-ONLY. `rocknix_spotter_loop.sh`
-   runs four detectors: ADRENO (a6xx fault) · **ADRENO-NOFAULT** (hangcheck newer than
+   runs five detectors: ADRENO (a6xx fault) · **ADRENO-NOFAULT** (hangcheck newer than
    mark with NO fault line — the SSX class, 2026-08-11: forward-progress collapse both the
    fault watch and the SILENT watch are blind to) · SILENT (live_stat staleness +
    `emu_alive()` cmdline-walk, never pgrep; a graceful exit reports `>>> GRACEFUL EXIT`,
    no stub) · NEW CORE / RPCS3 fatal (scans the log's BYTE DELTA since last tick — a fatal
    can land pre-buried under the syscall-stats flush; on a size DROP it re-baselines so a
-   relaunch can't re-fire on the previous session's fatal).
+   relaunch can't re-fire on the previous session's fatal; the core dir is read from
+   `core_pattern` — a fixed `/storage/cores` went blind when cores moved to the card) ·
+   **EXIT-HANG / EXIT-CRASH** (2026-09-27: the process outlives RPCS3's last shutdown line,
+   `gui_application: Deleting old game window`, by `EXITHANG_SECS`; 0.9.0.x left within
+   0.5–4.6 s, N=30. Banks threads + kernel stacks + gdb bt, toasts the driver when to R3. A
+   core after that line is EXIT-CRASH: core 0.9.1 aborted in a static destructor and the
+   "hang" was the kernel writing a multi-GB core to the card — kstack `vfs_coredump`).
+   `RESCUE_BREAK=0` keeps the watch up through keepalive rescues for late-session hunts.
 3. **Finalize size-stable** — wait ~10 s of no growth, never a fixed timer (a 6 s kill
    truncated a capture to 211 MB undecodable; size-stable got 587 MB complete). Captures
    can still be node-truncated even when size-stable — `rd_repair.py` recovers them

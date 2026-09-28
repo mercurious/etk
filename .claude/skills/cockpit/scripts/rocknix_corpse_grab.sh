@@ -54,7 +54,9 @@ if [ -n "$PID" ]; then
   echo "--- THREAD TABLE (tid state wchan comm) ---"
   { for t in /proc/$PID/task/*; do
       tid=${t##*/}
-      st=$(awk '{print $3}' "$t/stat" 2>/dev/null)
+      # state = first field after comm's LAST ") " — comm can hold spaces ("PPU[0x1000027] ",
+      # "RSX Sampler"), which shifted a plain $3 into the name (2026-09-27 GT6 grab: "Threa):2")
+      st=$(sed 's/^.*) //' "$t/stat" 2>/dev/null | cut -d' ' -f1)
       wc=$(cat "$t/wchan" 2>/dev/null)
       cm=$(cat "$t/comm" 2>/dev/null)
       printf '%s\t%s\t%s\t%s\n' "$tid" "$st" "${wc:-?}" "$cm"
