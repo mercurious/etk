@@ -1886,7 +1886,7 @@ if [ -n "${KERNEL_IMAGE:-}" ] && [ -f "${KERNEL_IMAGE:-}" ]; then
     # Skip re-staging if the rig already carries this exact Image (idempotent).
     K_RIG_SHA=$(ssh $RIG_SSH "sha256sum /flash/KERNEL.gtktest 2>/dev/null | cut -d' ' -f1" 2>/dev/null)
     scp -q "$KERNEL_IMAGE" "$RIG_SSH:/storage/rocknix-gtk.KERNEL.staging" 2>/dev/null
-    K_OUT=$(ssh $RIG_SSH "HOST_SHA='$K_HOST_SHA' K_CMDLINE='$K_CMDLINE' K_CMDLINE_QUIET='$K_CMDLINE_QUIET' FLIP2_DTB='$K_FLIP2_DTB' K_MODE='$K_MODE' K_RELEASE='$K_RELEASE' sh -s" 2>&1 << 'KERNELREMOTE'
+    K_OUT=$(ssh $RIG_SSH "HOST_SHA='$K_HOST_SHA' K_CMDLINE='$K_CMDLINE' K_CMDLINE_QUIET='$K_CMDLINE_QUIET' FLIP2_DTB='$K_FLIP2_DTB' K_MODE='$K_MODE' K_RELEASE='$K_RELEASE' ETK_INTERNAL_MIC='${ETK_INTERNAL_MIC:-1}' ETK_ROOT='$ETK_ROOT' sh -s" 2>&1 << 'KERNELREMOTE'
 set -e
 S=$(sha256sum /storage/rocknix-gtk.KERNEL.staging 2>/dev/null | cut -d' ' -f1)
 [ "$S" = "$HOST_SHA" ] || { echo "KERNEL_FAIL staging sha mismatch ($S)"; rm -f /storage/rocknix-gtk.KERNEL.staging; exit 1; }
@@ -1908,6 +1908,43 @@ printf '%s\n' "$K_MODE"    > /storage/rocknix-gtk/heal/mode
 # /flash/KERNEL, so on a virgin rig this IS the OS-shipped kernel. The managed
 # fallback entry boots it with the verbose forensic console.
 [ -f /flash/KERNEL.etk-stock ] || cp /flash/KERNEL /flash/KERNEL.etk-stock
+# FLIP 2 INTERNAL MIC DTB (ETK_INTERNAL_MIC, default 1). The built-in mic is a
+# WCD938x DMIC that the stock DT never powers (no DAPM source, no MIC BIAS3);
+# bin/etk_dtb_mic.py derives a kit DTB from THIS OS's stock Flip 2 DTB by
+# adding exactly two /sound properties (byte-verified; it refuses anything it
+# is unsure of). The GTK UFS entries boot the kit slot ONLY when the derive
+# succeeded and the /flash copy verifies; every other outcome keeps them on
+# the stock DTB and removes the slot. A `devicetree` that fails does NOT abort
+# a grub entry (DT-less boot), so an entry must never name a missing slot.
+# Not used by: the stock-kernel fallback (pristine by design) and the SD-card
+# branch (the card carries only its own stock DTB). osguard Phase B keeps the
+# slot coherent across ROCKNIX updates (heal bundle DTB.* below).
+GTK_DTB="$FLIP2_DTB"
+DTB_VERDICT="stock(off)"
+rm -f /storage/rocknix-gtk/heal/DTB.staged /storage/rocknix-gtk/heal/DTB.staged.sha256 /storage/rocknix-gtk/heal/DTB.base.sha256
+if [ "${ETK_INTERNAL_MIC:-1}" = "1" ]; then
+    DTB_OUT=$(python3 "$ETK_ROOT/bin/etk_dtb_mic.py" derive "/flash$FLIP2_DTB" /storage/rocknix-gtk/heal/DTB.staged 2>&1) || true
+    case "$DTB_OUT" in
+        DTB_MIC_OK*)
+            DTB_SHA=$(printf '%s' "$DTB_OUT" | sed -n 's/.*sha=\([0-9a-f]*\).*/\1/p')
+            cp /storage/rocknix-gtk/heal/DTB.staged /flash/boot/grub/etk-flip2.dtb
+            sync
+            if [ "$(sha256sum /flash/boot/grub/etk-flip2.dtb | cut -d' ' -f1)" = "$DTB_SHA" ]; then
+                printf '%s\n' "$DTB_SHA" > /storage/rocknix-gtk/heal/DTB.staged.sha256
+                printf '%s\n' "$DTB_OUT" | sed -n 's/.*base=\([0-9a-f]*\).*/\1/p' > /storage/rocknix-gtk/heal/DTB.base.sha256
+                GTK_DTB=/boot/grub/etk-flip2.dtb
+                DTB_VERDICT="mic"
+            else
+                DTB_VERDICT="stock(flash-copy-sha-mismatch)"
+            fi ;;
+        DTB_MIC_SKIP*) DTB_VERDICT="stock($(printf '%s' "$DTB_OUT" | awk '{print $2}'))" ;;
+        *)             DTB_VERDICT="stock(derive-failed)" ;;
+    esac
+fi
+if [ "$GTK_DTB" = "$FLIP2_DTB" ]; then
+    rm -f /flash/boot/grub/etk-flip2.dtb /storage/rocknix-gtk/heal/DTB.staged \
+          /storage/rocknix-gtk/heal/DTB.staged.sha256 /storage/rocknix-gtk/heal/DTB.base.sha256
+fi
 K_STOCK_CMDLINE="boot=LABEL=ROCKNIX disk=LABEL=STORAGE grub_portable rootwait console=tty0 loglevel=7 panic=30 gpt"
 # SD-card boot cmdlines — LOCKSTEP with os-install/build/build_gtk_image_v2.sh
 # (the card's own grub entries): unique labels ROCKNIX-GTK/GTKSTOR locate the
@@ -1948,12 +1985,12 @@ for CFG in /flash/EFI/BOOT/grub.cfg /flash/boot/grub/grub.cfg; do
         [ "$K_MODE" = "default" ] && printf '        savedefault\n'
         printf '        search --set -f /KERNEL.gtktest\n'
         printf '        linux /KERNEL.gtktest %s\n' "$K_CMDLINE_QUIET"
-        printf '        devicetree %s\n' "$FLIP2_DTB"
+        printf '        devicetree %s\n' "$GTK_DTB"
         printf '}\n'
         printf "menuentry 'ROCKNIX-GTK for Flip 2 (verbose)' \$menuentry_id_option 'etk-gtk-verbose' {\n"
         printf '        search --set -f /KERNEL.gtktest\n'
         printf '        linux /KERNEL.gtktest %s\n' "$K_CMDLINE"
-        printf '        devicetree %s\n' "$FLIP2_DTB"
+        printf '        devicetree %s\n' "$GTK_DTB"
         printf '}\n'
         printf "menuentry 'ROCKNIX-GTK fallback -- stock kernel' \$menuentry_id_option 'etk-fallback-stock' {\n"
         printf '        savedefault\n'
@@ -1980,7 +2017,7 @@ for CFG in /flash/EFI/BOOT/grub.cfg /flash/boot/grub/grub.cfg; do
         printf '                save_env saved_entry\n'
         printf '                search --set=root --label ROCKNIX --no-floppy\n'
         printf '                linux /KERNEL.gtktest %s\n' "$K_CMDLINE_QUIET"
-        printf '                devicetree %s\n' "$FLIP2_DTB"
+        printf '                devicetree %s\n' "$GTK_DTB"
         printf '        fi\n'
         printf '}\n'
         printf "menuentry 'ROCKNIX-GTK from SD card (verbose)' \$menuentry_id_option 'etk-sdcard-verbose' {\n"
@@ -1990,7 +2027,7 @@ for CFG in /flash/EFI/BOOT/grub.cfg /flash/boot/grub/grub.cfg; do
         printf '        else\n'
         printf '                search --set=root --label ROCKNIX --no-floppy\n'
         printf '                linux /KERNEL.gtktest %s\n' "$K_CMDLINE"
-        printf '                devicetree %s\n' "$FLIP2_DTB"
+        printf '                devicetree %s\n' "$GTK_DTB"
         printf '        fi\n'
         printf '}\n'
     } > "$CFG.etkblock"
@@ -2073,7 +2110,7 @@ mount -o remount,ro /flash || true
 # (the tail default= wins) and name the entry at that index.
 DEF_IDX=$(grep '^set default=' /flash/boot/grub/grub.cfg 2>/dev/null | tail -1 | sed 's/^set default=//')
 DEF_ENTRY=$(awk -v want="$DEF_IDX" '/^menuentry /{ if (n==want){ match($0,/'"'"'[^'"'"']*'"'"' \{/); print substr($0,RSTART+1,RLENGTH-4); exit } n++ }' /flash/boot/grub/grub.cfg 2>/dev/null)
-echo "KERNEL_OK gtktest_sha=$F keepalive=$(grep -qc 'msm.context_keepalive=1' /flash/EFI/BOOT/grub.cfg && echo on || echo off) bootdefault=$([ "$K_MODE" = "default" ] && echo gtk || echo stock) default_idx=${DEF_IDX:-none} default_entry=${DEF_ENTRY:-?}"
+echo "KERNEL_OK gtktest_sha=$F keepalive=$(grep -qc 'msm.context_keepalive=1' /flash/EFI/BOOT/grub.cfg && echo on || echo off) bootdefault=$([ "$K_MODE" = "default" ] && echo gtk || echo stock) dtb=$DTB_VERDICT default_idx=${DEF_IDX:-none} default_entry=${DEF_ENTRY:-?}"
 KERNELREMOTE
 )
     if echo "$K_OUT" | grep -q KERNEL_OK; then
@@ -2100,6 +2137,13 @@ KERNELREMOTE
         else
             say "${G}[ETK]${N} Custom kernel staged -> /flash/KERNEL.gtktest (parity=${K_KA:-off}); $K_BOOTMSG. Reboot on-device."
         fi
+        # Flip 2 internal-mic DTB verdict (the DT half of STEP 6.76's mic).
+        K_DTB=$(echo "$K_OUT" | sed -n 's/.* dtb=\([^ ]*\).*/\1/p')
+        case "$K_DTB" in
+            mic)          say "${G}[ETK]${N} Flip 2 internal mic: kit DTB derived from this OS's stock DTB (/flash/boot/grub/etk-flip2.dtb); the GTK entries boot it." ;;
+            "stock(off)") say "${C}[INFO] Flip 2 internal mic off (ETK_INTERNAL_MIC=0): GTK entries boot the stock DTB.${N}" ;;
+            *)            say "${Y}[WARN] Flip 2 internal mic NOT enabled (${K_DTB:-no verdict}): GTK entries boot the stock DTB; everything else is unaffected.${N}" ;;
+        esac
         # --- GTK boot-identity line (no image rebuild) ---
         # /etc/os-release (the stock boot version/date) is read-only squashfs, so
         # rebranding it needs the image lane. Instead we deploy a oneshot that
@@ -3075,6 +3119,71 @@ if [ "$ETK_DP_AUDIO_S16" = "1" ] && [ -f "./config/wireplumber-dp-s16.conf" ]; t
 else
     ssh $RIG_SSH "[ -f '$WP_CONF_RIG' ] && { rm -f '$WP_CONF_RIG'; systemctl restart wireplumber 2>/dev/null; }" 2>/dev/null
     [ "$ETK_DP_AUDIO_S16" != "1" ] && say "${G}[ETK]${N} DP capture-audio S16 pin removed (kill-switch)"
+fi
+# CAPTURE S16 PIN (same class, different direction): every capture PCM on this
+# card is the q6 passthrough with a backend FIXED at S16_LE/48k/2ch. PipeWire
+# negotiates S24 and the capture is garbage — the Flip 2's 3.5 mm headset mic
+# read -17.7 dBFS white noise at S24 and a clean -67 dBFS floor at S16 on the
+# same route (2026-09-29): the "broken jack mic" was this, not hardware. Also
+# required by the internal mic (STEP 6.76). Matches card0 capture nodes only;
+# playback untouched. Bounce-on-change like the DP pin. Kill-switch
+# ETK_CAPTURE_S16=0 removes it.
+ETK_CAPTURE_S16="${ETK_CAPTURE_S16:-1}"
+WP_CAP_RIG="/storage/.config/wireplumber/wireplumber.conf.d/51-etk-capture-s16.conf"
+if [ "$ETK_CAPTURE_S16" = "1" ] && [ -f "./config/wireplumber-capture-s16.conf" ]; then
+    NEW_SUM=$(shasum "./config/wireplumber-capture-s16.conf" 2>/dev/null | cut -d' ' -f1)
+    OLD_SUM=$(ssh $RIG_SSH "sha1sum '$WP_CAP_RIG' 2>/dev/null | cut -d' ' -f1")
+    if [ "$NEW_SUM" != "$OLD_SUM" ]; then
+        ssh $RIG_SSH "mkdir -p /storage/.config/wireplumber/wireplumber.conf.d && cat > '$WP_CAP_RIG' && systemctl restart wireplumber 2>/dev/null" \
+            < "./config/wireplumber-capture-s16.conf"
+        say "${G}[ETK]${N} Capture S16 pin deployed — headset jack mic fixed (WirePlumber bounced)"
+    else
+        say "${G}[ETK]${N} Capture S16 pin already current"
+    fi
+else
+    ssh $RIG_SSH "[ -f '$WP_CAP_RIG' ] && { rm -f '$WP_CAP_RIG'; systemctl restart wireplumber 2>/dev/null; }" 2>/dev/null
+    [ "$ETK_CAPTURE_S16" != "1" ] && say "${G}[ETK]${N} Capture S16 pin removed (kill-switch)"
+fi
+
+# ==========================================================
+# STEP 6.76: FLIP 2 INTERNAL MIC — UCM OVERLAY (boot-time bind)
+# ==========================================================
+# The UCM half of the built-in mic (the DT half is STEP 6.4's mic DTB). ROCKNIX's
+# Flip 2 UCM offers only the headset jack; the kit's HiFi-RP.conf is stock plus an
+# "Internal Microphone" device (WCD938x DMIC slot 3 -> TX DEC0 -> hw:,2, gain +12 dB)
+# that conflicts with Headset, so the jack wins when a headset is in and the built-in
+# mic otherwise. The stock file lives on read-only squashfs, so etk-ucm.service binds
+# the overlay over it at boot, before WirePlumber parses UCM (same vector as the
+# Turnip/RPCS3 binds). The bind script self-gates at every boot — Flip 2, the booted
+# DT carries the "Internal Mic" widget, the stock file is the overlay's base sha — and
+# otherwise leaves stock UCM (`journalctl -u etk-ucm` names the gate). Never binds live: takes
+# effect on the next boot, with the mic DTB. Validated 2026-09-29: overlay parsed by
+# alsaucm, Mic sequence captured live audio on hw:0,2, Headset/Mic conflict enforced.
+# Kill-switch ETK_INTERNAL_MIC=0 (also drops the mic DTB in STEP 6.4).
+ETK_INTERNAL_MIC="${ETK_INTERNAL_MIC:-1}"
+if [ "$ETK_INTERNAL_MIC" = "1" ] && [ -f ./config/ucm/sm8250-HiFi-RP.flip2.conf ] \
+        && [ -f ./config/etk-ucm-bind.sh ] && [ -f ./config/etk-ucm.service ]; then
+    if ssh $RIG_SSH "tr '\0' '\n' < /sys/firmware/devicetree/base/compatible 2>/dev/null | grep -q '^retroidpocket,rpflip2$'" 2>/dev/null; then
+        ssh $RIG_SSH "mkdir -p /storage/.config/etk-ucm && cat > /storage/.config/etk-ucm/HiFi-RP.conf" < ./config/ucm/sm8250-HiFi-RP.flip2.conf
+        ssh $RIG_SSH "tr -d '\r' > /storage/.config/etk-ucm-bind.sh" < ./config/etk-ucm-bind.sh
+        ssh $RIG_SSH "mkdir -p /storage/.config/system.d && tr -d '\r' > /storage/.config/system.d/etk-ucm.service" < ./config/etk-ucm.service
+        UCM_OUT=$(ssh $RIG_SSH "systemctl daemon-reload; systemctl enable /storage/.config/system.d/etk-ucm.service >/dev/null 2>&1; \
+            B=\$(sed -n 's/^ETK_UCM_BASE_SHA=\"\(.*\)\"/\1/p' /storage/.config/etk-ucm-bind.sh); \
+            S=\$(sha256sum /usr/share/alsa/ucm2/Qualcomm/sm8250/HiFi-RP.conf 2>/dev/null | cut -d' ' -f1); \
+            grep -q ' /usr/share/alsa/ucm2/Qualcomm/sm8250/HiFi-RP.conf ' /proc/mounts && M=bound || M=unbound; \
+            [ \"\$B\" = \"\$S\" ] && echo UCM_OK base=match now=\$M || echo UCM_OK base=STALE now=\$M" 2>/dev/null)
+        case "$UCM_OUT" in
+            *base=match*now=bound*) say "${G}[ETK]${N} Flip 2 internal mic: UCM overlay active (Internal Microphone; the headset jack wins when plugged)" ;;
+            *base=match*)           say "${G}[ETK]${N} Flip 2 internal mic: UCM overlay staged — active from the next boot (needs the STEP 6.4 mic DTB)" ;;
+            *base=STALE*)           say "${Y}[WARN] Flip 2 internal mic: this OS's stock HiFi-RP.conf differs from the overlay's base — the overlay will NOT bind (mic off, stock UCM). Refresh config/ucm/ from the new stock file and reinstall.${N}" ;;
+            *)                      say "${Y}[WARN] Flip 2 internal mic: UCM overlay deploy gave no status — check ssh output${N}" ;;
+        esac
+    else
+        say "${C}[INFO] Internal-mic UCM overlay skipped: not a Retroid Pocket Flip 2${N}"
+    fi
+else
+    ssh $RIG_SSH "systemctl disable etk-ucm.service >/dev/null 2>&1; rm -f /storage/.config/system.d/etk-ucm.service /storage/.config/etk-ucm-bind.sh; rm -rf /storage/.config/etk-ucm" 2>/dev/null
+    [ "$ETK_INTERNAL_MIC" != "1" ] && say "${G}[ETK]${N} Internal-mic UCM overlay removed (kill-switch; stock UCM from the next boot)"
 fi
 
 # ==========================================================

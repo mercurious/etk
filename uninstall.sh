@@ -197,6 +197,18 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
         systemctl restart wireplumber 2>/dev/null
         echo "    Removed: WirePlumber DP-audio S16 pin"
     fi
+    # Capture S16 pin (STEP 6.75) + Flip 2 internal-mic UCM overlay (STEP 6.76).
+    # The overlay bind (if live) clears on the next boot once the unit is gone;
+    # no in-session unmount while WirePlumber holds the card's UCM.
+    if [ -f /storage/.config/wireplumber/wireplumber.conf.d/51-etk-capture-s16.conf ]; then
+        rm -f /storage/.config/wireplumber/wireplumber.conf.d/51-etk-capture-s16.conf
+        systemctl restart wireplumber 2>/dev/null
+        echo "    Removed: WirePlumber capture S16 pin"
+    fi
+    systemctl disable etk-ucm.service 2>/dev/null
+    rm -f /storage/.config/system.d/etk-ucm.service /storage/.config/etk-ucm-bind.sh
+    rm -rf /storage/.config/etk-ucm
+    echo "    Removed: etk-ucm.service + internal-mic UCM overlay (stock UCM from the next boot)"
 
     # Stage III stability harness (v0.2.0): oneshot unit, coredump script,
     # profile.d env snippet. Restore the Rocknix stock core_pattern
@@ -325,7 +337,7 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
                 mv "$GE.tmp" "$GE"
             fi
         done
-        rm -f /flash/KERNEL.gtktest /flash/KERNEL.etk-stock
+        rm -f /flash/KERNEL.gtktest /flash/KERNEL.etk-stock /flash/boot/grub/etk-flip2.dtb
         sync
         mount -o remount,ro /flash 2>/dev/null
         echo "    Removed: GTK kernel entries + staged Images (default boot = stock device entry)"

@@ -36,6 +36,7 @@ person using it.
 | **installing a game** | **TOOLS** | runs in the background; a game launch outranks an install |
 | **updating from the couch** | **TOOLS → Check for ETK Updates** | every `gtk_stack.json` asset is fetchable from `releases/latest` |
 | **judging whether a change helped** | the ledger · `etk_dyno` · charts | the row is attributable and every claim carries its N |
+| **talking to the rig** (voice chat, the Flip 2's built-in mic or a headset) | PipeWire source `alsa_input…sound_card0…` ports **Internal Microphone** / **Headphone Microphone** · install lines `Flip 2 internal mic: …` (STEP 6.4 DTB, STEP 6.76 UCM) · `journalctl -u etk-ucm` at boot (the bind's verdict; the Sentry rewrites the tripwire log later in boot) | judged after a COLD boot, never at install: the booted DT carries `Internal Mic` (`/proc/device-tree/sound/widgets`), the UCM overlay is bound, capture runs S16 (`pactl list sources short`); a headset in the jack takes the port by priority; any gate failure = stock mic set + a named reason, never a silent half-state |
 | **doubting the card itself** — TREADWEAR (odd stalls, "is it dying?") | `tools/card_doctor.py` verdict card + `state/card_doctor/<run>/report.md` + the `treadwear` table (a row per run per card) | the verdict names its evidence (errors · two-pass hash agreement · latency tail · write class); a read-only tier never claims write endurance; `scan`/`quick`/`write` need `sudo` and the OPERATOR runs them; a reader fault is ruled out with a known-good card in the same reader (`--baseline`, `treadwear --vs`); wear is a TREND per tyre, never one report |
 
 > **THE RULE THIS TABLE EXISTS FOR: every loop ends at a SURFACE, and a change is not done
@@ -303,6 +304,29 @@ by that interval (bog metas carry `session_start=`), never by treating `epoch` a
   and the watchdog was actively **retired** (STEP 6.57 tears it down). The template:
   workaround → root fix → tear the workaround down. Emergency revive on a pre-fix kernel:
   `echo 3370000.codec > /sys/bus/platform/drivers_probe` (validated live, N=1).
+- **The Flip 2 microphones (2026-09-29, ollamadreno retro-voice work).** Both mics were
+  "broken" on ROCKNIX, for two different reasons. **Headset jack:** the hardware path was
+  fine all along — every capture PCM on this card is the q6 bit-exact passthrough with a
+  backend FIXED at S16/48k/2ch, PipeWire opened it at S24, and the capture was white noise
+  (same route: S24 −17.7 dBFS garbage, S16 a clean −67 dBFS floor). Fix: WirePlumber
+  capture S16 pin (STEP 6.75, `ETK_CAPTURE_S16`). **Built-in mic:** a WCD938x DMIC (data
+  slot 3 on the DMIC3/4 clock pair, MIC BIAS3 — the AYN Thor's wiring) that the stock DT
+  never powers (mainline gives WCD DMIC ADCs no DAPM source). Found by a DT hunt on a
+  one-shot grub entry (1 kHz loopback 86 dB above neighbours on slot 3 only; the no-bias
+  path dead at −57 dBFS; speech ASR-transcribed word-exact). Fix, no kernel change: a
+  card-level `"Internal Mic"` widget + `DMIC4 ← Internal Mic`, `DMIC4 ← MIC BIAS3` —
+  `bin/etk_dtb_mic.py` splices exactly those two `/sound` properties into the OS's own
+  stock DTB (no dtc: decompiling this DTB turns vreg_l11c's `<0x324b00>` into `"\02K"`,
+  which recompiles WRONG), refusing anything it is not sure of (byte-identical no-op
+  round-trip, node-for-node post-verify). STEP 6.4 boots the kit slot
+  `/boot/grub/etk-flip2.dtb` from the GTK UFS entries only when it verifies; osguard Phase B
+  keeps the slot coherent across OS updates (re-derive, or stock bytes, never a missing
+  devicetree — grub does not abort an entry on a failed `devicetree`). The UCM half (STEP
+  6.76) binds an overlay HiFi-RP.conf with an "Internal Microphone" device (conflicts with
+  Headset; the jack wins when plugged) at boot, gated on the booted DT's widget and the
+  stock file's sha. Kill-switch `ETK_INTERNAL_MIC=0`. Harnesses: `tools/test_dtb_mic.py`,
+  `test_dtb_slot.sh`, `test_ucm_bind.sh`, `test_osguard.sh` scenarios 8–12 (host + rig
+  BusyBox). Not yet on the flashable card (image lane) or the PowerShell port (no 6.4).
 - **The bog profiler.** `R1+DPAD-Down` mid-race → `perf record -F 199 -g` for
   `BOG_PROFILE_SECS` (default 30), **symbolized AT CAPTURE TIME** — the AppImage dwarfs
   mount dies with the session, so a later `perf script` resolves nothing. Meta sidecar
@@ -538,10 +562,10 @@ knobs, writes the handoff, verifies afterward from read-only telemetry.
 - **Step map (abridged):** wizard/pairing/live-session guard → 0 quiesce + Mesa
   fingerprint → 1 dirs → 2 vault PULL + Tier-B state backup + forensics offload → 3
   bin/scripts deploy → 4 vault PUSH → 5 Pitstop → 6 Sentry heredoc + `etk.service` → 6.4
-  kernel (grub twins, snapshot, device guard) → 6.5 Turnip catalog (sha-pinned; never
+  kernel (grub twins, snapshot, device guard, Flip 2 mic DTB) → 6.5 Turnip catalog (sha-pinned; never
   prunes the rig's `selected`) → 6.55 RPCS3 AppImage (sha-verified; free-space preflight)
   → 6.553 NEXT-BOOT BIND verdict → 6.56 env flags → 6.57 watchdog teardown → 6.6 power
-  applier → 6.65 black box (+ grub-drift tripwire) → 6.7 DP-mirror → 6.8 Stage III →
+  applier → 6.65 black box (+ grub-drift tripwire) → 6.7 DP-mirror → 6.75 S16 pins (DP + capture) → 6.76 internal-mic UCM → 6.8 Stage III →
   6.85 SD rebind (label-based v3) → 7 PADDOCK link.
 - **The emulator lane's deploy surface is STEP 6.553 NEXT-BOOT BIND** — printed at
   every install, read from the rig AFTER the bind service restarts (truth, not
@@ -578,7 +602,7 @@ knobs, writes the handoff, verifies afterward from read-only telemetry.
   `RIG_SSH`, `ETK_BUILD_TYPE` (FULL/LITE/RAW — tier-aware: FULL→LITE kills HUD/thermal
   daemons), `VAULT_SYNC`, `TURNIP_SO`, `KERNEL_*`, `RPCS3_APPIMAGE` (empty=certified
   auto-fetch / `stock` / dev path), `RPCS3_ENV_FLAGS`, `DEFAULT_MODE`, `ETK_HUD_MODE`,
-  `HUD_HEADER_HOLD_S`, `ETK_DP_MIRROR`, `BOG_PROFILE_SECS`, `PADDOCK_TOKEN`/`PADDOCK_REPO`,
+  `HUD_HEADER_HOLD_S`, `ETK_DP_MIRROR`, `ETK_DP_AUDIO_S16`/`ETK_CAPTURE_S16`, `ETK_INTERNAL_MIC`, `BOG_PROFILE_SECS`, `PADDOCK_TOKEN`/`PADDOCK_REPO`,
   `FORGE_*`. Its comment block is the fork-build provenance changelog.
 - **⚠️ THE OS-UPDATER TRAP (cost a frankenboot):** the ROCKNIX in-place updater writes the
   new kernel over **whatever file the running boot used** (`BOOT_IMAGE=`) — on a rig booted

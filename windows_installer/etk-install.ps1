@@ -99,7 +99,8 @@ if ("$liveCheck" -match "ETK_LIVE") {
 # skips the vault pull (8-13) and push (20-30) - no host vault on Windows -
 # and does not port STEP 6.4/6.45 (44-50) or STEPS 6.552/6.553/6.554 (68-78),
 # so those bands never appear. Monotonic non-decreasing to 100 is the
-# contract, not a dense sequence.
+# contract, not a dense sequence. Also not ported: STEP 6.76 (Flip 2
+# internal-mic UCM overlay) - it only binds on STEP 6.4's mic DTB.
 # ==========================================================
 $script:ToastId    = ""      # live notification id; replaces the card in place
 $script:ToastSh    = ""      # resolved rig-side sender path ("-" once given up)
@@ -395,6 +396,7 @@ $etkConf = @(
     "ETK_HUD_MODE=`"$EtkHudMode`"",
     "ETK_DP_MIRROR=`"$EtkDpMirror`"",
     "ETK_DP_AUDIO_S16=`"$EtkDpAudioS16`"",
+    "ETK_CAPTURE_S16=`"$EtkCaptureS16`"",
     "HUD_HEADER_HOLD_S=`"$HudHeaderHold`""
 ) -join "`n"
 Send-Text -Content ($etkConf + "`n") -RemotePath "$EtkRoot/etk.conf"
@@ -739,6 +741,26 @@ if (($EtkDpAudioS16 -ne "0") -and (Test-Path -LiteralPath $wpConfLocal)) {
     }
 } else {
     Invoke-Rig "[ -f '$wpConfRig' ] && { rm -f '$wpConfRig'; systemctl restart wireplumber 2>/dev/null; } || true" | Out-Null
+}
+# Capture S16 pin (install.sh Step 6.75, same class): every capture PCM on the
+# SM8250 card is the q6 passthrough with a backend fixed at S16/48k/2ch; at
+# PipeWire's default S24 the Flip 2 headset jack mic is white noise. Fixes the
+# jack mic (see config/wireplumber-capture-s16.conf). Deploy-on-change.
+$wpCapLocal = Join-Path $RepoRoot "config\wireplumber-capture-s16.conf"
+$wpCapRig   = "/storage/.config/wireplumber/wireplumber.conf.d/51-etk-capture-s16.conf"
+if (($EtkCaptureS16 -ne "0") -and (Test-Path -LiteralPath $wpCapLocal)) {
+    $newCap = (Get-Content -LiteralPath $wpCapLocal -Raw)
+    $oldCap = (Invoke-Rig "cat '$wpCapRig' 2>/dev/null") -join "`n"
+    if ($oldCap.Trim() -ne $newCap.Trim()) {
+        Invoke-Rig "mkdir -p /storage/.config/wireplumber/wireplumber.conf.d" | Out-Null
+        Send-Text -Content $newCap -RemotePath $wpCapRig
+        Invoke-Rig "systemctl restart wireplumber 2>/dev/null" | Out-Null
+        Write-Ok "Capture S16 pin deployed - headset jack mic fixed (WirePlumber bounced)."
+    } else {
+        Write-Ok "Capture S16 pin already current."
+    }
+} else {
+    Invoke-Rig "[ -f '$wpCapRig' ] && { rm -f '$wpCapRig'; systemctl restart wireplumber 2>/dev/null; } || true" | Out-Null
 }
 
 # ==========================================================

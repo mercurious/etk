@@ -286,6 +286,23 @@ ETK_DP_AUDIO=0
 # 1 = deploy the pin (default) · 0 = remove it (stock S24 behavior returns)
 ETK_DP_AUDIO_S16=1
 
+# --- Capture format pin (install.sh STEP 6.75, ships ON) ---
+# Fixes the Flip 2's 3.5 mm headset mic (and is required by the internal mic):
+# every capture path on this sound card only works at 16-bit/48 kHz, but
+# PipeWire opens it at 24-bit and records white noise. Playback is untouched.
+# 1 = deploy the pin (default) · 0 = remove it (stock S24 capture returns)
+ETK_CAPTURE_S16=1
+
+# --- Flip 2 internal microphone (install.sh STEP 6.4 + 6.76, ships ON) ---
+# The built-in mic works on Android but is dead on stock ROCKNIX (the device tree
+# never powers it). With a custom kernel deployed (KERNEL_IMAGE), install.sh
+# derives a kit DTB from the OS's own Flip 2 DTB (two added audio routes) for the
+# GTK boot entries, and a boot-time UCM overlay adds an "Internal Microphone"
+# input; a plugged headset still wins. Everything self-gates: any mismatch
+# (another device, an OS update that changed the DT or UCM) falls back to stock.
+# 1 = enable (default) · 0 = stock DTB + stock UCM (takes effect on reboot)
+ETK_INTERNAL_MIC=1
+
 # --- Gamepad self-heal on display unplug (read live by dpmirror_d) ---
 # Unplugging the capture cable can kill the controller system-wide (an OS
 # input-service fault; previously only a reboot recovered it). The kit now

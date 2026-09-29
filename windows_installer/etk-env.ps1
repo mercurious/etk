@@ -56,6 +56,7 @@ $DefaultMode   = "RACE"    # RACE | PIT           (DEFAULT_MODE)
 $EtkHudMode    = "BASIC"   # BASIC | GINSTR       (ETK_HUD_MODE)
 $EtkDpMirror   = "1"       # 1 = DP capture mirror on (ETK_DP_MIRROR)
 $EtkDpAudioS16 = "1"       # 1 = deploy the DP capture-audio S16 pin (ETK_DP_AUDIO_S16)
+$EtkCaptureS16 = "1"       # 1 = deploy the capture S16 pin - fixes the Flip 2 jack mic (ETK_CAPTURE_S16)
 $HudHeaderHold = "15"      # seconds              (HUD_HEADER_HOLD_S)
 
 # --- CUSTOM TURNIP DRIVER (Stage IV, install Step 6.5) -----------------

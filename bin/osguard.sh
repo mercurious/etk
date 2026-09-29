@@ -228,13 +228,57 @@ if [ "$GT_SHA" != "$WANT" ]; then
     flash_rw || { log "cannot remount $FLASH rw for Phase B"; finish 0; }
     act "restore GTK kernel -> $FLASH/KERNEL.gtktest" cp "$HEAL/KERNEL.staged" "$FLASH/KERNEL.gtktest" && CHANGED=1
 fi
-if [ -f "$HEAL/grub.block" ]; then
+# FLIP 2 INTERNAL MIC DTB SLOT (install.sh STEP 6.4 parity). The banked grub
+# block — and the live cfg — may boot /boot/grub/etk-flip2.dtb, derived from
+# the OS's stock Flip 2 DTB. An OS update can replace that stock DTB (base sha
+# changes) or leave the slot missing, and a grub `devicetree` that fails does
+# NOT abort the entry (DT-less boot). So BEFORE the block goes back in:
+#   bank coherent with this OS -> restore the banked DTB if the slot drifted
+#   base changed / bank damaged -> re-derive from the new stock DTB; if the
+#     patcher stands down, bank + slot hold the STOCK DTB byte-for-byte (mic
+#     off, boot safe — the UCM overlay self-gates on the booted DT). Either
+#     way the bank then matches the base, so the next boot is a no-op.
+# Last line of defence: if the slot is still absent, the block is replayed
+# with the stock DTB path (never an entry naming a missing devicetree).
+DTB_TOOL="${OSG_DTB_TOOL:-$ETK_ROOT/bin/etk_dtb_mic.py}"
+STOCK_DTB="$FLASH/boot/grub/sm8250-retroidpocket-flip2.dtb"
+SLOT="$FLASH/boot/grub/etk-flip2.dtb"
+BLOCK="$HEAL/grub.block"
+if grep -qs 'etk-flip2.dtb' "$HEAL/grub.block" "$FLASH/EFI/BOOT/grub.cfg" "$FLASH/boot/grub/grub.cfg" \
+        && [ -f "$STOCK_DTB" ]; then
+    BASE_NOW=$(sha256sum "$STOCK_DTB" | cut -d' ' -f1)
+    BASE_WAS=$(cat "$HEAL/DTB.base.sha256" 2>/dev/null)
+    D_WANT=$(cat "$HEAL/DTB.staged.sha256" 2>/dev/null)
+    D_GOT=$(sha256sum "$HEAL/DTB.staged" 2>/dev/null | cut -d' ' -f1)
+    if [ -n "$D_WANT" ] && [ "$D_GOT" = "$D_WANT" ] && [ "$BASE_NOW" = "$BASE_WAS" ]; then
+        if [ "$(sha256sum "$SLOT" 2>/dev/null | cut -d' ' -f1)" != "$D_WANT" ]; then
+            flash_rw && act "restore Flip 2 mic DTB -> $SLOT" cp "$HEAL/DTB.staged" "$SLOT" && CHANGED=1
+        fi
+    elif [ "$MODE" != "heal" ]; then
+        log "PLAN: re-derive the Flip 2 mic DTB (stock DTB base changed or bank damaged)"; CHANGED=1
+    else
+        D_OUT=$(python3 "$DTB_TOOL" derive "$STOCK_DTB" "$HEAL/DTB.staged" 2>&1) || true
+        case "$D_OUT" in
+            DTB_MIC_OK*) D_NOTE="re-derived for this OS" ;;
+            *) cp "$STOCK_DTB" "$HEAL/DTB.staged" 2>/dev/null
+               D_NOTE="patcher stood down ($(printf '%s' "$D_OUT" | awk '{print $2}')) - STOCK DTB in the slot, mic off" ;;
+        esac
+        sha256sum "$HEAL/DTB.staged" 2>/dev/null | cut -d' ' -f1 > "$HEAL/DTB.staged.sha256"
+        printf '%s\n' "$BASE_NOW" > "$HEAL/DTB.base.sha256"
+        flash_rw && act "Flip 2 mic DTB slot: $D_NOTE -> $SLOT" cp "$HEAL/DTB.staged" "$SLOT" && CHANGED=1
+    fi
+    if [ "$MODE" = "heal" ] && [ ! -f "$SLOT" ] && grep -q 'etk-flip2.dtb' "$HEAL/grub.block" 2>/dev/null; then
+        sed 's#/boot/grub/etk-flip2.dtb#/boot/grub/sm8250-retroidpocket-flip2.dtb#g' "$HEAL/grub.block" > "$HEAL/grub.block.stockdtb" \
+            && BLOCK="$HEAL/grub.block.stockdtb" && log "mic DTB slot unavailable - replaying the ETK entries with the stock DTB"
+    fi
+fi
+if [ -f "$BLOCK" ]; then
     for CFG in "$FLASH/EFI/BOOT/grub.cfg" "$FLASH/boot/grub/grub.cfg"; do
         [ -f "$CFG" ] || continue
         grep -q "etk-gtk-test" "$CFG" && continue
         flash_rw || continue
         if [ "$MODE" = "heal" ]; then
-            awk -v bf="$HEAL/grub.block" '
+            awk -v bf="$BLOCK" '
                 !ins && /^menuentry / { while ((getline line < bf) > 0) print line; close(bf); ins=1 }
                 { print }
                 END { if (!ins) { while ((getline line < bf) > 0) print line } }

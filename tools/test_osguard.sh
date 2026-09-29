@@ -125,6 +125,11 @@ sed -i.bak "1s/^/menuentry 'ROCKNIX-GTK for Flip 2' \$menuentry_id_option 'etk-g
     "$T/s3/flash/EFI/BOOT/grub.cfg" "$T/s3/flash/boot/grub/grub.cfg" 2>/dev/null \
     || { for C in "$T/s3/flash/EFI/BOOT/grub.cfg" "$T/s3/flash/boot/grub/grub.cfg"; do
            printf "menuentry 'x' \$menuentry_id_option 'etk-gtk-test' {\n}\n%s" "$(cat "$C")" > "$C"; done; }
+# ...and the numeric default pin a healthy install carries (STEP 6.4, index 0 =
+# etk-gtk-test). Without it the fixture is NOT healthy: Phase B correctly pins it
+# and asks for a reboot (this fixture predated the pin and failed since).
+for C in "$T/s3/flash/EFI/BOOT/grub.cfg" "$T/s3/flash/boot/grub/grub.cfg"; do
+    printf 'set default=0\nset timeout=2\n%s\n' "$(cat "$C")" > "$C"; done
 run_guard s3 7.1.2
 check "exit 0" [ "$(rc_of s3)" = "0" ]
 check "no marker on healthy boot" [ ! -f "$T/s3/marker" ]
@@ -188,6 +193,93 @@ sh "$GUARD" > "$T/s7/out.log" 2>&1
 RC7=$?
 check "exit 0 (disabled)" [ "$RC7" = "0" ]
 check "nothing healed while disabled" grep -q "rocknix-gtk" "$T/s7/flash/KERNEL"
+
+# ---- Flip 2 internal-mic DTB slot (Phase B, install.sh STEP 6.4 parity) ----
+# Fixture DTBs come from test_dtb_mic.py's synthetic FDT builder (python3 is on
+# the rig and the host); the patcher is bin/etk_dtb_mic.py (or a sibling copy
+# when the suite runs from /tmp on the rig).
+HERE_T=$(cd "$(dirname "$0")" && pwd)
+DTB_TOOL_T="$HERE_T/../bin/etk_dtb_mic.py"; [ -f "$DTB_TOOL_T" ] || DTB_TOOL_T="$HERE_T/etk_dtb_mic.py"
+# mk_dtb <out> <variant: stock|stock2|upstream>
+mk_dtb() {
+    ETK_DTB_MIC="$DTB_TOOL_T" python3 - "$1" "$2" "$HERE_T" <<'PY'
+import sys; sys.path.insert(0, sys.argv[3]); import test_dtb_mic as t
+v = sys.argv[2]
+blob = {"stock": t.flip2(),
+        "stock2": t.flip2(routing=("SpkrLeft IN", "WSA_SPK1 OUT", "AMIC2", "MIC BIAS2", "AMIC1", "MIC BIAS1")),
+        "upstream": t.flip2(widgets=("Microphone", "Int Mic"))}[v]
+open(sys.argv[1], "wb").write(blob)
+PY
+}
+# dtb_fixture <name> <stock-variant> — coherent GTK boot whose ETK entries an OS
+# update stripped; heal bundle banked by a mic-enabled install over variant 'stock'
+dtb_fixture() {
+    build_fixture "$1"; F="$T/$1"
+    fake_kernel "$F/flash/KERNEL"         7.2.0 stock BBB
+    fake_kernel "$F/flash/KERNEL.gtktest" 7.2.0 gtk   EEE
+    mkdir -p "$F/modules/7.2.0"
+    cp "$F/flash/KERNEL.gtktest" "$F/heal/KERNEL.staged"
+    sha256sum "$F/heal/KERNEL.staged" | cut -d' ' -f1 > "$F/heal/KERNEL.staged.sha256"
+    echo 7.2.0 > "$F/heal/KERNEL.staged.release"; echo default > "$F/heal/mode"
+    printf "menuentry 'ROCKNIX-GTK for Flip 2' \$menuentry_id_option 'etk-gtk-test' {\n        linux /KERNEL.gtktest quiet\n        devicetree /boot/grub/etk-flip2.dtb\n}\n" > "$F/heal/grub.block"
+    mk_dtb "$F/base.dtb" stock
+    python3 "$DTB_TOOL_T" derive "$F/base.dtb" "$F/heal/DTB.staged" >/dev/null
+    sha256sum "$F/heal/DTB.staged" | cut -d' ' -f1 > "$F/heal/DTB.staged.sha256"
+    sha256sum "$F/base.dtb" | cut -d' ' -f1 > "$F/heal/DTB.base.sha256"
+    mk_dtb "$F/flash/boot/grub/sm8250-retroidpocket-flip2.dtb" "$2"
+}
+run_guard_dtb() { N="$1"; shift; OSG_DTB_TOOL="${DTB_TOOL_OVERRIDE:-$DTB_TOOL_T}" run_guard "$N" 7.2.0 "$@"; }
+
+if command -v python3 >/dev/null 2>&1 && [ -f "$DTB_TOOL_T" ] && [ -f "$HERE_T/test_dtb_mic.py" ]; then
+
+echo "== SCENARIO 8: update stripped the entries, OS DTB unchanged, slot missing -> restore from bank =="
+dtb_fixture s8 stock
+run_guard_dtb s8
+check "exit 0" [ "$(rc_of s8)" = "0" ]
+check "slot restored == banked DTB" cmp -s "$T/s8/flash/boot/grub/etk-flip2.dtb" "$T/s8/heal/DTB.staged"
+check "entries re-inserted naming the kit slot" grep -q "devicetree /boot/grub/etk-flip2.dtb" "$T/s8/flash/EFI/BOOT/grub.cfg"
+check "stock DTB untouched" [ "$(sha256sum "$T/s8/flash/boot/grub/sm8250-retroidpocket-flip2.dtb" | cut -d' ' -f1)" = "$(cat "$T/s8/heal/DTB.base.sha256")" ]
+
+echo "== SCENARIO 9: OS update CHANGED the stock DTB (still patchable) -> re-derive, then no-op =="
+dtb_fixture s9 stock2
+run_guard_dtb s9
+check "exit 0" [ "$(rc_of s9)" = "0" ]
+check "slot is a patched DTB" python3 "$DTB_TOOL_T" check "$T/s9/flash/boot/grub/etk-flip2.dtb"
+check "slot derived from the NEW stock DTB (not the stale bank)" sh -c "python3 '$DTB_TOOL_T' derive '$T/s9/flash/boot/grub/sm8250-retroidpocket-flip2.dtb' '$T/s9/expect.dtb' >/dev/null && cmp -s '$T/s9/expect.dtb' '$T/s9/flash/boot/grub/etk-flip2.dtb'"
+check "bank base updated to the new stock DTB" [ "$(cat "$T/s9/heal/DTB.base.sha256")" = "$(sha256sum "$T/s9/flash/boot/grub/sm8250-retroidpocket-flip2.dtb" | cut -d' ' -f1)" ]
+cp "$T/s9/flash/boot/grub/etk-flip2.dtb" "$T/s9/slot.before"; rm -f "$T/s9/marker"
+run_guard_dtb s9
+check "second boot: slot unchanged" cmp -s "$T/s9/slot.before" "$T/s9/flash/boot/grub/etk-flip2.dtb"
+check "second boot: no reboot request (no marker)" [ ! -f "$T/s9/marker" ]
+
+echo "== SCENARIO 10: new stock DTB already has upstream widgets -> stock bytes in the slot, stable =="
+dtb_fixture s10 upstream
+run_guard_dtb s10
+check "exit 0" [ "$(rc_of s10)" = "0" ]
+check "slot == stock DTB byte-for-byte (mic off, boot safe)" cmp -s "$T/s10/flash/boot/grub/etk-flip2.dtb" "$T/s10/flash/boot/grub/sm8250-retroidpocket-flip2.dtb"
+check "log names the stand-down reason" grep -q "stock-dt-already-has-widgets" "$T/s10/trip.log"
+rm -f "$T/s10/marker"; run_guard_dtb s10
+check "second boot: no reboot request (no marker)" [ ! -f "$T/s10/marker" ]
+
+echo "== SCENARIO 11: patcher unavailable + slot unusable -> entries replayed with the STOCK DTB =="
+dtb_fixture s11 stock2
+mkdir -p "$T/s11/flash/boot/grub/etk-flip2.dtb"          # a directory: the slot can never be a file
+DTB_TOOL_OVERRIDE="$T/s11/no_such_tool.py" run_guard_dtb s11
+check "exit 0 (fail-soft)" [ "$(rc_of s11)" = "0" ]
+check "replayed entries name the stock DTB" grep -q "devicetree /boot/grub/sm8250-retroidpocket-flip2.dtb" "$T/s11/flash/EFI/BOOT/grub.cfg"
+check "no entry names the unusable slot" sh -c "! grep -q 'etk-flip2.dtb' '$T/s11/flash/EFI/BOOT/grub.cfg'"
+
+echo "== SCENARIO 12: --check with a changed stock DTB (plan only, no writes) =="
+dtb_fixture s12 stock2
+run_guard_dtb s12 --check
+check "exit 2 (findings)" [ "$(rc_of s12)" = "2" ]
+check "no slot written" [ ! -e "$T/s12/flash/boot/grub/etk-flip2.dtb" ]
+check "bank untouched" [ "$(cat "$T/s12/heal/DTB.base.sha256")" = "$(sha256sum "$T/s12/base.dtb" | cut -d' ' -f1)" ]
+check "plan logged" grep -q "PLAN: re-derive the Flip 2 mic DTB" "$T/s12/trip.log"
+
+else
+    echo "== SCENARIOS 8-12 SKIPPED: python3 / etk_dtb_mic.py / test_dtb_mic.py not available here =="
+fi
 
 echo ""
 echo "RESULT: $PASS passed, $FAIL failed  ($(basename "$GUARD") @ $(uname -s)/$(uname -m))"

@@ -5,6 +5,14 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 ## [Unreleased]
 
 ### Added
+- **The Retroid Pocket Flip 2's built-in microphone works.** It worked on
+  Android but was dead on ROCKNIX: the device tree never powered it. With a
+  custom kernel installed, the kit now builds a corrected device tree from
+  the one your OS ships (two added audio routes, checked byte for byte) and
+  adds an "Internal Microphone" input; a plugged-in headset still takes
+  priority. If anything doesn't match what the fix expects (a different
+  device, an OS update that changed the audio files), it quietly falls back
+  to stock. Turn it off with `ETK_INTERNAL_MIC=0`.
 - **Treadwear** (`tools/card_doctor.py`) — SD cards are the tyres of a racing
   emulation rig: the one consumable. This is the objective wear check, run from
   your computer with the card in a USB reader. Tiers: a quick identity/history
@@ -22,6 +30,11 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
   leaves its report.
 
 ### Fixed
+- **The 3.5 mm headset mic records speech instead of white noise.** The
+  hardware was fine: this sound card only records correctly at 16-bit, and
+  the audio server was opening it at 24-bit. The kit now pins every
+  microphone input to 16-bit (`ETK_CAPTURE_S16=0` to undo). USB-C and
+  Bluetooth headsets were never affected.
 - **A game installed from the TOOLS tab now records its config seed in the
   ledger** like the startup sweep always did, so the first title on a fresh
   card shows where its starting config came from (shipped tune or generic

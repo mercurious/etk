@@ -1,0 +1,15 @@
+[Unit]
+Description=ETK Flip 2 internal-mic UCM overlay (bind over the stock HiFi-RP.conf)
+# Must finish before WirePlumber (and PipeWire) parse the card's UCM at startup.
+After=local-fs.target
+Before=pipewire.service wireplumber.service pipewire-pulse.service
+ConditionPathExists=/storage/.config/etk-ucm-bind.sh
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh /storage/.config/etk-ucm-bind.sh
+ExecStop=/bin/sh -c 'umount /usr/share/alsa/ucm2/Qualcomm/sm8250/HiFi-RP.conf 2>/dev/null || true'
+
+[Install]
+WantedBy=multi-user.target
