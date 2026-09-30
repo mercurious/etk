@@ -37,6 +37,7 @@ person using it.
 | **updating from the couch** | **TOOLS → Check for ETK Updates** | every `gtk_stack.json` asset is fetchable from `releases/latest` |
 | **judging whether a change helped** | the ledger · `etk_dyno` · charts | the row is attributable and every claim carries its N |
 | **talking to the rig** (voice chat, the Flip 2's built-in mic or a headset) | PipeWire source `alsa_input…sound_card0…` ports **Internal Microphone** / **Headphone Microphone** · install lines `Flip 2 internal mic: …` (STEP 6.4 DTB, STEP 6.76 UCM) · `journalctl -u etk-ucm` at boot (the bind's verdict; the Sentry rewrites the tripwire log later in boot) | judged after a COLD boot, never at install: the booted DT carries `Internal Mic` (`/proc/device-tree/sound/widgets`), the UCM overlay is bound, capture runs S16 (`pactl list sources short`); a headset in the jack takes the port by priority; any gate failure = stock mic set + a named reason, never a silent half-state |
+| **putting the game on a TV / capture card** (USB-C → HDMI/DP adapter; the Anker's working face is logo-down) | the picture on the TV · the pad driving ES **on the TV** · install lines `USB-C video/power out: …` + `Flip 2 internal mic: …` (STEP 6.4 kit DTB) · `/dev/shm/etk_shm/dpmirror.log` (`pad-heal:` / `focus-guard:` lines) | judged after a COLD boot, adapter plugged at ES: regulator `usb_vbus` enabled (`/sys/class/regulator/*/num_users` = 1), partner `supports_usb_power_delivery=yes` with an `ff01` alt-mode, `DP-1 connected`, picture — then the pad moves ES on the TV. A pad that is "dead" while `gamepad_probe.py /dev/input/event10` shows presses = ES without sway focus, not InputPlumber. **Paid for 2026-09-30:** mainline 7.2 moved `vdd-vbus-supply` onto the connector (`b5817fa4026c`) and the 20260901 DT carried it nowhere — VBUS rode a DUMMY regulator for the whole 0.5.x cycle and nothing re-checked DP after the rebase |
 | **doubting the card itself** — TREADWEAR (odd stalls, "is it dying?") | `tools/card_doctor.py` verdict card + `state/card_doctor/<run>/report.md` + the `treadwear` table (a row per run per card) | the verdict names its evidence (errors · two-pass hash agreement · latency tail · write class); a read-only tier never claims write endurance; `scan`/`quick`/`write` need `sudo` and the OPERATOR runs them; a reader fault is ruled out with a known-good card in the same reader (`--baseline`, `treadwear --vs`); wear is a TREND per tyre, never one report |
 
 > **THE RULE THIS TABLE EXISTS FOR: every loop ends at a SURFACE, and a change is not done
@@ -325,8 +326,30 @@ by that interval (bog metas carry `session_start=`), never by treating `epoch` a
   6.76) binds an overlay HiFi-RP.conf with an "Internal Microphone" device (conflicts with
   Headset; the jack wins when plugged) at boot, gated on the booted DT's widget and the
   stock file's sha. Kill-switch `ETK_INTERNAL_MIC=0`. Harnesses: `tools/test_dtb_mic.py`,
-  `test_dtb_slot.sh`, `test_ucm_bind.sh`, `test_osguard.sh` scenarios 8–12 (host + rig
+  `test_dtb_slot.sh`, `test_ucm_bind.sh`, `test_osguard.sh` scenarios 8–13 (host + rig
   BusyBox). Not yet on the flashable card (image lane) or the PowerShell port (no 6.4).
+- **USB-C VBUS — the kit DTB's second delta (2026-09-30).** Symptom: no picture from a
+  USB-C→HDMI adapter on every 0.5.x kernel. Mechanism: mainline 7.2 moved the PM8150B VBUS
+  supply from the Type-C block (`vdd-vbus-supply`, `pm8150b.dtsi`) to the connector
+  (`vbus-supply`, `b5817fa4026c`) and the driver now reads the connector first
+  (`506927b6bf29`) — but only in-tree boards got the property; the ROCKNIX 20260901 Flip 2
+  DT has neither, and the fallback `devm_regulator_get("vdd-vbus")` hands out a DUMMY
+  regulator. Signature: boot `supply vdd-vbus not found, using dummy regulator`; per plug
+  `vbus vsafe5v fail`, tcpm `SRC_SEND_CAPABILITIES` TX status 2 (no GoodCRC — the adapter
+  is unpowered), partner `supports_usb_power_delivery=no`, zero partner alt-modes,
+  `usb_vbus state=disabled users=0`. Fix: `etk_dtb_mic.py` splices `vbus-supply =
+  <&pm8150b_vbus>` after `self-powered` (= ROCKNIX `1dc63e1531`), standing down when the
+  stock DT wires VBUS either way; not behind the mic knob (`--no-mic` still carries it).
+  Operator-validated by cold boot (DTB `4c968bf8…` — the golden check in
+  `test_dtb_mic.py`). Also blocks OTG for any bus-powered USB device.
+- **ES focus guard (`dpmirror_d`, 2026-09-30).** ROCKNIX's `for_window [app_id=
+  "emulationstation"] move output DP-1` leaves the seat focus on the bare workspace when ES
+  maps while DP is connected; SDL drops pad events for an unfocused window
+  (`SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS` unset) — pad "dead" while evdev flows. Hit live
+  when the plug's DP bring-up flapped DP-1 + tore down the USB root hubs → InputPlumber
+  tripwire → pad-heal → essway restart with DP back. Guard (per reconcile, DP connected,
+  no game): ES + wl-mirror the only windows and focus on nothing/the mirror → focus ES.
+  Knob `ETK_DP_ESFOCUS` (live, default 1). Harness `tools/test_dpmirror_focus.sh`.
 - **The bog profiler.** `R1+DPAD-Down` mid-race → `perf record -F 199 -g` for
   `BOG_PROFILE_SECS` (default 30), **symbolized AT CAPTURE TIME** — the AppImage dwarfs
   mount dies with the session, so a later `perf script` resolves nothing. Meta sidecar

@@ -300,7 +300,10 @@ ETK_CAPTURE_S16=1
 # GTK boot entries, and a boot-time UCM overlay adds an "Internal Microphone"
 # input; a plugged headset still wins. Everything self-gates: any mismatch
 # (another device, an OS update that changed the DT or UCM) falls back to stock.
-# 1 = enable (default) · 0 = stock DTB + stock UCM (takes effect on reboot)
+# The same kit DTB also carries the USB-C video/power-out fix (no switch: without
+# it the port can't power a DP/HDMI adapter or a bus-powered USB device on the
+# 20260901 OS); turning the mic off keeps that fix.
+# 1 = enable (default) · 0 = no mic routes + stock UCM (takes effect on reboot)
 ETK_INTERNAL_MIC=1
 
 # --- Gamepad self-heal on display unplug (read live by dpmirror_d) ---
@@ -313,6 +316,14 @@ ETK_INTERNAL_MIC=1
 #   force = heal on every unplug
 #   0 = off (manual recovery: restart inputplumber, then essway)
 ETK_DP_PADHEAL=1
+
+# --- Controller focus on the TV (read live by dpmirror_d) ---
+# When the menu restarts while the display adapter is plugged in (after a
+# gamepad self-heal, or booting with the adapter attached), it can come up on
+# the TV without input focus — and then ignores the controller. The kit gives
+# it focus back, only when nothing else is on screen (never during a game).
+#   1 = on (default) · 0 = off (manual fix: swaymsg '[app_id="emulationstation"] focus')
+ETK_DP_ESFOCUS=1
 
 # --- Private Paddock (optional — personal cloud backup of YOUR vaults/saves/tunes) ---
 # To get private shader storage, add your GitHub token here BEFORE running

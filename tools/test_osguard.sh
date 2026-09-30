@@ -194,20 +194,23 @@ RC7=$?
 check "exit 0 (disabled)" [ "$RC7" = "0" ]
 check "nothing healed while disabled" grep -q "rocknix-gtk" "$T/s7/flash/KERNEL"
 
-# ---- Flip 2 internal-mic DTB slot (Phase B, install.sh STEP 6.4 parity) ----
+# ---- Flip 2 kit DTB slot: mic + USB-C VBUS (Phase B, install.sh STEP 6.4 parity) ----
 # Fixture DTBs come from test_dtb_mic.py's synthetic FDT builder (python3 is on
 # the rig and the host); the patcher is bin/etk_dtb_mic.py (or a sibling copy
 # when the suite runs from /tmp on the rig).
 HERE_T=$(cd "$(dirname "$0")" && pwd)
 DTB_TOOL_T="$HERE_T/../bin/etk_dtb_mic.py"; [ -f "$DTB_TOOL_T" ] || DTB_TOOL_T="$HERE_T/etk_dtb_mic.py"
-# mk_dtb <out> <variant: stock|stock2|upstream>
+# mk_dtb <out> <variant: stock|stock2|upstream|stock_typec|stock2_typec>
 mk_dtb() {
     ETK_DTB_MIC="$DTB_TOOL_T" python3 - "$1" "$2" "$HERE_T" <<'PY'
 import sys; sys.path.insert(0, sys.argv[3]); import test_dtb_mic as t
 v = sys.argv[2]
 blob = {"stock": t.flip2(),
         "stock2": t.flip2(routing=("SpkrLeft IN", "WSA_SPK1 OUT", "AMIC2", "MIC BIAS2", "AMIC1", "MIC BIAS1")),
-        "upstream": t.flip2(widgets=("Microphone", "Int Mic"))}[v]
+        "upstream": t.flip2(widgets=("Microphone", "Int Mic")),
+        "stock_typec": t.flip2(pmic=t.pm8150b()),
+        "stock2_typec": t.flip2(routing=("SpkrLeft IN", "WSA_SPK1 OUT", "AMIC2", "MIC BIAS2", "AMIC1", "MIC BIAS1"),
+                                pmic=t.pm8150b())}[v]
 open(sys.argv[1], "wb").write(blob)
 PY
 }
@@ -275,10 +278,22 @@ run_guard_dtb s12 --check
 check "exit 2 (findings)" [ "$(rc_of s12)" = "2" ]
 check "no slot written" [ ! -e "$T/s12/flash/boot/grub/etk-flip2.dtb" ]
 check "bank untouched" [ "$(cat "$T/s12/heal/DTB.base.sha256")" = "$(sha256sum "$T/s12/base.dtb" | cut -d' ' -f1)" ]
-check "plan logged" grep -q "PLAN: re-derive the Flip 2 mic DTB" "$T/s12/trip.log"
+check "plan logged" grep -q "PLAN: re-derive the Flip 2 kit DTB" "$T/s12/trip.log"
+
+echo "== SCENARIO 13: mic-off install (ETK_INTERNAL_MIC=0, VBUS-only slot), OS update changed the stock DTB -> re-derive VBUS-only =="
+dtb_fixture s13 stock2_typec
+mk_dtb "$T/s13/base.dtb" stock_typec
+python3 "$DTB_TOOL_T" derive --no-mic "$T/s13/base.dtb" "$T/s13/heal/DTB.staged" >/dev/null
+sha256sum "$T/s13/heal/DTB.staged" | cut -d' ' -f1 > "$T/s13/heal/DTB.staged.sha256"
+sha256sum "$T/s13/base.dtb" | cut -d' ' -f1 > "$T/s13/heal/DTB.base.sha256"
+mkdir -p "$T/s13/noetk"; printf 'ETK_INTERNAL_MIC=0\n' > "$T/s13/noetk/etk.conf"
+run_guard_dtb s13
+check "slot re-derived from the NEW stock DTB, VBUS-only" sh -c "python3 '$DTB_TOOL_T' derive --no-mic '$T/s13/flash/boot/grub/sm8250-retroidpocket-flip2.dtb' '$T/s13/expect.dtb' >/dev/null && cmp -s '$T/s13/expect.dtb' '$T/s13/flash/boot/grub/etk-flip2.dtb'"
+check "the mic kill-switch survives the re-derive (no mic routes in the slot)" sh -c "python3 '$DTB_TOOL_T' check '$T/s13/flash/boot/grub/etk-flip2.dtb' >/dev/null; [ \$? = 3 ]"
+check "log names the deltas" grep -q "mic=off vbus=applied" "$T/s13/trip.log"
 
 else
-    echo "== SCENARIOS 8-12 SKIPPED: python3 / etk_dtb_mic.py / test_dtb_mic.py not available here =="
+    echo "== SCENARIOS 8-13 SKIPPED: python3 / etk_dtb_mic.py / test_dtb_mic.py not available here =="
 fi
 
 echo ""

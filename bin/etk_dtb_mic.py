@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""ETK Flip 2 internal-mic DTB derivation (install.sh STEP 6.4, bin/osguard.sh Phase B).
+"""ETK Flip 2 kit DTB derivation (install.sh STEP 6.4, bin/osguard.sh Phase B).
+
+Two independent deltas, each of which applies or stands down on its own:
+  mic   the built-in microphone (below; kill-switch ETK_INTERNAL_MIC=0 -> --no-mic)
+  vbus  the USB-C connector's VBUS supply (below the mic section)
 
 The Flip 2's built-in microphone is a WCD938x digital mic: data slot 3 on the codec's
 DMIC3/DMIC4 clock pair, powered from MIC BIAS3 (the AYN Thor's wiring for the same
@@ -14,18 +18,37 @@ Validated on the rig 2026-09-29 (ollamadreno mic hunt): 1 kHz loopback 86 dB abo
 neighbouring bins, and speech transcribed word-exact by Qwen3-ASR; the same slot with no
 bias is dead (-57 dBFS noise), which is what pins MIC BIAS3.
 
+USB-C VBUS (2026-09-30): mainline 7.2 moved the PM8150B VBUS supply from the Type-C
+block (`vdd-vbus-supply`, pm8150b.dtsi) to the connector (`vbus-supply`, b5817fa4026c)
+and taught the driver to read the connector first (506927b6bf29) — but only in-tree
+boards got the new property. The ROCKNIX 20260901 Flip 2 DT has NEITHER, so the driver
+falls back to a DUMMY regulator: in source role it "enables" nothing, VBUS never
+reaches 5 V ("vbus vsafe5v fail"), and a bus-powered DP/HDMI adapter (or any
+bus-powered USB device) never powers up — no PD, no DP alt-mode, no picture. One
+connector property fixes it, exactly as ROCKNIX 1dc63e1531 does upstream:
+
+    <pm8150b typec>/connector  vbus-supply = <&pm8150b_vbus>   (after self-powered)
+
+Validated on the rig 2026-09-30: cold boot on the spliced DTB -> usb_vbus enabled,
+PD partner with the ff01 alt-mode, DP-1 connected, picture on the TV. It stands down
+when the stock DT already wires VBUS either way (upstream took over).
+
 This tool derives the ETK DTB from whatever stock DTB the OS ships, by splicing the
 binary FDT directly (no dtc: decompiling the stock Flip 2 DTB turns vreg_l11c's
 <0x324b00> into "\\02K", which recompiles wrong). It refuses anything it is not sure of:
   * the input must re-serialize BYTE-IDENTICAL with no edits (proves the splicer), and
-  * the output must equal the input node-for-node except the two /sound properties.
+  * after each delta, the output must equal its input node-for-node except that
+    delta's properties (two /sound props; one connector prop).
 
-    etk_dtb_mic.py derive <stock.dtb> <out.dtb>
-        DTB_MIC_OK sha=<out> base=<in>      exit 0  (out written)
-        DTB_MIC_SKIP <reason> base=<in>     exit 3  (not applicable: use the stock DTB)
-        DTB_MIC_FAIL <reason>               exit 1
+    etk_dtb_mic.py derive [--no-mic] [--no-vbus] <stock.dtb> <out.dtb>
+        DTB_MIC_OK sha=<out> base=<in> mic=<st> vbus=<st>          exit 0  (out written)
+        DTB_MIC_SKIP <reason> base=<in> [mic=<st> vbus=<st>]       exit 3  (nothing applies:
+                                                                     use the stock DTB)
+        DTB_MIC_FAIL <reason>                                      exit 1
+      <st> = applied | off | the delta's stand-down reason. A SKIP's <reason> is the DTB-
+      level refusal, else the first requested delta's stand-down reason.
     etk_dtb_mic.py check <dtb>
-        DTB_MIC_PATCHED | DTB_MIC_STOCK     exit 0 / 3
+        DTB_MIC_PATCHED | DTB_MIC_STOCK     exit 0 / 3   (the mic delta only)
 """
 import hashlib
 import struct
@@ -40,10 +63,20 @@ CARD_COMPAT = b"qcom,sm8250-sndcard"
 MIC = "Internal Mic"
 WIDGETS = ["Microphone", MIC]
 ROUTES = [("DMIC4", MIC), ("DMIC4", "MIC BIAS3")]
+TYPEC_COMPAT = b"qcom,pm8150b-typec"
+CONN_COMPAT = b"usb-c-connector"
+VBUS_COMPAT = b"qcom,pm8150b-vbus-reg"
 
 
 class Skip(Exception):
-    pass
+    """The whole DTB is not ours to touch (or nothing applies): use the stock DTB."""
+    def __init__(self, reason, status=None):
+        super().__init__(reason)
+        self.status = status
+
+
+class Stand(Exception):
+    """One delta stands down; the other may still apply."""
 
 
 def _align4(n):
@@ -158,49 +191,65 @@ def is_patched(props):
     return MIC in w and all(p in pairs for p in ROUTES)
 
 
-def derive(data):
+def index(toks):
+    """path -> {"props": {name: (start, end, value)}, "after_props": offset past its last prop}."""
+    nodes, path = {}, []
+    for kind, _i, j, x in toks:
+        if kind == "begin":
+            path.append(x)
+            nodes["/".join(path) or "/"] = {"props": {}, "after_props": j}
+        elif kind == "end":
+            path.pop()
+        elif kind == "prop":
+            node = nodes["/".join(path) or "/"]
+            node["props"][x[0]] = (_i, j, x[1])
+            node["after_props"] = j
+    return nodes
+
+
+def _string_off(strings, name):
+    """(offset of name in the strings block, strings block) — reuse a whole-string hit, else append."""
+    needle = name.encode() + b"\0"
+    idx = strings.find(needle)
+    while idx > 0 and strings[idx - 1] != 0:
+        idx = strings.find(needle, idx + 1)
+    if idx < 0:
+        return len(strings), strings + needle
+    return idx, strings
+
+
+def _prop(nameoff, val):
+    blob = struct.pack(">III", PROP, len(val), nameoff) + val
+    return blob + b"\0" * (_align4(len(blob)) - len(blob))
+
+
+def _mic_delta(data):
+    """-> data + the two /sound properties (post-verified), or raise Stand(reason)."""
     h, sb, strings, toks = parse(data)
-    off_rsv, off_struct = h[4], h[2]
-    head_gap = data[HDR.size:off_struct]
-    if off_rsv != HDR.size:
-        raise Skip("unsupported-layout")
-    if build(h, head_gap, sb, strings) != data:
-        raise Skip("roundtrip-not-identical")
-    if DEVICE_COMPAT not in root_compat(toks):
-        raise Skip("not-a-flip2-dtb")
+    head_gap = data[HDR.size:h[2]]
     props = sound_props(toks)
     if props is None:
-        raise Skip("no-sound-node")
+        raise Stand("no-sound-node")
     if props.get("compatible", (0, 0, b""))[2].split(b"\0")[0] != CARD_COMPAT:
-        raise Skip("unexpected-sound-card")
+        raise Stand("unexpected-sound-card")
     if "audio-routing" not in props:
-        raise Skip("no-audio-routing")
+        raise Stand("no-audio-routing")
     if is_patched(props):
-        raise Skip("already-patched")
+        raise Stand("already-patched")
     if "widgets" in props:
-        raise Skip("stock-dt-already-has-widgets")          # upstream took over: stand down
+        raise Stand("stock-dt-already-has-widgets")          # upstream took over: stand down
     routing = _strlist(props["audio-routing"][2])
     if routing is None or len(routing) % 2:
-        raise Skip("malformed-audio-routing")
+        raise Stand("malformed-audio-routing")
     if MIC in routing:
-        raise Skip("stock-dt-already-routes-internal-mic")
+        raise Stand("stock-dt-already-routes-internal-mic")
 
-    # strings block: reuse "widgets" if the table already carries it, else append
-    idx, strings2 = strings.find(b"widgets\0"), strings
-    while idx > 0 and strings[idx - 1] != 0:
-        idx = strings.find(b"widgets\0", idx + 1)
-    if idx < 0:
-        idx, strings2 = len(strings), strings + b"widgets\0"
-
-    def prop(nameoff, val):
-        blob = struct.pack(">III", PROP, len(val), nameoff) + val
-        return blob + b"\0" * (_align4(len(blob)) - len(blob))
-
+    idx, strings2 = _string_off(strings, "widgets")
     r_start, r_end, r_val = props["audio-routing"]
     r_nameoff = struct.unpack_from(">I", sb, r_start + 8)[0]
     w_val = b"".join(s.encode() + b"\0" for s in WIDGETS)
     new_r = r_val + b"".join(s.encode() + b"\0" for p in ROUTES for s in p)
-    sb2 = sb[:r_start] + prop(idx, w_val) + prop(r_nameoff, new_r) + sb[r_end:]
+    sb2 = sb[:r_start] + _prop(idx, w_val) + _prop(r_nameoff, new_r) + sb[r_end:]
     out = build(h, head_gap, sb2, strings2)
 
     # post-verify: identical tree except the two /sound properties
@@ -219,27 +268,123 @@ def derive(data):
     return out
 
 
+def _vbus_delta(data):
+    """-> data + connector vbus-supply = <&pm8150b_vbus> (post-verified), or raise Stand(reason)."""
+    h, sb, strings, toks = parse(data)
+    head_gap = data[HDR.size:h[2]]
+    nodes = index(toks)
+
+    def has_compat(path, compat):
+        return compat in nodes[path]["props"].get("compatible", (0, 0, b""))[2].split(b"\0")
+
+    def okay(path):
+        st = nodes[path]["props"].get("status")
+        return st is None or st[2] in (b"okay\0", b"ok\0")
+
+    typec = [p for p in nodes if has_compat(p, TYPEC_COMPAT)]
+    if len(typec) != 1:
+        raise Stand("no-pm8150b-typec" if not typec else "multiple-pm8150b-typec")
+    if not okay(typec[0]):
+        raise Stand("typec-disabled")
+    if "vdd-vbus-supply" in nodes[typec[0]]["props"]:
+        raise Stand("typec-has-vdd-vbus-supply")             # pre-7.2 binding: the driver falls back to it
+    conn = typec[0] + "/connector"
+    if conn not in nodes or not has_compat(conn, CONN_COMPAT):
+        raise Stand("no-usb-c-connector")
+    cprops = nodes[conn]["props"]
+    if "vbus-supply" in cprops:
+        raise Stand("connector-has-vbus-supply")             # upstream took over (or already spliced)
+    regs = [p for p in nodes if has_compat(p, VBUS_COMPAT)]
+    if len(regs) != 1:
+        raise Stand("no-vbus-regulator" if not regs else "multiple-vbus-regulators")
+    # A disabled regulator never registers: the connector would then defer the Type-C
+    # probe FOREVER (no charging negotiation either). Only ever point at a live one.
+    if not okay(regs[0]):
+        raise Stand("vbus-regulator-disabled")
+    ph = nodes[regs[0]]["props"].get("phandle", (0, 0, b""))[2]
+    if len(ph) != 4:
+        raise Stand("vbus-regulator-no-phandle")
+    if [p for p in nodes if nodes[p]["props"].get("phandle", (0, 0, b""))[2] == ph
+            or nodes[p]["props"].get("linux,phandle", (0, 0, b""))[2] == ph] != regs:
+        raise Stand("vbus-phandle-not-unique")
+
+    idx, strings2 = _string_off(strings, "vbus-supply")
+    anchor = cprops["self-powered"][1] if "self-powered" in cprops else nodes[conn]["after_props"]
+    sb2 = sb[:anchor] + _prop(idx, ph) + sb[anchor:]
+    out = build(h, head_gap, sb2, strings2)
+
+    # post-verify: identical tree except the one connector property, at the anchor
+    _h2, _sb, _st, toks2 = parse(out)
+    exp, got = flatten(toks), flatten(toks2)
+    exp_edit, last = [], max(i for i, x in enumerate(exp) if x[0] == conn)
+    if "self-powered" in cprops:
+        last = next(i for i, x in enumerate(exp) if x[0] == conn and x[1] == "self-powered")
+    for i, x in enumerate(exp):
+        exp_edit.append(x)
+        if i == last:
+            exp_edit.append((conn, "vbus-supply", ph))
+    if got != exp_edit:
+        raise RuntimeError("post-verify: output tree differs beyond the vbus delta")
+    return out
+
+
+DELTAS = (("mic", _mic_delta), ("vbus", _vbus_delta))
+
+
+def derive(data, mic=True, vbus=True):
+    """-> (out, {delta: applied|off|reason}). Skip = the DTB is not ours, or nothing applies."""
+    h, sb, strings, toks = parse(data)
+    off_rsv, off_struct = h[4], h[2]
+    head_gap = data[HDR.size:off_struct]
+    if off_rsv != HDR.size:
+        raise Skip("unsupported-layout")
+    if build(h, head_gap, sb, strings) != data:
+        raise Skip("roundtrip-not-identical")
+    if DEVICE_COMPAT not in root_compat(toks):
+        raise Skip("not-a-flip2-dtb")
+    want, status, out = {"mic": mic, "vbus": vbus}, {}, data
+    for name, fn in DELTAS:
+        if not want[name]:
+            status[name] = "off"
+            continue
+        try:
+            out = fn(out)
+            status[name] = "applied"
+        except Stand as e:
+            status[name] = str(e)
+    if "applied" not in status.values():
+        reasons = [v for v in status.values() if v != "off"]
+        raise Skip(reasons[0] if reasons else "all-deltas-off", status)
+    return out, status
+
+
 def sha(b):
     return hashlib.sha256(b).hexdigest()
 
 
+def _status_str(status):
+    return " ".join(f"{k}={v}" for k, v in (status or {}).items())
+
+
 def main(argv):
-    if len(argv) == 4 and argv[1] == "derive":
-        data = open(argv[2], "rb").read()
+    flags = [a for a in argv[2:] if a.startswith("--")]
+    args = argv[:2] + [a for a in argv[2:] if not a.startswith("--")]
+    if len(args) == 4 and args[1] == "derive" and set(flags) <= {"--no-mic", "--no-vbus"}:
+        data = open(args[2], "rb").read()
         try:
-            out = derive(data)
+            out, status = derive(data, mic="--no-mic" not in flags, vbus="--no-vbus" not in flags)
         except Skip as e:
-            print(f"DTB_MIC_SKIP {e} base={sha(data)}")
+            print(f"DTB_MIC_SKIP {e} base={sha(data)} {_status_str(e.status)}".rstrip())
             return 3
         except Exception as e:  # noqa: BLE001 — any surprise = refuse, never write
             print(f"DTB_MIC_FAIL {type(e).__name__}: {e}")
             return 1
-        tmp = argv[3] + ".tmp"
+        tmp = args[3] + ".tmp"
         with open(tmp, "wb") as f:
             f.write(out)
         import os
-        os.replace(tmp, argv[3])
-        print(f"DTB_MIC_OK sha={sha(out)} base={sha(data)}")
+        os.replace(tmp, args[3])
+        print(f"DTB_MIC_OK sha={sha(out)} base={sha(data)} {_status_str(status)}")
         return 0
     if len(argv) == 3 and argv[1] == "check":
         try:

@@ -1,13 +1,15 @@
 #!/bin/sh
 # ============================================================
-# test_dtb_slot.sh — STEP 6.4 Flip 2 internal-mic DTB slot harness
+# test_dtb_slot.sh — STEP 6.4 Flip 2 kit DTB slot harness (mic + USB-C VBUS)
 # ------------------------------------------------------------
-# Extracts the "FLIP 2 INTERNAL MIC DTB" block VERBATIM from install.sh's
+# Extracts the "FLIP 2 KIT DTB" block VERBATIM from install.sh's
 # KERNELREMOTE heredoc (anti-drift: the test runs the shipped code), rewrites
 # only its /flash and heal paths into a private fixture, and asserts the
 # contract the grub entries depend on:
-#   * derive OK            -> GTK_DTB = kit slot, slot == heal DTB.staged, verdict mic
-#   * ETK_INTERNAL_MIC=0   -> GTK_DTB = stock, a previous slot + heal DTB.* REMOVED
+#   * derive OK            -> GTK_DTB = kit slot, slot == heal DTB.staged, verdict mic+vbus
+#   * ETK_INTERNAL_MIC=0   -> the VBUS fix still ships: slot = vbus-only (mic routes absent)
+#   * mic off + stock DT already wires VBUS -> GTK_DTB = stock, a previous slot + heal DTB.* REMOVED
+#   * mic on  + stock DT already wires VBUS -> slot = mic only, dtbvbus names the stand-down
 #   * stock DTB unusable   -> GTK_DTB = stock, slot REMOVED, verdict names the reason
 #   * python3 missing      -> GTK_DTB = stock (never a slot the entries can't boot)
 # The broken states are fixtures too: a suite that only sees the happy path
@@ -34,7 +36,7 @@ if ! command -v sha256sum >/dev/null 2>&1; then
 fi
 
 # The block under test: from its banner comment to the line before K_STOCK_CMDLINE=.
-awk '/^# FLIP 2 INTERNAL MIC DTB/{f=1} /^K_STOCK_CMDLINE=/{f=0} f' "$ROOT/install.sh" > "$T/block.raw"
+awk '/^# FLIP 2 KIT DTB/{f=1} /^K_STOCK_CMDLINE=/{f=0} f' "$ROOT/install.sh" > "$T/block.raw"
 check "block extracted from install.sh (non-empty, has the derive call)" grep -q 'etk_dtb_mic.py" derive' "$T/block.raw"
 
 # run_block <case> <ETK_INTERNAL_MIC> [PATH override]
@@ -43,7 +45,7 @@ run_block() {
     cp "$STOCK_SRC" "$C/flash/boot/grub/sm8250-retroidpocket-flip2.dtb"
     sed -e "s#/storage/rocknix-gtk/heal#$C/heal#g" -e "s#/flash/boot/grub/etk-flip2.dtb#$C/flash/boot/grub/etk-flip2.dtb#g" \
         -e "s#\"/flash\$FLIP2_DTB\"#\"$C/flash\$FLIP2_DTB\"#" "$T/block.raw" > "$C/block.sh"
-    printf '%s\n' 'echo "GTK_DTB=$GTK_DTB"; echo "DTB_VERDICT=$DTB_VERDICT"' >> "$C/block.sh"
+    printf '%s\n' 'echo "GTK_DTB=$GTK_DTB"; echo "DTB_VERDICT=$DTB_VERDICT"; echo "DTB_MIC=$DTB_MIC"; echo "DTB_VBUS=$DTB_VBUS"' >> "$C/block.sh"
     [ -n "${PRE:-}" ] && eval "$PRE"
     ( set -e; FLIP2_DTB=/boot/grub/sm8250-retroidpocket-flip2.dtb; ETK_INTERNAL_MIC="$2"; ETK_ROOT="$T/etk"
       [ -n "${3:-}" ] && PATH="$3"; . "$C/block.sh" ) > "$C/out" 2>&1
@@ -55,19 +57,33 @@ echo "== derive OK (ETK_INTERNAL_MIC=1, real stock DTB)"
 PRE= run_block mic 1
 check "block exits 0" [ "$(cat "$T/mic/rc")" = 0 ]
 check "GTK_DTB = kit slot" [ "$(val mic GTK_DTB)" = "/boot/grub/etk-flip2.dtb" ]
-check "verdict mic" [ "$(val mic DTB_VERDICT)" = "mic" ]
+check "verdict mic+vbus (the 20260901 DT wires VBUS nowhere)" [ "$(val mic DTB_VERDICT)" = "mic+vbus" ]
+check "per-delta tokens: mic=applied vbus=applied" [ "$(val mic DTB_MIC)/$(val mic DTB_VBUS)" = "applied/applied" ]
 check "slot present and == heal DTB.staged" cmp "$T/mic/flash/boot/grub/etk-flip2.dtb" "$T/mic/heal/DTB.staged"
 check "heal DTB.staged.sha256 matches the slot" [ "$(cat "$T/mic/heal/DTB.staged.sha256")" = "$(sha256sum "$T/mic/flash/boot/grub/etk-flip2.dtb" | cut -d' ' -f1)" ]
 check "heal DTB.base.sha256 = the stock DTB" [ "$(cat "$T/mic/heal/DTB.base.sha256")" = "$(sha256sum "$STOCK_SRC" | cut -d' ' -f1)" ]
 check "stock DTB untouched" cmp "$T/mic/flash/boot/grub/sm8250-retroidpocket-flip2.dtb" "$STOCK_SRC"
 check "slot is the patched DTB (etk_dtb_mic check)" python3 "$T/etk/bin/etk_dtb_mic.py" check "$T/mic/flash/boot/grub/etk-flip2.dtb"
 
-echo "== kill-switch ETK_INTERNAL_MIC=0 with a slot left by a previous install"
+echo "== kill-switch ETK_INTERNAL_MIC=0 with a slot left by a previous install -> VBUS-only kit DTB"
 PRE='cp "$STOCK_SRC" "$C/flash/boot/grub/etk-flip2.dtb"; echo x > "$C/heal/DTB.staged"; echo y > "$C/heal/DTB.base.sha256"' run_block off 0
-check "GTK_DTB = stock" [ "$(val off GTK_DTB)" = "/boot/grub/sm8250-retroidpocket-flip2.dtb" ]
-check "verdict stock(off)" [ "$(val off DTB_VERDICT)" = "stock(off)" ]
-check "old slot removed" [ ! -e "$T/off/flash/boot/grub/etk-flip2.dtb" ]
-check "heal DTB.* removed" [ ! -e "$T/off/heal/DTB.staged" -a ! -e "$T/off/heal/DTB.base.sha256" ]
+check "GTK_DTB = kit slot (the VBUS fix is not behind the mic knob)" [ "$(val off GTK_DTB)" = "/boot/grub/etk-flip2.dtb" ]
+check "verdict vbus, mic=off" [ "$(val off DTB_VERDICT)/$(val off DTB_MIC)" = "vbus/off" ]
+check "stale slot replaced: slot == heal DTB.staged" cmp "$T/off/flash/boot/grub/etk-flip2.dtb" "$T/off/heal/DTB.staged"
+check "slot carries NO mic routes (etk_dtb_mic check -> STOCK)" sh -c "python3 '$T/etk/bin/etk_dtb_mic.py' check '$T/off/flash/boot/grub/etk-flip2.dtb'; [ \$? = 3 ]"
+check "slot carries the VBUS wire (re-derive stands down on it)" sh -c "python3 '$T/etk/bin/etk_dtb_mic.py' derive --no-mic '$T/off/flash/boot/grub/etk-flip2.dtb' '$T/off/x.dtb' | grep -q 'vbus=connector-has-vbus-supply'"
+
+echo "== stock DT already wires VBUS (upstream fix landed)"
+python3 "$T/etk/bin/etk_dtb_mic.py" derive --no-mic "$STOCK_SRC" "$T/wired.dtb" >/dev/null
+SAVE="$STOCK_SRC"; STOCK_SRC="$T/wired.dtb"
+PRE='cp "$SAVE" "$C/flash/boot/grub/etk-flip2.dtb"; echo x > "$C/heal/DTB.staged"; echo y > "$C/heal/DTB.base.sha256"' run_block wiredoff 0
+PRE= run_block wiredon 1
+STOCK_SRC="$SAVE"
+check "mic off: GTK_DTB = stock" [ "$(val wiredoff GTK_DTB)" = "/boot/grub/sm8250-retroidpocket-flip2.dtb" ]
+check "mic off: verdict names the vbus stand-down" [ "$(val wiredoff DTB_VERDICT)" = "stock(connector-has-vbus-supply)" ]
+check "mic off: old slot removed" [ ! -e "$T/wiredoff/flash/boot/grub/etk-flip2.dtb" ]
+check "mic off: heal DTB.* removed" [ ! -e "$T/wiredoff/heal/DTB.staged" -a ! -e "$T/wiredoff/heal/DTB.base.sha256" ]
+check "mic on: slot = mic only, vbus stand-down reported" [ "$(val wiredon DTB_VERDICT)/$(val wiredon DTB_VBUS)" = "mic/connector-has-vbus-supply" ]
 
 echo "== stock DTB is not a Flip 2 DT (patcher refuses)"
 printf 'not a dtb at all, just bytes........................................' > "$T/garbage.dtb"

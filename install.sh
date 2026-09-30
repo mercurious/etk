@@ -1908,39 +1908,47 @@ printf '%s\n' "$K_MODE"    > /storage/rocknix-gtk/heal/mode
 # /flash/KERNEL, so on a virgin rig this IS the OS-shipped kernel. The managed
 # fallback entry boots it with the verbose forensic console.
 [ -f /flash/KERNEL.etk-stock ] || cp /flash/KERNEL /flash/KERNEL.etk-stock
-# FLIP 2 INTERNAL MIC DTB (ETK_INTERNAL_MIC, default 1). The built-in mic is a
-# WCD938x DMIC that the stock DT never powers (no DAPM source, no MIC BIAS3);
-# bin/etk_dtb_mic.py derives a kit DTB from THIS OS's stock Flip 2 DTB by
-# adding exactly two /sound properties (byte-verified; it refuses anything it
-# is unsure of). The GTK UFS entries boot the kit slot ONLY when the derive
-# succeeded and the /flash copy verifies; every other outcome keeps them on
-# the stock DTB and removes the slot. A `devicetree` that fails does NOT abort
-# a grub entry (DT-less boot), so an entry must never name a missing slot.
-# Not used by: the stock-kernel fallback (pristine by design) and the SD-card
-# branch (the card carries only its own stock DTB). osguard Phase B keeps the
-# slot coherent across ROCKNIX updates (heal bundle DTB.* below).
+# FLIP 2 KIT DTB. bin/etk_dtb_mic.py derives a kit DTB from THIS OS's stock
+# Flip 2 DTB with two independent deltas (byte-verified; each refuses anything
+# it is unsure of and stands down on its own):
+#   mic  (ETK_INTERNAL_MIC, default 1 -> else --no-mic): the built-in WCD938x
+#        DMIC the stock DT never powers — two /sound properties.
+#   vbus (always): the USB-C connector's vbus-supply. Mainline 7.2 moved the
+#        PM8150B VBUS supply onto the connector node and the 20260901 Flip 2 DT
+#        wires it NOWHERE, so the Type-C driver toggles a dummy regulator: no
+#        5 V out, no DP/HDMI adapter, no bus-powered USB (2026-09-30). Stands
+#        down once the stock DT wires it (ROCKNIX 1dc63e1531).
+# The GTK UFS entries boot the kit slot ONLY when a delta applied and the /flash
+# copy verifies; every other outcome keeps them on the stock DTB and removes the
+# slot. A `devicetree` that fails does NOT abort a grub entry (DT-less boot), so
+# an entry must never name a missing slot. Not used by: the stock-kernel
+# fallback (pristine by design) and the SD-card branch (the card carries only
+# its own stock DTB). osguard Phase B keeps the slot coherent across ROCKNIX
+# updates (heal bundle DTB.* below).
 GTK_DTB="$FLIP2_DTB"
-DTB_VERDICT="stock(off)"
+DTB_VERDICT="stock(derive-failed)"
 rm -f /storage/rocknix-gtk/heal/DTB.staged /storage/rocknix-gtk/heal/DTB.staged.sha256 /storage/rocknix-gtk/heal/DTB.base.sha256
-if [ "${ETK_INTERNAL_MIC:-1}" = "1" ]; then
-    DTB_OUT=$(python3 "$ETK_ROOT/bin/etk_dtb_mic.py" derive "/flash$FLIP2_DTB" /storage/rocknix-gtk/heal/DTB.staged 2>&1) || true
-    case "$DTB_OUT" in
-        DTB_MIC_OK*)
-            DTB_SHA=$(printf '%s' "$DTB_OUT" | sed -n 's/.*sha=\([0-9a-f]*\).*/\1/p')
-            cp /storage/rocknix-gtk/heal/DTB.staged /flash/boot/grub/etk-flip2.dtb
-            sync
-            if [ "$(sha256sum /flash/boot/grub/etk-flip2.dtb | cut -d' ' -f1)" = "$DTB_SHA" ]; then
-                printf '%s\n' "$DTB_SHA" > /storage/rocknix-gtk/heal/DTB.staged.sha256
-                printf '%s\n' "$DTB_OUT" | sed -n 's/.*base=\([0-9a-f]*\).*/\1/p' > /storage/rocknix-gtk/heal/DTB.base.sha256
-                GTK_DTB=/boot/grub/etk-flip2.dtb
-                DTB_VERDICT="mic"
-            else
-                DTB_VERDICT="stock(flash-copy-sha-mismatch)"
-            fi ;;
-        DTB_MIC_SKIP*) DTB_VERDICT="stock($(printf '%s' "$DTB_OUT" | awk '{print $2}'))" ;;
-        *)             DTB_VERDICT="stock(derive-failed)" ;;
-    esac
-fi
+DTB_FLAGS=""; [ "${ETK_INTERNAL_MIC:-1}" = "1" ] || DTB_FLAGS="--no-mic"
+DTB_OUT=$(python3 "$ETK_ROOT/bin/etk_dtb_mic.py" derive $DTB_FLAGS "/flash$FLIP2_DTB" /storage/rocknix-gtk/heal/DTB.staged 2>&1) || true
+DTB_MIC=$(printf '%s' "$DTB_OUT" | sed -n 's/.* mic=\([^ ]*\).*/\1/p')
+DTB_VBUS=$(printf '%s' "$DTB_OUT" | sed -n 's/.* vbus=\([^ ]*\).*/\1/p')
+case "$DTB_OUT" in
+    DTB_MIC_OK*)
+        DTB_SHA=$(printf '%s' "$DTB_OUT" | sed -n 's/.*sha=\([0-9a-f]*\).*/\1/p')
+        cp /storage/rocknix-gtk/heal/DTB.staged /flash/boot/grub/etk-flip2.dtb
+        sync
+        if [ "$(sha256sum /flash/boot/grub/etk-flip2.dtb | cut -d' ' -f1)" = "$DTB_SHA" ]; then
+            printf '%s\n' "$DTB_SHA" > /storage/rocknix-gtk/heal/DTB.staged.sha256
+            printf '%s\n' "$DTB_OUT" | sed -n 's/.*base=\([0-9a-f]*\).*/\1/p' > /storage/rocknix-gtk/heal/DTB.base.sha256
+            GTK_DTB=/boot/grub/etk-flip2.dtb
+            DTB_VERDICT=""
+            [ "$DTB_MIC" = "applied" ] && DTB_VERDICT="mic"
+            [ "$DTB_VBUS" = "applied" ] && DTB_VERDICT="${DTB_VERDICT:+$DTB_VERDICT+}vbus"
+        else
+            DTB_VERDICT="stock(flash-copy-sha-mismatch)"
+        fi ;;
+    DTB_MIC_SKIP*) DTB_VERDICT="stock($(printf '%s' "$DTB_OUT" | awk '{print $2}'))" ;;
+esac
 if [ "$GTK_DTB" = "$FLIP2_DTB" ]; then
     rm -f /flash/boot/grub/etk-flip2.dtb /storage/rocknix-gtk/heal/DTB.staged \
           /storage/rocknix-gtk/heal/DTB.staged.sha256 /storage/rocknix-gtk/heal/DTB.base.sha256
@@ -2110,7 +2118,7 @@ mount -o remount,ro /flash || true
 # (the tail default= wins) and name the entry at that index.
 DEF_IDX=$(grep '^set default=' /flash/boot/grub/grub.cfg 2>/dev/null | tail -1 | sed 's/^set default=//')
 DEF_ENTRY=$(awk -v want="$DEF_IDX" '/^menuentry /{ if (n==want){ match($0,/'"'"'[^'"'"']*'"'"' \{/); print substr($0,RSTART+1,RLENGTH-4); exit } n++ }' /flash/boot/grub/grub.cfg 2>/dev/null)
-echo "KERNEL_OK gtktest_sha=$F keepalive=$(grep -qc 'msm.context_keepalive=1' /flash/EFI/BOOT/grub.cfg && echo on || echo off) bootdefault=$([ "$K_MODE" = "default" ] && echo gtk || echo stock) dtb=$DTB_VERDICT default_idx=${DEF_IDX:-none} default_entry=${DEF_ENTRY:-?}"
+echo "KERNEL_OK gtktest_sha=$F keepalive=$(grep -qc 'msm.context_keepalive=1' /flash/EFI/BOOT/grub.cfg && echo on || echo off) bootdefault=$([ "$K_MODE" = "default" ] && echo gtk || echo stock) dtb=$DTB_VERDICT dtbmic=${DTB_MIC:-none} dtbvbus=${DTB_VBUS:-none} default_idx=${DEF_IDX:-none} default_entry=${DEF_ENTRY:-?}"
 KERNELREMOTE
 )
     if echo "$K_OUT" | grep -q KERNEL_OK; then
@@ -2137,12 +2145,25 @@ KERNELREMOTE
         else
             say "${G}[ETK]${N} Custom kernel staged -> /flash/KERNEL.gtktest (parity=${K_KA:-off}); $K_BOOTMSG. Reboot on-device."
         fi
-        # Flip 2 internal-mic DTB verdict (the DT half of STEP 6.76's mic).
+        # Flip 2 kit DTB verdict: one line per delta (mic = the DT half of STEP
+        # 6.76's mic; vbus = USB-C 5 V out for DP/HDMI adapters + bus-powered USB).
         K_DTB=$(echo "$K_OUT" | sed -n 's/.* dtb=\([^ ]*\).*/\1/p')
+        K_DTBMIC=$(echo "$K_OUT" | sed -n 's/.* dtbmic=\([^ ]*\).*/\1/p')
+        K_DTBVBUS=$(echo "$K_OUT" | sed -n 's/.* dtbvbus=\([^ ]*\).*/\1/p')
         case "$K_DTB" in
-            mic)          say "${G}[ETK]${N} Flip 2 internal mic: kit DTB derived from this OS's stock DTB (/flash/boot/grub/etk-flip2.dtb); the GTK entries boot it." ;;
-            "stock(off)") say "${C}[INFO] Flip 2 internal mic off (ETK_INTERNAL_MIC=0): GTK entries boot the stock DTB.${N}" ;;
-            *)            say "${Y}[WARN] Flip 2 internal mic NOT enabled (${K_DTB:-no verdict}): GTK entries boot the stock DTB; everything else is unaffected.${N}" ;;
+            stock*) K_DTBWHERE="GTK entries boot the stock DTB" ;;
+            *)      K_DTBWHERE="GTK entries boot the kit DTB /flash/boot/grub/etk-flip2.dtb, derived from this OS's own" ;;
+        esac
+        case "$K_DTBMIC" in
+            applied) say "${G}[ETK]${N} Flip 2 internal mic: on ($K_DTBWHERE)." ;;
+            off)     say "${C}[INFO] Flip 2 internal mic off (ETK_INTERNAL_MIC=0).${N}" ;;
+            *)       say "${Y}[WARN] Flip 2 internal mic NOT enabled (${K_DTBMIC:-${K_DTB:-no verdict}}); everything else is unaffected.${N}" ;;
+        esac
+        case "$K_DTBVBUS" in
+            applied) say "${G}[ETK]${N} USB-C video/power out: VBUS wired to the connector — DP/HDMI adapters and bus-powered USB get 5 V ($K_DTBWHERE)." ;;
+            connector-has-vbus-supply|typec-has-vdd-vbus-supply)
+                     say "${C}[INFO] USB-C VBUS: this OS's DT already wires it (upstream fix) — no kit change needed.${N}" ;;
+            *)       say "${Y}[WARN] USB-C VBUS NOT wired (${K_DTBVBUS:-${K_DTB:-no verdict}}): DP/HDMI adapters and bus-powered USB devices get no power on the GTK kernel ($K_DTBWHERE).${N}" ;;
         esac
         # --- GTK boot-identity line (no image rebuild) ---
         # /etc/os-release (the stock boot version/date) is read-only squashfs, so

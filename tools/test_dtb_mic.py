@@ -75,8 +75,44 @@ def sl(*xs):
     return b"".join(x.encode() + b"\0" for x in xs)
 
 
+U32 = struct.Struct(">I").pack
+CONN = "/soc@0/spmi@c440000/pmic@2/typec@1500/connector"
+VBUS_PH = 0x201
+
+
+def pm8150b(typec_status="okay", reg_status="okay", vdd_vbus=False, conn_vbus=False, connector=True,
+            self_powered=True, reg_phandle=VBUS_PH, regs=1, typecs=1, dup_phandle=False):
+    """The PM8150B Type-C slice of the 20260901 Flip 2 DT (the VBUS delta's inputs)."""
+    reg_nodes = []
+    for n in range(regs):
+        rp = [("compatible", sl("qcom,pm8150b-vbus-reg"))]
+        if reg_status is not None:
+            rp.append(("status", sl(reg_status)))
+        rp.append(("reg", U32(0x1100 + n)))
+        if reg_phandle is not None:
+            rp.append(("phandle", U32(reg_phandle + n)))
+        reg_nodes.append((f"usb-vbus-regulator@{0x1100 + n:x}", rp, []))
+    cprops = [("compatible", sl("usb-c-connector")), ("power-role", sl("dual"))]
+    if self_powered:
+        cprops.append(("self-powered", b""))
+    if conn_vbus:
+        cprops.append(("vbus-supply", U32(VBUS_PH)))
+    cprops.append(("source-pdos", U32(0x2601912C)))
+    ports = ("ports", [("#address-cells", U32(1))], [("port@0", [("reg", U32(0))], [])])
+    tprops = [("compatible", sl("qcom,pm8150b-typec")), ("status", sl(typec_status)), ("reg", U32(0x1500))]
+    if vdd_vbus:
+        tprops.append(("vdd-vbus-supply", U32(VBUS_PH)))
+    tprops.append(("phandle", U32(0x300)))
+    tkids = [("connector", cprops, [ports])] if connector else []
+    typec_nodes = [(f"typec@{0x1500 + n:x}", tprops, tkids) for n in range(typecs)]
+    extra = [("temp-alarm@2400", [("phandle", U32(VBUS_PH))], [])] if dup_phandle else []
+    return ("spmi@c440000", [], [("pmic@2", [("compatible", sl("qcom,pm8150b"))],
+                                  reg_nodes + typec_nodes + extra)])
+
+
 def flip2(root_compat=("retroidpocket,rpflip2", "qcom,sm8250"), sound=True, widgets=None,
-          routing=("SpkrLeft IN", "WSA_SPK1 OUT", "AMIC2", "MIC BIAS2"), card="qcom,sm8250-sndcard"):
+          routing=("SpkrLeft IN", "WSA_SPK1 OUT", "AMIC2", "MIC BIAS2"), card="qcom,sm8250-sndcard",
+          pmic=None):
     sprops = [("compatible", sl(card)), ("model", sl("RetroidPocket"))]
     if widgets is not None:
         sprops.append(("widgets", sl(*widgets)))
@@ -84,7 +120,8 @@ def flip2(root_compat=("retroidpocket,rpflip2", "qcom,sm8250"), sound=True, widg
         sprops.append(("audio-routing", sl(*routing)))
     sprops.append(("phandle", struct.pack(">I", 0x266)))
     kids = [("soc@0", [("#address-cells", struct.pack(">I", 2))],
-             [("codec@3370000", [("compatible", sl("qcom,sm8250-lpass-va-macro"))], [])])]
+             [("codec@3370000", [("compatible", sl("qcom,sm8250-lpass-va-macro"))], [])]
+             + ([pmic] if pmic else []))]
     if sound:
         kids.append(("sound", sprops, [("mm1-dai-link", [("link-name", sl("MultiMedia1"))], [])]))
     kids.append(("audio-codec", [("compatible", sl("qcom,wcd9385-codec"))], []))
@@ -156,6 +193,84 @@ def main():
         rc, txt, _src, out = derive_file(blob, tmp, desc.replace(" ", "_").replace("/", "_"))
         check(f"{desc} -> SKIP {reason}", rc == 3 and f"DTB_MIC_SKIP {reason}" in txt and not os.path.exists(out))
 
+    def flat(blob):
+        return m.flatten(m.parse(blob)[3])
+
+    def read(p):
+        return open(p, "rb").read() if os.path.exists(p) else b""
+
+    print("== USB-C VBUS delta (7.2 moved vdd-vbus-supply to the connector; 20260901 DT has neither)")
+    rc, txt = run(["derive", src, os.path.join(tmp, "nopmic.dtb")])
+    check("no PM8150B Type-C in the DT -> vbus stands down, mic still applies",
+          rc == 0 and "mic=applied vbus=no-pm8150b-typec" in txt)
+    base = flip2(pmic=pm8150b())
+    rc, txt, src, out = derive_file(base, tmp, "vbus")
+    got = read(out)
+    check("derive OK with mic=applied vbus=applied", rc == 0 and "mic=applied vbus=applied" in txt)
+    extra = [x for x in flat(got) if x not in flat(base)] if got else []
+    check("exactly the mic pair + one connector vbus-supply differ",
+          sorted(x[:2] for x in extra) == sorted([("/sound", "audio-routing"), ("/sound", "widgets"), (CONN, "vbus-supply")]))
+    check("vbus-supply points at the regulator's phandle",
+          [x[2] for x in extra if x[1] == "vbus-supply"] == [U32(VBUS_PH)])
+    check("placed right after self-powered (ROCKNIX 1dc63e1531 order)",
+          [x[1] for x in flat(got) if x[0] == CONN] == ["compatible", "power-role", "self-powered", "vbus-supply", "source-pdos"])
+    rc, txt = run(["derive", "--no-mic", src, os.path.join(tmp, "vbus_only.dtb")])
+    got = read(os.path.join(tmp, "vbus_only.dtb"))
+    check("--no-mic: mic=off vbus=applied, and ONLY the connector prop differs",
+          rc == 0 and "mic=off vbus=applied" in txt
+          and [x[:2] for x in flat(got) if x not in flat(base)] == [(CONN, "vbus-supply")])
+    check("--no-mic output is mic-stock (check -> DTB_MIC_STOCK)",
+          run(["check", os.path.join(tmp, "vbus_only.dtb")]) == (3, "DTB_MIC_STOCK"))
+    rc, txt = run(["derive", "--no-vbus", src, os.path.join(tmp, "mic_only.dtb")])
+    got = read(os.path.join(tmp, "mic_only.dtb"))
+    check("--no-vbus: vbus=off, the connector untouched",
+          rc == 0 and "mic=applied vbus=off" in txt and not [x for x in flat(got) if x[0] == CONN and x not in flat(base)])
+    rc, txt = run(["derive", out, os.path.join(tmp, "vbus_again.dtb")])
+    check("re-derive on own output -> SKIP already-patched, vbus=connector-has-vbus-supply, nothing written",
+          rc == 3 and "DTB_MIC_SKIP already-patched" in txt and "vbus=connector-has-vbus-supply" in txt
+          and not os.path.exists(os.path.join(tmp, "vbus_again.dtb")))
+    nsp = flip2(pmic=pm8150b(self_powered=False))
+    rc, txt, _s, o = derive_file(nsp, tmp, "noselfpowered")
+    check("no self-powered anchor -> appended after the connector's last prop (before its child nodes)",
+          rc == 0 and [x[1] for x in flat(read(o)) if x[0] == CONN] == ["compatible", "power-role", "source-pdos", "vbus-supply"])
+    rc, txt, _s, o = derive_file(flip2(pmic=pm8150b(reg_status=None)), tmp, "nostatus")
+    check("regulator with no status property (DT: enabled) -> applied", rc == 0 and "vbus=applied" in txt)
+    reuse = fdt(("", [("compatible", sl("retroidpocket,rpflip2"))],
+                 [("usb@a600000", [("vbus-supply", U32(0x77))], []), pm8150b()]))
+    rc, txt, _s, o = derive_file(reuse, tmp, "vbus_reuse")
+    check("strings table already carries 'vbus-supply' -> offset reused, strings not grown",
+          rc == 0 and m.parse(read(o))[0][8] == m.parse(reuse)[0][8])
+    stands = [
+        ("connector already wires VBUS (upstream took over)", pm8150b(conn_vbus=True), "connector-has-vbus-supply"),
+        ("Type-C block carries the pre-7.2 vdd-vbus-supply", pm8150b(vdd_vbus=True), "typec-has-vdd-vbus-supply"),
+        ("regulator disabled (would defer the Type-C probe forever)", pm8150b(reg_status="disabled"), "vbus-regulator-disabled"),
+        ("Type-C block disabled", pm8150b(typec_status="disabled"), "typec-disabled"),
+        ("no connector node", pm8150b(connector=False), "no-usb-c-connector"),
+        ("no vbus regulator", pm8150b(regs=0), "no-vbus-regulator"),
+        ("two vbus regulators", pm8150b(regs=2), "multiple-vbus-regulators"),
+        ("two Type-C blocks", pm8150b(typecs=2), "multiple-pm8150b-typec"),
+        ("regulator has no phandle", pm8150b(reg_phandle=None), "vbus-regulator-no-phandle"),
+        ("regulator phandle shared by another node", pm8150b(dup_phandle=True), "vbus-phandle-not-unique"),
+    ]
+    for desc, pm, reason in stands:
+        blob = flip2(pmic=pm)
+        rc, txt, _s, o = derive_file(blob, tmp, "stand_" + reason)
+        got = read(o)
+        check(f"{desc} -> vbus={reason}, mic still applied, connector untouched",
+              rc == 0 and f"mic=applied vbus={reason}" in txt
+              and not [x for x in flat(got) if x[1] == "vbus-supply" and x not in flat(blob)])
+    rc, txt, _s, o = derive_file(flip2(widgets=("Microphone", "Int Mic"), pmic=pm8150b(conn_vbus=True)), tmp, "both_stand")
+    check("both deltas stand down -> SKIP with the mic reason first, both named, nothing written",
+          rc == 3 and "DTB_MIC_SKIP stock-dt-already-has-widgets" in txt
+          and "vbus=connector-has-vbus-supply" in txt and not os.path.exists(o))
+    wired = os.path.join(tmp, "wired.dtb")
+    open(wired, "wb").write(flip2(pmic=pm8150b(conn_vbus=True)))
+    rc, txt = run(["derive", "--no-mic", wired, os.path.join(tmp, "wired.out.dtb")])
+    check("--no-mic and vbus stands down -> SKIP names the vbus reason",
+          rc == 3 and "DTB_MIC_SKIP connector-has-vbus-supply" in txt and "mic=off" in txt)
+    rc, txt = run(["derive", "--bogus", wired, os.path.join(tmp, "bogus.dtb")])
+    check("unknown flag -> usage (2), nothing written", rc == 2 and not os.path.exists(os.path.join(tmp, "bogus.dtb")))
+
     if len(sys.argv) > 1:
         real = sys.argv[1]
         print(f"== real DTB {real}")
@@ -167,8 +282,15 @@ def main():
         if rc == 0:
             got = open(out, "rb").read()
             diff = [x for x in m.flatten(m.parse(got)[3]) if x not in m.flatten(toks)]
-            check("real DTB: only /sound widgets + audio-routing differ",
-                  sorted(x[1] for x in diff) == ["audio-routing", "widgets"])
+            want = {"mic": ["audio-routing", "widgets"], "vbus": ["vbus-supply"]}
+            exp = sorted(p for d, ps in want.items() if f"{d}=applied" in txt for p in ps)
+            check(f"real DTB: only the applied deltas' props differ ({txt.split(' ', 3)[-1]})",
+                  exp and sorted(x[1] for x in diff) == exp)
+            # GOLDEN: the 20260901 stock Flip 2 DTB -> the exact DTB the operator cold-booted
+            # on 2026-09-30 (VBUS on: picture on the TV; mic on: validated 2026-09-29).
+            if m.sha(data) == "fd7376637e23f0d43a88b52ed5fdb2874b4e9665fe5f7e386f5f77f749cb4fae":
+                check("20260901 stock DTB -> the operator-validated kit DTB 4c968bf8... byte-for-byte",
+                      m.sha(got) == "4c968bf8e9d6913cf751f90c15dd146eff35ff2a8c8b8ff8225dd84643f38c7d")
         else:
             check(f"real DTB derive ({txt})", False)
 

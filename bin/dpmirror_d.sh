@@ -185,6 +185,55 @@ _pad_heal() {
     fi
 }
 
+# ==========================================================
+# ES FOCUS GUARD (2026-09-30)
+# ==========================================================
+# ROCKNIX's `for_window [app_id="emulationstation"] move output DP-1` moves an
+# ES window that maps while DP-1 is connected, and sway leaves the seat focus
+# on the bare workspace instead of the moved window. SDL (ES) treats an
+# unfocused window as background and DROPS every gamepad event
+# (SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS is unset), so the pad reads "dead" in
+# ES while evdev shows the presses flowing out of InputPlumber. Seen live
+# 2026-09-30: the plug's DP bring-up flapped DP-1 and tore down the USB root
+# hubs -> InputPlumber tripwire -> the pad heal above -> essway restarted
+# with DP-1 back -> ES unfocused; `swaymsg '[app_id="emulationstation"] focus'`
+# restored the pad at once. Any ES (re)start with DP connected (booting with
+# the dock attached) takes the same path.
+# Guard (DP connected, no game running): when ES and the wl-mirror view are
+# the ONLY windows, and the seat focus is on nothing (a bare workspace/output)
+# or on the mirror view (never an input target), focus ES. It never takes
+# focus from any other window, and in steady state issues zero sway commands.
+# ETK_DP_ESFOCUS (live knob): 1 = guard on (default), 0 = off.
+ES_FOCUS_PY='import json, sys
+wins, foc = [], []
+def walk(n):
+    if n.get("pid"):
+        wins.append(n)
+    if n.get("focused"):
+        foc.append(n)
+    for c in n.get("nodes", []) + n.get("floating_nodes", []):
+        walk(c)
+walk(json.load(sys.stdin))
+apps = [w.get("app_id") for w in wins]
+if "emulationstation" not in apps or set(apps) - {"emulationstation", "at.yrlf.wl_mirror"} or len(foc) != 1:
+    sys.exit(1)
+f = foc[0]
+if f.get("type") in ("root", "output", "workspace"):
+    print("%s:%s" % (f.get("type"), f.get("name")))
+elif f.get("app_id") == "at.yrlf.wl_mirror":
+    print("wl-mirror")
+else:
+    sys.exit(1)'
+_es_focus_guard() {
+    pgrep -f "AppRun.wrappe[d]|rpcs3-s[a]" >/dev/null 2>&1 && return   # a game owns input
+    [ "$(_knob ETK_DP_ESFOCUS 1)" = "0" ] && return
+    _swaysock || return
+    local on
+    on=$(swaymsg -t get_tree 2>/dev/null | python3 -c "$ES_FOCUS_PY" 2>/dev/null) || return
+    _sway '[app_id="emulationstation"] focus' \
+        && _log "focus-guard: ES window unfocused (focus on $on) -> focused ES"
+}
+
 # SIGKILL: instant, so wl-mirror can never linger and fall back onto DP-1.
 _stop_mirror() {
     [ -n "$MIRROR_PID" ] && kill -9 "$MIRROR_PID" 2>/dev/null
@@ -243,6 +292,7 @@ _reconcile() {
             _audio_disarm
             _stop_mirror
         fi
+        _es_focus_guard
     else
         # DP gone / no session: disarm audio FIRST (a live audio backend makes
         # the bridge teardown time out), kill the mirror, then — on a true
@@ -257,6 +307,9 @@ _reconcile() {
     fi
     DP_LAST=$dp_now
 }
+
+# Test seam: tools/test_dpmirror_focus.sh sources this file for its functions only.
+[ "${DPMIRROR_LIB:-0}" = "1" ] && return 0
 
 trap '_audio_disarm; _stop_mirror; exit 0' TERM INT
 

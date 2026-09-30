@@ -30,6 +30,20 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
   leaves its report.
 
 ### Fixed
+- **USB-C video out works again on the custom kernel.** Since the 20260901
+  OS, plugging in a USB-C to HDMI/DisplayPort adapter gave no picture: the
+  newer kernel looks for the port's 5 V power switch in a different place in
+  the device tree, the OS's device tree didn't have it there, so the handheld
+  never powered the adapter (the same went for any USB device that draws power
+  from the port, like a flash drive or a wired pad). The kit's corrected device
+  tree now carries that one missing line, matching the fix ROCKNIX has queued
+  upstream, and stands aside once the OS ships it. Charging was never affected.
+- **The controller no longer goes dead on the TV after plugging in the
+  adapter.** When the menu restarted with the adapter connected (the kit's
+  gamepad self-heal does this, and so does booting with the adapter attached),
+  it could come up on the TV without input focus and ignore every button. The
+  kit now gives it focus back, only when nothing else is on screen and never
+  during a game. `ETK_DP_ESFOCUS=0` turns this off.
 - **The 3.5 mm headset mic records speech instead of white noise.** The
   hardware was fine: this sound card only records correctly at 16-bit, and
   the audio server was opening it at 24-bit. The kit now pins every
