@@ -867,7 +867,33 @@ fi
 # --copy-links: if a per-game vault dir is a Tier A symlink into internal UFS,
 # dereference it so the HOST archives the REAL shaders, not a dangling link
 # pointing at a rig-only path. No-op when the dir is a plain dir (SD rig).
+# --copy-links is also why a vault self-loop (<ID>/shaders/shaders -> itself,
+# see the Sentry's etk_link_cache) came out on the host as a real tree nested
+# 40 levels deep. Heal the loops on the rig FIRST and say so — this line is
+# where the operator sees the class — and exclude the name on both syncs so a
+# heal that misses can never nest again (a Mesa cache never has an entry
+# called `shaders`; only a stray link does).
 mkdir -p "./vault/$CHIPSET"
+VAULT_LOOPS=$(ssh $RIG_SSH "for L in $ETK_ROOT/vault/$CHIPSET/*/shaders/shaders; do [ -L \"\$L\" ] || continue; echo \"\$L -> \$(readlink \"\$L\")\"; rm -f \"\$L\"; done; echo VAULT_LOOPS_DONE" 2>/dev/null)
+# No end marker = the probe never ran: say so, never a silent OK.
+case "$VAULT_LOOPS" in
+    *VAULT_LOOPS_DONE) VAULT_LOOPS="${VAULT_LOOPS%VAULT_LOOPS_DONE}"; VAULT_LOOPS="${VAULT_LOOPS%
+}" ;;
+    *) VAULT_LOOPS=""; say "${Y}[WARN] Shader vault self-loop check did not run (ssh) — the PULL's exclude still blocks nesting${N}"; VAULT_LOOPS_SKIP=1 ;;
+esac
+if [ "${VAULT_LOOPS_SKIP:-0}" = 1 ]; then
+    :
+elif [ -n "$VAULT_LOOPS" ]; then
+    # Parent-shell loop, not a pipe: say() keeps TUI datalog state.
+    _VL_IFS=$IFS; IFS='
+'
+    for VL in $VAULT_LOOPS; do
+        say "${Y}[HEAL] Shader vault self-loop removed on the rig: ${VL#$ETK_ROOT/vault/$CHIPSET/}${N}"
+    done
+    IFS=$_VL_IFS
+else
+    say "${G}[OK] Shader vault: no self-loops (<ID>/shaders/shaders)${N}"
+fi
 # One rsync, no seam to subdivide — arm the bulk backstop, not another beacon.
 rig_toast 9 "Pulling shader vault" $ETK_TOAST_BULK_MS || true
 # Tier-A shader PULL (rig -> host harvest). Runs in full + backup modes; the
@@ -876,7 +902,7 @@ if [ "$VAULT_SYNC" = "off" ]; then
     say "${Y}[SKIP] Tier-A shader pull — VAULT_SYNC=off (Paddock owns shader backup)${N}"
     tui_step_progress 1 70
 else
-    tui_rsync 1 0 70 "Pulling vault shaders (rig → host)" --copy-links --ignore-existing --exclude='.DS_Store' "$RIG_SSH:$ETK_ROOT/vault/$CHIPSET/" "./vault/$CHIPSET/"
+    tui_rsync 1 0 70 "Pulling vault shaders (rig → host)" --copy-links --ignore-existing --exclude='.DS_Store' --exclude='/*/shaders/shaders' "$RIG_SSH:$ETK_ROOT/vault/$CHIPSET/" "./vault/$CHIPSET/"
 fi
 
 # --- TIER-B BACKUP: rig -> host (addendum §C) ---
@@ -1045,7 +1071,7 @@ if [ "$VAULT_SYNC" != "full" ]; then
     say "${Y}[SKIP] Tier-A shader push (host → rig) — VAULT_SYNC=$VAULT_SYNC${N}"
     tui_step_progress 3 100
 elif [ -d "./vault/$CHIPSET" ] && [ "$(ls -A "./vault/$CHIPSET" 2>/dev/null)" ]; then
-    tui_rsync 3 0 100 "Pushing vault shaders (host → rig)" --keep-dirlinks --ignore-existing --exclude='.DS_Store' "./vault/$CHIPSET/" "$RIG_SSH:$ETK_ROOT/vault/$CHIPSET/"
+    tui_rsync 3 0 100 "Pushing vault shaders (host → rig)" --keep-dirlinks --ignore-existing --exclude='.DS_Store' --exclude='/*/shaders/shaders' "./vault/$CHIPSET/" "$RIG_SSH:$ETK_ROOT/vault/$CHIPSET/"
 else
     say "${Y}[SKIP] No local vault found — nothing to push${N}"
     tui_step_progress 3 100
@@ -1317,14 +1343,37 @@ echo "0"    > "$SHM_DIR/vault_count"
 #
 # etk_link_cache <target_vault>: idempotently makes the fixed
 # Turnip cache path resolve into the per-game vault.
-#  - If the cache path is a REAL directory (legacy / first run),
-#    its contents are folded into the vault first; the real dir
-#    is only removed if that rsync SUCCEEDS, so shaders are
-#    never lost on a partial migrate.
+#  - The link is re-pointed by ATOMIC RENAME (temp link + mv -T),
+#    never rm-then-ln: the cache path is never missing, so Mesa
+#    never gets a gap to mkdir a real dir into, and a real dir
+#    that is there anyway makes mv FAIL instead of receiving the
+#    link inside it (see THE SELF-LOOP below).
+#  - A REAL directory squatting on the cache path is renamed to
+#    .pre-etk.<epoch> (never deleted), the link goes live at once,
+#    and only THEN is the squatter folded into the vault — with
+#    every symlink stripped out of it first.
 #  - The symlink is only (re)pointed when it differs from the
 #    desired target, and vault_d.sh is killed on a re-point so
 #    the Accountant re-baselines against the correct tree.
-# BusyBox-safe: readlink -f, rsync, ln -sfn, [ -L ], [ -d ].
+#  - CACHE LINKED is logged only after the link reads back as the
+#    target; anything else logs CACHE LINK FAILED and returns 1.
+#
+# THE SELF-LOOP ($VAULT/<ID>/shaders/shaders -> itself; 2026-06-21,
+# then again 2026-08-31 + 2026-09-27 under ln -sfn). Root-caused
+# 2026-09-30 from the 32 .pre-etk backups on the rig, every one of
+# which held a stray `shaders -> <vault>` link:
+#   1. the old code left the cache path MISSING (rm -f ... ln, and
+#      for seconds during the fold), at ignition, while RPCS3 was
+#      bringing up Vulkan — Mesa mkdir'd a REAL cache dir into it;
+#   2. `rm -f` can't remove a dir, so `ln -sfn` wrote shaders ->
+#      <vault> INSIDE it (-n guards a symlink, not a real dir) and
+#      CACHE LINKED was logged anyway;
+#   3. the next call folded that squatter into the vault with
+#      rsync -a, which copied the stray link along: same game =
+#      <vault>/shaders -> <vault>. install.sh's --copy-links PULL
+#      then wrote it out on the host 40 levels deep (21.9 GB).
+# Regression harness: tools/test_vault_link.sh (host + --rig).
+# BusyBox-safe: readlink, rsync, ln -s, mv -fT, [ -L ], [ -d ].
 # ==========================================================
 # ==========================================================
 # etk_game_running -- is a REAL game session live?
@@ -1373,42 +1422,86 @@ etk_link_cache() {
     [ -z "$DESIRED" ] && return 0
     mkdir -p "$DESIRED" "$(dirname "$RPCS3_CACHE_DIR")"
 
-    # Legacy/first-run: a REAL directory squatting on the cache path.
-    # Get it out of the way by RENAME (atomic on same fs, reliable on
-    # BusyBox) so the symlink can always be established — never leave
-    # the pipeline broken on a copy hiccup. Old contents are folded
-    # into the vault best-effort afterward; nothing is deleted, so a
-    # failed fold loses no shaders (they remain in the .pre-etk backup).
-    if [ -e "$RPCS3_CACHE_DIR" ] && [ ! -L "$RPCS3_CACHE_DIR" ] && [ -d "$RPCS3_CACHE_DIR" ]; then
-        BK="${RPCS3_CACHE_DIR}.pre-etk.$(date +%s)"
-        if mv "$RPCS3_CACHE_DIR" "$BK" 2>/dev/null; then
-            if command -v rsync >/dev/null 2>&1; then
-                rsync -a "$BK"/ "$DESIRED"/ 2>/dev/null
-            else
-                cp -a "$BK"/. "$DESIRED"/ 2>/dev/null
-            fi
-            echo "[$(date '+%H:%M:%S.%N')] CACHE DIR MOVED -> $BK, folded into $DESIRED" >> "$TRIPWIRE_LOG"
-        else
-            echo "[$(date '+%H:%M:%S.%N')] FATAL: cannot move real cache dir $RPCS3_CACHE_DIR" >> "$TRIPWIRE_LOG"
-            return 1
-        fi
+    # Already pointed here: open no window at all. One-level readlink, not
+    # -f: on a Tier A rig $DESIRED runs through a symlinked game dir, and a
+    # fully-resolved compare never matched — it re-linked every ignition.
+    if [ -L "$RPCS3_CACHE_DIR" ] && [ "$(readlink "$RPCS3_CACHE_DIR")" = "$DESIRED" ]; then
+        return 0
     fi
 
-    CUR_LINK="$(readlink -f "$RPCS3_CACHE_DIR" 2>/dev/null)"
-    if [ "$CUR_LINK" != "$DESIRED" ]; then
-        rm -f "$RPCS3_CACHE_DIR"
-        # -n (no-dereference): belt-and-suspenders for the rm above. If that rm
-        # ever fails to drop the symlink (TOCTOU / re-entry), a bare `ln -sf`
-        # would dereference the still-present symlink-to-dir and drop
-        # "$DESIRED/shaders -> $DESIRED" INSIDE the vault — a self-loop that
-        # recurses until the 40-link kernel limit and HANGS install.sh's
-        # --copy-links vault PULL (rsync "Too many levels of symbolic links").
-        # -n replaces the link atomically instead of writing inside it.
-        # (vault-loop regression fix, 2026-06-21.)
-        ln -sfn "$DESIRED" "$RPCS3_CACHE_DIR"
+    SQUATTERS=""
+    TMP_LINK="${RPCS3_CACHE_DIR}.etk-link.$$"
+    TRY=0
+    while :; do
+        TRY=$((TRY + 1))
+        # A REAL directory on the cache path (first run, or Mesa recreated
+        # it): rename it aside — atomic on the same fs, nothing deleted, so a
+        # failed fold below loses no shaders (they stay in the .pre-etk dir).
+        if [ -d "$RPCS3_CACHE_DIR" ] && [ ! -L "$RPCS3_CACHE_DIR" ]; then
+            BK="${RPCS3_CACHE_DIR}.pre-etk.$(date +%s).$TRY"
+            if mv "$RPCS3_CACHE_DIR" "$BK" 2>/dev/null; then
+                SQUATTERS="$SQUATTERS $BK"
+            else
+                echo "[$(date '+%H:%M:%S.%N')] FATAL: cannot move real cache dir $RPCS3_CACHE_DIR" >> "$TRIPWIRE_LOG"
+                return 1
+            fi
+        fi
+        # Build the link aside, then rename it over the path. rename(2)
+        # swaps an old symlink in one step; -T makes mv REFUSE a directory
+        # (a bare mv would follow a symlink-to-dir and drop the link INSIDE
+        # the vault — the very loop this replaces). A squatter that won the
+        # race between the two renames above fails it: go round again.
+        rm -f "$TMP_LINK"
+        if ln -s "$DESIRED" "$TMP_LINK" 2>/dev/null \
+           && mv -fT "$TMP_LINK" "$RPCS3_CACHE_DIR" 2>/dev/null; then
+            break
+        fi
+        rm -f "$TMP_LINK"
+        if [ "$TRY" -ge 3 ]; then
+            echo "[$(date '+%H:%M:%S.%N')] CACHE LINK FAILED -> $DESIRED (cache path keeps coming back as a real dir; $TRY tries)" >> "$TRIPWIRE_LOG"
+            return 1
+        fi
+    done
+
+    # Read-back: the log names what the path IS, not what we asked for.
+    if [ -L "$RPCS3_CACHE_DIR" ] && [ "$(readlink "$RPCS3_CACHE_DIR")" = "$DESIRED" ]; then
         pkill -f vault_d.sh 2>/dev/null
         echo "[$(date '+%H:%M:%S.%N')] CACHE LINKED -> $DESIRED" >> "$TRIPWIRE_LOG"
+    else
+        echo "[$(date '+%H:%M:%S.%N')] CACHE LINK FAILED -> $DESIRED (path reads back as '$(readlink "$RPCS3_CACHE_DIR" 2>/dev/null)')" >> "$TRIPWIRE_LOG"
+        return 1
     fi
+
+    # Fold the squatters only now — the link is live, so the copy can take
+    # as long as it likes. Strip every symlink first: Mesa never writes one
+    # into its cache, so any link in a squatter is a stray `ln`, and folding
+    # it is exactly how $DESIRED/shaders -> $DESIRED was born.
+    for BK in $SQUATTERS; do
+        find "$BK" -type l 2>/dev/null | while IFS= read -r L; do rm -f "$L"; done
+        if command -v rsync >/dev/null 2>&1; then
+            rsync -a "$BK"/ "$DESIRED"/ 2>/dev/null
+        else
+            cp -a "$BK"/. "$DESIRED"/ 2>/dev/null
+        fi
+        echo "[$(date '+%H:%M:%S.%N')] CACHE DIR MOVED -> $BK, folded into $DESIRED" >> "$TRIPWIRE_LOG"
+    done
+    return 0
+}
+
+# etk_heal_vault_loops: drop the self-loop class wherever it already stands.
+# The only name a stray link can carry inside a game's vault is `shaders`
+# (basename of the vault dir, see THE SELF-LOOP above), and Mesa never writes
+# a symlink into its cache — so a symlink at <ID>/shaders/shaders is never
+# data. Only the link is removed, never what it points at. A Tier A game dir
+# (vault/$CHIPSET/<ID> itself a symlink into internal storage) is traversed,
+# not touched.
+etk_heal_vault_loops() {
+    for L in "$ETK_ROOT/vault/$CHIPSET"/*/shaders/shaders; do
+        [ -L "$L" ] || continue
+        T="$(readlink "$L" 2>/dev/null)"
+        rm -f "$L" \
+          && echo "[$(date '+%H:%M:%S.%N')] VAULT LOOP HEALED: $L -> $T" >> "$TRIPWIRE_LOG"
+    done
     return 0
 }
 
@@ -1426,6 +1519,7 @@ SEED_ID="$(cat "$RECENT_ID_FILE" 2>/dev/null)"
 case "$SEED_ID" in
     ""|IDLE|UNKNOWN_ID) SEED_ID="NPUA80075" ;;
 esac
+etk_heal_vault_loops
 etk_link_cache "$ETK_ROOT/vault/$CHIPSET/$SEED_ID/shaders"
 
 # ==========================================================
