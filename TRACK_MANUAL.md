@@ -310,6 +310,8 @@ by that interval (bog metas carry `session_start=`), never by treating `epoch` a
   fork decodes remap 0x00 as ONE×4. Field-validated on four platforms. Operator's PS3
   hwtest: the console renders black too — so this is a **patch-not-fix**, default-ON; root
   cause reopened at the constants/shader layer. Upstream lane: psl1ght hardware test.
+  **Upstream closed #11912 on 2026-09-30 (PR #19653, a stale cached texture view); our
+  patch is not yet resolved against it — TODO in §A.4 Upstream lanes.**
 - **Kernel-root fixes over workarounds (the audio precedent).** The SM8250 ~1-in-4
   silent-boot coin flip (q6afe clock-vote error never woke the waiter; every LPASS device
   parked in `devices_deferred` forever) was bridged by a userspace watchdog, then **fixed
@@ -878,7 +880,16 @@ highest-value KPI lever) · ffs-v5 flip-status force-retire · GRID-B accumulati
 lap-mapping with 15 s bog samples. Campaign state lives in memory + dossiers, not here.
 
 **Upstream lanes (operator posts all upstream comments):** #11912 psl1ght hardware test
-for kd-11 · ROCKNIX audio-race patch not yet reported · aPS3e PRs #122/#127 open · ROCKNIX
+for kd-11 — **TODO (2026-10-01): resolve `GTK_REMAP0_ONE` against the upstream fix.**
+RPCS3 closed #11912 on 2026-09-30 with PR #19653 "RSX: Fix cached texture view remaps"
+(`1331e307ce`, `texture_cache.h`, 6 lines): the temporary texture cache returned a cached
+view without comparing its remap, so a request for ONE got the cached ZERO view. Not in
+our tree yet (the fork is based before it). At the next rebase: (1) A/B GT5P on a base
+that has `1331e307ce` with `GTK_REMAP0_ONE=0` vs default — if the road stays lit with our
+patch off, retire it (workaround → root fix → tear the workaround down) and update the
+README's "non-upstreamable patch" lines; (2) square the upstream explanation with the PS3
+hwtest ("the console renders black too") before calling either one the root cause
+· ROCKNIX audio-race patch not yet reported · aPS3e PRs #122/#127 open · ROCKNIX
 EFI fix landed (#2874) · candidates: InputPlumber malformed-udev-remove wedge, DP-sink
 default volume, `get_setting []` regex bug.
 
