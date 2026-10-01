@@ -285,9 +285,21 @@ by that interval (bog metas carry `session_start=`), never by treating `epoch` a
   from the near-crowning of `TU_DEBUG=sysmem`; delivered the sddepth verdict (4–5×
   wedge-rate cut at equal fps, 2026-07-10) and the dial-era result (median duration +67%).
 - **The shader vault + homologation.** Per-game vault (`vault/$CHIPSET/$ID/shaders`)
-  live-symlinked over Mesa's cache with `ln -sfn` (plain `-sf` once built a self-loop that
-  hung rsync at the kernel's 40-link limit); **never rsync the live cache — the symlink is
-  the mechanism** (install.sh works around it). Staleness keys on the **Mesa VERSION-string
+  live-symlinked over Mesa's cache, re-pointed by **atomic rename** (temp link + `mv -fT`) —
+  the cache path is never missing; **never rsync the live cache — the symlink is the
+  mechanism** (install.sh works around it). **The self-loop** (`<ID>/shaders/shaders` →
+  itself; 06-21, then 08-31 and 09-27 *under* `ln -sfn`): whenever the old rm-then-`ln`
+  re-point or the squatter fold left the path missing, RPCS3 bringing up Vulkan let Mesa
+  `mkdir` a REAL cache dir there; `rm -f` can't remove a dir, so `ln -sfn` wrote
+  `shaders -> <vault>` INSIDE it (`-n` guards a symlink, not a dir) and logged LINKED; the
+  next fold's `rsync -a` carried the link into the vault, and the `--copy-links` PULL wrote
+  it out on the host 40 levels deep (21.9 GB, 14 games). The tell: all 32 `.pre-etk`
+  squatters on the rig held that stray link. Fixed 2026-09-30 (`9bbbeb4`): squatters are
+  renamed aside, the link goes live, THEN they fold with symlinks stripped; LINKED only after
+  read-back (else `CACHE LINK FAILED`); `etk_heal_vault_loops` at Sentry boot + STEP 2
+  (`[HEAL]`/`[OK]` line); both vault syncs exclude `/*/shaders/shaders`. Harness
+  `tools/test_vault_link.sh` (host + `--rig`; `--against 38f27e1` must fail). A new
+  squatter is `.pre-etk.<epoch>.<try>`. Staleness keys on the **Mesa VERSION-string
   fingerprint** (`vault/.last_mesa.hash`); `vault_sweep.sh` prunes dead-epoch files (first
   run reclaimed 174,954 files / 1.2 GB). Stage III lifts Mesa's silent 1 GB LRU cap to 10 G.
   Sharing gates on a **homologation hash** (sha256 of the live driver's first 64 KB);
@@ -583,7 +595,7 @@ lines, 8 TUI steps). The operator runs it (§1.1); Claude stages artifacts, sets
 knobs, writes the handoff, verifies afterward from read-only telemetry.
 
 - **Step map (abridged):** wizard/pairing/live-session guard → 0 quiesce + Mesa
-  fingerprint → 1 dirs → 2 vault PULL + Tier-B state backup + forensics offload → 3
+  fingerprint → 1 dirs → 2 vault self-loop heal + PULL + Tier-B state backup + forensics offload → 3
   bin/scripts deploy → 4 vault PUSH → 5 Pitstop → 6 Sentry heredoc + `etk.service` → 6.4
   kernel (grub twins, snapshot, device guard, Flip 2 mic DTB) → 6.5 Turnip catalog (sha-pinned; never
   prunes the rig's `selected`) → 6.55 RPCS3 AppImage (sha-verified; free-space preflight)
@@ -1103,7 +1115,10 @@ every rung worse than stock Atomic, menus unreachable — the fault is not FIFO 
 the PPU-decoder interpreter A/B is the indicated probe when RR7's turn comes) ·
 `smartctl` through a USB card reader (2026-09-04: `-d scsi` stalled the Norelsys NS1081
 bridge → kernel USB reset → an 80-minute card_doctor scan died on the probe's timeout; USB
-readers expose no SMART anyway — card health is measured, never queried).
+readers expose no SMART anyway — card health is measured, never queried) · `ln -sfn` as the
+vault self-loop fix (2026-06-21; the loop came back twice under it — `-n` only guards a
+symlink, and the loop entered through a real dir Mesa recreated in a missing-link window.
+Root cause and fix: §2.4).
 
 ---
 
