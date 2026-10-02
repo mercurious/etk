@@ -212,15 +212,26 @@ _CERT=$(sed -n 's/^CERT_RPCS3="\(.*\)"$/\1/p' "$REPO_ROOT/install.sh" | head -1)
 # local miss + non-200 = FAIL; local miss + offline = FAIL (unprovable).
 _CERT_NCORES=$(ls "$REPO_ROOT"/emulators/*.AppImage 2>/dev/null | wc -l | tr -d ' ')
 _CERT_LOCAL=0; [ -n "$_CERT" ] && [ -f "$REPO_ROOT/emulators/$_CERT" ] && _CERT_LOCAL=1
+# Asks the API for releases/latest's asset LIST — never the download URL.
+# The old probe (curl -L of releases/latest/download/$_CERT) pulled the full
+# ~78 MB AppImage and bumped its public download_count on every forge, which
+# is the only usage signal the release has (2026-10-02). Asset absent from the
+# list = the 404 install.sh would hit; API unreachable/rate-limited = 000.
 if [ -n "$_CERT" ] && command -v curl >/dev/null 2>&1; then
-    _code=$(curl -s -o /dev/null -m 20 -w '%{http_code}' -L \
-        "https://github.com/mercurious/etk/releases/latest/download/$_CERT" 2>/dev/null || echo 000)
+    _rel=$(curl -s -m 20 -w '\n%{http_code}' \
+        -H 'Accept: application/vnd.github+json' \
+        "https://api.github.com/repos/mercurious/etk/releases/latest" 2>/dev/null || echo 000)
+    _code=$(printf '%s\n' "$_rel" | tail -n 1)
     case "$_code" in
-        200) ok "CERT_RPCS3 resolves on releases/latest (HTTP 200)" ;;
+        200) printf '%s\n' "$_rel" | grep -qF "\"name\": \"$_CERT\"" || _code=404 ;;
+        403|429) _code=000 ;;
+    esac
+    case "$_code" in
+        200) ok "CERT_RPCS3 is an asset of releases/latest (API asset list)" ;;
         000) if [ "$_CERT_LOCAL" = 0 ] && [ "$_CERT_NCORES" -gt 0 ]; then
-                 bad "CERT_RPCS3 has NO local copy and network is down — zero provable sources ($_CERT)"
+                 bad "CERT_RPCS3 has NO local copy and the GitHub API is unreachable/rate-limited — zero provable sources ($_CERT)"
              else
-                 skip "CERT_RPCS3 reachability: no network (local copy covers installs)"
+                 skip "CERT_RPCS3 reachability: GitHub API unreachable/rate-limited (local copy covers installs)"
              fi ;;
         *)   if [ "$_CERT_LOCAL" = 0 ] && [ "$_CERT_NCORES" -gt 0 ]; then
                  bad "CERT_RPCS3: HTTP $_code on releases/latest AND no local copy — install.sh AUTO has ZERO sources (the 2026-08-27 stock-nuke condition)"
