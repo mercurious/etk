@@ -1,4 +1,16 @@
 # The Emulation Tuning Kit - GTK Edition
+
+> [!WARNING]
+> **ETK users: do not install the ROCKNIX October update (20261001) yet.** *(posted 2026-10-02)*
+>
+> ROCKNIX 20261001 replaces the GRUB boot menu on SM8250 handhelds with the ROCKNIX ABL bootloader: the update flashes the new bootloader onto the device's internal storage and deletes GRUB. The GTK kernel boots through GRUB, so a rig running ROCKNIX-GTK is expected to **not boot** after taking this update — the updater writes its new kernel into the GTK kernel's file instead of the one the new bootloader loads. We found this by reading upstream's code, not yet by reproducing it on hardware, and we're treating it as real until proven otherwise.
+>
+> - **Stay on ROCKNIX 20260901.** ETK v0.9.0 keeps working exactly as it does today; decline the updater's offer until a new ETK release says it's safe. The v0.9.0 SD card image is built on 20260901 and is still safe to flash — just don't update it.
+> - **Need October ROCKNIX now?** Remove the kit first with `uninstall.sh` (it restores the standard kernel and boot menu), then take the update. Reinstall the kit when its October-ready release ships.
+> - **Already updated and the rig won't boot?** If ROCKNIX is on an SD card: put the card in a computer, open its boot partition (labelled `ROCKNIX-GTK` or `ROCKNIX`), delete `KERNEL`, and rename `KERNEL.gtktest` to `KERNEL`. The rig then boots standard ROCKNIX 20261001; ignore any ETK OS Guard message asking for a reboot, and run `uninstall.sh` until the new release. If ROCKNIX is installed to internal storage, please [open an issue](https://github.com/mercurious/etk/issues) before trying anything else and we'll work through it with you.
+
+> [!NOTE]
+> **The October ETK release is postponed.** The ROCKNIX developers shipped a remarkable amount in a single month — a new boot chain for SM8250, new controller input, new Mesa — and the kit's deepest layer (our kernel, the anti-lock boot settings, the one-pick stock-kernel fallback, the Flip 2 mic and USB-C video fixes) was built around the boot menu that just went away. Rather than bolt the kit onto the new chassis in a hurry, we're rebuilding the Emulation Tuning Kit on the October ROCKNIX and certifying it with the same cold-boot discipline as every release. The next release will say plainly when it's safe to update. Until then, **ETK v0.9.0 on ROCKNIX 20260901 is the supported setup.**
 The **Gran Turismo Kit** (GTK) is a specialty installation for your **Retroid Pocket Flip2 SM8250** (or [sibling device](https://github.com/mercurious/etk/#handheld-system-support)) built on patched forks of [ROCKNIX](https://github.com/mercurious/rocknix-gtk) (OS/kernel), [RPCS3](https://github.com/mercurious/etk-rpcs3-gtk) (PS3 emulator) and [MESA Turnip](https://github.com/mercurious/etk-turnip-gtk) (Adreno Vulkan video driver) integrated with a custom middleware (the **ETK**), originally tuned for the **Gran Turismo series**. GT HD Concept, GT 5 Prologue Spec II and Spec III, and GT6 are supported while GT5 remains *pending*. Other game support is *emergent* demonstrating promise of the project. The GTK installs by flashing an SD Card and booting into ROCKNIX or running an installer script from your computer.
 
 <img src="https://raw.githubusercontent.com/mercurious/etk/main/docs/screenshots/etk_NPUA80075_20260526_132550.png" width="640"
@@ -192,6 +204,8 @@ etk/
 The companion repos: [chiaki-rocknix](https://github.com/mercurious/chiaki-rocknix) (Remote Play client), [etk-rpcs3-gtk](https://github.com/mercurious/etk-rpcs3-gtk), [etk-turnip-gtk](https://github.com/mercurious/etk-turnip-gtk), [rocknix-gtk](https://github.com/mercurious/rocknix-gtk) and [wl-mirror-rocknix](https://github.com/mercurious/wl-mirror-rocknix) (screen mirror for DP capture; unpatched build mirror at a pinned ref) document all the forks the kit deploys.
 
 ## Notes on ROCKNIX OS Updates
+> **ROCKNIX 20261001 is the exception:** don't take it on an ETK rig yet — see the advisory at the top of this page. The guidance below applies to updates up to 20260901.
+
 A kernel and its OS are a matched pair with the OS image carrying all the drivers (WiFi, sound, storage). The kit's deepest modification is that your rig boots **our** kernel to support features including the
 ANTI-LOCK crash net and the audio-boot fixes. The ROCKNIX updater doesn't know we exist and so it drops its new kernel and resets the boot menu to factory. The **first boot after a ROCKNIX update comes up with no WiFi and no sound. This is expected.** The **ETK OS Guard** (v0.8.3+) repairs it automatically during that same boot during which you'll see an on-screen message and one reboot fully resolves. Don't reflash, don't panic.
 
