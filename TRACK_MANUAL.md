@@ -443,6 +443,28 @@ Caveat if the instance is ever rebuilt: a reserved IP must be re-attached to the
 new instance, and an unattached reservation can bill — delete it with the
 instance if the node is retired for good.
 
+**Rebuilt 2026-10-04 — `tools/forge/provision_node.sh` is the recipe.** The trial
+lapsed before the PAYG conversion landed and Oracle destroyed the instance (now
+PAYG; the A1 4/24 shape stays inside Always-Free). The audit of a fresh box
+found the 2026-08-05 lesson recurred one layer down: the turnip `/work/mesa-<V>`
+trees, the `etk-imgtool` container, the kernel 7.2 ground truth, the base img
+and the image `seed_config` existed ONLY on the dead node. The tool rebuilds all
+of it, phase by phase (`checkouts containers inputs groundtruth trees toolchain`,
+or `all`); its default `check` is read-only and is the surface — a lane is ready
+when its row reads READY. Three facts it encodes: (1) the kernel ground truth is
+derived from the PUBLIC base image (stock KERNEL's IKCONFIG + carved initramfs +
+the SYSTEM squashfs's firmware) — no rig contact needed; (2) `seed_config` is a
+rendered rig snapshot, gitignored — the Air copy was recovered 2026-10-04 from
+the 0.9.0 card's GTKSTOR (`/games-internal/roms/etk/.seed_config`, debugfs
+rdump); back it up, it has no other source; (3) the baked binaries are pushed
+from the Air, never re-minted on the node (not byte-reproducible; the image lane
+refuses them). Running any phase but `check` is MINT (§1.1) — operator runs it.
+**After a rebuild, `./forge.sh --status` lies:** its fingerprints are Air-side and
+the kernel/image lanes can SKIP "fresh" against an empty node. Prove the image
+lane with `--force`; NEVER the kernel lane at the certified name (it would replace
+the cold-boot-validated kernel) — build it in-container and compare, or mint a new
+`FORGE_KERNEL_VER`.
+
 Why it exists (2026-08-05): the LLVM-22 toolchain image took ~30 h across two failed
 attempts on the Air (ENOSPC, memory overload) and built unattended on etk-cloud first try.
 Native docker also removes the colima-virtiofs trap class. All six lanes validated

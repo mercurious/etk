@@ -283,9 +283,10 @@ tui_step_progress 0 15
 if [ "$MODE" = cloud ] && ! FSSH true 2>/dev/null; then
     tui_cleanup
     echo -e "${R}FATAL: build host '$FORGE_HOST' unreachable.${N}" >&2
-    echo    "  etk-cloud's public IP is EPHEMERAL — it changes on stop/start." >&2
-    echo    "  Re-read it from the Oracle console, update 'Host etk-cloud' in" >&2
-    echo    "  ~/.ssh/config, or run with --local for the colima fallback." >&2
+    echo    "  The IP is RESERVED (2026-08-30), so it no longer drifts. Likelier:" >&2
+    echo    "  the instance is stopped, or it was REBUILT and its new host key fails" >&2
+    echo    "  BatchMode — ssh-keygen -R the address, then one interactive ssh." >&2
+    echo    "  A rebuilt node: tools/forge/provision_node.sh. Or --local (colima)." >&2
     exit 2
 fi
 tui_step_progress 0 30
@@ -303,6 +304,7 @@ PROBE=$(FSSH "
                                \$HOME/etk/os-install/build/build_gtk_image_v2.sh; do
                         [ -e \"\$f\" ] && echo \"OK \$f\" || echo \"MISSING \$f\"; done
   echo '@RPCS3TREE';  cd '$FORGE_RPCS3_TREE' 2>/dev/null && git diff --stat | tail -1
+  echo '@RPCS3BASE';  git -C '$FORGE_RPCS3_TREE' cat-file -e '$FORGE_RPCS3_BASE^{commit}' 2>/dev/null && echo OK || echo MISSING
   echo '@END'
 " 2>/dev/null)
 probe_section() { printf '%s\n' "$PROBE" | awk -v s="@$1" '$0==s{f=1;next} /^@/{f=0} f'; }
@@ -321,6 +323,15 @@ lane_selected kernel  && need_container rocknix-gtk-kernel-sid kernel
 lane_selected image   && need_container etk-imgtool image
 if lane_selected rpcs3 && [ -z "$(probe_section IMAGEID | head -1)" ]; then
     MISSING_PRE="$MISSING_PRE rpcs3:image-$FORGE_RPCS3_IMAGE-missing"
+fi
+# A missing tree used to read as "clean" (the diff probe's `cd` failed silently)
+# and an unfetched BASE as nothing at all — both passed preflight and died only
+# after the detached lane launched. Same for turnip trees (2026-10-04 audit).
+if lane_selected rpcs3 && [ "$(probe_section RPCS3BASE | head -1)" != OK ]; then
+    MISSING_PRE="$MISSING_PRE rpcs3:$FORGE_RPCS3_TREE-lacks-BASE-$FORGE_RPCS3_BASE(fetch-armsx3)"
+fi
+if lane_selected turnip && probe_section TURNIPTREES | grep -qx unknown; then
+    MISSING_PRE="$MISSING_PRE turnip:no-/work/mesa-<V>-tree(provision_node.sh-trees)"
 fi
 if lane_selected image && probe_section IMGINPUTS | grep -q '^MISSING'; then
     MISSING_PRE="$MISSING_PRE image:$(probe_section IMGINPUTS | awk '/^MISSING/{print $2}' | tr '\n' ',')"
@@ -637,7 +648,7 @@ if lane_selected kernel; then
     else
         forge_status kernel WORK 0 "launching"
         lane_launch_or_attach kernel
-        lane_poll kernel 3 "docker exec rocknix-gtk-kernel-sid sh -c 'wc -c < /kernel/build712.log' 2>/dev/null"
+        lane_poll kernel 3 "docker exec rocknix-gtk-kernel-sid sh -c 'wc -c < /kernel/build$FORGE_KERNEL_BUILD.log' 2>/dev/null"
         if [ "$LANE_RC" = "0" ]; then
             tui_step_progress 3 90
             NSHA=$(FSSH "sha256sum \$HOME/rocknix-gtk/artifacts/$KNAME 2>/dev/null | cut -d' ' -f1")
