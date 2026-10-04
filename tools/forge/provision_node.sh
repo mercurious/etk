@@ -324,7 +324,7 @@ row host "tools + docker (no sudo)" "$( [ -z "$miss" ] && echo READY || echo "MI
 nh=$(git -C ~/etk rev-parse --short=9 HEAD 2>/dev/null)
 row all "~/etk @ Air HEAD $HEAD" "$( [ "$nh" = "$HEAD" ] && echo READY || echo "MISSING — node at ${nh:-none}")"
 for r in rocknix-gtk etk-turnip-gtk etk-rpcs3-gtk; do
-    h=$(git -C ~/$r rev-parse --short HEAD 2>/dev/null); row all "~/$r" "${h:+READY @ $h}${h:-MISSING}"
+    h=$(git -C ~/$r rev-parse --short HEAD 2>/dev/null); row all "~/$r" "$( [ -n "$h" ] && echo "READY @ $h" || echo MISSING)"
 done
 # rpcs3
 git -C ~/rpcs3 cat-file -e "$BASE^{commit}" 2>/dev/null; row rpcs3 "~/rpcs3 has BASE $BASE" "$(ok $?)"
@@ -360,7 +360,8 @@ REMOTE
     # before anyone reads `./forge.sh --status` as node truth.
     if [ -d state/forge/fingerprints ]; then
         say "note: state/forge/fingerprints describe the Air's staged artifacts, not this node."
-        say "      kernel/image can fingerprint FRESH against an empty node — prove a rebuilt node with --force."
+        say "      kernel/image can fingerprint FRESH against an empty node — prove the image lane with --force;"
+        say "      NEVER --force the kernel lane at the certified name (TRACK_MANUAL §A.1)."
     fi
 }
 
