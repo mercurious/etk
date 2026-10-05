@@ -265,12 +265,17 @@ python3 /rocknix-gtk/scripts/extract_initramfs.py KERNEL.stock "initramfs-stock-
 head -c6 "initramfs-stock-$D.cpio" | grep -q 070701
 FW=$(sed -n 's/^CONFIG_EXTRA_FIRMWARE="\(.*\)"$/\1/p' config-7.2-rig.txt)
 [ -n "$FW" ] || { echo "CONFIG_EXTRA_FIRMWARE empty" >&2; exit 1; }
-# The whole firmware dir, then cp -L: a blob may be a symlink into a sibling
-# dir, which a per-file extract would leave dangling. The tree stays NESTED
-# (qcom/sm8250/adsp.mbn) — CONFIG_EXTRA_FIRMWARE names relative paths.
-unsquashfs -q -n -d sys SYSTEM.stock usr/lib/firmware >/dev/null
+# NOT usr/lib/firmware: in the image that is a symlink to
+# /run/kernel-overlays/firmware, which ROCKNIX assembles at BOOT from the
+# kernel-overlays (found 2026-10-05 — the rig's live /usr/lib/firmware hides
+# this). The blobs live in the base overlay. Extract that dir whole, then cp -L
+# in case a blob links to a sibling. The tree stays NESTED (qcom/sm8250/…) —
+# CONFIG_EXTRA_FIRMWARE names relative paths.
+FWDIR=usr/lib/kernel-overlays/base/lib/firmware
+rm -rf sys
+unsquashfs -q -n -d sys SYSTEM.stock "$FWDIR" >/dev/null
 mkdir -p "external-firmware-$D"
-( cd sys/usr/lib/firmware && cp -L --parents $FW "/work/.gt-tmp/external-firmware-$D/" )
+( cd "sys/$FWDIR" && cp -L --parents $FW "/work/.gt-tmp/external-firmware-$D/" )
 rm -rf sys SYSTEM.stock
 echo "   KERNEL.stock sha $(sha256sum KERNEL.stock | cut -c1-12).. · config $(wc -l < config-7.2-rig.txt) lines · $(find external-firmware-$D -type f | wc -l) firmware blobs"
 IN
