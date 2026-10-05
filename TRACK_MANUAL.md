@@ -461,6 +461,13 @@ nightly is gone from ROCKNIX's retention, so the rig's `/flash/KERNEL.etk-stock`
 pulled once to `~/rocknix-gtk/groundtruth/KERNEL.rig-stock-20260901`, is the
 source; the public image still supplies the firmware. The `groundtruth` phase GATES
 on "staged initramfs == what the certified kernel embeds", and `check` shows it;
+**Validated 2026-10-05:** an in-container `build_72.sh` on the rebuilt node gave the
+certified 0.5's exact size (59,726,336 B), 269 modules, its embedded initramfs
+(`b1a45ea0…`) and a config drift identical line-for-line to the 09-01 mint — except
+gcc-15 **15.3.0-4** vs the certified **15.3.0-2** (sid moved; binutils 2.47 both). Per the
+toolchain law that combination is unvalidated: a kernel minted here is cold-boot gated;
+pin 15.3.0-2 from snapshot.debian.org for strict parity. Turnip minted green the same
+day (symbol-identical modulo toolchain padding — see the Mesa note above);
 (2) `seed_config` is a
 rendered rig snapshot, gitignored — the Air copy was recovered 2026-10-04 from
 the 0.9.0 card's GTKSTOR (`/games-internal/roms/etk/.seed_config`, debugfs
