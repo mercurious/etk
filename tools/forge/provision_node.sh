@@ -327,7 +327,11 @@ row() { printf '  %-7s %-46s %s\n' "$1" "$2" "$3"; }
 ok()  { [ "$1" = 0 ] && echo READY || echo "MISSING${2:+ — $2}"; }
 up()  { docker ps --format '{{.Names}}' | grep -qx "$1"; }
 echo "== node: $(hostname) · $(nproc) cores · $(free -g | awk '/Mem/{print $2}') GB · $(df -Ph ~ | awk 'NR==2{print $4}') free · load $(cut -d' ' -f1-3 /proc/loadavg)"
-other=$(docker ps --format '{{.Names}}' | grep -vxE 'turnip-rocknix|rocknix-gtk-kernel-sid|etk-imgtool' | tr '\n' ' ')
+# A container on a bare image id is a legacy-builder `docker build` step — our
+# own toolchain build while it runs (2026-10-05: `competent_solomon` read as
+# contention). Forge containers are matched by name first.
+other=$(docker ps --format '{{.Names}} {{.Image}}' | grep -vE '^(turnip-rocknix|rocknix-gtk-kernel-sid|etk-imgtool) ' \
+        | grep -vE ' [0-9a-f]{12}$' | cut -d' ' -f1 | tr '\n' ' ')
 # Judge contention by LOAD, not by presence: a parked `sleep infinity` box from
 # another workstream is not competing for cores (2026-10-05: asahi-kbuild sat
 # idle at load 0.00 and still read CONTENDED).
