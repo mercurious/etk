@@ -314,7 +314,16 @@ ok()  { [ "$1" = 0 ] && echo READY || echo "MISSING${2:+ — $2}"; }
 up()  { docker ps --format '{{.Names}}' | grep -qx "$1"; }
 echo "== node: $(hostname) · $(nproc) cores · $(free -g | awk '/Mem/{print $2}') GB · $(df -Ph ~ | awk 'NR==2{print $4}') free · load $(cut -d' ' -f1-3 /proc/loadavg)"
 other=$(docker ps --format '{{.Names}}' | grep -vxE 'turnip-rocknix|rocknix-gtk-kernel-sid|etk-imgtool' | tr '\n' ' ')
-[ -n "$other" ] && echo "   CONTENDED: non-forge containers running: $other"
+# Judge contention by LOAD, not by presence: a parked `sleep infinity` box from
+# another workstream is not competing for cores (2026-10-05: asahi-kbuild sat
+# idle at load 0.00 and still read CONTENDED).
+if [ -n "$other" ]; then
+    if awk '{exit !($1 >= 1.0)}' /proc/loadavg; then
+        echo "   CONTENDED: load $(cut -d' ' -f1 /proc/loadavg) with non-forge containers up: $other"
+    else
+        echo "   idle non-forge containers present (not contending): $other"
+    fi
+fi
 echo "== lane readiness"
 # host
 for c in git rsync curl python3 setsid docker; do command -v $c >/dev/null || miss="$miss $c"; done
