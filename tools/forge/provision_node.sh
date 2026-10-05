@@ -61,6 +61,12 @@ IMGTOOL_PKGS="parted mtools dosfstools e2fsprogs fdisk rsync gzip xz-utils pytho
 GT="/home/ubuntu/gt72"          # stage_72.sh's default GT, spelled for the node
 
 NSSH() { ssh -o BatchMode=yes -o ConnectTimeout=15 "$HOST" "$@"; }
+# Run a stdin script on the node WITH positional args. ssh joins its argv into
+# ONE command string that the remote shell re-splits, so a plain
+# `NSSH bash -s -- "$LIST"` arrives as N words — the 2026-10-05 first run handed
+# etk-imgtool `$1=parted` and silently dropped mtools/e2fsprogs/python3/... .
+# %q-quote each arg so it survives the remote re-split as exactly one word.
+NRUN() { NSSH "bash -s -- $(printf '%q ' "$@")"; }
 say()  { printf '\033[36m[provision]\033[0m %s\n' "$*"; }
 die()  { printf '\033[31m[provision] FATAL:\033[0m %s\n' "$*" >&2; exit 1; }
 
@@ -80,7 +86,7 @@ phase_checkouts() {
     git merge-base --is-ancestor "$head" origin/main \
         || die "Air HEAD ${head:0:9} is not on origin/main — push first (the node clones; it cannot see local commits)"
     say "checkouts: ~/etk @ ${head:0:9}, forks @ origin/main, ~/rpcs3 @ $FORGE_RPCS3_BASE"
-    NSSH bash -s -- "$head" "$FORGE_RPCS3_BASE" <<'REMOTE'
+    NRUN "$head" "$FORGE_RPCS3_BASE" <<'REMOTE'
 set -euo pipefail
 HEAD="$1" BASE="$2"
 # init+fetch rather than clone: the rpcs3/turnip lanes mkdir ~/etk/{emulators,drivers}
@@ -136,7 +142,7 @@ phase_containers() {
     NSSH "mkdir -p ~/rocknix-gtk/staging && cd ~/rocknix-gtk && scripts/provision-build-container.sh"
 
     say "containers: etk-imgtool (no recipe existed anywhere until now)"
-    NSSH bash -s -- "$IMGTOOL_PKGS" <<'REMOTE'
+    NRUN "$IMGTOOL_PKGS" <<'REMOTE'
 set -euo pipefail
 PKGS="$1"
 mkdir -p "$HOME/etk/os-install"
@@ -170,7 +176,7 @@ phase_trees() {
             *-devel-*) die "trees: $v is a devel pin — prepare it by hand per etk-turnip-gtk BUILDING.md (SKIP_PATCHES differs per main sha)" ;;
         esac
         say "trees: /work/mesa-$v (fork HEAD's full series)"
-        NSSH bash -s -- "$v" <<'REMOTE'
+        NRUN "$v" <<'REMOTE'
 set -euo pipefail
 V="$1" C=turnip-rocknix
 if docker exec "$C" test -f "/work/mesa-$V/src/freedreno/vulkan/tu_etk_gears.h"; then
@@ -189,7 +195,7 @@ REMOTE
 # ---------------------------------------------------------------------------
 phase_inputs() {
     say "inputs: base $BASE_GZ (sha-pinned ${PROVISION_BASE_SHA:0:12}..)"
-    NSSH bash -s -- "$BASE_URL" "$BASE_GZ" "$PROVISION_BASE_SHA" <<'REMOTE'
+    NRUN "$BASE_URL" "$BASE_GZ" "$PROVISION_BASE_SHA" <<'REMOTE'
 set -euo pipefail
 URL="$1" F="$HOME/etk/os-install/$2" SHA="$3"
 mkdir -p "$(dirname "$F")"
@@ -233,7 +239,7 @@ phase_groundtruth() {
     # carries /usr/lib/firmware. So a fresh node needs no rig contact at all.
     # `check` cross-references the result against the rig, read-only.
     say "groundtruth: derive config / initramfs / firmware from $BASE_GZ"
-    NSSH bash -s -- "$BASE_GZ" "$BASEDATE" "$GT" <<'REMOTE'
+    NRUN "$BASE_GZ" "$BASEDATE" "$GT" <<'REMOTE'
 set -euo pipefail
 GZ="$1" D="$2" GT="$3"
 U="$(id -u):$(id -g)"      # extracted files stay owned by ubuntu on the host
@@ -259,9 +265,12 @@ python3 /rocknix-gtk/scripts/extract_initramfs.py KERNEL.stock "initramfs-stock-
 head -c6 "initramfs-stock-$D.cpio" | grep -q 070701
 FW=$(sed -n 's/^CONFIG_EXTRA_FIRMWARE="\(.*\)"$/\1/p' config-7.2-rig.txt)
 [ -n "$FW" ] || { echo "CONFIG_EXTRA_FIRMWARE empty" >&2; exit 1; }
-unsquashfs -q -n -d sys SYSTEM.stock $(for f in $FW; do printf 'usr/lib/firmware/%s ' "$f"; done) >/dev/null
+# The whole firmware dir, then cp -L: a blob may be a symlink into a sibling
+# dir, which a per-file extract would leave dangling. The tree stays NESTED
+# (qcom/sm8250/adsp.mbn) — CONFIG_EXTRA_FIRMWARE names relative paths.
+unsquashfs -q -n -d sys SYSTEM.stock usr/lib/firmware >/dev/null
 mkdir -p "external-firmware-$D"
-( cd sys/usr/lib/firmware && cp --parents $FW "/work/.gt-tmp/external-firmware-$D/" )
+( cd sys/usr/lib/firmware && cp -L --parents $FW "/work/.gt-tmp/external-firmware-$D/" )
 rm -rf sys SYSTEM.stock
 echo "   KERNEL.stock sha $(sha256sum KERNEL.stock | cut -c1-12).. · config $(wc -l < config-7.2-rig.txt) lines · $(find external-firmware-$D -type f | wc -l) firmware blobs"
 IN
@@ -284,7 +293,7 @@ phase_toolchain() {
     # a re-run reports instead of restarting. The fork script pins rpcs3-docker
     # and tags the name forge.sh expects ($FORGE_RPCS3_IMAGE).
     say "toolchain: $FORGE_RPCS3_IMAGE (detached; log ~/forge-runs/toolchain-rpcs3.log)"
-    NSSH bash -s -- "$FORGE_RPCS3_IMAGE" <<'REMOTE'
+    NRUN "$FORGE_RPCS3_IMAGE" <<'REMOTE'
 set -euo pipefail
 IMG="$1" R="$HOME/forge-runs"; mkdir -p "$R"
 if [ -n "$(docker images -q "$IMG")" ]; then echo "   $IMG present — nothing to do"; exit 0; fi
@@ -306,7 +315,7 @@ phase_check() {
     NSSH true 2>/dev/null || die "cannot reach '$HOST' (BatchMode). A REBUILT node has new host keys:
   ssh-keygen -R <its address>, then one interactive 'ssh $HOST true'."
     local drivers_csv; drivers_csv=$(echo $CERT_DRIVERS | tr ' ' ',')
-    NSSH bash -s -- "$head" "$FORGE_RPCS3_BASE" "$FORGE_RPCS3_IMAGE" "$FORGE_TURNIP_VERS" \
+    NRUN "$head" "$FORGE_RPCS3_BASE" "$FORGE_RPCS3_IMAGE" "$FORGE_TURNIP_VERS" \
         "$BASE_GZ" "$PROVISION_BASE_SHA" "$CERT_KNAME" "$CERT_ANAME" "$drivers_csv" "$BASEDATE" <<'REMOTE'
 HEAD="$1" BASE="$2" IMG="$3" VERS="$4" GZ="$5" GZSHA="$6" KN="$7" AN="$8" DRV="$9" D="${10}"
 row() { printf '  %-7s %-46s %s\n' "$1" "$2" "$3"; }
