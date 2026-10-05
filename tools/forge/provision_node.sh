@@ -236,20 +236,38 @@ phase_groundtruth() {
     # node's ~/gt72. All three are carried by the PUBLIC base image the rig was
     # migrated to: the stock KERNEL embeds its own config (IKCONFIG — the very
     # bytes /proc/config.gz serves) and its initramfs, and the SYSTEM squashfs
-    # carries /usr/lib/firmware. So a fresh node needs no rig contact at all.
-    # `check` cross-references the result against the rig, read-only.
-    say "groundtruth: derive config / initramfs / firmware from $BASE_GZ"
-    NRUN "$BASE_GZ" "$BASEDATE" "$GT" <<'REMOTE'
+    # carries /usr/lib/firmware.
+    #
+    # BUT THE PUBLIC KERNEL IS NOT THE ONE THE KIT WAS BUILT AGAINST (2026-10-05).
+    # The rig was migrated to the 20260827 nightly and kept that build's KERNEL;
+    # every certified GTK kernel (20260827-0.5, 20260901-0.5, -0.5.1) embeds THAT
+    # kernel's initramfs (b1a45ea0, built 08-27), not the official 20260901 one
+    # (b986ecda) — same 67 files, busybox/avfsd rebuilt. The config is identical.
+    # The nightly is no longer downloadable, so the rig's own copy, pulled once
+    # to the Air (~/rocknix-gtk/groundtruth/KERNEL.rig-stock-<date>, from the
+    # rig's /flash/KERNEL.etk-stock), is preferred whenever it exists. Either
+    # way the GATE below decides: the staged initramfs must be byte-identical to
+    # what the certified kernel embeds, or a remint cannot reproduce it.
+    local rigk="$(dirname "$FORGE_KERNEL_ARTDIR")/groundtruth/KERNEL.rig-stock-$BASEDATE" ksrc=public
+    if [ -f "$rigk" ]; then
+        ksrc=rig
+        rsync -a "$rigk" "$HOST:etk/os-install/KERNEL.rig-stock-$BASEDATE"
+        say "groundtruth: config/initramfs from the RIG's stock kernel ($(sha256sum "$rigk" | cut -c1-12)..); firmware from $BASE_GZ"
+    else
+        say "groundtruth: WARN no $rigk — deriving everything from $BASE_GZ (the gate will judge it)"
+    fi
+    NRUN "$BASE_GZ" "$BASEDATE" "$GT" "$ksrc" <<'REMOTE'
 set -euo pipefail
-GZ="$1" D="$2" GT="$3"
+GZ="$1" D="$2" GT="$3" KSRC="$4"
 U="$(id -u):$(id -g)"      # extracted files stay owned by ubuntu on the host
 rm -rf "$HOME/etk/os-install/.gt-tmp"; mkdir -p "$HOME/etk/os-install/.gt-tmp"
-docker exec -i -u "$U" -e GZ="$GZ" -e D="$D" etk-imgtool bash -s <<'IN'
+docker exec -i -u "$U" -e GZ="$GZ" -e D="$D" -e KSRC="$KSRC" etk-imgtool bash -s <<'IN'
 set -euo pipefail
 cd /work/.gt-tmp
 gunzip -c "/work/$GZ" > base.img
 OFF=$(parted -m base.img unit B print | awk -F: '/^1:/{gsub("B","",$2);print $2}')
-mcopy -i "base.img@@$OFF" ::/KERNEL KERNEL.stock
+if [ "$KSRC" = rig ]; then cp "/work/KERNEL.rig-stock-$D" KERNEL.stock
+else mcopy -i "base.img@@$OFF" ::/KERNEL KERNEL.stock; fi
 mcopy -i "base.img@@$OFF" ::/SYSTEM SYSTEM.stock
 rm -f base.img
 # IKCONFIG: gzip stream between the IKCFG_ST / IKCFG_ED markers (what the
@@ -286,6 +304,23 @@ mv "$HOME/etk/os-install/.gt-tmp/config-7.2-rig.txt" "$HOME/etk/os-install/.gt-t
 rmdir "$HOME/etk/os-install/.gt-tmp"
 REMOTE
 
+    # THE GATE: ground truth is only "true" if it reproduces what the certified
+    # kernel actually embeds. Read the answer out of the artifact, not a note.
+    local want got xi="$(dirname "$FORGE_KERNEL_ARTDIR")/scripts/extract_initramfs.py" tmp
+    tmp=$(mktemp)
+    python3 "$xi" "$FORGE_KERNEL_ARTDIR/$CERT_KNAME" "$tmp" >/dev/null || die "groundtruth: could not carve the initramfs out of $CERT_KNAME"
+    want=$(sha256sum "$tmp" | cut -d' ' -f1); rm -f "$tmp"
+    got=$(NSSH "sha256sum $GT/initramfs-stock-$BASEDATE.cpio" | cut -d' ' -f1)
+    if [ "$got" = "$want" ]; then
+        say "groundtruth: initramfs ${got:0:12}.. == the one $CERT_KNAME embeds — remint-faithful"
+    elif [ "${PROVISION_GT_ALLOW_DRIFT:-0}" = 1 ]; then
+        say "groundtruth: WARN initramfs ${got:0:12}.. != certified ${want:0:12}.. (PROVISION_GT_ALLOW_DRIFT=1)"
+    else
+        die "groundtruth: staged initramfs ${got:0:12}.. is NOT what $CERT_KNAME embeds (${want:0:12}..).
+  A remint would diverge from the certified kernel. Pull the rig's stock kernel to
+  $rigk (from /flash/KERNEL.etk-stock), or set PROVISION_GT_ALLOW_DRIFT=1 deliberately."
+    fi
+
     # ROCKNIX_REF pinned to the release tag — stage_72.sh still defaults to the
     # pre-release nightly; the certified remint used the tag (VALIDATION.md).
     say "groundtruth: stage_72.sh (ROCKNIX_REF=$BASEDATE) into rocknix-gtk-kernel-sid"
@@ -320,9 +355,16 @@ phase_check() {
     NSSH true 2>/dev/null || die "cannot reach '$HOST' (BatchMode). A REBUILT node has new host keys:
   ssh-keygen -R <its address>, then one interactive 'ssh $HOST true'."
     local drivers_csv; drivers_csv=$(echo $CERT_DRIVERS | tr ' ' ',')
+    # what the certified kernel embeds — the staging row is judged against it
+    local wantinit="" tmp xi="$(dirname "$FORGE_KERNEL_ARTDIR")/scripts/extract_initramfs.py"
+    if [ -f "$xi" ] && [ -f "$FORGE_KERNEL_ARTDIR/$CERT_KNAME" ]; then
+        tmp=$(mktemp)
+        python3 "$xi" "$FORGE_KERNEL_ARTDIR/$CERT_KNAME" "$tmp" >/dev/null 2>&1 && wantinit=$(sha256sum "$tmp" | cut -d' ' -f1)
+        rm -f "$tmp"
+    fi
     NRUN "$head" "$FORGE_RPCS3_BASE" "$FORGE_RPCS3_IMAGE" "$FORGE_TURNIP_VERS" \
-        "$BASE_GZ" "$PROVISION_BASE_SHA" "$CERT_KNAME" "$CERT_ANAME" "$drivers_csv" "$BASEDATE" <<'REMOTE'
-HEAD="$1" BASE="$2" IMG="$3" VERS="$4" GZ="$5" GZSHA="$6" KN="$7" AN="$8" DRV="$9" D="${10}"
+        "$BASE_GZ" "$PROVISION_BASE_SHA" "$CERT_KNAME" "$CERT_ANAME" "$drivers_csv" "$BASEDATE" "$wantinit" <<'REMOTE'
+HEAD="$1" BASE="$2" IMG="$3" VERS="$4" GZ="$5" GZSHA="$6" KN="$7" AN="$8" DRV="$9" D="${10}" WANTINIT="${11}"
 row() { printf '  %-7s %-46s %s\n' "$1" "$2" "$3"; }
 ok()  { [ "$1" = 0 ] && echo READY || echo "MISSING${2:+ — $2}"; }
 up()  { docker ps --format '{{.Names}}' | grep -qx "$1"; }
@@ -372,6 +414,10 @@ docker exec rocknix-gtk-kernel-sid sh -c "gcc-15 -dumpfullversion" >/dev/null 2>
 row kernel "gcc-15 in container" "$( [ $? = 0 ] && echo "READY ($(docker exec rocknix-gtk-kernel-sid gcc-15 -dumpfullversion))" || echo MISSING)"
 docker exec rocknix-gtk-kernel-sid sh -c "test -d /kernel/staging/patches-72/01-mainline && test -f /kernel/staging/config-7.2-rig.txt && test -f /kernel/staging/initramfs-stock-$D.cpio && test -d /kernel/staging/external-firmware-$D && test -f /kernel/linux-7.2.tar.xz" 2>/dev/null
 row kernel "staging (stage_72.sh) assembled" "$(ok $? 'groundtruth phase')"
+gi=$(docker exec rocknix-gtk-kernel-sid sha256sum /kernel/staging/initramfs-stock-$D.cpio 2>/dev/null | cut -d' ' -f1)
+if [ -z "$WANTINIT" ]; then row kernel "staged initramfs == certified embed" "UNJUDGED — no certified kernel on the Air"
+elif [ "$gi" = "$WANTINIT" ]; then row kernel "staged initramfs == certified embed" "READY (${gi:0:12})"
+else row kernel "staged initramfs == certified embed" "MISMATCH ${gi:0:12} != ${WANTINIT:0:12} — re-run groundtruth"; fi
 # image
 up etk-imgtool; row image "container etk-imgtool Up" "$(ok $?)"
 f=~/etk/os-install/$GZ

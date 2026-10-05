@@ -452,8 +452,16 @@ and the image `seed_config` existed ONLY on the dead node. The tool rebuilds all
 of it, phase by phase (`checkouts containers inputs groundtruth trees toolchain`,
 or `all`); its default `check` is read-only and is the surface — a lane is ready
 when its row reads READY. Three facts it encodes: (1) the kernel ground truth is
-derived from the PUBLIC base image (stock KERNEL's IKCONFIG + carved initramfs +
-the SYSTEM squashfs's firmware) — no rig contact needed; (2) `seed_config` is a
+NOT the public image's (found 2026-10-05). The rig was migrated to the 20260827
+nightly and kept that build's KERNEL (`ea10fd21…` md5) under the 20260901 SYSTEM;
+every certified GTK kernel — `20260901-0.5` and `-0.5.1` included — embeds THAT
+kernel's initramfs (`b1a45ea0…`, built 08-27), not the official release's
+(`b986ecda…`; same 67 files, busybox/avfsd rebuilt). Config is identical. The
+nightly is gone from ROCKNIX's retention, so the rig's `/flash/KERNEL.etk-stock`,
+pulled once to `~/rocknix-gtk/groundtruth/KERNEL.rig-stock-20260901`, is the
+source; the public image still supplies the firmware. The `groundtruth` phase GATES
+on "staged initramfs == what the certified kernel embeds", and `check` shows it;
+(2) `seed_config` is a
 rendered rig snapshot, gitignored — the Air copy was recovered 2026-10-04 from
 the 0.9.0 card's GTKSTOR (`/games-internal/roms/etk/.seed_config`, debugfs
 rdump); back it up, it has no other source; (3) the baked binaries are pushed
