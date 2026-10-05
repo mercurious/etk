@@ -41,6 +41,13 @@ KEY_FILE="$HOME/.ssh/etk_rig"
 PUB_FILE="$KEY_FILE.pub"
 SSH_CONFIG="$HOME/.ssh/config"
 CFG_MARKER="# ETK pairing (etk_pair.sh) -- do not edit by hand"
+# The rig's USB-gadget address (ROCKNIX usb-net; the cockpit skill's default).
+# Pairing used to route only the ONE host it was run against, and the block
+# above is written once — so a rig paired over WiFi stayed password-prompted
+# on the USB link forever (2026-10-05: `ssh root@169.254.170.2` asked for a
+# password while SM8250.local was passwordless). Its own marker, own block.
+RIG_USB_HOST="${ETK_RIG_USB_HOST:-169.254.170.2}"
+USB_MARKER="# ETK pairing, USB gadget link (etk_pair.sh) -- do not edit by hand"
 
 # Probe opts: never prompt (BatchMode), fail fast, auto-accept the host key
 # the first time (§B.5). NO -i / IdentitiesOnly here -- the bare-target probe
@@ -104,6 +111,36 @@ ensure_config_block() {
     chmod 600 "$SSH_CONFIG" 2>/dev/null
     echo -e "    ${G}[OK] Added ETK block to ${SSH_CONFIG} (routes ${RIG_HOST} -> etk_rig).${N}"
 }
+# Is <host> already a pattern on some Host line? (the main block when the pair
+# target IS the gadget address, or a hand-added block — never add a second.)
+# -w with -F: 169.254.170.2 must not match inside 169.254.170.20.
+host_routed() {
+    tr -d '\r' < "$SSH_CONFIG" 2>/dev/null \
+        | grep -iE '^[[:space:]]*Host[[:space:]]' | grep -qwF -- "$1"
+}
+# Route the USB-gadget address to the dedicated key too. Callers invoke this
+# ONLY once the rig is known to accept etk_rig: pointing a host at a key the
+# rig refuses would break whatever already worked there.
+ensure_usb_block() {
+    grep -qF "$USB_MARKER" "$SSH_CONFIG" 2>/dev/null && return 0
+    if host_routed "$RIG_USB_HOST"; then
+        echo -e "    ${G}[OK] USB link ${RIG_USB_HOST} already routed in ${SSH_CONFIG} (left as is).${N}"
+        return 0
+    fi
+    [ -s "$SSH_CONFIG" ] && printf '\n' >> "$SSH_CONFIG"
+    {
+        printf '%s\n' "$USB_MARKER"
+        # Own HostName: the bare IP must stay on the USB link, never be
+        # rerouted through the WiFi block's HostName.
+        printf 'Host %s etk-rig-usb\n' "$RIG_USB_HOST"
+        printf '    HostName %s\n' "$RIG_USB_HOST"
+        printf '    User %s\n' "$RIG_USER"
+        printf '    IdentityFile ~/.ssh/etk_rig\n'
+        printf '    IdentitiesOnly yes\n'
+    } >> "$SSH_CONFIG"
+    chmod 600 "$SSH_CONFIG" 2>/dev/null
+    echo -e "    ${G}[OK] Added USB-link block (routes ${RIG_USB_HOST} -> etk_rig).${N}"
+}
 # Persist the resolved target to etk.conf if that file exists (install.sh
 # creates it during discovery; we only refresh the value).
 persist_conf() {
@@ -144,6 +181,10 @@ fi
 # ETK pair -> behavior unchanged when already paired (§G.6).
 if probe_bare; then
     echo -e "    ${G}[OK] Already reachable passwordlessly — nothing to do.${N}"
+    # ...except the USB link, which an earlier pairing never routed. Only when
+    # it is OUR key that works (a user's own key on the bare target proves
+    # nothing about etk_rig).
+    probe_etkrig && ensure_usb_block
     exit 0
 fi
 
@@ -211,6 +252,7 @@ fi
 
 # --- STEP 4: config block so the BARE target offers the dedicated key. ------
 ensure_config_block
+ensure_usb_block
 
 # --- STEP 5: verify the REAL path — bare-target, passwordless. --------------
 if probe_bare; then

@@ -734,6 +734,13 @@ knobs, writes the handoff, verifies afterward from read-only telemetry.
   `etk_pair.sh` STEP 0 detects it, clears ONLY the rig's stale known_hosts entries, and
   prints the fingerprint the rig now offers; strict checking stays on. Never relax
   `StrictHostKeyChecking` globally for this.
+  **Pairing routes BOTH links** (2026-10-05): the main block maps the target you paired
+  against; a second marker block maps the USB gadget (`169.254.170.2`, alias
+  `etk-rig-usb`; override `ETK_RIG_USB_HOST`) — written even on the "already reachable"
+  early exit, but only once the rig is proven to accept `etk_rig`. Before this, a rig
+  paired over WiFi prompted for a password on USB forever. Pinned by
+  `tools/test_pair_usb.sh` (`--against 84474b3` must fail). The PowerShell port
+  (`etk-common.ps1`) still writes only the main block.
 
 ### A.3 The UI layer (Pitstop, notifications, HUD, installs)
 
