@@ -478,7 +478,12 @@ attempts on the Air (ENOSPC, memory overload) and built unattended on etk-cloud 
 Native docker also removes the colima-virtiofs trap class. All six lanes validated
 end-to-end 2026-08-05 (chiaki + wl-mirror byte-identical; kernel exact shipped size, same
 237 modules; Turnip within 296 B — **Mesa builds are not byte-reproducible across hosts:
-don't split an A/B's arms across boxes**). The audit's real finding: four lanes' recipes
+don't split an A/B's arms across boxes**). **Judge a cross-host Turnip by SYMBOLS, not file
+size** (2026-10-05, first mint on the rebuilt node): +65,728 B vs the 09-28 build of the
+same series was 7.7 KB of inter-function `.text` padding crossing ONE 64 KiB
+`align 0x10000` segment boundary (+65,536 B of file padding); `nm -S` showed ~15 symbols
+differing by ~4 B. Diff `size -A` + `nm -S --defined-only`; a real source change shows as
+grown functions, not as padding. The audit's real finding: four lanes' recipes
 had lived only on the laptop (one `docker rm` from gone) — all now in git and installed by
 provisioning scripts. Lanes: **rpcs3** (`etk-rpcs3-jammy-aarch64:llvm22`, `~/rpcs3`) ·
 **turnip** (`~/etk-turnip-gtk` + `turnip-rocknix` container) · **kernel** (`~/rocknix-gtk`
