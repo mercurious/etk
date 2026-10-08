@@ -15,6 +15,14 @@
 # network blocks mDNS, replace with an IP form (e.g. root@10.0.0.40).
 RIG_SSH="root@SM8250.local"
 
+# More than one rig? Name each car by its RAM (car8, car12, ...) and set the
+# one this checkout targets. install.sh then refuses when the unit at RIG_SSH
+# isn't that car (RAM must match; scripts/etk_car.sh assign writes the name on
+# the unit). Leave CAR unset for a single rig: the check only reports.
+# CAR="car8"
+# CAR8_SSH="root@SM8250.local"
+# CAR12_SSH="root@<ip-or-host>"
+
 # --- Build tier ---
 # FULL — shader vault + thermal protection + HUD telemetry (recommended)
 # LITE — thermal protection + HUD only (for saturated shader caches)

@@ -190,6 +190,29 @@ elif [ "$DO_PAIR_ONLY" = "1" ]; then
 fi
 
 # ==========================================================
+# CAR CHECK (two-rig garage, 2026-10-07)
+# The garage hosts more than one rig, named by RAM (car8, car12). Before the
+# first rig contact that ACTS, confirm the unit at $RIG_SSH is the car this
+# run means: its MemTotal must match the car's GB and its /storage/.etk/car
+# name (if assigned) must match CAR. Day one, car12 squatted car8's USB address
+# and accepted car8's key; only ssh host-key checking stood between this
+# installer and the wrong unit (dossiers/TwoRigGarage_20261007.md).
+# Opt-in: no CAR in etk.conf = report only, never blocks (single-rig installs).
+# ==========================================================
+# >>> CAR CHECK
+if [ -f "./scripts/etk_car.sh" ]; then
+    . ./scripts/etk_car.sh
+    CAR_MSG=$(etk_car_verify "$RIG_SSH" "${CAR:-}"); CAR_RC=$?
+    echo -e "${C}>>> ${CAR_MSG}${N}"
+    if [ "$CAR_RC" -ne 0 ]; then
+        echo -e "${R}>>> Install refused: the unit at $RIG_SSH is not ${CAR}.${N}"
+        echo -e "${R}    Check CAR / RIG_SSH in etk.conf, or which car is plugged in.${N}"
+        exit 1
+    fi
+fi
+# <<< CAR CHECK
+
+# ==========================================================
 # LIVE-SESSION GUARD (operator-directed 2026-07-05)
 # NEVER deploy over an active race. STEP 0 kills the telemetry
 # daemons and STEP 6 restarts the Sentry, which re-seeds SHM and
