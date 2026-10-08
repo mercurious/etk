@@ -478,8 +478,11 @@ lane_env() {  # <lane> -> env assignments for the node-side recipe
         # ETK_KIT_DTB / ETK_INTERNAL_MIC: the boot.img lane splices the Flip 2 kit
         # DTB deltas at mint (ABL era); both default ON, etk.conf's ETK_INTERNAL_MIC
         # is the same knob install.sh honours on the grub slot.
-        kernel) printf 'KNAME=%s FORGE_KERNEL_BUILD=%s FORGE_KERNEL_BASEDATE=%s ETK_KIT_DTB=%s ETK_INTERNAL_MIC=%s' \
-                    "$KNAME" "$FORGE_KERNEL_BUILD" "$FORGE_KERNEL_BASEDATE" "${ETK_KIT_DTB:-1}" "${ETK_INTERNAL_MIC:-1}" ;;
+        # ETK_GPIO_SBU_BUILTIN: the boot-logo fix (upstream ROCKNIX 187eb24f2e,
+        # CONFIG_TYPEC_MUX_GPIO_SBU m->y as a config delta); default ON, =0 is the
+        # pure-parity A/B arm that reproduces 20261001's missing splash.
+        kernel) printf 'KNAME=%s FORGE_KERNEL_BUILD=%s FORGE_KERNEL_BASEDATE=%s ETK_KIT_DTB=%s ETK_INTERNAL_MIC=%s ETK_GPIO_SBU_BUILTIN=%s' \
+                    "$KNAME" "$FORGE_KERNEL_BUILD" "$FORGE_KERNEL_BASEDATE" "${ETK_KIT_DTB:-1}" "${ETK_INTERNAL_MIC:-1}" "${ETK_GPIO_SBU_BUILTIN:-1}" ;;
         # The three baked names come from the MANIFEST (see the preflight
         # note above), never from the build knobs — an image is a shipped
         # asset and must carry exactly the certified stack.
