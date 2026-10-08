@@ -30,9 +30,18 @@
 #   unload <target>     drop a loaded-but-not-executed image (kexec -u).
 #
 # Spike 1 reuses the RUNNING device tree (/sys/firmware/fdt, which kexec-tools
-# rewrites with the new bootargs) — the pure "does kexec work" question. Spike 2
-# (later) passes --dtb with the kit DTB splice. GO_DTB=1 passes the staged stock
-# Visionox DTB now.
+# rewrites with the new bootargs) — the pure "does kexec work" question. PASSED
+# 2026-10-08 12:50 (9/9, ~12 s to the new kernel).
+# Spike 2 passes a DTB explicitly. PAID FOR 2026-10-08 12:5x: the DTB carved from
+# the boot.img is the BUILD's DTB — its memory node is `reg = <0 0x80000000 0 0>`
+# (size ZERO; the bootloader fills it at boot, along with chosen/kaslr-seed and
+# the splash framebuffer). kexec'd with it, the kernel had no RAM and died dark
+# (hard power reset recovered; /flash untouched). So the only valid base for a
+# kexec --dtb is the RUNNING tree: GO_DTB=1 snapshots /sys/firmware/fdt to the
+# rig dir and passes THAT (proves the explicit-dtb path); GO_DTB=<file on rig>
+# passes a kit DTB that was derived FROM that snapshot (etk_dtb_mic.py splices
+# into whatever base it is given). The go script refuses any --dtb whose memory
+# node has zero size — the exact defect, pinned.
 #
 # Source of the Image/DTB: KEXEC_BOOTIMG (default the etk.conf KERNEL_IMAGE).
 # Rig dir: /storage/rocknix-gtk/kexec/ (persists; nothing boots from it).
@@ -90,8 +99,42 @@ for p in /proc/[0-9]*; do [ "$(cat $p/comm 2>/dev/null)" = AppRun.wrapped ] && f
 [ -x "$D/kexec" ] && [ -f "$D/Image" ] || fail "staged files missing under $D"
 [ "$(sha256sum "$D/Image" | cut -d' ' -f1)" = "$(cat "$D/Image.sha256")" ] || fail "Image sha mismatch"
 CMD="$(cat /proc/cmdline | sed 's/ *etk_kexec=1//') etk_kexec=1"
-DTB=""; [ "${GO_DTB:-0}" = 1 ] && DTB="--dtb=$D/flip2-visionox.dtb"
-echo "loading: $D/Image"; echo "cmdline: $CMD"; echo "dtb    : ${DTB:-running /sys/firmware/fdt (rewritten by kexec-tools)}"
+DTB=""
+case "${GO_DTB:-0}" in
+  0) ;;
+  1) cat /sys/firmware/fdt > "$D/running.fdt" || fail "cannot snapshot /sys/firmware/fdt"; DTBF="$D/running.fdt" ;;
+  *) DTBF="$GO_DTB"; [ -f "$DTBF" ] || fail "GO_DTB file not found: $DTBF" ;;
+esac
+if [ -n "${DTBF:-}" ]; then
+    # MEMORY GUARD: a DTB whose /memory reg has zero size is the build's unfilled
+    # tree (the 2026-10-08 dark-kexec). Only a bootloader-filled tree may be passed.
+    python3 -I - "$DTBF" <<'PY' || fail "DTB $DTBF has NO usable memory node (size 0) -- base it on /sys/firmware/fdt, not the boot.img"
+import struct, sys
+b = open(sys.argv[1], 'rb').read()
+_, total, off_s, off_str = struct.unpack_from('>4I', b, 0)
+strings = b[off_str:]
+p, path, found = off_s, [], False
+while p < total:
+    tok = struct.unpack_from('>I', b, p)[0]; p += 4
+    if tok == 1:
+        e = b.index(b'\0', p); path.append(b[p:e].decode()); p = (e + 4) & ~3
+    elif tok == 2:
+        path.pop()
+    elif tok == 3:
+        ln, no = struct.unpack_from('>II', b, p); p += 8
+        name = strings[no:strings.index(b'\0', no)].decode()
+        if name == 'reg' and len(path) == 2 and path[1].startswith('memory'):
+            cells = struct.unpack_from('>%dI' % (ln // 4), b, p)
+            size = sum(cells[i + 2] << 32 | cells[i + 3] for i in range(0, len(cells) - 3, 4))
+            print('memory size bytes:', size); found = size > 0
+        p = (p + ln + 3) & ~3
+    elif tok == 9:
+        break
+sys.exit(0 if found else 1)
+PY
+    DTB="--dtb=$DTBF"
+fi
+echo "loading: $D/Image"; echo "cmdline: $CMD"; echo "dtb    : ${DTB:-running /sys/firmware/fdt (reused + rewritten by kexec-tools)}"
 "$D/kexec" -c -l "$D/Image" --command-line="$CMD" $DTB || fail "kexec -l refused (rc $?)"
 [ "$(cat /sys/kernel/kexec_loaded)" = 1 ] || fail "kexec_loaded != 1 after load"
 echo "KEXEC_LOADED ok -- orderly shutdown + kexec in 3 s (systemctl kexec)"
