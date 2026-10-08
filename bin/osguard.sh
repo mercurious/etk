@@ -133,12 +133,22 @@ fi
 # Every phase below edits grub twins / grubenv / KERNEL.gtktest — none of which
 # exist here; left to run, Phase B would drop a stray KERNEL.gtktest on /flash
 # and announce "GTK kernel restored" every boot (UPSTREAM_20261001.md §1b).
-# The slot is install.sh STEP 6.4's (KERNELABLREMOTE): this guard only JUDGES
-# it against the heal bundle and names the revert an OS update causes (the
-# updater writes its boot.img over /flash/KERNEL — stock is back, silently).
-# Re-staging from a boot-time daemon is deliberately NOT done until the slot
-# path is cold-boot validated; the fix it names is a re-run of the installer.
-if [ "$(cat "$HEAL/chain" 2>/dev/null)" = "abl" ] ||    { [ ! -f "$FLASH/boot/grub/grub.cfg" ] && [ ! -d "$FLASH/EFI" ] && [ "$(head -c 8 "$FLASH/KERNEL" 2>/dev/null)" = "ANDROID!" ]; }; then
+# The slot is install.sh STEP 6.4's (KERNELABLREMOTE). This guard JUDGES it
+# against the heal bundle and, since the slot path was cold-boot validated
+# (car12, 0.6.1/0.6.2), RE-STAGES the GTK boot.img after the revert an OS
+# update causes (the updater writes its boot.img over /flash/KERNEL — stock is
+# back, silently) — under ONE gate that has no exception:
+#   the staged kernel's release == the NEW SYSTEM's module tree.
+# There is no grub pick on this chain: a kernel the ABL boots to a module-less
+# system is a DARK unit with a card-in-a-PC recovery. So a release mismatch is
+# named, not healed, and the stock the updater just wrote is left in the slot.
+# When the gate holds: the updater's boot.img is parked as KERNEL.etk-stock
+# (it IS the pristine stock for this OS; the old parked copy is for an OS that
+# no longer exists), ours goes back sha-verified, and the operator is told to
+# reboot once. Kill-switch ETK_OSGUARD_ABL_RESTAGE=0 (etk.conf): name only.
+# Harness: tools/test_kernel_abl.sh (osguard section).
+if [ "$(cat "$HEAL/chain" 2>/dev/null)" = "abl" ] || \
+   { [ ! -f "$FLASH/boot/grub/grub.cfg" ] && [ ! -d "$FLASH/EFI" ] && [ "$(head -c 8 "$FLASH/KERNEL" 2>/dev/null)" = "ANDROID!" ]; }; then
     WANT=$(cat "$HEAL/KERNEL.staged.sha256" 2>/dev/null)
     if [ -z "$WANT" ] || [ "$(cat "$HEAL/mode" 2>/dev/null)" != "default" ]; then
         log "abl chain: no GTK boot.img deployed to the slot (bundle absent or mode=test) — nothing to guard"
@@ -153,9 +163,58 @@ if [ "$(cat "$HEAL/chain" 2>/dev/null)" = "abl" ] ||    { [ ! -f "$FLASH/boot/gr
         fi
         finish 0
     fi
-    log "abl chain: slot sha ${SLOT:-none} != staged $WANT — an OS update (or a hand swap) put another boot.img in /flash/KERNEL; the GTK kernel is NOT live. Re-run install.sh to restore it."
-    notify "OS update replaced the GTK kernel. Re-run the ETK installer from your computer to restore it."
-    [ "$MODE" = "heal" ] && finish 0 || finish 2
+    STAGED_REL=$(cat "$HEAL/KERNEL.staged.release" 2>/dev/null)
+    log "abl chain: slot sha ${SLOT:-none} != staged $WANT — an OS update (or a hand swap) put another boot.img in $FLASH/KERNEL; the GTK kernel is NOT live (SYSTEM modules $SYS_REL, staged kernel ${STAGED_REL:-?})"
+    if [ "${ETK_OSGUARD_ABL_RESTAGE:-1}" = "0" ]; then
+        notify "OS update replaced the GTK kernel. Re-run the ETK installer from your computer to restore it."
+        [ "$MODE" = "heal" ] && finish 0 || finish 2
+    fi
+    # THE GATE. Release mismatch = the staged boot.img was built for another OS:
+    # its modules would not load and nothing on this chain can fall back.
+    if [ -z "$STAGED_REL" ] || [ "$STAGED_REL" != "$SYS_REL" ]; then
+        log "abl chain: NOT re-staging — staged GTK kernel is ${STAGED_REL:-unknown}, this OS ships modules for $SYS_REL (a kernel that boots dark has no grub pick to recover from). Stock stays in the slot until a GTK kernel for $SYS_REL is installed."
+        notify "OS updated to a new kernel ($SYS_REL). The ETK kernel for it is not installed yet - stock kernel in use. Re-run the ETK installer when the new build ships."
+        [ "$MODE" = "heal" ] && finish 0 || finish 2
+    fi
+    GOT_STAGED=$(sha256sum "$HEAL/KERNEL.staged" 2>/dev/null | cut -d' ' -f1)
+    if [ "$GOT_STAGED" != "$WANT" ] || [ "$(head -c 8 "$HEAL/KERNEL.staged" 2>/dev/null)" != "ANDROID!" ]; then
+        log "abl chain: NOT re-staging — heal bundle KERNEL.staged is missing, corrupt (sha) or not a boot.img"
+        notify "OS update replaced the GTK kernel and the staged copy is unusable. Re-run the ETK installer from your computer."
+        [ "$MODE" = "heal" ] && finish 0 || finish 2
+    fi
+    if [ "$(head -c 8 "$FLASH/KERNEL" 2>/dev/null)" != "ANDROID!" ]; then
+        log "abl chain: NOT re-staging — $FLASH/KERNEL is not a boot.img; leaving it alone"
+        [ "$MODE" = "heal" ] && finish 0 || finish 2
+    fi
+    log "abl chain: RE-STAGE — release $STAGED_REL matches this OS; parking the updater's boot.img as KERNEL.etk-stock and restoring the GTK boot.img"
+    if [ "$MODE" != "heal" ]; then
+        log "PLAN: park $FLASH/KERNEL -> KERNEL.etk-stock; cp $HEAL/KERNEL.staged -> $FLASH/KERNEL (sha-verified)"
+        finish 2
+    fi
+    flash_rw || { log "abl chain: cannot remount $FLASH rw — not re-staged"; finish 0; }
+    NEWMD5=$(md5sum "$FLASH/KERNEL" | cut -d' ' -f1)
+    if cp "$FLASH/KERNEL" "$FLASH/KERNEL.etk-stock.new" && sync \
+       && [ "$(md5sum "$FLASH/KERNEL.etk-stock.new" | cut -d' ' -f1)" = "$NEWMD5" ] \
+       && mv -f "$FLASH/KERNEL.etk-stock.new" "$FLASH/KERNEL.etk-stock" && sync; then
+        OSMD5=$(cut -d' ' -f1 "$FLASH/KERNEL.md5" 2>/dev/null)
+        log "DONE: parked the updater's boot.img as KERNEL.etk-stock (md5 $NEWMD5, KERNEL.md5 ${OSMD5:-absent}, pristine=$([ -n "$OSMD5" ] && [ "$NEWMD5" = "$OSMD5" ] && echo yes || echo UNPROVEN))"
+    else
+        rm -f "$FLASH/KERNEL.etk-stock.new"
+        log "FAIL: could not park the updater's boot.img — slot left as the updater wrote it"
+        finish 0
+    fi
+    if cp "$HEAL/KERNEL.staged" "$FLASH/KERNEL.new" && sync \
+       && [ "$(sha256sum "$FLASH/KERNEL.new" | cut -d' ' -f1)" = "$WANT" ] \
+       && mv -f "$FLASH/KERNEL.new" "$FLASH/KERNEL" && sync \
+       && [ "$(sha256sum "$FLASH/KERNEL" | cut -d' ' -f1)" = "$WANT" ]; then
+        log "DONE: GTK boot.img restored to $FLASH/KERNEL (sha $WANT) — REBOOT once to run it"
+        notify "OS update repaired: the ETK kernel is back in the boot slot. REBOOT once to finish."
+        finish 0
+    fi
+    rm -f "$FLASH/KERNEL.new"
+    log "FAIL: GTK boot.img write did not verify — slot left as the updater wrote it (stock boots)"
+    notify "OS update replaced the GTK kernel and the restore did not verify. Re-run the ETK installer from your computer."
+    finish 0
 fi
 
 # ==========================================================

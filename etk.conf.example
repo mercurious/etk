@@ -249,6 +249,11 @@ ETK_BG_INSTALL=1
 # screen) to reboot once. It NEVER reboots the device itself.
 # 1 = on (default) · 0 = kill-switch (guard does nothing)
 ETK_OS_GUARD=1
+# ABL-era (ROCKNIX 20261001+) re-stage: after an OS update puts stock back in the
+# single boot slot, osguard restores the GTK boot.img ONLY when the staged kernel's
+# release matches the new OS's module tree (no grub pick exists to recover a dark
+# boot). 0 = name the revert, never write; re-run install.sh instead.
+ETK_OSGUARD_ABL_RESTAGE=1
 
 # --- Controller binding repair (0.8.1, ships ON) ---
 # Makes the gamepad work in RPCS3 without you touching a pad-config screen.

@@ -1,7 +1,7 @@
 #!/bin/bash
 # test_kernel_abl.sh — pins the ABL-era kernel path through the KIT:
 #   install.sh   STEP 6.4  KERNELABLREMOTE  (the only writer of /flash/KERNEL)
-#   bin/osguard.sh         ABL stand-down   (judges the slot, never edits grub)
+#   bin/osguard.sh         ABL re-stage     (release-gated; never edits grub)
 #   uninstall.sh           ABLRESTORE       (parked stock back into the slot)
 #
 # WHY: under ROCKNIX-ABL (20261001+) the bootloader loads exactly one file,
@@ -150,18 +150,50 @@ reset_unit; cp "$TD/gtk.img" "$U/storage/KERNEL.staging"
 expect "stage: staging sha mismatch REFUSED" 1 "staging sha mismatch" env HOST_SHA=deadbeef K_RELEASE=7.2.0 K_MODE=default FLASH="$U/flash" HEAL="$U/storage/heal" STAGING="$U/storage/KERNEL.staging" sh "$TD/stage.sh"
 [ -e "$U/storage/KERNEL.staging" ] && bad "bad staging file kept" || ok "bad staging file discarded"
 
-# ===== bin/osguard.sh — ABL stand-down ================================================
+# ===== bin/osguard.sh — ABL re-stage (release-gated) ====================================
+OTHER_MD5=$(md5sum "$TD/other.img" | cut -d' ' -f1)
+os_update() {   # the ROCKNIX updater: a new stock boot.img lands in the slot (+ its md5)
+    cp "$TD/other.img" "$U/flash/KERNEL"; printf '%s  target/KERNEL\n' "$OTHER_MD5" > "$U/flash/KERNEL.md5"
+}
 reset_unit
 expect "osguard: ABL unit, nothing deployed -> nothing to guard, rc 0" 0 "nothing to guard" guard --check
 stage "$TD/gtk.img" >/dev/null
 expect "osguard: slot == staged -> ok (not yet booted)" 0 "sha ok" guard --check
 [ -e "$U/flash/KERNEL.gtktest" ] && bad "osguard dropped KERNEL.gtktest on an ABL unit" || ok "osguard wrote no KERNEL.gtktest"
-cp "$TD/stock.img" "$U/flash/KERNEL"     # the OS updater put stock back
-expect "osguard --check: OS update reverted the slot -> named, rc 2" 2 "Re-run install.sh" guard --check
-expect "osguard heal: names it, writes nothing, rc 0" 0 "NOT live" guard
-[ "$(slot_sha)" = "$STOCK_SHA" ] && ok "osguard did not rewrite the slot" || bad "osguard rewrote the slot"
-grep -q 'Re-run the ETK installer' "$U/marker" 2>/dev/null && ok "osguard left the operator-visible marker" || bad "no marker written"
+os_update
+expect "osguard --check: OS update reverted the slot, release matches -> PLAN re-stage, rc 2" 2 "PLAN: park" guard --check
+[ "$(slot_sha)" = "$(sha256sum "$TD/other.img" | cut -d' ' -f1)" ] && ok "--check wrote nothing" || bad "--check changed the slot"
+expect "osguard heal: release matches -> GTK boot.img RESTORED, rc 0" 0 "GTK boot.img restored" guard
+[ "$(slot_sha)" = "$GTK_SHA" ] && ok "slot holds the GTK image again (sha-verified)" || bad "slot not restored"
+[ "$(md5sum "$U/flash/KERNEL.etk-stock" | cut -d' ' -f1)" = "$OTHER_MD5" ] && ok "parked stock = the UPDATER's boot.img (the old parked copy replaced)" || bad "parked stock is not the new OS's"
+grep -q 'REBOOT once' "$U/marker" 2>/dev/null && ok "operator told to reboot once" || bad "no reboot marker"
+[ -e "$U/flash/KERNEL.new" ] || [ -e "$U/flash/KERNEL.etk-stock.new" ] && bad "temp files left on flash" || ok "no temp files left on flash"
+expect "osguard: next boot, slot == staged -> ok" 0 "sha ok" guard --check
 [ -e "$U/flash/KERNEL.gtktest" ] && bad "osguard dropped KERNEL.gtktest" || ok "still no KERNEL.gtktest"
+
+# the gate: the new OS ships a different kernel release -> NEVER re-stage (dark-unit class)
+reset_unit; stage "$TD/gtk.img" >/dev/null; os_update
+rm -rf "$U/modules/7.2.0"; mkdir -p "$U/modules/7.3.0"
+expect "osguard --check: release MISMATCH (7.3.0) -> named, not healed, rc 2" 2 "NOT re-staging" guard --check
+OSG_RUN_REL=7.3.0 expect "osguard heal: release mismatch -> stock stays, rc 0" 0 "NOT re-staging" env OSG_RUN_REL=7.3.0 bash -c 'OSG_FLASH="$1" OSG_HEAL="$2" OSG_MOD_BASE="$3" OSG_NO_REMOUNT=1 TRIPWIRE_LOG="$4" OSG_MARKER="$5" ETK_ROOT="$6" sh "$7"' _ "$U/flash" "$U/storage/heal" "$U/modules" "$U/trip.log" "$U/marker" "$U/noetk" "$GUARD"
+[ "$(slot_sha)" = "$(sha256sum "$TD/other.img" | cut -d' ' -f1)" ] && ok "mismatch left the updater's stock in the slot" || bad "mismatch rewrote the slot"
+grep -q '7.3.0' "$U/marker" 2>/dev/null && ok "marker names the new release" || bad "marker missing the release"
+rm -rf "$U/modules/7.3.0"; mkdir -p "$U/modules/7.2.0"
+
+# kill-switch: name only
+reset_unit; stage "$TD/gtk.img" >/dev/null; os_update
+ETK_OSGUARD_ABL_RESTAGE=0 expect "osguard: ETK_OSGUARD_ABL_RESTAGE=0 -> named only, rc 0" 0 "the GTK kernel is NOT live" guard
+grep -q 'Re-run the ETK installer' "$U/marker" 2>/dev/null && ok "kill-switch: marker points at the installer" || bad "kill-switch: no installer marker"
+[ "$(slot_sha)" = "$(sha256sum "$TD/other.img" | cut -d' ' -f1)" ] && ok "kill-switch: slot untouched" || bad "kill-switch wrote the slot"
+unset ETK_OSGUARD_ABL_RESTAGE
+
+# a corrupt staged copy must never reach the slot
+reset_unit; stage "$TD/gtk.img" >/dev/null; os_update
+printf 'junk' >> "$U/storage/heal/KERNEL.staged"
+expect "osguard: staged copy corrupt (sha) -> refused, slot untouched" 0 "corrupt (sha)" guard
+[ "$(slot_sha)" = "$(sha256sum "$TD/other.img" | cut -d' ' -f1)" ] && ok "corrupt stage: slot untouched" || bad "corrupt stage reached the slot"
+reset_unit; stage "$TD/gtk.img" >/dev/null; printf 'not a boot image' > "$U/flash/KERNEL"
+expect "osguard: non-boot.img in the slot -> left alone" 0 "not a boot.img" guard
 reset_unit; stage "$TD/gtk.img" test >/dev/null
 expect "osguard: mode=test bundle -> nothing to guard" 0 "nothing to guard" guard --check
 
