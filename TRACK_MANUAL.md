@@ -744,7 +744,11 @@ knobs, writes the handoff, verifies afterward from read-only telemetry.
   phases, no re-stage from a boot daemon until the slot path is validated); the fix is a
   re-run of install.sh. Kit DTB deltas (mic, VBUS) are NOT applied under ABL — they ride
   inside the boot.img and get spliced at mint (follow-up). `etk-gtk-version.service` now
-  gates on `KERNEL.gtktest|msm.context_keepalive=1`. Harnesses:
+  gates on `KERNEL.gtktest|msm.context_keepalive=1`. **Operator ruling 2026-10-08: this
+  slot-owned path (a) SHIPS for October; kexec (d) is PARKED as the fallback mechanism** —
+  proven on car12 (`tools/kexec_spike.sh`, 9/9 after the jump, ~12 s to the new kernel;
+  a kexec `--dtb` must derive from the running `/sys/firmware/fdt` — the build's tree has
+  a zero-size memory node and kexec'd dark), not a boot path. Harnesses:
   `tools/test_kernel_abl.sh` (extracts the three rig bodies; `--against 6615699` fails),
   `tools/test_abl_slot.sh`. Lifted from the slot tool after the operator's correction
   ("USE THE KIT — update install.sh"): a side tool that writes the slot is the §1.3
