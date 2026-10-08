@@ -59,6 +59,7 @@ _archive/
 /os-install/build/*
 !/os-install/build/*.sh
 !/os-install/build/*.md
+!/os-install/build/*.py
 
 # 5b. Design dossiers — LOCAL-PRIVATE, never committed. The dossiers/ tree
 # lives at $ETK_ROOT/dossiers as the design-rationale archive (referenced
