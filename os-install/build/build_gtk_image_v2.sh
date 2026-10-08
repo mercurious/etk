@@ -21,8 +21,8 @@ set -eu
 # check below, and KERNEL still named -0.3 after the forge moved to etk-cloud.
 # release_sanity.sh only validated the FILENAME FORMAT of these, never that the
 # file exists or is the shipping one; that check is now in the gate too.
-BASE_GZ="${BASE_GZ:-/work/ROCKNIX-SM8250.aarch64-20260901.img.gz}"
-KERNEL="${KERNEL:-/rocknix-gtk/artifacts/KERNEL.rocknix-gtk-20260901-0.5}"
+BASE_GZ="${BASE_GZ:-/work/ROCKNIX-SM8250.aarch64-20261001.img.gz}"
+KERNEL="${KERNEL:-/rocknix-gtk/artifacts/KERNEL.rocknix-gtk-20261001-0.6.2}"
 APPIMAGE="${APPIMAGE:-/etk/emulators/rpcs3-etk_gtk-edition-0.9.0.3_armsx3-a74a0f3e0_linux_aarch64.AppImage}"
 TURNIP_SO="${TURNIP_SO:-/etk/drivers/etk_turnip_rocknix_26.2.2_gtk_0.7.so}"
 REPO="${REPO:-/etk}"
@@ -63,6 +63,36 @@ STOR_START=$(echo "$MAP" | awk -F: '/^2:/{gsub("B","",$2);print $2}')
 MI(){ mdir -i "$WORK@@$BOOT_OFF" "$@" 2>/dev/null; }
 MC(){ mcopy -i "$WORK@@$BOOT_OFF" "$@" 2>/dev/null; }
 echo "   boot FAT @ ${BOOT_OFF}B  STORAGE @ ${STOR_START}B"
+# BOOT CHAIN of the base (2026-10-08): ROCKNIX 20261001+ ships SM8250 on ROCKNIX-ABL —
+# no grub, and ::/KERNEL is an Android boot.img with the cmdline BAKED IN. Everything
+# grub-era below (entries, numeric default, grubenv, the DTB path) has no object on
+# such a base; the kernel goes into the ONE slot the ABL boots, with the card's unique
+# labels rewritten INTO its cmdline (relabel_bootimg.py — only the two LABEL tokens
+# move; the certified artifact is otherwise byte-identical), stock parked beside it as
+# KERNEL.etk-stock (relabelled too, or a stock fallback would mount the internal
+# ROCKNIX), and the osguard heal bundle seeded on STORAGE so an OS update's silent
+# revert self-heals on a card-born install exactly as on a host install.
+RELABEL="$REPO/os-install/build/relabel_bootimg.py"
+STOCK_BOOT_LABEL="${STOCK_BOOT_LABEL:-ROCKNIX}"; STOCK_STOR_LABEL="${STOCK_STOR_LABEL:-STORAGE}"
+KREL="${KREL:-}"                                   # kernel release the boot.img carries (manifest kernel_release) — ABL only
+if MC ::/boot/grub/grub.cfg /tmp/chain_grub.cfg; then
+  CHAIN=grub
+  [ "$(head -c 8 "$KERNEL")" != "ANDROID!" ] || die "base is GRUB-era but KERNEL is a boot.img — a grub entry cannot boot it"
+else
+  MC ::/KERNEL /tmp/stockK.img || die "base has no ::/KERNEL"
+  [ "$(head -c 8 /tmp/stockK.img)" = "ANDROID!" ] || die "base has neither grub.cfg nor a boot.img KERNEL — unknown boot chain"
+  CHAIN=abl
+  [ "$(head -c 8 "$KERNEL")" = "ANDROID!" ] || die "base is qcom-abl but KERNEL is not a boot.img (mint with FORGE_KERNEL_BASEDATE>=20261001)"
+  [ -n "$KREL" ] || die "KREL (the boot.img's kernel release, e.g. 7.2.0) is required on an ABL base — the osguard heal bundle keys on it"
+  [ -f "$RELABEL" ] || die "missing $RELABEL"
+  python3 -I "$RELABEL" "$KERNEL" /tmp/gtkK.card.img "$STOCK_BOOT_LABEL" "$STOCK_STOR_LABEL" "$BOOT_LABEL" "$STOR_LABEL" \
+    | sed 's/^/   GTK   /' || die "relabel of the GTK boot.img failed"
+  python3 -I "$RELABEL" /tmp/stockK.img /tmp/stockK.card.img "$STOCK_BOOT_LABEL" "$STOCK_STOR_LABEL" "$BOOT_LABEL" "$STOR_LABEL" \
+    | sed 's/^/   stock /' || die "relabel of the stock boot.img failed"
+  GTK_CARD_SHA=$(sha256sum /tmp/gtkK.card.img | cut -d' ' -f1)
+  STOCK_CARD_SHA=$(sha256sum /tmp/stockK.card.img | cut -d' ' -f1)
+fi
+echo "   boot chain: $CHAIN"
 
 say "2. stage ETK seed — framework + GTK forks, NO .config (so fs-resize runs)"
 rm -rf "$SEED"; mkdir -p "$SEED"
@@ -153,6 +183,17 @@ done
 [ "$_seen_default" = 1 ] || die "TURNIP_SO ($TSO) is not in TURNIP_CATALOG — the card would boot on a driver it does not ship"
 printf '%s\n' "$TSO" > "$SEED/turnip/selected"
 echo "   turnip catalog: $(ls "$SEED/turnip/drivers" | wc -l | tr -d ' ') driver(s), selected=$TSO"
+if [ "$CHAIN" = abl ]; then
+  # osguard heal bundle (install.sh STEP 6.4 KERNELABLREMOTE parity): the card's
+  # own relabelled GTK boot.img + its sha/release, mode=default, chain=abl.
+  mkdir -p "$SEED/rocknix-gtk/heal"
+  cp /tmp/gtkK.card.img "$SEED/rocknix-gtk/heal/KERNEL.staged"
+  printf '%s\n' "$GTK_CARD_SHA" > "$SEED/rocknix-gtk/heal/KERNEL.staged.sha256"
+  printf '%s\n' "$KREL"         > "$SEED/rocknix-gtk/heal/KERNEL.staged.release"
+  printf 'default\n'            > "$SEED/rocknix-gtk/heal/mode"
+  printf 'abl\n'                > "$SEED/rocknix-gtk/heal/chain"
+  echo "   seeded osguard heal bundle (ABL): KERNEL.staged $(stat -c %s /tmp/gtkK.card.img) B, release $KREL"
+fi
 echo "   seed: $(du -sh "$SEED" | cut -f1)  (NO /storage/.config)"
 
 # SIZE THE FILESYSTEM FROM THE SEED, NOT FROM A CONSTANT (2026-09-03). The
@@ -178,6 +219,22 @@ dumpe2fs -h "$STOR" 2>/dev/null | grep -iE 'Filesystem features' | grep -q resiz
   && echo "   resize_inode present (fs-resize-compatible)" || echo "   WARN: no resize_inode"
 e2fsck -fn "$STOR" >/dev/null 2>&1 && echo "   e2fsck clean"
 
+if [ "$CHAIN" = abl ]; then
+say "4. boot FAT (qcom-abl): relabel $BOOT_LABEL + GTK boot.img in the slot (card labels baked) + stock parked"
+mlabel -i "$WORK@@$BOOT_OFF" "::$BOOT_LABEL" 2>/dev/null || die "mlabel failed"
+echo "   FAT volume: $(MI ::/ | awk '/Volume in drive/{print $NF}')"
+FREE=$(MI ::/ | awk '/bytes free/{gsub(/[^0-9]/,"");print}'); KSZ=$(stat -c %s /tmp/gtkK.card.img); SSZ=$(stat -c %s /tmp/stockK.card.img)
+[ "${FREE:-0}" -gt "$SSZ" ] || die "boot FAT too full to park the stock boot.img (free=$FREE need=$SSZ)"
+MC -o /tmp/stockK.card.img ::/KERNEL.etk-stock || die "could not park KERNEL.etk-stock"
+MC -o /tmp/gtkK.card.img ::/KERNEL || die "could not write the GTK boot.img into ::/KERNEL"
+# KERNEL.md5 names the OS kernel's md5 (the updater's payload check; install.sh and
+# osguard read it as 'the pristine stock'): point it at the parked, relabelled stock.
+printf '%s  target/KERNEL\n' "$(md5sum /tmp/stockK.card.img | cut -d' ' -f1)" > /tmp/K2.md5
+MC -o /tmp/K2.md5 ::/KERNEL.md5
+echo "   ::/KERNEL = GTK boot.img $GTK_CARD_SHA"
+echo "   ::/KERNEL.etk-stock = stock boot.img (relabelled) $STOCK_CARD_SHA"
+echo "   cmdline: $(python3 -I "$RELABEL" show /tmp/gtkK.card.img)"
+else
 say "4. boot FAT: relabel $BOOT_LABEL + graft GTK kernel + branded LABEL-pinned grub"
 mlabel -i "$WORK@@$BOOT_OFF" "::$BOOT_LABEL" 2>/dev/null || die "mlabel failed"
 echo "   FAT volume: $(MI ::/ | awk '/Volume in drive/{print $NF}')"
@@ -223,6 +280,7 @@ MC -o /tmp/grub2.cfg ::/EFI/BOOT/grub.cfg
 { printf '# GRUB Environment Block\nsaved_entry=etk-gtk-test\n'; } > /tmp/grubenv2
 PAD=$(( 1024 - $(stat -c %s /tmp/grubenv2) )); head -c "$PAD" /dev/zero | tr '\0' '#' >> /tmp/grubenv2
 MC -o /tmp/grubenv2 ::/boot/grub/grubenv; MC -o /tmp/grubenv2 ::/EFI/BOOT/grubenv
+fi
 # --- optional: bake the hostless P0 hook into /flash (init sources /flash/mount-storage.sh) ---
 if [ -n "$HOOK_SCRIPT" ]; then
   [ -f "$HOOK_SCRIPT" ] || die "HOOK_SCRIPT set but missing: $HOOK_SCRIPT"
@@ -256,12 +314,28 @@ parted -m "$WORK" unit B print 2>/dev/null | sed 's/^/   /'
 echo "   -- labels --"; blkid_fake=$(MI ::/ | awk '/Volume in drive/{print}'); echo "   FAT: $blkid_fake"
 dd if="$WORK" of=/tmp/vs2.ext4 bs=1M skip=$(( STOR_START / 1048576 )) count="$STORAGE_MIB" status=none
 echo "   ext4 label: $(dumpe2fs -h /tmp/vs2.ext4 2>/dev/null | awk -F: '/volume name/{gsub(/ /,"",$2);print $2}')"
-echo "   -- boot FAT (KERNEL + KERNEL.gtktest + SYSTEM) --"; MI ::/ | grep -iE 'KERNEL|SYSTEM' | sed 's/^/   /'
+echo "   -- boot FAT (KERNEL + $([ "$CHAIN" = abl ] && echo KERNEL.etk-stock || echo KERNEL.gtktest) + SYSTEM) --"; MI ::/ | grep -iE 'KERNEL|SYSTEM' | sed 's/^/   /'
 if [ -n "$HOOK_SCRIPT" ]; then
   echo "   -- /flash/mount-storage.sh (hostless P0 hook) --"; MI ::/ | grep -i 'mount' | sed 's/^/   /'
   MC ::/mount-storage.sh /tmp/vh.sh 2>/dev/null && { grep -q 'mount_part "\$disk"' /tmp/vh.sh && echo "   hook mounts \$disk FIRST ✅" || die "hook missing the mount line"; sh -n /tmp/vh.sh && echo "   hook syntax OK ✅"; }
 fi
+if [ "$CHAIN" = abl ]; then
+  echo "   -- ABL slot (read back from the FAT) --"
+  MC ::/KERNEL /tmp/vk2.img || die "cannot read ::/KERNEL back"
+  [ "$(sha256sum /tmp/vk2.img | cut -d' ' -f1)" = "$GTK_CARD_SHA" ] && echo "   ::/KERNEL sha == relabelled GTK boot.img ✅" || die "::/KERNEL sha mismatch"
+  VCMD=$(python3 -I "$RELABEL" show /tmp/vk2.img)
+  printf '%s' "$VCMD" | grep -q "boot=LABEL=$BOOT_LABEL disk=LABEL=$STOR_LABEL" && echo "   slot cmdline carries the card labels ✅" || die "slot cmdline lacks the card labels: $VCMD"
+  printf '%s' "$VCMD" | grep -q 'msm.context_keepalive=1' && echo "   slot cmdline carries the keepalive ✅" || die "slot cmdline lacks msm.context_keepalive=1"
+  MC ::/KERNEL.etk-stock /tmp/vs2.img || die "cannot read ::/KERNEL.etk-stock back"
+  [ "$(sha256sum /tmp/vs2.img | cut -d' ' -f1)" = "$STOCK_CARD_SHA" ] && echo "   ::/KERNEL.etk-stock sha == relabelled stock ✅" || die "parked stock sha mismatch"
+  MC ::/KERNEL.md5 /tmp/vm2.md5; [ "$(cut -d' ' -f1 /tmp/vm2.md5)" = "$(md5sum /tmp/vs2.img | cut -d' ' -f1)" ] && echo "   KERNEL.md5 names the parked stock ✅" || die "KERNEL.md5 does not name the parked stock"
+  MI ::/EFI >/dev/null 2>&1 && die "::/EFI present on an ABL card" || echo "   no grub on the card ✅"
+  MI ::/rocknix_abl >/dev/null 2>&1 && echo "   rocknix_abl/ (the ABL installer) preserved ✅" || echo "   WARN: no rocknix_abl/ dir on the FAT"
+  echo "   -- heal bundle on STORAGE --"; debugfs -R "ls /rocknix-gtk/heal" /tmp/vs2.ext4 2>/dev/null | tr -s ' ' | sed 's/^/   /'
+  rm -f /tmp/vk2.img /tmp/vs2.img /tmp/vm2.md5
+else
 echo "   -- grub (label-pinned, ETK first) --"; MC ::/boot/grub/grub.cfg /tmp/vg2.cfg; grep -nE "ROCKNIX-GTK for Flip 2'|disk=LABEL|search --set=root --label" /tmp/vg2.cfg | head -4 | sed 's/^/   /'
+fi
 echo "   -- STORAGE (framework + forks + marker, NO .config) --"
 debugfs -R "ls /" /tmp/vs2.ext4 2>/dev/null | tr -s ' ' | fold -sw100 | sed 's/^/   /'
 echo "   etk/bin daemons: $(debugfs -R 'ls /games-internal/roms/etk/bin' /tmp/vs2.ext4 2>/dev/null | grep -c '\.')"
@@ -278,5 +352,7 @@ rm -f /tmp/bref2.img /tmp/bS2 /tmp/nS2 /tmp/vs2.ext4
 say "7. compress + sha"
 rm -f "$OUT_IMG.gz"; gzip -c "$WORK" > "$OUT_IMG.gz"
 sha256sum "$OUT_IMG.gz" | tee "$OUT_IMG.gz.sha256"
+# the baked kernel's sha, for the lane's independent read-back (ABL: the RELABELLED one)
+printf '%s\n' "${GTK_CARD_SHA:-$(sha256sum "$KERNEL" | cut -d' ' -f1)}" > "$OUT_IMG.kernel.sha256"
 echo "   raw=${NEW_BYTES}B gz=$(stat -c %s "$OUT_IMG.gz")B -> $OUT_IMG.gz"
 say "DONE (labels: boot=$BOOT_LABEL storage=$STOR_LABEL; ETK staged; fs-resize will grow STORAGE)"

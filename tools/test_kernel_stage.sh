@@ -88,6 +88,28 @@ mk_artifact "$D/art2"
 run_stage "$D" "$D/art2" "$SHA"
 check "existing mode preserved when arg omitted" grep -q "test" "$D/heal/mode"
 
+echo "== S5: ABL-era boot.img artifact -> release from KS_RELEASE, chain=abl, no grub harvest =="
+D="$T/s5"; mkdir -p "$D"; mk_cfg "$D/grub.cfg"
+printf 'ANDROID!\0\0\0\0\0\0\0\0gzip-image-no-version-string\n' > "$D/art"
+SHA=$(sha256sum "$D/art" | cut -d' ' -f1)
+run_stage "$D" "$D/art" "$SHA"
+check "boot.img WITHOUT KS_RELEASE is refused" [ "$(cat "$D/rc")" != "0" ]
+check "nothing staged on refusal" [ ! -f "$D/heal/KERNEL.staged" ]
+printf 'ANDROID!\0\0\0\0\0\0\0\0gzip-image-no-version-string\n' > "$D/art"
+KS_RELEASE=7.2.0 KS_HEAL="$D/heal" KS_CFG_LIST="$D/grub.cfg" KS_NO_ACTIVATE=1 TRIPWIRE_LOG="$D/trip.log" ETK_ROOT="$D/etk" \
+    sh "$STAGE" "$D/art" "$SHA" >/dev/null 2>&1; echo $? > "$D/rc"
+check "boot.img WITH KS_RELEASE stages (exit 0)" [ "$(cat "$D/rc")" = "0" ]
+check "release banked from KS_RELEASE" [ "$(cat "$D/heal/KERNEL.staged.release")" = "7.2.0" ]
+check "chain=abl banked" [ "$(cat "$D/heal/chain" 2>/dev/null)" = "abl" ]
+check "no grub block harvested on an ABL stage" [ ! -f "$D/heal/grub.block" ]
+check "mode defaults to default" grep -q "default" "$D/heal/mode"
+
+echo "== S6: a raw Image still banks chain=grub =="
+D="$T/s6"; mkdir -p "$D"; mk_artifact "$D/art"; mk_cfg "$D/grub.cfg"
+SHA=$(sha256sum "$D/art" | cut -d' ' -f1)
+run_stage "$D" "$D/art" "$SHA"
+check "chain=grub banked for a raw Image" [ "$(cat "$D/heal/chain" 2>/dev/null)" = "grub" ]
+
 echo ""
 echo "RESULT: $PASS passed, $FAIL failed  ($(basename "$STAGE") @ $(uname -s)/$(uname -m))"
 rm -rf "$T"

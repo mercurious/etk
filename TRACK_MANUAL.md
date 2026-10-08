@@ -790,6 +790,16 @@ knobs, writes the handoff, verifies afterward from read-only telemetry.
   `/flash/mount-storage.sh`, `.seed_config` staged. Recover a previous image's labels by
   decompressing it before rebuilding — do not trust prose about which labels ship (a
   stale "standard labels" line stood for two releases after it stopped being true).
+  **qcom-abl base (ROCKNIX 20261001+, built 2026-10-08, card walk PENDING):** the recipe
+  detects the chain; on an ABL base there is no grub to edit — the certified boot.img goes
+  into `::/KERNEL` with its two cmdline LABEL tokens rewritten to the card's labels
+  (`os-install/build/relabel_bootimg.py`, byte-identical outside the 512-byte cmdline
+  field, harness `tools/test_relabel_bootimg.sh`), the relabelled stock is parked as
+  `KERNEL.etk-stock` (`KERNEL.md5` names it), and the osguard heal bundle (`chain=abl`) is
+  seeded on STORAGE so a card-born install self-heals an OS-update revert. The lane's verify
+  relabels the PINNED artifact itself and compares the slot to that (never the recipe's own
+  number). `gtk_stack.json` carries `format: boot.img` + `requires_os`; the self-update
+  path (`kernel_stage.sh`) takes the release from the manifest (`KS_RELEASE`) for a boot.img.
   **A reflash mints new sshd host keys** — the first `ssh`/`--pair` after flashing hits
   REMOTE HOST IDENTIFICATION HAS CHANGED. Routine, not (necessarily) an attack:
   `etk_pair.sh` STEP 0 detects it, clears ONLY the rig's stale known_hosts entries, and

@@ -116,6 +116,7 @@ docker exec etk-imgtool bash -lc "
     HOOK_SCRIPT=/work/build/mount-storage.sh \
     SEED_CONFIG=/work/build/seed_config \
     BOOT_LABEL=ROCKNIX-GTK STOR_LABEL=GTKSTOR \
+    KREL=${KREL:-} \
     OUT_IMG=/work/$OUTIMG \
     bash /work/build/build_gtk_image_v2.sh"
 
@@ -127,7 +128,7 @@ log "artifact verify: labels + baked kernel, read back from the image"
 # environment, so the expected hash has to be handed in explicitly. Without
 # this the check inside would read an empty KSHA and silently skip itself,
 # which is the exact failure mode this block was just rewritten to kill.
-docker exec -i -e KSHA="${KSHA:-}" etk-imgtool bash -s <<'VERIFY'
+docker exec -i -e KSHA="${KSHA:-}" -e KNAME="$KNAME" etk-imgtool bash -s <<'VERIFY'
 set -eu
 W=/tmp/work2.img
 [ -f "$W" ] || { echo "VERIFY FAIL: $W gone (container restarted mid-lane?)"; exit 1; }
@@ -150,17 +151,43 @@ echo "artifact ext4 label: $ELBL"
 # A hash is decisive where a version string was only indicative — every kernel
 # in the -0.4.1.N ladder prints the SAME "Linux version 7.1.2" line, so even a
 # working strings check could not have told them apart. sha256sum is present.
-mcopy -i "$W@@$OFF" ::/KERNEL.gtktest /tmp/kchk.img 2>/dev/null \
-    || { echo "VERIFY FAIL: could not read KERNEL.gtktest back out of the image"; exit 1; }
+# BOOT CHAIN (2026-10-08): a qcom-abl base has no grub and the kernel sits in
+# ::/KERNEL as a boot.img whose cmdline the recipe RELABELLED to the card's
+# labels. The expected sha is therefore not the pinned artifact's but the pinned
+# artifact relabelled THE SAME WAY — derived here independently of the recipe's
+# output (relabel_bootimg.py is deterministic: only the 512-byte cmdline field
+# moves), so a recipe that baked the wrong kernel, or relabelled it wrong, fails.
+if mcopy -i "$W@@$OFF" ::/boot/grub/grub.cfg /tmp/gchk.cfg 2>/dev/null; then
+    CHAIN=grub; SLOT=KERNEL.gtktest; EXPECT="${KSHA:-}"
+else
+    CHAIN=abl; SLOT=KERNEL
+    [ -n "${KSHA:-}" ] && sha256sum "/rocknix-gtk/artifacts/$KNAME" | grep -q "^$KSHA " \
+        || { echo "VERIFY FAIL: pinned artifact /rocknix-gtk/artifacts/$KNAME does not match KSHA"; exit 1; }
+    python3 -I /etk/os-install/build/relabel_bootimg.py "/rocknix-gtk/artifacts/$KNAME" /tmp/kexp.img ROCKNIX STORAGE ROCKNIX-GTK GTKSTOR >/dev/null \
+        || { echo "VERIFY FAIL: could not relabel the pinned artifact for comparison"; exit 1; }
+    EXPECT=$(sha256sum /tmp/kexp.img | cut -d' ' -f1)
+    echo "artifact chain     : abl (expected ::/KERNEL = pinned $KNAME relabelled to ROCKNIX-GTK/GTKSTOR = $EXPECT)"
+fi
+mcopy -i "$W@@$OFF" "::/$SLOT" /tmp/kchk.img 2>/dev/null \
+    || { echo "VERIFY FAIL: could not read $SLOT back out of the image"; exit 1; }
 BAKED=$(sha256sum /tmp/kchk.img | cut -d' ' -f1)
-echo "artifact kernel sha: $BAKED"
-if [ -n "${KSHA:-}" ] && [ "$BAKED" != "$KSHA" ]; then
+echo "artifact kernel sha: $BAKED ($SLOT)"
+if [ -n "${EXPECT:-}" ] && [ "$BAKED" != "$EXPECT" ]; then
     echo "VERIFY FAIL: baked kernel is not the pinned one"
-    echo "  baked  $BAKED"
-    echo "  pinned $KSHA"
+    echo "  baked    $BAKED"
+    echo "  expected $EXPECT"
     exit 1
 fi
-[ -n "${KSHA:-}" ] || echo "VERIFY WARN: no KSHA passed — baked kernel unverified"
+[ -n "${EXPECT:-}" ] || echo "VERIFY WARN: no KSHA passed — baked kernel unverified"
+if [ "$CHAIN" = abl ]; then
+    CMD=$(python3 -I /etk/os-install/build/relabel_bootimg.py show /tmp/kchk.img)
+    printf '%s' "$CMD" | grep -q 'boot=LABEL=ROCKNIX-GTK disk=LABEL=GTKSTOR' || { echo "VERIFY FAIL: slot cmdline lacks the card labels: $CMD"; exit 1; }
+    printf '%s' "$CMD" | grep -q 'msm.context_keepalive=1' || { echo "VERIFY FAIL: slot cmdline lacks the keepalive: $CMD"; exit 1; }
+    mcopy -i "$W@@$OFF" ::/KERNEL.etk-stock /tmp/schk.img 2>/dev/null || { echo "VERIFY FAIL: no KERNEL.etk-stock parked on the card"; exit 1; }
+    [ "$(head -c 8 /tmp/schk.img)" = "ANDROID!" ] || { echo "VERIFY FAIL: parked KERNEL.etk-stock is not a boot.img"; exit 1; }
+    echo "artifact slot cmdline: $CMD"
+    rm -f /tmp/schk.img /tmp/kexp.img
+fi
 rm -f /tmp/kchk.img /tmp/vchk.ext4
 echo "ARTIFACT VERIFY OK"
 VERIFY

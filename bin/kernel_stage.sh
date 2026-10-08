@@ -43,9 +43,22 @@ die() { log "FAIL: $*"; exit 1; }
 GOT=$(sha256sum "$ART" | cut -d' ' -f1)
 [ "$GOT" = "$WANT" ] || die "sha256 mismatch (got $GOT) — artifact discarded, nothing staged"
 
-REL=$(strings "$ART" 2>/dev/null | grep -m1 "Linux version " \
-      | sed 's/.*Linux version \([^ ]*\).*/\1/')
-[ -n "$REL" ] || die "cannot read a kernel release string from the artifact"
+# ABL era (ROCKNIX 20261001+): the artifact is an Android boot.img — the Image
+# inside is gzip'd, so `strings` finds no "Linux version"; the release comes
+# from the manifest (gtk_stack.json kernel.kernel_release) via KS_RELEASE, and
+# the bundle is marked chain=abl so bin/osguard.sh takes its ABL path: the
+# slot (/flash/KERNEL) gets the staged boot.img on the next boot whose module
+# tree matches the release — never a raw Image in the ABL's slot.
+CHAIN=grub
+if [ "$(head -c 8 "$ART" 2>/dev/null)" = "ANDROID!" ]; then
+    CHAIN=abl
+    REL="${KS_RELEASE:-}"
+    [ -n "$REL" ] || die "boot.img artifact needs KS_RELEASE (the manifest's kernel_release) — nothing staged"
+else
+    REL=$(strings "$ART" 2>/dev/null | grep -m1 "Linux version " \
+          | sed 's/.*Linux version \([^ ]*\).*/\1/')
+    [ -n "$REL" ] || die "cannot read a kernel release string from the artifact"
+fi
 
 mkdir -p "$HEAL" || die "cannot create $HEAL"
 # Consume the artifact into the bundle (rename when same fs, copy across).
@@ -60,9 +73,12 @@ if [ -n "$MODE_ARG" ]; then
 elif [ ! -f "$HEAL/mode" ]; then
     printf 'default\n' > "$HEAL/mode"
 fi
-log "staged kernel $REL (sha ok) -> $HEAL/KERNEL.staged (mode=$(cat "$HEAL/mode"))"
+printf '%s\n' "$CHAIN" > "$HEAL/chain"
+log "staged kernel $REL (sha ok, chain=$CHAIN) -> $HEAL/KERNEL.staged (mode=$(cat "$HEAL/mode"))"
 
 # Bank the live ETK grub block (read-only on /flash; freshest render wins).
+# No grub on an ABL unit: the bundle alone drives osguard's re-stage there.
+[ "$CHAIN" = abl ] && CFG_LIST=""
 for CFG in $CFG_LIST; do
     [ -f "$CFG" ] || continue
     grep -q "etk-gtk-test" "$CFG" || continue
@@ -79,7 +95,7 @@ for CFG in $CFG_LIST; do
     fi
     break
 done
-[ -f "$HEAL/grub.block" ] || log "NOTE: no ETK grub entries live and none banked — osguard will heal the kernel slot; entries return with the next install.sh"
+[ "$CHAIN" = abl ] || [ -f "$HEAL/grub.block" ] || log "NOTE: no ETK grub entries live and none banked — osguard will heal the kernel slot; entries return with the next install.sh"
 
 # Poke osguard: if the running OS already matches this kernel, activation
 # happens right now (Phase B) and the user just reboots; if not, the stage

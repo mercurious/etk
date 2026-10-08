@@ -4213,7 +4213,11 @@ def _self_update_apply(info):
                             h.update(chunk)
                     if h.hexdigest() != kern["sha256"]:
                         raise RuntimeError("kernel asset failed sha256 verify")
-                    rc = os.system(f"sh '{base}/bin/kernel_stage.sh' "
+                    # KS_RELEASE: an ABL-era boot.img carries its Image gzip'd,
+                    # so kernel_stage.sh takes the release from the manifest.
+                    krel = str(kern.get("kernel_release", "")).replace("'", "")
+                    rc = os.system(f"KS_RELEASE='{krel}' "
+                                   f"sh '{base}/bin/kernel_stage.sh' "
                                    f"'{kpath}' '{kern['sha256']}' "
                                    f">/dev/null 2>&1")
                     if rc != 0:

@@ -78,8 +78,8 @@ FORGE_TURNIP_GTKVER="${FORGE_TURNIP_GTKVER:-0.7}"
 # DATE/VER/BUILD trio moves TOGETHER: build selector 72 is the 7.2 recipe —
 # mixing an old selector with a new name would mint a 7.1.2 kernel under a
 # 7.2 label. Bumped 20260827->20260901 at the official-chassis remint.
-FORGE_KERNEL_DATE="${FORGE_KERNEL_DATE:-20260901}"
-FORGE_KERNEL_VER="${FORGE_KERNEL_VER:-0.5}"
+FORGE_KERNEL_DATE="${FORGE_KERNEL_DATE:-20261001}"
+FORGE_KERNEL_VER="${FORGE_KERNEL_VER:-0.6.2}"
 FORGE_KERNEL_ARTDIR="${FORGE_KERNEL_ARTDIR:-$HOME/rocknix-gtk/artifacts}"
 # Recipe selector for lane_kernel: 72 = 7.2/20260901-era (scripts/build_72.sh),
 # 712 = 7.1.2/20260801 (kept for remints of the old base). Allowlisted below
@@ -88,8 +88,8 @@ FORGE_KERNEL_BUILD="${FORGE_KERNEL_BUILD:-72}"
 # Chassis date for the 72 lane. 20260901 = the shipping GRUB-era lane (historic paths).
 # 20261001+ = qcom-abl era: the node recipe builds a parity-gated boot.img and the
 # lane ships THAT (rocknix-gtk UPSTREAM_20261001.md "K2 execution plan").
-FORGE_KERNEL_BASEDATE="${FORGE_KERNEL_BASEDATE:-20260901}"
-FORGE_IMAGE_BASEDATE="${FORGE_IMAGE_BASEDATE:-20260901}"
+FORGE_KERNEL_BASEDATE="${FORGE_KERNEL_BASEDATE:-20261001}"
+FORGE_IMAGE_BASEDATE="${FORGE_IMAGE_BASEDATE:-20261001}"
 FORGE_STALL_WARN_S="${FORGE_STALL_WARN_S:-1200}"
 ETK_VERBOSE="${ETK_VERBOSE:-0}"
 
@@ -263,6 +263,9 @@ CERT_TCAT=$(awk '
     END { for (i=1;i<=n;i++) if (a[i] in m) printf "%s:%s ", a[i], m[a[i]] }
 ' "$REPO_ROOT/install.sh")
 CERT_KSHA=$(_manifest_sha kernel)
+# kernel_release: the ABL-era card seeds the osguard heal bundle, which keys
+# its re-stage on this (bin/osguard.sh); the recipe refuses an ABL base without it.
+CERT_KREL=$(sed -n '/"kernel": {/,/}/p' "$REPO_ROOT/config/gtk_stack.json" | sed -n 's/.*"kernel_release": "\([^"]*\)".*/\1/p' | head -1)
 CERT_ASHA=$(_manifest_sha rpcs3)
 CERT_TSHA=$(_manifest_sha turnip)
 if lane_selected image; then
@@ -480,11 +483,11 @@ lane_env() {  # <lane> -> env assignments for the node-side recipe
         # The three baked names come from the MANIFEST (see the preflight
         # note above), never from the build knobs — an image is a shipped
         # asset and must carry exactly the certified stack.
-        image)  printf 'KNAME=%s ANAME=%s TNAME=%s KSHA=%s ASHA=%s TSHA=%s TCAT="%s" EXPECT_VER=%s EXPECT_HEAD=%s BASEDATE=%s OUTIMG=%s' \
+        image)  printf 'KNAME=%s ANAME=%s TNAME=%s KSHA=%s ASHA=%s TSHA=%s TCAT="%s" EXPECT_VER=%s EXPECT_HEAD=%s BASEDATE=%s OUTIMG=%s KREL=%s' \
                     "$CERT_KNAME" "$CERT_ANAME" "$CERT_TNAME" \
                     "$CERT_KSHA" "$CERT_ASHA" "$CERT_TSHA" "$CERT_TCAT" \
                     "$CERT_VER" "$CERT_HEAD" \
-                    "$FORGE_IMAGE_BASEDATE" "$IMGNAME" ;;
+                    "$FORGE_IMAGE_BASEDATE" "$IMGNAME" "$CERT_KREL" ;;
     esac
 }
 

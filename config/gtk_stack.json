@@ -11,10 +11,11 @@
   ],
   "gtk_stack": "0.9.0",
   "kernel": {
-    "asset": "KERNEL.rocknix-gtk-20260901-0.5",
-    "sha256": "de05888f8288b89e9c73ab4f82818e5ac3fa0f188c0a4f7ca0943242fc8d6d64",
+    "asset": "KERNEL.rocknix-gtk-20261001-0.6.2",
+    "sha256": "3d3bf8cb13968ce868bdbf39bd0cafc607c4f753bc56ec087895175a9f2f76f3",
     "kernel_release": "7.2.0",
-    "requires_os": "20260901"
+    "requires_os": "20261001",
+    "format": "boot.img"
   },
   "turnip": {
     "asset": "etk_turnip_rocknix_26.2.2_gtk_0.7.so",
