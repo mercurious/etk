@@ -22,7 +22,9 @@ Type=oneshot
 # Two GTK signatures: the GRUB-era entry boots /KERNEL.gtktest; the ABL-era
 # boot.img (ROCKNIX 20261001+) has no file name on the cmdline, only the baked
 # msm.context_keepalive=1 that no stock boot.img carries.
-ExecStart=/bin/sh -c 'grep -qE "KERNEL\.gtktest|msm\.context_keepalive=1" /proc/cmdline && echo "ROCKNIX-GTK @GTKVER@-@KDATE@" || true'
+# [.] not \. : systemd unescapes quoted ExecStart strings and logs "Ignoring unknown
+# escape sequences" for a backslash (seen on car12's first ABL boot; harmless, noisy).
+ExecStart=/bin/sh -c 'grep -qE "KERNEL[.]gtktest|msm[.]context_keepalive=1" /proc/cmdline && echo "ROCKNIX-GTK @GTKVER@-@KDATE@" || true'
 RemainAfterExit=yes
 StandardOutput=tty
 

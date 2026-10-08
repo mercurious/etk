@@ -722,7 +722,7 @@ knobs, writes the handoff, verifies afterward from read-only telemetry.
   (host + rig-BusyBox). **4Kn law:** any FAT image built for the internal ESP MUST be
   `mkfs.fat -S 4096` — a 512-sector FAT crashes U-Boot itself (Synchronous Abort loop;
   fastboot `flash ROCKNIX` is the proven recovery rung).
-- **ABL-era kernel deploy (ROCKNIX 20261001+, built 2026-10-08, COLD-BOOT GATED on car12):**
+- **ABL-era kernel deploy (ROCKNIX 20261001+, built AND cold-boot validated on car12 2026-10-08 — `KERNEL.rocknix-gtk-20261001-0.6.1` live: `/proc/cmdline` == the baked cmdline, so the ABL appends nothing — hardware-confirmed; keepalive param `Y`; 51 modules; Visionox at 120 Hz; GPU/audio up; osguard logged "slot holds the staged GTK boot.img and this boot runs it"):**
   upstream replaced GRUB with ROCKNIX-ABL on SM8250 — the ABL loads exactly ONE file,
   `/flash/KERNEL`, an Android boot.img (gzip Image + the 9 device DTBs + the cmdline BAKED
   IN; the ABL appends nothing), and `/flash/EFI` + `/flash/boot` are gone. STEP 6.4 probes

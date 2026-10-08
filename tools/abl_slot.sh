@@ -177,7 +177,8 @@ verify)
     [ "$rcmd" = "$wcmd" ] && ok "ABL booted the slot: /proc/cmdline == the boot.img's baked cmdline (nothing appended)" \
                           || bad "running cmdline != slot cmdline (booted something else, or the ABL rewrote it): '$rcmd'"
     printf '%s' "$rcmd" | grep -q 'msm.context_keepalive=1' && ok "msm.context_keepalive=1 on the live cmdline" || bad "keepalive NOT on the live cmdline -- anti-lock net #2 is off"
-    kp=$(field "$p" keepalive_param); [ -z "$kp" ] || { [ "$kp" = 1 ] && ok "msm.context_keepalive param reads 1" || bad "msm.context_keepalive param reads '$kp'"; }
+    # bool module params print Y/N via sysfs (seen live on car12 2026-10-08), ints print 1/0
+    kp=$(field "$p" keepalive_param); [ -z "$kp" ] || { case "$kp" in 1|Y|y) ok "msm.context_keepalive param reads $kp" ;; *) bad "msm.context_keepalive param reads '$kp'" ;; esac; }
     if [ -n "$wlinux" ]; then
         rv=$(field "$p" run_version | cut -d'#' -f1); wv=$(printf '%s' "$wlinux" | cut -d'#' -f1)
         [ "$rv" = "$wv" ] && ok "running kernel is the image's build ($(printf '%s' "$wv" | cut -c1-70)…)" || bad "running '$rv' != image '$wv'"

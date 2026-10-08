@@ -96,7 +96,7 @@ boot_as() {   # stock | gtk — what the fake unit is RUNNING
     if [ "$1" = gtk ]; then
         printf '%s\n' "$GTK_CMD" > "$U/proc/cmdline"
         echo 'Linux version 7.2.0 (root@rocknix-gtk) (gcc-15 (Debian 15.3.0-4) 15.3.0) #1 SMP PREEMPT' > "$U/proc/version"
-        mkdir -p "$U/sys/module/msm/parameters"; echo 1 > "$U/sys/module/msm/parameters/context_keepalive"
+        mkdir -p "$U/sys/module/msm/parameters"; echo Y > "$U/sys/module/msm/parameters/context_keepalive"   # bool param: sysfs prints Y (live car12)
     else
         printf '%s\n' "$STOCK_CMD" > "$U/proc/cmdline"
         echo 'Linux version 7.2.0 (@0b091aade48d) (aarch64-rocknix-linux-gnu-gcc-15.2.0 (GCC) 15.2.0) #1 SMP PREEMPT' > "$U/proc/version"
@@ -165,6 +165,7 @@ expect "verify: unit still running STOCK after stage -> FAIL" 1 "running cmdline
 expect "verify: ...and names the missing keepalive"            1 "keepalive NOT on the live cmdline" "$TOOL" verify root@car12host
 boot_as gtk
 expect "verify: booted the GTK slot -> PASS"                  0 "ABL_SLOT_VERIFY PASS" "$TOOL" verify root@car12host "$TD/gtk.img" --car car12
+expect "verify: bool keepalive param Y accepted"             0 "param reads Y" "$TOOL" verify root@car12host
 expect "verify: matches the image's Linux version"            0 "running kernel is the image's build" "$TOOL" verify root@car12host "$TD/gtk.img"
 expect "verify: without an image, judges against install.sh's banked sha" 0 "slot holds what install.sh staged" "$TOOL" verify root@car12host
 expect "verify: ABL appended nothing"                         0 "nothing appended"     "$TOOL" verify root@car12host
