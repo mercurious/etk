@@ -85,6 +85,10 @@ FORGE_KERNEL_ARTDIR="${FORGE_KERNEL_ARTDIR:-$HOME/rocknix-gtk/artifacts}"
 # 712 = 7.1.2/20260801 (kept for remints of the old base). Allowlisted below
 # so a typo dies host-side.
 FORGE_KERNEL_BUILD="${FORGE_KERNEL_BUILD:-72}"
+# Chassis date for the 72 lane. 20260901 = the shipping GRUB-era lane (historic paths).
+# 20261001+ = qcom-abl era: the node recipe builds a parity-gated boot.img and the
+# lane ships THAT (rocknix-gtk UPSTREAM_20261001.md "K2 execution plan").
+FORGE_KERNEL_BASEDATE="${FORGE_KERNEL_BASEDATE:-20260901}"
 FORGE_IMAGE_BASEDATE="${FORGE_IMAGE_BASEDATE:-20260901}"
 FORGE_STALL_WARN_S="${FORGE_STALL_WARN_S:-1200}"
 ETK_VERBOSE="${ETK_VERBOSE:-0}"
@@ -202,6 +206,13 @@ if ! printf '%s' "$FORGE_KERNEL_VER" | grep -Eq '^[0-9]+(\.[0-9]+)*$' \
    || ! printf '%s' "$FORGE_KERNEL_DATE" | grep -Eq '^[0-9]{8}$'; then
     tui_fail "FORGE_KERNEL_DATE/VER must be 8-digit date + digits-and-dots (law #8): got $KNAME"
 fi
+printf '%s' "$FORGE_KERNEL_BASEDATE" | grep -Eq '^[0-9]{8}$' \
+    || tui_fail "FORGE_KERNEL_BASEDATE must be an 8-digit chassis date: got '$FORGE_KERNEL_BASEDATE'"
+if [ "$FORGE_KERNEL_BASEDATE" != 20260901 ] && [ "$FORGE_KERNEL_BUILD" != 72 ]; then
+    tui_fail "FORGE_KERNEL_BASEDATE=$FORGE_KERNEL_BASEDATE needs FORGE_KERNEL_BUILD=72 (only the 7.2 recipe is date-parametrized)"
+fi
+# same suffix rule as build_72.sh / lane_kernel.sh
+FORGE_KERNEL_SFX=""; [ "$FORGE_KERNEL_BASEDATE" != 20260901 ] && FORGE_KERNEL_SFX="-$FORGE_KERNEL_BASEDATE"
 case "$FORGE_KERNEL_BUILD" in
     712|72) ;;
     *) tui_fail "FORGE_KERNEL_BUILD must be 712 or 72 (selects scripts/build_<sel>.sh on the node): got '$FORGE_KERNEL_BUILD'" ;;
@@ -375,7 +386,8 @@ fp_compute() {  # <lane> -> fingerprint string on stdout
                     "$(sha256_of "$FORGE_RPCS3_FORK/scripts/verify-markers.sh")" \
                     "$(probe_section IMAGEID | head -1)" ;;
         turnip) printf 'vers=%s gtk=%s tip=%s' "$FORGE_TURNIP_VERS" "$FORGE_TURNIP_GTKVER" "$TURNIP_TIP" ;;
-        kernel) printf 'tip=%s name=%s kcc=gcc-15' "$KERNEL_TIP" "$KNAME" ;;
+        kernel) printf 'tip=%s name=%s kcc=gcc-15%s' "$KERNEL_TIP" "$KNAME" \
+                    "${FORGE_KERNEL_SFX:+ basedate=$FORGE_KERNEL_BASEDATE}" ;;
         # kit=%s IS LOAD-BEARING. The image bakes the ETK middleware straight
         # out of the build node's checkout, but this fingerprint only ever
         # hashed the three BINARIES, the base date and the recipe. The
@@ -460,7 +472,7 @@ lane_env() {  # <lane> -> env assignments for the node-side recipe
                     "$FORGE_RPCS3_TREE" "$FORGE_RPCS3_BASE" "$(basename "$FORGE_RPCS3_PATCH")" \
                     "$FORGE_RPCS3_IMAGE" "$FORGE_RPCS3_MARKER" "$FORGE_RPCS3_ARTIFACT" ;;
         turnip) printf 'VERS="%s" GTKVER=%s' "$FORGE_TURNIP_VERS" "$FORGE_TURNIP_GTKVER" ;;
-        kernel) printf 'KNAME=%s FORGE_KERNEL_BUILD=%s' "$KNAME" "$FORGE_KERNEL_BUILD" ;;
+        kernel) printf 'KNAME=%s FORGE_KERNEL_BUILD=%s FORGE_KERNEL_BASEDATE=%s' "$KNAME" "$FORGE_KERNEL_BUILD" "$FORGE_KERNEL_BASEDATE" ;;
         # The three baked names come from the MANIFEST (see the preflight
         # note above), never from the build knobs — an image is a shipped
         # asset and must carry exactly the certified stack.
@@ -648,7 +660,7 @@ if lane_selected kernel; then
     else
         forge_status kernel WORK 0 "launching"
         lane_launch_or_attach kernel
-        lane_poll kernel 3 "docker exec rocknix-gtk-kernel-sid sh -c 'wc -c < /kernel/build$FORGE_KERNEL_BUILD.log' 2>/dev/null"
+        lane_poll kernel 3 "docker exec rocknix-gtk-kernel-sid sh -c 'wc -c < /kernel/build$FORGE_KERNEL_BUILD$FORGE_KERNEL_SFX.log' 2>/dev/null"
         if [ "$LANE_RC" = "0" ]; then
             tui_step_progress 3 90
             NSHA=$(FSSH "sha256sum \$HOME/rocknix-gtk/artifacts/$KNAME 2>/dev/null | cut -d' ' -f1")
