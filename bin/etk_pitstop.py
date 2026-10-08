@@ -498,6 +498,31 @@ def _read_absinfo(fd, axis=ABS_RY):
     return None
 
 
+def _read_abs_value(fd, axis):
+    """The axis's CURRENT value as the kernel holds it (input_absinfo.value),
+    or None. evdev delivers changes only, so a trigger that has not moved
+    since the fd was opened never produces an event — this is how the
+    TRIGGER CAL screen learns the rest floor before the operator touches
+    anything (car12, 2026-10-08: the model's live value stayed 0 while L2
+    rested at 20/255, and three saves baked the drag back in)."""
+    if fd is None:
+        return None
+    req = _eviocgabs(axis)
+    for r in (req, req - (1 << 32)):
+        try:
+            buf = fcntl.ioctl(fd, r, b'\0' * _ABSINFO_SIZE)
+        except Exception:
+            continue
+        try:
+            val, lo, hi, _fuzz, _flat, _res = struct.unpack(_ABSINFO_FMT, buf)
+        except Exception:
+            break
+        if hi > lo:
+            return val
+        break
+    return None
+
+
 # === TAB DISPATCH ===
 # Tab IDs are stable identifiers; the TABS list sets the left-to-right
 # DISPLAY + cycle order. L1/R1 and [/] step through TABS, clamped at ends.
@@ -6378,6 +6403,14 @@ _TRIGCAL_MARGIN = 13   # AUTO = live rest + margin (12+13=25 = the 06-16 fix)
 # always saturates; envelope max must clear the floor to count as a pull.
 _TRIGCAL_TOP_MARGIN = 4
 _TRIGCAL_TOP_FLOOR = 200
+# REST BAND (2026-10-08, car12): a released DS5 trigger does not sit still — it
+# wanders (L2 seen 11..20/255 across samples on the 12GB unit) and evdev only
+# reports CHANGES, so a model that trusts the last event (or a never-updated 0)
+# underestimates the floor and AUTO/SAVE bake in a dragging brake. Any value at
+# or below this band counts as "resting"; the model keeps the HIGHEST resting
+# value seen (seeded from the kernel's current value at screen open) and every
+# threshold is judged against THAT. Above the band = the trigger is being held.
+_TRIGCAL_REST_BAND = 48
 
 
 def _trigcal_handler_scale(handler):
@@ -6445,9 +6478,14 @@ def _trigcal_read_thresholds():
     return l, r, lmax, rmax, handler, None
 
 
-def _trigcal_new_model():
+def _trigcal_new_model(fd=None):
     l, r, lmax, rmax, handler, err = _trigcal_read_thresholds()
     scale = _trigcal_handler_scale(handler)
+    # Seed the live values and the rest floor from the KERNEL's current axis
+    # values: a trigger nobody has touched since Pitstop opened sends no
+    # event, and a live value of 0 is a lie the DS5 rest bug punishes.
+    live_l = _read_abs_value(fd, ABS_Z) if fd is not None else None
+    live_r = _read_abs_value(fd, ABS_RZ) if fd is not None else None
 
     def to_raw(cfg):
         if cfg is None:
@@ -6468,9 +6506,15 @@ def _trigcal_new_model():
         "handler": handler or "?",
         "scale": scale,                   # config units per full travel
         "load_err": err,
-        "l2": 0, "r2": 0,                 # live axis values
-        "l2_min": None, "l2_max": None,   # observed envelope this session
-        "r2_min": None, "r2_max": None,
+        "l2": live_l or 0, "r2": live_r or 0,   # live axis values (kernel-seeded)
+        "l2_min": live_l, "l2_max": live_l,     # observed envelope this session
+        "r2_min": live_r, "r2_max": live_r,
+        # Highest RESTING value seen (<= _TRIGCAL_REST_BAND): the floor every
+        # threshold must clear. None until the kernel or an event says.
+        "l2_rest": None, "r2_rest": None,
+        "l2_rest_last": live_l if (live_l is not None and live_l <= _TRIGCAL_REST_BAND) else None,
+        "r2_rest_last": live_r if (live_r is not None and live_r <= _TRIGCAL_REST_BAND) else None,
+        "note": "",                             # one-line verdict under AUTO-SET
         "dirty": False,
     }
 
@@ -6486,6 +6530,53 @@ def _trigcal_axis(state, code, val):
     mn, mx = m[key + "_min"], m[key + "_max"]
     m[key + "_min"] = val if mn is None else min(mn, val)
     m[key + "_max"] = val if mx is None else max(mx, val)
+    # SETTLED rest, not any in-band value: a release ramps 255 -> 30 -> 20 -> 12
+    # and the transient 30 is not a floor. The last in-band value is where the
+    # trigger is sitting; it is FOLDED into the floor (max) when the next pull
+    # begins, so each release's settle counts and ramp samples never do.
+    if val <= _TRIGCAL_REST_BAND:
+        m[key + "_rest_last"] = val
+    else:
+        last = m.get(key + "_rest_last")
+        if last is not None:
+            rest = m.get(key + "_rest")
+            m[key + "_rest"] = last if rest is None else max(rest, last)
+
+
+def _trigcal_floor(m, key):
+    """The floor a threshold must clear for `key`: the highest SETTLED
+    resting value — every release's settle folded at the next pull, plus
+    where the trigger sits right now if that is in the rest band — or the
+    live value when nothing resting has been seen yet."""
+    cands = [m.get(key + "_rest"), m.get(key + "_rest_last")]
+    live = m.get(key) or 0
+    if live <= _TRIGCAL_REST_BAND:
+        cands.append(live)
+    cands = [c for c in cands if c is not None]
+    return max(cands) if cands else live
+
+
+def _trigcal_auto(m, keys=("l2", "r2")):
+    """AUTO for the given triggers: threshold = rest floor + margin. Refuses
+    (returns False, sets m['note']) while any of them is held above the rest
+    band — the live value would then be a pull, not a floor. Top-end: only
+    when a genuine full pull was observed (envelope max past the floor); max
+    at true 255 means no top deadzone -> cal off; never clobbers an existing
+    cal with 'no pull seen'."""
+    held = [k for k in keys if (m.get(k) or 0) > _TRIGCAL_REST_BAND]
+    if held:
+        m["note"] = "RELEASE " + "+".join(k.upper() for k in held) + " first - AUTO reads the resting value"
+        return False
+    for k in keys:
+        floor = _trigcal_floor(m, k)
+        m[k + "_thr"] = max(0, min(255, floor + _TRIGCAL_MARGIN))
+        mx = m.get(k + "_max")
+        if mx is not None and mx >= _TRIGCAL_TOP_FLOOR:
+            m[k + "_top"] = 0 if mx >= 255 else max(64, mx - _TRIGCAL_TOP_MARGIN)
+    m["note"] = "set: " + "  ".join(
+        f"{k.upper()} rest {_trigcal_floor(m, k)} -> thr {m[k + '_thr']}" for k in keys)
+    m["dirty"] = True
+    return True
 
 
 def _trigcal_adjust(state, delta):
@@ -6530,6 +6621,17 @@ def _trigcal_save(state):
     raw_l, raw_r = m.get("l2_thr"), m.get("r2_thr")
     if raw_l is None or raw_r is None:
         return (False, ["No thresholds to save."])
+    # THE DRAG GUARD: a threshold at or below the trigger's resting value is a
+    # brake (or throttle) that is always slightly pressed. Never write one.
+    drag = []
+    for k, raw, name in (("l2", raw_l, "L2 (brake)"), ("r2", raw_r, "R2 (accel)")):
+        floor = _trigcal_floor(m, k)
+        if raw <= floor:
+            drag.append(f"  {name}: threshold {raw} <= rest {floor} -> would DRAG")
+    if drag:
+        return (False, ["NOT SAVED - this calibration would drag:"] + drag +
+                       ["Release both triggers and press A on AUTO-SET",
+                        "(or A on the trigger's row), then SAVE."])
     top_l, top_r = m.get("l2_top") or 0, m.get("r2_top") or 0
     # RAW pad units (0-255, the UI/gauge domain) -> the handler's config
     # units at the file boundary (SDL = 0-32767; HID handlers = 0-255).
@@ -6671,9 +6773,13 @@ def _draw_trigcal_screen(stdscr, state, y, h, w):
         put(y, 19, f"[{bar}]",
             curses.color_pair(PAIR_CLEAN) if active else curses.A_NORMAL)
         y += 1
-        env = (f"live {live:3d}   threshold {thr:3d}   seen rest/max: "
-               + (f"{mn}/{mx}" if mn is not None else "-/-"))
-        put(y, 19, env, curses.A_DIM)
+        rest = m.get(key + "_rest")
+        env = (f"live {live:3d}   threshold {thr:3d}   rest {rest if rest is not None else '-':>3}"
+               f"   min/max {mn if mn is not None else '-'}/{mx if mx is not None else '-'}")
+        drags = rest is not None and thr <= rest
+        put(y, 19, env, curses.color_pair(PAIR_CRASH) if drags else curses.A_DIM)
+        if drags:
+            put(y, 19 + len(env) + 2, "DRAG", curses.color_pair(PAIR_CRASH) | curses.A_BOLD)
         y += 1
         # Top-end calibration row (H7b) — its own cursor row so DPAD/A can
         # drive it; shows the saturation ceiling the fork rescales to full.
@@ -6691,7 +6797,10 @@ def _draw_trigcal_screen(stdscr, state, y, h, w):
         curses.color_pair(1) if sel else curses.A_NORMAL)
     put(y, 6, "AUTO-SET  (pull both fully, release, then press A)",
         curses.A_REVERSE if sel else curses.A_NORMAL)
-    y += 2
+    y += 1
+    if m.get("note"):
+        put(y, 8, m["note"], curses.A_DIM)
+    y += 1
     sel = (_TRIGCAL_ROWS[cur] == "save")
     put(y, 4, "> " if sel else "  ",
         curses.color_pair(1) if sel else curses.A_NORMAL)
@@ -6770,7 +6879,7 @@ def _tools_select(state):
         elif state.get("tools_cursor", 0) == _TOOLS_TRIGCAL_IDX:   # Trigger Cal
             state["tools_mode"] = "trigcal"
             state["tools_cursor"] = 0
-            state["trigcal_model"] = _trigcal_new_model()
+            state["trigcal_model"] = _trigcal_new_model(state.get("pad_fd"))
         elif state.get("tools_cursor", 0) == _TOOLS_FIRMWARE_IDX:   # Firmware
             pups = _scan_firmware()
             if len(pups) == 0:
@@ -6863,19 +6972,14 @@ def _tools_select(state):
         m = state.get("trigcal_model") or {}
         row = _TRIGCAL_ROWS[state.get("tools_cursor", 0) % len(_TRIGCAL_ROWS)]
         if row == "auto":
-            # Live values ARE the rest residuals when both triggers are
-            # released — the whole point of the DS5 nonzero-rest bug.
-            m["l2_thr"] = max(0, min(255, (m.get("l2") or 0) + _TRIGCAL_MARGIN))
-            m["r2_thr"] = max(0, min(255, (m.get("r2") or 0) + _TRIGCAL_MARGIN))
-            # Top-end: only when a genuine full pull was observed this
-            # session (envelope max past the floor). Max at true 255 means
-            # no top deadzone -> cal off. Never clobber an existing cal
-            # with 'no pull seen'.
-            for k in ("l2", "r2"):
-                mx = m.get(k + "_max")
-                if mx is not None and mx >= _TRIGCAL_TOP_FLOOR:
-                    m[k + "_top"] = 0 if mx >= 255 else max(64, mx - _TRIGCAL_TOP_MARGIN)
-            m["dirty"] = True
+            # Rest floor + margin, per trigger (refused while held). The rest
+            # floor is kernel-seeded at screen open and tracks the HIGHEST
+            # resting value, so the DS5's wandering nonzero rest cannot sneak
+            # under the threshold (car12, 2026-10-08: three saves of 0).
+            _trigcal_auto(m)
+        elif row in ("l2", "r2"):
+            # A on a threshold row = AUTO for that trigger alone.
+            _trigcal_auto(m, (row,))
         elif row in ("l2top", "r2top"):
             # A on a top-end row = set from this session's observed max
             # (per-trigger AUTO). No pull seen yet -> leave unchanged.
@@ -6887,7 +6991,7 @@ def _tools_select(state):
         elif row == "save":
             state["tools_result"] = _trigcal_save(state)
             state["tools_mode"] = "result"
-        # l2/r2 threshold rows adjust via DPAD left/right; A is a no-op there
+        # l2/r2 threshold rows also adjust via DPAD left/right
 
     elif mode == "result":
         state["tools_mode"] = "menu"
@@ -9247,6 +9351,7 @@ def main(stdscr):
     _stick_range = _read_absinfo(fd, ABS_RY)
 
     state = {
+        "pad_fd": fd,                 # TRIGGER CAL seeds its rest floor from it
         "matrix": matrix,
         "cursor_idx": 0,
         # Default tab: TOOLS when no game resolved (the install front door,
