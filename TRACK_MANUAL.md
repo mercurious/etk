@@ -740,9 +740,12 @@ knobs, writes the handoff, verifies afterward from read-only telemetry.
   are the read-only instrument panel — verify = slot sha vs the bundle, `/proc/cmdline` ==
   the baked cmdline, keepalive live, module tree, panel, GPU, audio). The OS updater writes
   its boot.img over `/flash/KERNEL` (init's `IMAGE_KERNEL` defaults to `KERNEL`): a silent
-  revert to stock, never a brick — osguard's ABL check names it and stands down (no grub
-  phases, no re-stage from a boot daemon until the slot path is validated); the fix is a
-  re-run of install.sh. **Kit DTB deltas ride inside the boot.img and are spliced at MINT**
+  revert to stock, never a brick — **osguard RE-STAGES it** (validated car12 2026-10-08:
+  simulated revert → stock boot → parked the updater's boot.img as `KERNEL.etk-stock`,
+  restored ours sha-verified, toast "REBOOT once" → second boot runs it) under ONE gate:
+  the staged release == the new OS's module tree; a mismatch is named and left stock,
+  because no grub pick exists to recover a dark boot. `ETK_OSGUARD_ABL_RESTAGE=0` = name
+  only. Grub phases never run on this chain. **Kit DTB deltas ride inside the boot.img and are spliced at MINT**
   (rocknix-gtk `pack_bootimg.sh` runs `bin/etk_dtb_mic.py` on the Flip2 + Flip2-Visionox
   DTBs; the lane stages the splicer from the node's `~/etk`; gate strict + kit-aware;
   knobs `ETK_KIT_DTB`/`ETK_INTERNAL_MIC` via forge) — validated car12 2026-10-08 on 0.6.2:
