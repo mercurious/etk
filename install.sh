@@ -1996,18 +1996,35 @@ except zlib.error:
     print('linux='); print('dtbs=0'); sys.exit(0)
 lv = img.find(b'Linux version ')
 print('linux=' + (img[lv:img.index(b'\n', lv)].decode(errors='replace') if lv >= 0 else ''))
-n, p = 0, 0
+n, p, kit = 0, 0, []
+sys.path.insert(0, './bin')
+try:
+    import etk_dtb_mic as splicer
+except Exception:
+    splicer = None
 while p + 8 <= len(tail):
     m, t = struct.unpack_from('>II', tail, p)
     if m != 0xd00dfeed or t < 40 or p + t > len(tail): break
+    blob = tail[p:p + t]
+    if b'Retroid Pocket Flip2' in blob and splicer is not None:
+        # which Flip 2 DTBs in this boot.img carry the kit splice (mic) -- baked at mint
+        model = 'Flip2 Visionox' if b'Retroid Pocket Flip2 Visionox\0' in blob else 'Flip2'
+        try:
+            _h, _sb, _st, toks = splicer.parse(blob)
+            props = splicer.sound_props(toks)
+            kit.append(f"{model}={'mic' if (props is not None and splicer.is_patched(props)) else 'stock'}")
+        except Exception as e:
+            kit.append(f'{model}=unreadable')
     n += 1; p += t
 print(f'dtbs={n}')
+print('kitdtb=' + ' '.join(kit))
 PY
 )
     K_MAGIC=$(printf '%s\n' "$K_INFO" | sed -n 's/^magic=//p')
     K_BAKED=$(printf '%s\n' "$K_INFO" | sed -n 's/^cmdline=//p')
     K_DTBS=$(printf '%s\n' "$K_INFO" | sed -n 's/^dtbs=//p')
     K_RELEASE=$(printf '%s\n' "$K_INFO" | sed -n 's/^linux=//p' | sed 's/^Linux version \([^ ]*\).*/\1/')
+    K_KITDTB=$(printf '%s\n' "$K_INFO" | sed -n 's/^kitdtb=//p')
     K_MODE="${KERNEL_DEPLOY_MODE:-default}"
     K_ABL_STOP=""
     if [ "$K_MAGIC" != "ok" ]; then
@@ -2112,7 +2129,14 @@ KERNELABLREMOTE
                 say "${C}[INFO] ABL boot chain: no menu, no grub pick. Fallback = ./uninstall.sh (restores the parked stock), or the card in a PC: cp KERNEL.etk-stock KERNEL. An OS update silently puts stock back in the slot; osguard names it, this installer restores it.${N}"
                 [ "$K_PRI" = "yes" ] || say "${Y}[WARN] The parked KERNEL.etk-stock does not match this OS's KERNEL.md5 — the fallback is whatever was in the slot, not a proven-pristine OS kernel.${N}" ;;
             esac
-            say "${C}[INFO] Flip 2 kit DTB (internal mic, USB-C VBUS): not applied under ABL — the DTBs ride inside the boot.img and are spliced at mint; this unit boots its own stock board DTB.${N}"
+            # Kit DTB verdict under ABL: baked at MINT (rocknix-gtk pack_bootimg.sh +
+            # etk_dtb_mic.py), read back here from the image's own Flip 2 DTBs. The
+            # UCM half (STEP 6.76) binds after the cold boot on the booted DT's widget.
+            case "$K_KITDTB" in
+                *"=mic"*) say "${G}[ETK]${N} Flip 2 kit DTB baked at mint: ${K_KITDTB} (internal mic widget; USB-C VBUS is upstream on this OS). Mic binds at STEP 6.76 after the cold boot." ;;
+                *"=stock"*) say "${Y}[WARN] Flip 2 kit DTB NOT in this boot.img (${K_KITDTB}): the internal mic stays off on the ABL stack. Mint with ETK_KIT_DTB=1 (lane_kernel.sh stages the splicer).${N}" ;;
+                *) say "${C}[INFO] Flip 2 kit DTB: no verdict (${K_KITDTB:-no Flip 2 DTB found / splicer unreadable}).${N}" ;;
+            esac
             # --- GTK boot-identity line (same unit as the GRUB branch; it gates on the
             #     live cmdline's keepalive, which only a GTK boot.img carries) ---
             GTK_KDATE=$(basename "$KERNEL_IMAGE" | grep -oE '[0-9]{8}' | head -1)

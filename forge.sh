@@ -472,7 +472,11 @@ lane_env() {  # <lane> -> env assignments for the node-side recipe
                     "$FORGE_RPCS3_TREE" "$FORGE_RPCS3_BASE" "$(basename "$FORGE_RPCS3_PATCH")" \
                     "$FORGE_RPCS3_IMAGE" "$FORGE_RPCS3_MARKER" "$FORGE_RPCS3_ARTIFACT" ;;
         turnip) printf 'VERS="%s" GTKVER=%s' "$FORGE_TURNIP_VERS" "$FORGE_TURNIP_GTKVER" ;;
-        kernel) printf 'KNAME=%s FORGE_KERNEL_BUILD=%s FORGE_KERNEL_BASEDATE=%s' "$KNAME" "$FORGE_KERNEL_BUILD" "$FORGE_KERNEL_BASEDATE" ;;
+        # ETK_KIT_DTB / ETK_INTERNAL_MIC: the boot.img lane splices the Flip 2 kit
+        # DTB deltas at mint (ABL era); both default ON, etk.conf's ETK_INTERNAL_MIC
+        # is the same knob install.sh honours on the grub slot.
+        kernel) printf 'KNAME=%s FORGE_KERNEL_BUILD=%s FORGE_KERNEL_BASEDATE=%s ETK_KIT_DTB=%s ETK_INTERNAL_MIC=%s' \
+                    "$KNAME" "$FORGE_KERNEL_BUILD" "$FORGE_KERNEL_BASEDATE" "${ETK_KIT_DTB:-1}" "${ETK_INTERNAL_MIC:-1}" ;;
         # The three baked names come from the MANIFEST (see the preflight
         # note above), never from the build knobs — an image is a shipped
         # asset and must carry exactly the certified stack.

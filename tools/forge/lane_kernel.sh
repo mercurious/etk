@@ -35,8 +35,22 @@ KLANE="${FORGE_KERNEL_BUILD:-712}"
 BASEDATE="${FORGE_KERNEL_BASEDATE:-20260901}"
 # same suffix rule as build_72.sh: the 20260901 lane keeps its historic paths
 if [ "$KLANE" = 72 ] && [ "$BASEDATE" != 20260901 ]; then SFX="-$BASEDATE"; else SFX=""; fi
-log "build_${KLANE}.sh BASEDATE=$BASEDATE (KCC=gcc-15, enforced in-recipe)"
-docker exec rocknix-gtk-kernel-sid bash -lc "KCC=gcc-15 BASEDATE=$BASEDATE bash /work/scripts/build_${KLANE}.sh"
+# KIT DTB SPLICE AT MINT (boot.img lane, 2026-10-08): the DTBs ride inside the
+# boot.img, so the Flip 2 kit deltas (internal mic; USB-C VBUS where the stock DT
+# lacks it) are spliced by etk's bin/etk_dtb_mic.py INSIDE the recipe. The
+# splicer's canonical home is the etk repo; this lane stages the node's ~/etk
+# copy into the container (never a copy kept in rocknix-gtk) and prints its
+# sha + the checkout tip so a stale node kit is visible in the log.
+ETK_KIT_DTB="${ETK_KIT_DTB:-1}"
+ETK_INTERNAL_MIC="${ETK_INTERNAL_MIC:-1}"
+if [ "$KLANE" = 72 ] && [ "$BASEDATE" -ge 20261001 ] && [ "$ETK_KIT_DTB" = 1 ]; then
+    SPL="$HOME/etk/bin/etk_dtb_mic.py"
+    [ -f "$SPL" ] || { log "FATAL: $SPL missing on the node (pull ~/etk) -- or ETK_KIT_DTB=0 for a pure-parity mint"; exit 1; }
+    docker cp "$SPL" rocknix-gtk-kernel-sid:/kernel/staging/etk_dtb_mic.py
+    log "kit DTB splicer staged: etk_dtb_mic.py sha $(sha256sum "$SPL" | cut -c1-16) from ~/etk @ $(git -C "$HOME/etk" rev-parse --short HEAD 2>/dev/null || echo '?') (mic=$ETK_INTERNAL_MIC)"
+fi
+log "build_${KLANE}.sh BASEDATE=$BASEDATE (KCC=gcc-15, enforced in-recipe; kit DTB=$ETK_KIT_DTB)"
+docker exec rocknix-gtk-kernel-sid bash -lc "KCC=gcc-15 BASEDATE=$BASEDATE ETK_KIT_DTB=$ETK_KIT_DTB ETK_INTERNAL_MIC=$ETK_INTERNAL_MIC bash /work/scripts/build_${KLANE}.sh"
 
 echo "=== config drift vs rig ground truth (expect INITRAMFS/FIRMWARE paths + toolchain-probe lines) ==="
 docker exec rocknix-gtk-kernel-sid cat "/kernel/config${KLANE}${SFX}.drift" || true
