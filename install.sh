@@ -1942,7 +1942,189 @@ fi
 # card must keep moving whether or not the stage has any work to do. A stage
 # skipped by etk.conf is still a stage the operator watched go past.
 rig_toast 44 "Kernel + boot config" $ETK_TOAST_BULK_MS || true
-if [ -n "${KERNEL_IMAGE:-}" ] && [ -f "${KERNEL_IMAGE:-}" ]; then
+# BOOT CHAIN (2026-10-08): ROCKNIX 20261001 moved SM8250 from GRUB to ROCKNIX-ABL.
+# The ABL loads exactly ONE file, /flash/KERNEL — an Android boot.img (gzip Image
+# + the 9 device DTBs + the cmdline BAKED IN; the ABL appends nothing) — and
+# /flash/EFI + /flash/boot are gone. Every grub mechanism below (entries, numeric
+# default, kit DTB slot, grubenv) has no object on such a unit. Probe once; the
+# two deploy branches and STEP 6.65 key on it. 'grub' = the 20260901- chain.
+K_CHAIN=$(ssh $RIG_SSH 'if [ -d /flash/EFI ] || [ -f /flash/boot/grub/grub.cfg ]; then echo grub; elif [ "$(head -c 8 /flash/KERNEL 2>/dev/null)" = "ANDROID!" ]; then echo abl; else echo unknown; fi' 2>/dev/null)
+K_CHAIN="${K_CHAIN:-unknown}"
+if [ -n "${KERNEL_IMAGE:-}" ] && [ -f "${KERNEL_IMAGE:-}" ] && [ "$K_CHAIN" = "abl" ]; then
+    # ==========================================================
+    # ABL-ERA KERNEL DEPLOY (ROCKNIX 20261001+) — the slot replaces the menu
+    # ==========================================================
+    # KERNEL_IMAGE must be a parity-gated GTK boot.img (rocknix-gtk build_72.sh
+    # with BASEDATE>=20261001: pack_bootimg.sh + bootimg_parity.py — same
+    # header/DTB set/order as the stock KERNEL, cmdline = stock + the ETK
+    # params). The keepalive and panic=30 are MINT-time here, not install-time:
+    # KERNEL_CONTEXT_KEEPALIVE=1 therefore REQUIRES the baked cmdline to carry
+    # it (a boot.img without it would lose anti-lock net #2 silently).
+    # FALLBACK CONTRACT: the first deploy parks the OS's own boot.img as
+    # /flash/KERNEL.etk-stock and proves it against the OS's KERNEL.md5; a slot
+    # that is already non-stock with no parked copy is REFUSED. There is no
+    # grub pick: recovery is uninstall.sh (restores the parked stock), or the
+    # card in a PC (`cp KERNEL.etk-stock KERNEL`). KERNEL_DEPLOY_MODE=test
+    # keeps the cold-boot gate's meaning — stage the heal bundle, leave the
+    # slot alone (nothing in the ABL boots a second file). The OS updater
+    # writes its new boot.img over /flash/KERNEL (init's IMAGE_KERNEL defaults
+    # to KERNEL under ABL) — a silent revert to stock, never a brick; osguard's
+    # ABL check names it and the fix is a re-run of this installer.
+    # Kit DTB deltas (mic, USB-C VBUS) are NOT applied here: the DTBs ride
+    # inside the boot.img and get spliced at mint (follow-up), so the Visionox
+    # 12GB unit boots its own stock DTB from the set — no black-screen path.
+    # Harness: tools/test_kernel_abl.sh (extracts KERNELABLREMOTE).
+    if command -v sha256sum >/dev/null 2>&1; then
+        K_HOST_SHA=$(sha256sum "$KERNEL_IMAGE" | awk '{print $1}')
+    else
+        K_HOST_SHA=$(shasum -a 256 "$KERNEL_IMAGE" | awk '{print $1}')
+    fi
+    # Header + payload facts, read on the host (the Image is gzip'd inside the
+    # boot.img, so `strings` sees no "Linux version" — decompress to find it).
+    K_INFO=$(python3 -I - "$KERNEL_IMAGE" <<'PY'
+import struct, sys, zlib
+d = open(sys.argv[1], 'rb').read()
+ok = d[:8] == b'ANDROID!'
+print('magic=' + ('ok' if ok else 'bad'))
+if not ok: sys.exit(0)
+f = struct.unpack_from('<8s10I16s512s32s1024s', d, 0)
+ksz, ps = f[1], f[8]
+print('cmdline=' + f[12].rstrip(b'\0').decode(errors='replace'))
+try:
+    z = zlib.decompressobj(31); img = z.decompress(d[ps:ps + ksz]); tail = z.unused_data
+except zlib.error:
+    print('linux='); print('dtbs=0'); sys.exit(0)
+lv = img.find(b'Linux version ')
+print('linux=' + (img[lv:img.index(b'\n', lv)].decode(errors='replace') if lv >= 0 else ''))
+n, p = 0, 0
+while p + 8 <= len(tail):
+    m, t = struct.unpack_from('>II', tail, p)
+    if m != 0xd00dfeed or t < 40 or p + t > len(tail): break
+    n += 1; p += t
+print(f'dtbs={n}')
+PY
+)
+    K_MAGIC=$(printf '%s\n' "$K_INFO" | sed -n 's/^magic=//p')
+    K_BAKED=$(printf '%s\n' "$K_INFO" | sed -n 's/^cmdline=//p')
+    K_DTBS=$(printf '%s\n' "$K_INFO" | sed -n 's/^dtbs=//p')
+    K_RELEASE=$(printf '%s\n' "$K_INFO" | sed -n 's/^linux=//p' | sed 's/^Linux version \([^ ]*\).*/\1/')
+    K_MODE="${KERNEL_DEPLOY_MODE:-default}"
+    K_ABL_STOP=""
+    if [ "$K_MAGIC" != "ok" ]; then
+        K_ABL_STOP="is not an Android boot.img — the ABL boots nothing else (mint with FORGE_KERNEL_BASEDATE=20261001)"
+    elif [ "${K_DTBS:-0}" != "9" ]; then
+        K_ABL_STOP="carries ${K_DTBS:-0} DTBs; the SM8250 stock set is 9 (the ABL picks this unit's board DTB out of that set)"
+    elif [ "${KERNEL_CONTEXT_KEEPALIVE:-0}" = "1" ] && ! printf '%s' "$K_BAKED" | grep -q 'msm.context_keepalive=1'; then
+        K_ABL_STOP="has no msm.context_keepalive=1 in its baked cmdline and the ABL appends nothing — anti-lock net #2 would be lost silently; mint with the keepalive baked (cmdline: $K_BAKED)"
+    elif [ -z "$K_RELEASE" ]; then
+        K_ABL_STOP="has no 'Linux version' string in its gzip'd Image"
+    fi
+    if [ -n "$K_ABL_STOP" ]; then
+        say "${Y}[ETK]${N} Custom kernel deploy REFUSED (ABL): $(basename "$KERNEL_IMAGE") $K_ABL_STOP. Slot untouched."
+    else
+        if [ "${KERNEL_CONTEXT_KEEPALIVE:-0}" != "1" ] && printf '%s' "$K_BAKED" | grep -q 'msm.context_keepalive=1'; then
+            say "${C}[INFO] KERNEL_CONTEXT_KEEPALIVE=0, but the keepalive is BAKED into this boot.img (mint-time under ABL) — it stays on.${N}"
+        fi
+        # AUTO-BOOT SAFETY GUARDS — the same two as the GRUB branch. Under ABL a
+        # withheld deploy means: heal bundle staged, slot untouched.
+        if [ "$K_MODE" = "default" ]; then
+            if ! ssh $RIG_SSH "tr '\0' '\n' < /sys/firmware/devicetree/base/compatible 2>/dev/null | grep -q rpflip2" 2>/dev/null; then
+                echo "    [GUARD] default mode is Flip-2-only (the only verified device); this rig is not a Flip 2 -> slot untouched, bundle staged."
+                K_MODE="test"
+            elif ! ssh $RIG_SSH "[ -d /usr/lib/modules/$K_RELEASE ]" 2>/dev/null; then
+                K_RIG_MODS=$(ssh $RIG_SSH "ls /usr/lib/modules 2>/dev/null | tr '\n' ' '" 2>/dev/null)
+                echo "    [GUARD] kernel release '$K_RELEASE' has NO matching module tree on the rig (installed: ${K_RIG_MODS:-none}) -> slot untouched, bundle staged: the ABL would boot it to a module-less system."
+                K_MODE="test"
+            fi
+        fi
+        K_RIG_SHA=$(ssh $RIG_SSH "sha256sum /flash/KERNEL 2>/dev/null | cut -d' ' -f1" 2>/dev/null)
+        scp -q "$KERNEL_IMAGE" "$RIG_SSH:/storage/rocknix-gtk.KERNEL.staging" 2>/dev/null
+        K_OUT=$(ssh $RIG_SSH "HOST_SHA='$K_HOST_SHA' K_RELEASE='$K_RELEASE' K_MODE='$K_MODE' FLASH='/flash' HEAL='/storage/rocknix-gtk/heal' sh -s" 2>&1 << 'KERNELABLREMOTE'
+set -e
+STAGING="${STAGING:-/storage/rocknix-gtk.KERNEL.staging}"
+ro() { mount -o remount,ro "$FLASH" 2>/dev/null || true; }
+fail() { echo "KERNEL_FAIL $*"; rm -f "$FLASH/KERNEL.new"; ro; exit 1; }
+S=$(sha256sum "$STAGING" 2>/dev/null | cut -d' ' -f1)
+[ "$S" = "$HOST_SHA" ] || { rm -f "$STAGING"; echo "KERNEL_FAIL staging sha mismatch ($S)"; exit 1; }
+[ "$(head -c 8 "$STAGING")" = "ANDROID!" ] || { rm -f "$STAGING"; echo "KERNEL_FAIL staged file is not a boot.img"; exit 1; }
+[ -d "$FLASH/EFI" ] && { rm -f "$STAGING"; echo "KERNEL_FAIL GRUB is present on $FLASH -- not an ABL unit"; exit 1; }
+[ "$(head -c 8 "$FLASH/KERNEL")" = "ANDROID!" ] || { rm -f "$STAGING"; echo "KERNEL_FAIL $FLASH/KERNEL is not a boot.img -- not an ABL unit"; exit 1; }
+# OSGUARD HEAL BUNDLE first: osguard's ABL check judges the slot against it;
+# chain=abl tells osguard the GRUB phases have no object on this unit.
+mkdir -p "$HEAL"
+mv "$STAGING" "$HEAL/KERNEL.staged"
+printf '%s\n' "$HOST_SHA"  > "$HEAL/KERNEL.staged.sha256"
+printf '%s\n' "$K_RELEASE" > "$HEAL/KERNEL.staged.release"
+printf '%s\n' "$K_MODE"    > "$HEAL/mode"
+printf 'abl\n'             > "$HEAL/chain"
+rm -f "$HEAL/grub.block" "$HEAL/grub.block.stockdtb" "$HEAL/DTB.staged" "$HEAL/DTB.staged.sha256" "$HEAL/DTB.base.sha256"
+OSMD5=$(cut -d' ' -f1 "$FLASH/KERNEL.md5" 2>/dev/null)
+if [ "$K_MODE" != "default" ]; then
+    echo "KERNEL_OK chain=abl slot=untouched slot_sha=$(sha256sum "$FLASH/KERNEL" | cut -d' ' -f1) stock=$([ -f "$FLASH/KERNEL.etk-stock" ] && echo kept || echo none) pristine=n/a keepalive=n/a"
+    exit 0
+fi
+NEED=$(( $(wc -c < "$HEAL/KERNEL.staged") / 1024 ))
+[ -f "$FLASH/KERNEL.etk-stock" ] || NEED=$(( NEED + $(wc -c < "$FLASH/KERNEL") / 1024 ))
+FREE=$(df -k "$FLASH" | tail -n1 | awk '{print $4}')
+[ "$FREE" -gt $(( NEED + 2048 )) ] || { echo "KERNEL_FAIL $FLASH has ${FREE} kB free, need ${NEED} kB + margin"; exit 1; }
+mount -o remount,rw "$FLASH" || { echo "KERNEL_FAIL cannot remount $FLASH rw"; exit 1; }
+if [ ! -f "$FLASH/KERNEL.etk-stock" ]; then
+    # Pristine-stock snapshot: taken once, proven against the OS's own md5.
+    CUR=$(md5sum "$FLASH/KERNEL" | cut -d' ' -f1)
+    if [ -n "$OSMD5" ] && [ "$CUR" != "$OSMD5" ]; then
+        fail "no fallback copy exists and $FLASH/KERNEL ($CUR) is not the OS kernel per KERNEL.md5 ($OSMD5) -- put stock back by hand before deploying"
+    fi
+    cp "$FLASH/KERNEL" "$FLASH/KERNEL.etk-stock" || fail "cannot park the stock kernel"
+    sync
+    [ "$(md5sum "$FLASH/KERNEL.etk-stock" | cut -d' ' -f1)" = "$CUR" ] || { rm -f "$FLASH/KERNEL.etk-stock"; fail "fallback copy read-back mismatch"; }
+    PARKED=new
+else
+    PARKED=kept
+fi
+STOCKMD5=$(md5sum "$FLASH/KERNEL.etk-stock" | cut -d' ' -f1)
+if [ "$(sha256sum "$FLASH/KERNEL" | cut -d' ' -f1)" = "$HOST_SHA" ]; then
+    F="$HOST_SHA"; WROTE=already
+else
+    cp "$HEAL/KERNEL.staged" "$FLASH/KERNEL.new" || fail "cannot write $FLASH/KERNEL.new"
+    sync
+    [ "$(sha256sum "$FLASH/KERNEL.new" | cut -d' ' -f1)" = "$HOST_SHA" ] || fail "flash write read-back mismatch"
+    mv -f "$FLASH/KERNEL.new" "$FLASH/KERNEL" || fail "cannot move the boot.img into the slot"
+    sync
+    F=$(sha256sum "$FLASH/KERNEL" | cut -d' ' -f1)
+    [ "$F" = "$HOST_SHA" ] || fail "slot read-back mismatch ($F) -- recover with uninstall.sh, or card in a PC: cp KERNEL.etk-stock KERNEL"
+    WROTE=written
+fi
+ro
+echo "KERNEL_OK chain=abl slot=$WROTE slot_sha=$F stock=$PARKED stock_md5=$STOCKMD5 os_md5=${OSMD5:-none} pristine=$([ -n "$OSMD5" ] && [ "$STOCKMD5" = "$OSMD5" ] && echo yes || echo UNPROVEN) keepalive=$(dd if="$FLASH/KERNEL" bs=1 skip=64 count=512 2>/dev/null | tr -d '\000' | grep -q 'msm.context_keepalive=1' && echo on || echo off)"
+KERNELABLREMOTE
+)
+        if echo "$K_OUT" | grep -q KERNEL_OK; then
+            K_SLOT=$(echo "$K_OUT" | sed -n 's/.* slot=\([^ ]*\).*/\1/p')
+            K_STK=$(echo "$K_OUT" | sed -n 's/.* stock=\([^ ]*\).*/\1/p')
+            K_PRI=$(echo "$K_OUT" | sed -n 's/.* pristine=\([^ ]*\).*/\1/p')
+            K_KA=$(echo "$K_OUT" | sed -n 's/.* keepalive=\([^ ]*\).*/\1/p')
+            case "$K_SLOT" in
+                untouched) say "${Y}[ETK]${N} Custom kernel $(basename "$KERNEL_IMAGE") STAGED only (mode=test or a [GUARD] above): the ABL slot /flash/KERNEL still holds its current boot.img. Set KERNEL_DEPLOY_MODE=default (and clear the guard) to deploy." ;;
+                already)   say "${G}[ETK]${N} Custom kernel $(basename "$KERNEL_IMAGE") already in the ABL slot /flash/KERNEL (keepalive=${K_KA:-?}); stock parked as KERNEL.etk-stock (${K_STK}, pristine=${K_PRI})." ;;
+                *)         say "${G}[ETK]${N} Custom kernel $(basename "$KERNEL_IMAGE") -> ABL slot /flash/KERNEL (sha-verified read-back, keepalive=${K_KA:-?}); stock parked as KERNEL.etk-stock (${K_STK}, pristine=${K_PRI}). COLD boot on-device." ;;
+            esac
+            case "$K_SLOT" in untouched) ;; *)
+                say "${C}[INFO] ABL boot chain: no menu, no grub pick. Fallback = ./uninstall.sh (restores the parked stock), or the card in a PC: cp KERNEL.etk-stock KERNEL. An OS update silently puts stock back in the slot; osguard names it, this installer restores it.${N}"
+                [ "$K_PRI" = "yes" ] || say "${Y}[WARN] The parked KERNEL.etk-stock does not match this OS's KERNEL.md5 — the fallback is whatever was in the slot, not a proven-pristine OS kernel.${N}" ;;
+            esac
+            say "${C}[INFO] Flip 2 kit DTB (internal mic, USB-C VBUS): not applied under ABL — the DTBs ride inside the boot.img and are spliced at mint; this unit boots its own stock board DTB.${N}"
+            # --- GTK boot-identity line (same unit as the GRUB branch; it gates on the
+            #     live cmdline's keepalive, which only a GTK boot.img carries) ---
+            GTK_KDATE=$(basename "$KERNEL_IMAGE" | grep -oE '[0-9]{8}' | head -1)
+            GTK_VER=$(grep -m1 '^APP_VERSION' ./bin/etk_pitstop.py | cut -d'"' -f2)
+            tui_log "Deploying GTK boot-identity line (${GTK_VER:-dev}-${GTK_KDATE:-dev})"
+            scp -q ./config/etk-gtk-version.service "$RIG_SSH:/storage/.config/system.d/etk-gtk-version.service" 2>/dev/null
+            ssh $RIG_SSH "sed -i 's/@KDATE@/${GTK_KDATE:-dev}/; s/@GTKVER@/${GTK_VER:-dev}/' /storage/.config/system.d/etk-gtk-version.service 2>/dev/null; mkdir -p /storage/.config/system.d/basic.target.wants; ln -sf /storage/.config/system.d/etk-gtk-version.service /storage/.config/system.d/basic.target.wants/etk-gtk-version.service" 2>/dev/null
+        else
+            say "${Y}[ETK]${N} Custom kernel deploy FAILED (ABL): $(echo "$K_OUT" | grep -m1 KERNEL_FAIL || echo "$K_OUT" | tail -1)"
+        fi
+    fi
+elif [ -n "${KERNEL_IMAGE:-}" ] && [ -f "${KERNEL_IMAGE:-}" ]; then
     # portable host sha256 (Linux sha256sum | macOS shasum)
     if command -v sha256sum >/dev/null 2>&1; then
         K_HOST_SHA=$(sha256sum "$KERNEL_IMAGE" | awk '{print $1}')
@@ -2315,6 +2497,9 @@ else
     # Numeric resolves; injected last so nothing overrides it; index computed
     # from the canonical cfg. A rig that HAS ETK entries is left untouched —
     # the documented "empty = don't touch the kernel" contract stands.
+    if [ "$K_CHAIN" = "abl" ]; then
+        KCFG_OUT="KERNELCFG_SKIP abl-chain"
+    else
     KCFG_OUT=$(ssh $RIG_SSH "sh -s" 2>&1 << 'KERNELCFGREMOTE'
 set -e
 grep -q "etk-gtk" /flash/boot/grub/grub.cfg 2>/dev/null && { echo "KERNELCFG_SKIP etk-entries-present"; exit 0; }
@@ -2345,7 +2530,10 @@ DEF=$(grep '^set default=' /flash/boot/grub/grub.cfg | tail -1 | sed 's/^set def
 echo "KERNELCFG_OK base=system default_idx=$DEF"
 KERNELCFGREMOTE
 )
-    if echo "$KCFG_OUT" | grep -q KERNELCFG_OK; then
+    fi
+    if echo "$KCFG_OUT" | grep -q abl-chain; then
+        say "${C}[INFO] Boot config: ROCKNIX-ABL chain (no grub) — the slot /flash/KERNEL is the OS's own; nothing to converge.${N}"
+    elif echo "$KCFG_OUT" | grep -q KERNELCFG_OK; then
         say "${G}[ETK]${N} Boot config converged to canonical stock ($(echo "$KCFG_OUT" | grep -o 'default_idx=[0-9]*') = Flip2 — hands-off boot, kit-owned)."
     elif echo "$KCFG_OUT" | grep -q etk-entries-present; then
         say "${C}[INFO] Boot config untouched (ETK kernel entries present; empty KERNEL_IMAGE leaves a staged deploy alone).${N}"
@@ -3179,7 +3367,11 @@ if grep -q BLACKBOX_OK "$BB_OUT_FILE"; then
 else
     say "${Y}[ETK]${N} Panic Black Box service failed to start — check journalctl -u etk-blackbox on the rig."
 fi
-if grep -q BLACKBOX_UNARMED "$BB_OUT_FILE"; then
+if grep -q BLACKBOX_UNARMED "$BB_OUT_FILE" && [ "${K_CHAIN:-}" = "abl" ]; then
+    say "${Y}[ETK]${N} No panic auto-reboot token in the live cmdline: this boot ran a stock boot.img."
+    say "${Y}[ETK]${N} Under ROCKNIX-ABL the token is baked at mint (the GTK boot.img carries panic=30);"
+    say "${Y}[ETK]${N} arm_blackbox.sh (a grub editor) does not apply — deploy the GTK boot.img and cold boot."
+elif grep -q BLACKBOX_UNARMED "$BB_OUT_FILE"; then
     say "${Y}[ETK]${N} No panic auto-reboot token in the live cmdline (stock-kernel boot, or a"
     say "${Y}[ETK]${N} ROCKNIX update reverted grub). The GTK kernel bakes panic=30; on a stock"
     say "${Y}[ETK]${N} boot run scripts/arm_blackbox.sh, then reboot on-device."

@@ -127,6 +127,38 @@ if [ -z "$SYS_REL" ]; then
 fi
 
 # ==========================================================
+# ABL-ERA UNIT (ROCKNIX 20261001+, ROCKNIX-ABL on SM8250) — 2026-10-08
+# ==========================================================
+# No GRUB: the ABL boots the ONE file $FLASH/KERNEL (a boot.img, cmdline baked).
+# Every phase below edits grub twins / grubenv / KERNEL.gtktest — none of which
+# exist here; left to run, Phase B would drop a stray KERNEL.gtktest on /flash
+# and announce "GTK kernel restored" every boot (UPSTREAM_20261001.md §1b).
+# The slot is install.sh STEP 6.4's (KERNELABLREMOTE): this guard only JUDGES
+# it against the heal bundle and names the revert an OS update causes (the
+# updater writes its boot.img over /flash/KERNEL — stock is back, silently).
+# Re-staging from a boot-time daemon is deliberately NOT done until the slot
+# path is cold-boot validated; the fix it names is a re-run of the installer.
+if [ "$(cat "$HEAL/chain" 2>/dev/null)" = "abl" ] ||    { [ ! -f "$FLASH/boot/grub/grub.cfg" ] && [ ! -d "$FLASH/EFI" ] && [ "$(head -c 8 "$FLASH/KERNEL" 2>/dev/null)" = "ANDROID!" ]; }; then
+    WANT=$(cat "$HEAL/KERNEL.staged.sha256" 2>/dev/null)
+    if [ -z "$WANT" ] || [ "$(cat "$HEAL/mode" 2>/dev/null)" != "default" ]; then
+        log "abl chain: no GTK boot.img deployed to the slot (bundle absent or mode=test) — nothing to guard"
+        finish 0
+    fi
+    SLOT=$(sha256sum "$FLASH/KERNEL" 2>/dev/null | cut -d' ' -f1)
+    if [ "$SLOT" = "$WANT" ]; then
+        if grep -q 'msm.context_keepalive=1' /proc/cmdline 2>/dev/null; then
+            log "abl chain: slot holds the staged GTK boot.img (sha ok) and this boot runs it"
+        else
+            log "abl chain: slot holds the staged GTK boot.img (sha ok) but this boot's cmdline has no keepalive — not yet cold-booted, or the ABL booted another target"
+        fi
+        finish 0
+    fi
+    log "abl chain: slot sha ${SLOT:-none} != staged $WANT — an OS update (or a hand swap) put another boot.img in /flash/KERNEL; the GTK kernel is NOT live. Re-run install.sh to restore it."
+    notify "OS update replaced the GTK kernel. Re-run the ETK installer from your computer to restore it."
+    [ "$MODE" = "heal" ] && finish 0 || finish 2
+fi
+
+# ==========================================================
 # PHASE A — running kernel does not match the SYSTEM
 # ==========================================================
 if [ "$RUN_REL" != "$SYS_REL" ]; then

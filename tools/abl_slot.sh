@@ -1,50 +1,42 @@
 #!/bin/bash
 # ==========================================================
-# ABL SLOT — the ROCKNIX-ABL era KERNEL slot, as a tool (host-side)
+# ABL SLOT — read the ROCKNIX-ABL era KERNEL slot (host-side, read-only) + card recovery
 # ==========================================================
 # Since ROCKNIX 20261001 the SM8250 boots through ROCKNIX-ABL: no GRUB, no
 # menu, no kernel A/B. The ABL loads exactly one file, /flash/KERNEL, an
 # Android boot.img (gzip Image + the 9 device DTBs + the cmdline BAKED IN —
-# the ABL appends nothing). "Stock is one grub pick away" has no mechanism
-# any more; this tool is its replacement for a GTK kernel on an ABL unit:
+# the ABL appends nothing). THE KIT OWNS THAT SLOT: install.sh STEP 6.4
+# (KERNELABLREMOTE) is its only writer and uninstall.sh (ABLRESTORE) puts the
+# parked stock back. This tool is the instrument panel around it:
 #
-#   status  <target>                 what is in the slot and what is RUNNING (read-only)
-#   stage   <target> <boot.img>      OPERATOR: park stock as KERNEL.etk-stock (once,
-#                                    md5-proven pristine), put the GTK boot.img in the
-#                                    slot, sha-verify the read-back. Then a COLD boot.
-#   verify  <target> [<boot.img>]    read-only, after the boot: did the ABL boot the
+#   status  <target>                 what is in the slot and what is RUNNING
+#   verify  <target> [<boot.img>]    after the cold boot: did the ABL boot the
 #                                    slot, is the keepalive on the cmdline, modules,
-#                                    panel, GPU — the surface the change must show on
-#   restore <target>                 OPERATOR: put KERNEL.etk-stock back (md5 vs KERNEL.md5)
-#   restore --card <mountpoint>      the unit did not boot: card in the Air, same swap
-#                                    done locally on the mounted boot partition
+#                                    panel, GPU — the surface the deploy must show on
+#   restore --card <mountpoint>      the unit did not boot: card in the Air, put
+#                                    KERNEL.etk-stock back into KERNEL on the mounted
+#                                    boot partition (the one thing no rig-side tool
+#                                    can do for a unit that is dark)
 #
 #   options: --car carN   refuse unless the unit reached IS that car (scripts/etk_car.sh)
 #
-# stage/restore are DEPLOY (TRACK_MANUAL §1.1 — the rig can be bricked; the
-# operator runs them). status/verify never write anything on the unit.
-# Nothing lives on the unit (no push-list entry); the staged copy + its sha sit
-# under /storage/rocknix-gtk/abl/ so verify can judge the slot after the boot.
-#
-# Fallback contract: the FIRST stage on a unit copies /flash/KERNEL to
-# /flash/KERNEL.etk-stock and proves it against the OS's own /flash/KERNEL.md5;
-# a slot that is already non-stock with no fallback copy is REFUSED (restore
-# stock by hand first). A unit that fails to boot the GTK boot.img is recovered
-# with the card in the Air: `restore --card`.
+# status/verify never write anything on the unit. Nothing lives on the unit
+# (no push-list entry). install.sh banks the expected sha under
+# /storage/rocknix-gtk/heal/ (KERNEL.staged.sha256, chain=abl); verify reads it.
 #
 # Remote shell is BusyBox POSIX (manual §Q): no long options, no bashisms.
-# Harness: tools/test_abl_slot.sh (fake ssh/scp sandbox; --against ee353f3 fails).
-# Dossier: rocknix-gtk/UPSTREAM_20261001.md (K2 execution plan, step 4).
+# Harness: tools/test_abl_slot.sh (fake ssh sandbox; --against ee353f3 fails).
+# Kit path harness: tools/test_kernel_abl.sh. Dossier: rocknix-gtk/UPSTREAM_20261001.md.
 # ==========================================================
 set -u
 ETK_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SSH_OPTS="-o BatchMode=yes -o ConnectTimeout=8"
 # Test-only overrides (the harness points these at a sandbox):
-R_FLASH="${ABL_FLASH:-/flash}"; R_STG="${ABL_STG:-/storage/rocknix-gtk/abl}"
+R_FLASH="${ABL_FLASH:-/flash}"; R_STG="${ABL_STG:-/storage/rocknix-gtk/heal}"
 R_PROC="${ABL_PROC:-/proc}";    R_SYS="${ABL_SYS:-/sys}"; R_MODROOT="${ABL_MODROOT:-/usr/lib/modules}"
 
 die()  { echo "ABL_SLOT_FAIL: $*" >&2; exit 1; }
-usage() { sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 
 MODE="${1:-}"; [ -n "$MODE" ] || usage; shift
 CAR=""; CARD=""; TARGET=""; IMG=""
@@ -111,8 +103,8 @@ if [ -f "$FLASH/KERNEL.etk-stock" ]; then
   echo "stock_md5=$(md5sum "$FLASH/KERNEL.etk-stock" | cut -d" " -f1)"
 else echo "stock_sha=none"; echo "stock_md5=none"; fi
 echo "grub=$([ -d "$FLASH/EFI" ] && echo present || echo absent)"
-echo "expected_sha=$(cat "$STG/expected.sha256" 2>/dev/null)"
-echo "expected_name=$(cat "$STG/expected.name" 2>/dev/null)"
+echo "expected_sha=$([ "$(cat "$STG/chain" 2>/dev/null)" = abl ] && cat "$STG/KERNEL.staged.sha256" 2>/dev/null)"
+echo "expected_name=$([ "$(cat "$STG/chain" 2>/dev/null)" = abl ] && cat "$STG/mode" 2>/dev/null | sed "s/^/staged (mode=/; s/$/)/")"
 echo "run_cmdline=$(cat "$PROC/cmdline" 2>/dev/null)"
 echo "run_version=$(cat "$PROC/version" 2>/dev/null)"
 echo "run_release=$(uname -r 2>/dev/null)"
@@ -130,66 +122,6 @@ echo "flash_free_kb=$(df -k "$FLASH" 2>/dev/null | tail -n1 | awk "{print \$4}")
 echo "ABL_REMOTE_OK"
 '
 
-# stage: the only writer of the slot. Every byte is sha-verified after it lands.
-REMOTE_STAGE='
-set -e
-ro() { mount -o remount,ro "$FLASH" 2>/dev/null || true; }
-fail() { echo "SLOT_FAIL $*"; ro; exit 1; }
-S=$(sha256sum "$STG/KERNEL.staged" | cut -d" " -f1)
-[ "$S" = "$HOST_SHA" ] || { rm -f "$STG/KERNEL.staged"; fail "staging sha mismatch ($S)"; }
-[ "$(head -c 8 "$STG/KERNEL.staged")" = "ANDROID!" ] || fail "staged file is not a boot.img"
-[ -d "$FLASH/EFI" ] && fail "GRUB is present on $FLASH -- this is a GRUB-era unit, use install.sh STEP 6.4"
-[ "$(head -c 8 "$FLASH/KERNEL")" = "ANDROID!" ] || fail "$FLASH/KERNEL is not a boot.img -- not an ABL-era unit"
-NEED=$(( $(wc -c < "$STG/KERNEL.staged") / 1024 ))
-[ -f "$FLASH/KERNEL.etk-stock" ] || NEED=$(( NEED + $(wc -c < "$FLASH/KERNEL") / 1024 ))
-FREE=$(df -k "$FLASH" | tail -n1 | awk "{print \$4}")
-[ "$FREE" -gt $(( NEED + 2048 )) ] || fail "$FLASH has ${FREE} kB free, need ${NEED} kB + margin"
-OSMD5=$(cut -d" " -f1 "$FLASH/KERNEL.md5" 2>/dev/null)
-mount -o remount,rw "$FLASH" || fail "cannot remount $FLASH rw"
-if [ ! -f "$FLASH/KERNEL.etk-stock" ]; then
-  CUR=$(md5sum "$FLASH/KERNEL" | cut -d" " -f1)
-  [ -n "$OSMD5" ] && [ "$CUR" != "$OSMD5" ] && fail "no fallback copy exists and $FLASH/KERNEL ($CUR) is not the OS kernel per KERNEL.md5 ($OSMD5) -- restore stock by hand before staging"
-  cp "$FLASH/KERNEL" "$FLASH/KERNEL.etk-stock" || fail "cannot park the stock kernel"
-  sync
-  [ "$(md5sum "$FLASH/KERNEL.etk-stock" | cut -d" " -f1)" = "$CUR" ] || { rm -f "$FLASH/KERNEL.etk-stock"; fail "fallback copy read-back mismatch"; }
-  PARKED=new
-else PARKED=kept; fi
-STOCKMD5=$(md5sum "$FLASH/KERNEL.etk-stock" | cut -d" " -f1)
-cp "$STG/KERNEL.staged" "$FLASH/KERNEL.new" || fail "cannot write $FLASH/KERNEL.new"
-sync
-[ "$(sha256sum "$FLASH/KERNEL.new" | cut -d" " -f1)" = "$HOST_SHA" ] || { rm -f "$FLASH/KERNEL.new"; fail "flash write read-back mismatch"; }
-mv -f "$FLASH/KERNEL.new" "$FLASH/KERNEL" || fail "cannot move the new kernel into the slot"
-sync
-F=$(sha256sum "$FLASH/KERNEL" | cut -d" " -f1)
-[ "$F" = "$HOST_SHA" ] || fail "slot read-back mismatch ($F) -- restore NOW: $0 restore"
-printf "%s\n" "$HOST_SHA" > "$STG/expected.sha256"
-printf "%s\n" "$KNAME"    > "$STG/expected.name"
-ro
-echo "SLOT_OK slot_sha=$F stock=$PARKED stock_md5=$STOCKMD5 os_md5=${OSMD5:-none} pristine=$([ -n "$OSMD5" ] && [ "$STOCKMD5" = "$OSMD5" ] && echo yes || echo UNPROVEN)"
-'
-
-REMOTE_RESTORE='
-set -e
-ro() { mount -o remount,ro "$FLASH" 2>/dev/null || true; }
-fail() { echo "SLOT_FAIL $*"; ro; exit 1; }
-[ -f "$FLASH/KERNEL.etk-stock" ] || fail "no $FLASH/KERNEL.etk-stock to restore from"
-[ "$(head -c 8 "$FLASH/KERNEL.etk-stock")" = "ANDROID!" ] || fail "KERNEL.etk-stock is not a boot.img"
-OSMD5=$(cut -d" " -f1 "$FLASH/KERNEL.md5" 2>/dev/null)
-W=$(sha256sum "$FLASH/KERNEL.etk-stock" | cut -d" " -f1)
-mount -o remount,rw "$FLASH" || fail "cannot remount $FLASH rw"
-cp "$FLASH/KERNEL.etk-stock" "$FLASH/KERNEL.new" || fail "cannot write $FLASH/KERNEL.new"
-sync
-[ "$(sha256sum "$FLASH/KERNEL.new" | cut -d" " -f1)" = "$W" ] || { rm -f "$FLASH/KERNEL.new"; fail "restore write read-back mismatch"; }
-mv -f "$FLASH/KERNEL.new" "$FLASH/KERNEL" || fail "cannot move stock into the slot"
-sync
-F=$(sha256sum "$FLASH/KERNEL" | cut -d" " -f1)
-[ "$F" = "$W" ] || fail "slot read-back mismatch after restore ($F)"
-M=$(md5sum "$FLASH/KERNEL" | cut -d" " -f1)
-rm -f "$STG/expected.sha256" "$STG/expected.name"
-ro
-echo "SLOT_OK restored slot_sha=$F md5=$M os_md5=${OSMD5:-none} pristine=$([ -n "$OSMD5" ] && [ "$M" = "$OSMD5" ] && echo yes || echo UNPROVEN)"
-'
-
 # ---- modes --------------------------------------------------------------------
 print_status() {   # $1 = remote status output
     local p="$1"
@@ -204,7 +136,7 @@ print_status() {   # $1 = remote status output
     if [ "$stk" = none ]; then echo "fallback  : NONE parked (first stage will park $FLASH_LABEL/KERNEL as KERNEL.etk-stock)"
     else echo "fallback  : KERNEL.etk-stock sha $(echo "$stk" | cut -c1-12)… $( [ "$(field "$p" stock_md5)" = "$omd5" ] && echo "(pristine: md5 matches KERNEL.md5)" || echo "(md5 does NOT match KERNEL.md5)")"; fi
     local exp; exp=$(field "$p" expected_sha)
-    [ -n "$exp" ] && echo "staged    : $(field "$p" expected_name) sha $(echo "$exp" | cut -c1-12)… $( [ "$exp" = "$(field "$p" slot_sha)" ] && echo "= slot" || echo "!= slot (slot was changed since)")"
+    [ -n "$exp" ] && echo "install.sh: $(field "$p" expected_name) sha $(echo "$exp" | cut -c1-12)… $( [ "$exp" = "$(field "$p" slot_sha)" ] && echo "= slot" || echo "!= slot (slot was changed since)")"
     echo "running   : $(field "$p" run_version | cut -c1-110)"
     echo "  cmdline : $(field "$p" run_cmdline)"
     echo "  keepalive: cmdline $(printf '%s' "$(field "$p" run_cmdline)" | grep -q 'msm.context_keepalive=1' && echo on || echo off) · param $(field "$p" keepalive_param | sed 's/^$/absent/') · rescues $(field "$p" keepalive_rescues) · a6xx faults $(field "$p" a6xx_faults)"
@@ -220,31 +152,6 @@ status)
     [ -n "$TARGET" ] || usage
     car_gate
     print_status "$(rssh "$(remote_env) sh -s" <<< "$REMOTE_STATUS" 2>/dev/null)"
-    ;;
-
-stage)
-    [ -n "$TARGET" ] && [ -n "$IMG" ] || usage
-    [ -f "$IMG" ] || die "no such file: $IMG"
-    info=$(bootimg_info "$IMG")
-    [ "$(field "$info" magic)" = ok ] || die "$IMG is not an Android boot.img (the ABL boots nothing else)"
-    cmd=$(field "$info" cmdline)
-    printf '%s' "$cmd" | grep -q 'msm.context_keepalive=1' || die "$IMG's baked cmdline lacks msm.context_keepalive=1 -- the ABL appends nothing; this is not a GTK boot.img: $cmd"
-    [ "$(field "$info" dtbs)" = 9 ] || die "$IMG carries $(field "$info" dtbs) DTBs, the SM8250 stock set is 9"
-    HOST_SHA=$(sha256sum "$IMG" | cut -d' ' -f1); KNAME=$(basename "$IMG")
-    echo "image     : $KNAME · $(wc -c < "$IMG") B · sha $HOST_SHA"
-    echo "  kernel  : $(field "$info" linux | cut -c1-100)"
-    echo "  cmdline : $cmd"
-    car_gate
-    echo "staging   : -> $TARGET:$R_STG/KERNEL.staged"
-    rssh "mkdir -p '$R_STG'" || die "cannot create $R_STG on $TARGET"
-    scp -q $SSH_OPTS "$IMG" "$TARGET:$R_STG/KERNEL.staged" || die "scp failed"
-    out=$(rssh "HOST_SHA='$HOST_SHA' KNAME='$KNAME' $(remote_env) sh -s" <<< "$REMOTE_STAGE" 2>&1)
-    printf '%s\n' "$out"
-    printf '%s\n' "$out" | grep -q '^SLOT_OK' || die "stage did not complete -- read the lines above; the slot is either untouched or restorable"
-    echo
-    echo "NEXT: COLD boot the unit on-device (power off, power on; Vol- for the SD if that is how it boots)."
-    echo "      Then: tools/abl_slot.sh verify $TARGET $IMG${CAR:+ --car $CAR}"
-    echo "      Did not boot: card in the Air -> tools/abl_slot.sh restore --card /run/media/\$USER/ROCKNIX"
     ;;
 
 verify)
@@ -263,7 +170,7 @@ verify)
         [ "$slot" = "$want" ] && ok "slot holds $(basename "$IMG")" || bad "slot sha $slot != $(basename "$IMG") $want"
         winfo=$(bootimg_info "$IMG"); wcmd=$(field "$winfo" cmdline); wlinux=$(field "$winfo" linux)
     else
-        [ -n "$exp" ] && { [ "$slot" = "$exp" ] && ok "slot holds the staged $(field "$p" expected_name)" || bad "slot sha != staged sha ($exp)"; }
+        [ -n "$exp" ] && { [ "$slot" = "$exp" ] && ok "slot holds what install.sh staged ($(field "$p" expected_name))" || bad "slot sha != install.sh's staged sha ($exp) -- an OS update or hand swap replaced it"; }
         wcmd=$(field "$p" slot_cmdline); wlinux=""
     fi
     rcmd=$(field "$p" run_cmdline)
@@ -299,12 +206,7 @@ restore)
         echo "Unmount the card (sync; umount) and boot the unit."
         exit 0
     fi
-    [ -n "$TARGET" ] || usage
-    car_gate
-    out=$(rssh "$(remote_env) sh -s" <<< "$REMOTE_RESTORE" 2>&1)
-    printf '%s\n' "$out"
-    printf '%s\n' "$out" | grep -q '^SLOT_OK' || die "restore did not complete"
-    echo "NEXT: COLD boot the unit; then tools/abl_slot.sh status $TARGET"
+    die "restore over ssh is the kit's job: ./uninstall.sh puts the parked stock back (ABLRESTORE). This tool restores only a dark unit's card (--card <mountpoint>)."
     ;;
 *) usage ;;
 esac

@@ -2,13 +2,14 @@
 # test_abl_slot.sh — pins tools/abl_slot.sh (the ABL-era KERNEL slot tool).
 #
 # WHY: under ROCKNIX-ABL (20261001+) the one file the bootloader loads is
-# /flash/KERNEL, a boot.img; there is no GRUB entry to fall back to. The tool is
-# the only writer of that slot for a GTK kernel, so every refusal (not a
-# boot.img, no keepalive, wrong DTB count, GRUB-era unit, non-stock slot with no
-# fallback, wrong car, mount failure) and every write (park stock once, sha-verified
-# read-back, expected sha banked) must hold BEFORE it touches car12.
+# /flash/KERNEL, a boot.img; there is no GRUB entry to fall back to. The slot's
+# WRITER is the kit (install.sh STEP 6.4, pinned by tools/test_kernel_abl.sh);
+# this tool is the read-only instrument around it plus the dark-unit card
+# recovery, so: status/verify must never write, verify must judge the slot
+# against install.sh's heal bundle and FAIL loudly when the unit still runs
+# stock, and restore --card must put the parked stock back byte-exact.
 #
-# HOW: sandbox with a fake `ssh`/`scp` on PATH that run the tool's remote bodies
+# HOW: sandbox with a fake `ssh` on PATH that runs the tool's remote body
 # LOCALLY against a fake unit tree ($TD/unit: flash/ storage/ proc/ sys/ modules/),
 # with stubs for mount/dmesg/lsmod/uname. Boot images are real mkbootimg v0 images
 # around a fake Image + 9 tiny DTBs. Needs mkbootimg + dtc (Fedora: android-tools,
@@ -69,7 +70,7 @@ STOCK_MD5=$(md5sum "$TD/stock.img" | cut -d' ' -f1)
 
 # --- the fake unit ---------------------------------------------------------------
 U="$TD/unit"
-export ABL_FLASH="$U/flash" ABL_STG="$U/storage/rocknix-gtk/abl" ABL_PROC="$U/proc" ABL_SYS="$U/sys" ABL_MODROOT="$U/modules"
+export ABL_FLASH="$U/flash" ABL_STG="$U/storage/rocknix-gtk/heal" ABL_PROC="$U/proc" ABL_SYS="$U/sys" ABL_MODROOT="$U/modules"
 reset_unit() {   # fresh stock ABL unit, booted on stock
     rm -rf "$U"; mkdir -p "$U/flash" "$U/storage" "$U/proc/device-tree" "$U/proc/asound" \
         "$U/sys/class/drm/card0-DSI-1" "$U/sys/kernel/debug/dri/0" "$U/modules/7.2.0"
@@ -84,6 +85,12 @@ reset_unit() {   # fresh stock ABL unit, booted on stock
     printf 'Module                  Size  Used by\nfake_a 1 0\nfake_b 1 0\n' > "$U/lsmod"
     echo 7.2.0 > "$U/release"
     : > "$U/mount.log"
+}
+staged_by_install() {   # what install.sh STEP 6.4 leaves behind for a deployed GTK boot.img
+    mkdir -p "$U/storage/rocknix-gtk/heal"
+    cp "$TD/gtk.img" "$U/flash/KERNEL"; cp "$TD/stock.img" "$U/flash/KERNEL.etk-stock"
+    printf '%s\n' "$GTK_SHA" > "$U/storage/rocknix-gtk/heal/KERNEL.staged.sha256"
+    printf 'default\n' > "$U/storage/rocknix-gtk/heal/mode"; printf 'abl\n' > "$U/storage/rocknix-gtk/heal/chain"
 }
 boot_as() {   # stock | gtk — what the fake unit is RUNNING
     if [ "$1" = gtk ]; then
@@ -146,37 +153,11 @@ expect "status: reports the slot is stock"           0 "is stock: yes"          
 expect "status: unreachable unit -> rc 1"            1 "could not read"         "$TOOL" status root@nowhere
 [ -s "$U/mount.log" ] && bad "status wrote to the unit (mount called)" || ok "status never remounts"
 
-# --- stage refusals (slot must stay stock after each) -------------------------------
-expect "stage: raw file refused"                     1 "not an Android boot.img" "$TOOL" stage root@car12host "$TD/raw.img"
-expect "stage: boot.img without keepalive refused"   1 "lacks msm.context_keepalive=1" "$TOOL" stage root@car12host "$TD/nokeep.img"
-expect "stage: 8-DTB image refused"                  1 "carries 8 DTBs"          "$TOOL" stage root@car12host "$TD/eight.img"
-expect "stage: wrong car refused"                    1 "is not car8"             "$TOOL" stage root@car12host "$TD/gtk.img" --car car8
-[ "$(slot_sha)" = "$STOCK_SHA" ] && ok "slot untouched by every host-side refusal" || bad "a refusal changed the slot"
-[ -e "$U/flash/KERNEL.etk-stock" ] && bad "a refusal parked a fallback" || ok "no fallback parked by refusals"
-
-mkdir -p "$U/flash/EFI"
-expect "stage: GRUB-era unit refused"                1 "GRUB is present"        "$TOOL" stage root@car12host "$TD/gtk.img"
-rm -rf "$U/flash/EFI"
-cp "$TD/nokeep.img" "$U/flash/KERNEL"
-expect "stage: non-stock slot with no fallback refused" 1 "restore stock by hand" "$TOOL" stage root@car12host "$TD/gtk.img"
-[ "$(sha256sum "$U/flash/KERNEL" | cut -d' ' -f1)" = "$(sha256sum "$TD/nokeep.img" | cut -d' ' -f1)" ] && ok "refused slot left as found" || bad "refusal rewrote the slot"
-reset_unit
-MOUNT_FAIL=1 expect "stage: remount rw failure -> SLOT_FAIL, slot untouched" 1 "cannot remount" "$TOOL" stage root@car12host "$TD/gtk.img"
-unset MOUNT_FAIL
-[ "$(slot_sha)" = "$STOCK_SHA" ] && ok "slot still stock after mount failure" || bad "mount failure changed the slot"
-
-# --- the real stage ----------------------------------------------------------------
-reset_unit
-expect "stage: GTK boot.img lands, stock parked, pristine" 0 "SLOT_OK slot_sha=$GTK_SHA stock=new stock_md5=$STOCK_MD5 os_md5=$STOCK_MD5 pristine=yes" "$TOOL" stage root@car12host "$TD/gtk.img" --car car12
-[ "$(slot_sha)" = "$GTK_SHA" ] && ok "slot holds the GTK image byte-exact" || bad "slot sha wrong after stage"
-[ "$(md5sum "$U/flash/KERNEL.etk-stock" | cut -d' ' -f1)" = "$STOCK_MD5" ] && ok "KERNEL.etk-stock is the pristine stock" || bad "fallback copy wrong"
-[ "$(cat "$U/storage/rocknix-gtk/abl/expected.sha256")" = "$GTK_SHA" ] && ok "expected sha banked for verify" || bad "expected sha missing"
-[ "$(cat "$U/storage/rocknix-gtk/abl/expected.name")" = "gtk.img" ] && ok "expected name banked" || bad "expected name missing"
-grep -q 'remount,rw' "$U/mount.log" && tail -n1 "$U/mount.log" | grep -q 'remount,ro' && ok "flash remounted rw then left ro" || bad "mount sequence: $(tr '\n' '|' < "$U/mount.log")"
-[ -e "$U/flash/KERNEL.new" ] && bad "KERNEL.new left behind" || ok "no temp file left on flash"
-expect "stage: idempotent re-stage keeps the parked stock"   0 "stock=kept"           "$TOOL" stage root@car12host "$TD/gtk.img"
-[ "$(md5sum "$U/flash/KERNEL.etk-stock" | cut -d' ' -f1)" = "$STOCK_MD5" ] && ok "re-stage did not overwrite the fallback" || bad "re-stage clobbered KERNEL.etk-stock"
-expect "status: after stage shows staged = slot"             0 "= slot"               "$TOOL" status root@car12host
+# --- a wrong car is refused before anything is read in detail ---------------------
+expect "status: wrong car refused"                   1 "is not car8"             "$TOOL" status root@car12host --car car8
+staged_by_install
+expect "status: after install.sh shows staged = slot" 0 "= slot"               "$TOOL" status root@car12host
+expect "status: fallback parked and pristine"        0 "pristine: md5 matches" "$TOOL" status root@car12host
 
 # --- verify: the surface after the cold boot ----------------------------------------
 boot_as stock
@@ -185,7 +166,7 @@ expect "verify: ...and names the missing keepalive"            1 "keepalive NOT 
 boot_as gtk
 expect "verify: booted the GTK slot -> PASS"                  0 "ABL_SLOT_VERIFY PASS" "$TOOL" verify root@car12host "$TD/gtk.img" --car car12
 expect "verify: matches the image's Linux version"            0 "running kernel is the image's build" "$TOOL" verify root@car12host "$TD/gtk.img"
-expect "verify: without an image, judges against the banked sha" 0 "slot holds the staged gtk.img" "$TOOL" verify root@car12host
+expect "verify: without an image, judges against install.sh's banked sha" 0 "slot holds what install.sh staged" "$TOOL" verify root@car12host
 expect "verify: ABL appended nothing"                         0 "nothing appended"     "$TOOL" verify root@car12host
 rm -rf "$U/modules/7.2.0"
 expect "verify: missing module tree -> FAIL (frankenboot class)" 1 "NO module tree"    "$TOOL" verify root@car12host
@@ -200,13 +181,9 @@ cp "$TD/gtk.img" "$U/flash/KERNEL"
 "$TOOL" verify root@car12host >/dev/null 2>&1
 [ -s "$U/mount.log" ] && bad "verify wrote to the unit (mount called)" || ok "verify never remounts"
 
-# --- restore ------------------------------------------------------------------------
-expect "restore: stock back in the slot, pristine"           0 "SLOT_OK restored slot_sha=$STOCK_SHA md5=$STOCK_MD5 os_md5=$STOCK_MD5 pristine=yes" "$TOOL" restore root@car12host --car car12
-[ "$(slot_sha)" = "$STOCK_SHA" ] && ok "slot is stock byte-exact after restore" || bad "restore left the wrong bytes"
-[ -e "$U/storage/rocknix-gtk/abl/expected.sha256" ] && bad "expected sha survived restore" || ok "expected sha cleared by restore"
-[ -f "$U/flash/KERNEL.etk-stock" ] && ok "fallback copy kept after restore" || bad "restore deleted the fallback"
-rm -f "$U/flash/KERNEL.etk-stock"
-expect "restore: nothing parked -> SLOT_FAIL"                1 "no $U/flash/KERNEL.etk-stock" "$TOOL" restore root@car12host
+# --- restore over ssh is NOT this tool's job (uninstall.sh owns it) ---------------
+expect "restore <target>: refused, points at uninstall.sh" 1 "uninstall.sh" "$TOOL" restore root@car12host
+[ "$(slot_sha)" = "$GTK_SHA" ] && ok "refused restore left the slot alone" || bad "refused restore wrote the slot"
 
 # --- restore --card (the unit did not boot; card in the Air) --------------------------
 mkdir -p "$TD/card"; cp "$TD/gtk.img" "$TD/card/KERNEL"; cp "$TD/stock.img" "$TD/card/KERNEL.etk-stock"

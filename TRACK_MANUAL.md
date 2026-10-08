@@ -195,7 +195,9 @@ manual's A/B sections.
   stock squashfs binaries at boot (`etk-rpcs3.service`, `etk-turnip.service`) and boots its
   own kernel from a separate grub entry (`/flash/KERNEL.gtktest`; pristine
   `/flash/KERNEL.etk-stock` fallback always present). Stock is one grub pick or one
-  `"stock"` knob away.
+  `"stock"` knob away. **ROCKNIX 20261001+ (ROCKNIX-ABL, car12 first):** no grub — the kit
+  owns the single slot `/flash/KERNEL` with a boot.img; stock is parked beside it and
+  comes back via `uninstall.sh` or the card in a PC (§A.2 "ABL-era kernel deploy").
 - **Doctrine: never build a distro's package inside the distro** — warm cross-build
   containers off-rig (§A.1). Every fork feature is a **runtime flag** (default-off, or
   default-on with `=0` kill-switch) so A/B needs no rebuild.
@@ -720,6 +722,33 @@ knobs, writes the handoff, verifies afterward from read-only telemetry.
   (host + rig-BusyBox). **4Kn law:** any FAT image built for the internal ESP MUST be
   `mkfs.fat -S 4096` — a 512-sector FAT crashes U-Boot itself (Synchronous Abort loop;
   fastboot `flash ROCKNIX` is the proven recovery rung).
+- **ABL-era kernel deploy (ROCKNIX 20261001+, built 2026-10-08, COLD-BOOT GATED on car12):**
+  upstream replaced GRUB with ROCKNIX-ABL on SM8250 — the ABL loads exactly ONE file,
+  `/flash/KERNEL`, an Android boot.img (gzip Image + the 9 device DTBs + the cmdline BAKED
+  IN; the ABL appends nothing), and `/flash/EFI` + `/flash/boot` are gone. STEP 6.4 probes
+  the chain once (`K_CHAIN`=grub|abl) and on an ABL unit runs the `KERNELABLREMOTE` branch
+  instead of the grub one: `KERNEL_IMAGE` must be a parity-gated GTK boot.img (rocknix-gtk
+  `build_72.sh` BASEDATE≥20261001 → `pack_bootimg.sh` + `bootimg_parity.py`, DTBs 9/9
+  byte-identical to stock since `DTC_FLAGS=-@`); `KERNEL_CONTEXT_KEEPALIVE=1` REQUIRES the
+  keepalive in the baked cmdline (it is mint-time now, with `panic=30`); the first deploy
+  parks the OS's boot.img as `KERNEL.etk-stock` and proves it against the OS's
+  `KERNEL.md5`; a non-stock slot with no parked copy is refused; every write is
+  sha-verified on read-back; the heal bundle gains `chain=abl`. `KERNEL_DEPLOY_MODE=test`
+  = bundle staged, slot untouched (nothing in the ABL boots a second file). **No grub pick
+  exists:** fallback = `./uninstall.sh` (`ABLRESTORE` puts the parked stock back) or the
+  card in the Air (`tools/abl_slot.sh restore --card <mount>`; the tool's `status`/`verify`
+  are the read-only instrument panel — verify = slot sha vs the bundle, `/proc/cmdline` ==
+  the baked cmdline, keepalive live, module tree, panel, GPU, audio). The OS updater writes
+  its boot.img over `/flash/KERNEL` (init's `IMAGE_KERNEL` defaults to `KERNEL`): a silent
+  revert to stock, never a brick — osguard's ABL check names it and stands down (no grub
+  phases, no re-stage from a boot daemon until the slot path is validated); the fix is a
+  re-run of install.sh. Kit DTB deltas (mic, VBUS) are NOT applied under ABL — they ride
+  inside the boot.img and get spliced at mint (follow-up). `etk-gtk-version.service` now
+  gates on `KERNEL.gtktest|msm.context_keepalive=1`. Harnesses:
+  `tools/test_kernel_abl.sh` (extracts the three rig bodies; `--against 6615699` fails),
+  `tools/test_abl_slot.sh`. Lifted from the slot tool after the operator's correction
+  ("USE THE KIT — update install.sh"): a side tool that writes the slot is the §1.3
+  workaround class, however well gated.
 - **Default-boot contract (0.9.0 — `KERNEL_DEPLOY_MODE`):** the fallback is now
   **`default`**, not `test` — installing a custom kernel IS the intent to boot it (§0/§2.1
   client orientation: expertise ships as the default). STEP 6.4 withholds auto-boot (silent

@@ -19,7 +19,10 @@ After=show-version.service
 
 [Service]
 Type=oneshot
-ExecStart=/bin/sh -c 'grep -q KERNEL.gtktest /proc/cmdline && echo "ROCKNIX-GTK @GTKVER@-@KDATE@" || true'
+# Two GTK signatures: the GRUB-era entry boots /KERNEL.gtktest; the ABL-era
+# boot.img (ROCKNIX 20261001+) has no file name on the cmdline, only the baked
+# msm.context_keepalive=1 that no stock boot.img carries.
+ExecStart=/bin/sh -c 'grep -qE "KERNEL\.gtktest|msm\.context_keepalive=1" /proc/cmdline && echo "ROCKNIX-GTK @GTKVER@-@KDATE@" || true'
 RemainAfterExit=yes
 StandardOutput=tty
 

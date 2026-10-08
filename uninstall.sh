@@ -430,6 +430,44 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
         echo "    Removed:   ETK_ROOT scripts, bin, tools, config, logs, pro-tuning, etk.conf"
     fi
 CLEAN
+
+# ==========================================================
+# ABL-ERA KERNEL SLOT (ROCKNIX 20261001+, ROCKNIX-ABL): put the parked stock
+# boot.img back into /flash/KERNEL. install.sh STEP 6.4 (KERNELABLREMOTE)
+# parked the OS's own KERNEL as KERNEL.etk-stock on the first deploy; there
+# is no grub entry to strip here. Proven by read-back sha and the OS's own
+# KERNEL.md5 (pristine=yes) before the parked copy is dropped. Quoted heredoc:
+# everything below runs on the rig. Harness: tools/test_kernel_abl.sh.
+# ==========================================================
+ssh $RIG_SSH "FLASH='/flash' HEAL='/storage/rocknix-gtk/heal' sh -s" >> /tmp/etk_uninstall_clean.log 2>&1 << 'ABLRESTORE'
+if [ ! -d "$FLASH/EFI" ] && [ -f "$FLASH/KERNEL.etk-stock" ] && [ "$(head -c 8 "$FLASH/KERNEL.etk-stock" 2>/dev/null)" = "ANDROID!" ]; then
+    W=$(sha256sum "$FLASH/KERNEL.etk-stock" | cut -d' ' -f1)
+    OSMD5=$(cut -d' ' -f1 "$FLASH/KERNEL.md5" 2>/dev/null)
+    if [ "$(sha256sum "$FLASH/KERNEL" | cut -d' ' -f1)" = "$W" ]; then
+        echo "    ABL slot already holds the parked stock boot.img"
+    elif mount -o remount,rw "$FLASH" 2>/dev/null \
+         && cp "$FLASH/KERNEL.etk-stock" "$FLASH/KERNEL.new" && sync \
+         && [ "$(sha256sum "$FLASH/KERNEL.new" | cut -d' ' -f1)" = "$W" ] \
+         && mv -f "$FLASH/KERNEL.new" "$FLASH/KERNEL" && sync \
+         && [ "$(sha256sum "$FLASH/KERNEL" | cut -d' ' -f1)" = "$W" ]; then
+        echo "    Restored: stock boot.img -> $FLASH/KERNEL (ABL slot, sha-verified)"
+    else
+        rm -f "$FLASH/KERNEL.new"
+        echo "    FAILED: could not restore $FLASH/KERNEL from KERNEL.etk-stock -- left as is; card in a PC: cp KERNEL.etk-stock KERNEL"
+        mount -o remount,ro "$FLASH" 2>/dev/null
+        exit 1
+    fi
+    M=$(md5sum "$FLASH/KERNEL" | cut -d' ' -f1)
+    if [ -n "$OSMD5" ] && [ "$M" = "$OSMD5" ]; then
+        rm -f "$FLASH/KERNEL.etk-stock"; sync
+        echo "    Removed: KERNEL.etk-stock (slot is the OS kernel: md5 matches KERNEL.md5)"
+    else
+        echo "    Kept: KERNEL.etk-stock (slot md5 $M vs KERNEL.md5 ${OSMD5:-absent} -- not proven pristine)"
+    fi
+    mount -o remount,ro "$FLASH" 2>/dev/null
+    rm -f "$HEAL/chain"
+fi
+ABLRESTORE
 [ "$TUI_ACTIVE" != "1" ] && cat /tmp/etk_uninstall_clean.log
 rm -f /tmp/etk_uninstall_clean.log
 if [ "$ZAP_VAULT" = "1" ]; then
