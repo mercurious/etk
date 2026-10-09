@@ -12,7 +12,7 @@
 #   status  <target>                 what is in the slot and what is RUNNING
 #   verify  <target> [<boot.img>]    after the cold boot: did the ABL boot the
 #                                    slot, is the keepalive on the cmdline, modules,
-#                                    panel, GPU — the surface the deploy must show on
+#                                    panel, GPU, boot-logo order — the surface the deploy must show on
 #   restore --card <mountpoint>      the unit did not boot: card in the Air, put
 #                                    KERNEL.etk-stock back into KERNEL on the mounted
 #                                    boot partition (the one thing no rig-side tool
@@ -118,6 +118,9 @@ echo "gpu=$(dmesg 2>/dev/null | grep -m1 -E "bound [0-9a-f]+\.gpu|loaded qcom/a[
 echo "a6xx_faults=$(dmesg 2>/dev/null | grep -c "a6xx_irq.*gpu fault")"
 echo "keepalive_rescues=$(dmesg 2>/dev/null | grep -c "context_keepalive: surviving hang")"
 echo "sound_cards=$(grep -c "^ *[0-9]" "$PROC/asound/cards" 2>/dev/null)"
+echo "boot_root_s=$(dmesg 2>/dev/null | grep -m1 "mmcblk0p2): mounted" | sed "s/^\[ *\([0-9.]*\)\].*/\1/")"
+echo "boot_dsi_s=$(dmesg 2>/dev/null | grep -m1 "bound ae94000.dsi" | sed "s/^\[ *\([0-9.]*\)\].*/\1/")"
+echo "sbu_mux=$(lsmod 2>/dev/null | grep -q "^gpio_sbu_mux " && echo module || { [ -d "$SYS/bus/platform/drivers/gpio_sbu_mux" ] && echo builtin || echo absent; })"
 echo "flash_free_kb=$(df -k "$FLASH" 2>/dev/null | tail -n1 | awk "{print \$4}")"
 echo "ABL_REMOTE_OK"
 '
@@ -144,6 +147,16 @@ print_status() {   # $1 = remote status output
     echo "  panel   : DSI-1 $(field "$p" dsi_status) · $(field "$p" drm_mode | sed 's/^$/no DRM mode/')"
     echo "  gpu     : $(field "$p" gpu | sed 's/^$/no adreno line in dmesg/')"
     echo "  sound   : $(field "$p" sound_cards) card(s)"
+    echo "  boot    : root mounted $(field "$p" boot_root_s | sed 's/^$/?/')s · msm bound DSI $(field "$p" boot_dsi_s | sed 's/^$/?/')s · gpio_sbu_mux $(field "$p" sbu_mux) · logo $(logo_verdict "$p")"
+}
+# The ROCKNIX splash (init's load_splash, ~2.2 s) draws into /dev/fb0 -- which exists only
+# once msm has bound ae94000.dsi. Stock 20261001 binds it at ~3.9 s (gpio-sbu-mux =m defers
+# the USB-C connector past switch_root); GTK >= 0.6.3 builds it in (upstream 187eb24f2e).
+# Verdict from dmesg ordering: DSI bound BEFORE the root mount = the logo had a framebuffer.
+logo_verdict() {   # $1 = remote status output -> drawn | MISSING | unjudged
+    local rs ds; rs=$(field "$1" boot_root_s); ds=$(field "$1" boot_dsi_s)
+    [ -n "$rs" ] && [ -n "$ds" ] || { echo unjudged; return; }
+    awk "BEGIN{exit !($ds < $rs)}" && echo drawn || echo MISSING
 }
 FLASH_LABEL="$R_FLASH"
 
@@ -188,6 +201,12 @@ verify)
     [ "$(field "$p" dsi_status)" = connected ] && ok "panel DSI-1 connected · $(field "$p" drm_mode | cut -c1-40)" || bad "panel DSI-1 not connected"
     [ -n "$(field "$p" gpu)" ] && ok "GPU: $(field "$p" gpu | cut -c1-80)" || bad "no adreno probe line in dmesg"
     [ "$(field "$p" sound_cards)" -gt 0 ] && ok "audio: $(field "$p" sound_cards) sound card(s)" || bad "no sound card (q6afe probe race?)"
+    rs=$(field "$p" boot_root_s); ds=$(field "$p" boot_dsi_s); sbu=$(field "$p" sbu_mux)
+    case "$(logo_verdict "$p")" in
+        drawn)   ok "boot logo: msm bound ae94000.dsi at ${ds}s BEFORE the root mount at ${rs}s (load_splash had a /dev/fb0; gpio_sbu_mux $sbu)" ;;
+        MISSING) bad "boot logo MISSING: msm bound ae94000.dsi at ${ds}s AFTER the root mount at ${rs}s -- load_splash drew into a /dev/fb0 that did not exist yet (gpio_sbu_mux $sbu; needs CONFIG_TYPEC_MUX_GPIO_SBU=y, GTK >= 0.6.3)" ;;
+        *)       echo "SKIP: boot logo unjudged -- dmesg no longer holds the boot lines (ring rolled); judge at a fresh boot" ;;
+    esac
     echo
     if [ "$FAIL" = 0 ]; then echo "ABL_SLOT_VERIFY PASS ($PASS checks) -- the GTK boot.img is LIVE on $(field "$p" model)"; exit 0
     else echo "ABL_SLOT_VERIFY FAIL ($FAIL failed, $PASS passed)"; exit 1; fi

@@ -17,7 +17,8 @@
 # are written POSIX-only (manual §Q); the rig run is the discriminating check for that.
 #
 # DISCRIMINATION: `--against <rev>` takes the tool from that revision. Against
-# ee353f3 (before the tool existed) every case FAILS.
+# ee353f3 (before the tool existed) every case FAILS; against e56f82a (before the
+# boot-logo order check) the five logo cases FAIL.
 #
 #   tools/test_abl_slot.sh                   # working tree — must PASS
 #   tools/test_abl_slot.sh --against ee353f3 # pre-tool — must FAIL
@@ -81,8 +82,8 @@ reset_unit() {   # fresh stock ABL unit, booted on stock
     printf ' 0 [SM8250 ]: fake\n' > "$U/proc/asound/cards"
     echo connected > "$U/sys/class/drm/card0-DSI-1/status"
     printf '\tmode: "1080x1920": 120 263424 1080 1096 1098 1120 1920 1940 1944 1960 0x48 0x0\n' > "$U/sys/kernel/debug/dri/0/state"
-    printf '[    1.0] adreno 3d00000.gpu: supply vdd not found, using dummy regulator\n[    1.1] msm_dpu ae01000.display-controller: bound 3d00000.gpu (ops a6xx_gpu_funcs)\n' > "$U/dmesg"
     printf 'Module                  Size  Used by\nfake_a 1 0\nfake_b 1 0\n' > "$U/lsmod"
+    boot_order late
     echo 7.2.0 > "$U/release"
     : > "$U/mount.log"
 }
@@ -92,12 +93,26 @@ staged_by_install() {   # what install.sh STEP 6.4 leaves behind for a deployed 
     printf '%s\n' "$GTK_SHA" > "$U/storage/rocknix-gtk/heal/KERNEL.staged.sha256"
     printf 'default\n' > "$U/storage/rocknix-gtk/heal/mode"; printf 'abl\n' > "$U/storage/rocknix-gtk/heal/chain"
 }
+boot_order() {   # early | late | none — dmesg: when msm bound the DSI vs the root mount.
+    # late = the live car12 numbers on stock/0.6.2 (mounted 2.17 s, DSI 3.83 s: logo missing);
+    # early = the GRUB-era/0.6.3 shape (DSI first: load_splash finds /dev/fb0).
+    local gpu='[    1.0] adreno 3d00000.gpu: supply vdd not found, using dummy regulator\n[    1.1] msm_dpu ae01000.display-controller: bound 3d00000.gpu (ops a6xx_gpu_funcs)\n'
+    case "$1" in
+        early) printf "$gpu"'[    1.212345] msm_dpu ae01000.display-controller: bound ae94000.dsi (ops 0xffffc923a87ea868)\n[    2.174590] EXT4-fs (mmcblk0p2): mounted filesystem 2e7e288a r/w with ordered data mode. Quota mode: none.\n' > "$U/dmesg"
+               printf 'Module                  Size  Used by\nfake_a 1 0\nfake_b 1 0\n' > "$U/lsmod"; mkdir -p "$U/sys/bus/platform/drivers/gpio_sbu_mux" ;;
+        late)  printf "$gpu"'[    2.174590] EXT4-fs (mmcblk0p2): mounted filesystem 2e7e288a r/w with ordered data mode. Quota mode: none.\n[    3.834315] msm_dpu ae01000.display-controller: bound ae94000.dsi (ops 0xffffc923a87ea868)\n' > "$U/dmesg"
+               printf 'Module                  Size  Used by\nfake_a 1 0\nfake_b 1 0\ngpio_sbu_mux 12288 3\n' > "$U/lsmod"; rm -rf "$U/sys/bus/platform/drivers/gpio_sbu_mux" ;;
+        none)  printf "$gpu" > "$U/dmesg" ;;
+    esac
+}
 boot_as() {   # stock | gtk — what the fake unit is RUNNING
     if [ "$1" = gtk ]; then
+        boot_order early
         printf '%s\n' "$GTK_CMD" > "$U/proc/cmdline"
         echo 'Linux version 7.2.0 (root@rocknix-gtk) (gcc-15 (Debian 15.3.0-4) 15.3.0) #1 SMP PREEMPT' > "$U/proc/version"
         mkdir -p "$U/sys/module/msm/parameters"; echo Y > "$U/sys/module/msm/parameters/context_keepalive"   # bool param: sysfs prints Y (live car12)
     else
+        boot_order late
         printf '%s\n' "$STOCK_CMD" > "$U/proc/cmdline"
         echo 'Linux version 7.2.0 (@0b091aade48d) (aarch64-rocknix-linux-gnu-gcc-15.2.0 (GCC) 15.2.0) #1 SMP PREEMPT' > "$U/proc/version"
         rm -rf "$U/sys/module"
@@ -175,6 +190,15 @@ mkdir -p "$U/modules/7.2.0"
 echo disconnected > "$U/sys/class/drm/card0-DSI-1/status"
 expect "verify: panel down -> FAIL"                           1 "panel DSI-1 not connected" "$TOOL" verify root@car12host
 echo connected > "$U/sys/class/drm/card0-DSI-1/status"
+# --- the boot logo: the splash needs /dev/fb0, i.e. msm bound the DSI before the root mount
+expect "verify: boot logo order judged (DSI bound before the root mount)" 0 "BEFORE the root mount" "$TOOL" verify root@car12host
+expect "status: boot line names the logo verdict"             0 "logo drawn"            "$TOOL" status root@car12host
+boot_order late
+expect "verify: GTK slot live but msm bound AFTER the root mount -> FAIL (logo missing, the 0.6.3 falsifier)" 1 "boot logo MISSING" "$TOOL" verify root@car12host
+expect "verify: ...and names the module-vs-builtin tell"      1 "gpio_sbu_mux module"   "$TOOL" verify root@car12host
+boot_order none
+expect "verify: dmesg ring rolled -> logo unjudged, not failed" 0 "SKIP: boot logo unjudged" "$TOOL" verify root@car12host
+boot_order early
 cp "$TD/stock.img" "$U/flash/KERNEL"
 expect "verify: slot changed since stage -> FAIL"             1 "slot sha" "$TOOL" verify root@car12host "$TD/gtk.img"
 cp "$TD/gtk.img" "$U/flash/KERNEL"
