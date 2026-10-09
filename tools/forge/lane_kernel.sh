@@ -63,8 +63,10 @@ echo "=== end drift ==="
 
 REL=$(docker exec rocknix-gtk-kernel-sid cat "/kernel/out${KLANE}${SFX}/include/config/kernel.release")
 log "kernel.release: $REL"
-MODCOUNT=$(docker exec rocknix-gtk-kernel-sid sh -c "find /kernel/out${KLANE}${SFX} -name '*.ko' | wc -l")
-log "modules built: $MODCOUNT"
+# modules.order = what ships; a find for *.ko also counts stale objects from an
+# incremental rebuild (the 0.6.3 remint, 2026-10-08).
+MODCOUNT=$(docker exec rocknix-gtk-kernel-sid sh -c "wc -l < /kernel/out${KLANE}${SFX}/modules.order")
+log "modules built: $MODCOUNT (modules.order)"
 
 mkdir -p "$HOME/rocknix-gtk/artifacts"
 # qcom-abl era: ship the parity-gated boot.img (the recipe dies before here if the
