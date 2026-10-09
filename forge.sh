@@ -79,7 +79,7 @@ FORGE_TURNIP_GTKVER="${FORGE_TURNIP_GTKVER:-0.7}"
 # mixing an old selector with a new name would mint a 7.1.2 kernel under a
 # 7.2 label. Bumped 20260827->20260901 at the official-chassis remint.
 FORGE_KERNEL_DATE="${FORGE_KERNEL_DATE:-20261001}"
-FORGE_KERNEL_VER="${FORGE_KERNEL_VER:-0.6.2}"
+FORGE_KERNEL_VER="${FORGE_KERNEL_VER:-0.6.3}"
 FORGE_KERNEL_ARTDIR="${FORGE_KERNEL_ARTDIR:-$HOME/rocknix-gtk/artifacts}"
 # Recipe selector for lane_kernel: 72 = 7.2/20260901-era (scripts/build_72.sh),
 # 712 = 7.1.2/20260801 (kept for remints of the old base). Allowlisted below

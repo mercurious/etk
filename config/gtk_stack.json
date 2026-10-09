@@ -11,8 +11,8 @@
   ],
   "gtk_stack": "0.9.0",
   "kernel": {
-    "asset": "KERNEL.rocknix-gtk-20261001-0.6.2",
-    "sha256": "3d3bf8cb13968ce868bdbf39bd0cafc607c4f753bc56ec087895175a9f2f76f3",
+    "asset": "KERNEL.rocknix-gtk-20261001-0.6.3",
+    "sha256": "7254032f524af4fdd80d747fbeeca11c57d34957541ac05163ac27736442cf2d",
     "kernel_release": "7.2.0",
     "requires_os": "20261001",
     "format": "boot.img"
