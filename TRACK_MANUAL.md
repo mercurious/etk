@@ -810,7 +810,11 @@ knobs, writes the handoff, verifies afterward from read-only telemetry.
   `KERNEL.etk-stock` (`KERNEL.md5` names it), and the osguard heal bundle (`chain=abl`) is
   seeded on STORAGE so a card-born install self-heals an OS-update revert. The lane's verify
   relabels the PINNED artifact itself and compares the slot to that (never the recipe's own
-  number). `gtk_stack.json` carries `format: boot.img` + `requires_os`; the self-update
+  number). **The etched card is judged in the Air before it meets a rig:** `tools/abl_slot.sh
+  verify --card /run/media/$USER/ROCKNIX-GTK --storage /run/media/$USER/GTKSTOR
+  ~/rocknix-gtk/artifacts/<KNAME>` — slot == the certified boot.img relabelled, card labels +
+  keepalive in the cmdline, relabelled stock parked and named by `KERNEL.md5`, heal bundle
+  `chain=abl` with the slot's sha (harness `test_abl_slot.sh`, nine card cases). `gtk_stack.json` carries `format: boot.img` + `requires_os`; the self-update
   path (`kernel_stage.sh`) takes the release from the manifest (`KS_RELEASE`) for a boot.img.
   **A reflash mints new sshd host keys** — the first `ssh`/`--pair` after flashing hits
   REMOTE HOST IDENTIFICATION HAS CHANGED. Routine, not (necessarily) an attack:

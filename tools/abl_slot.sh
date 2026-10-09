@@ -13,6 +13,15 @@
 #   verify  <target> [<boot.img>]    after the cold boot: did the ABL boot the
 #                                    slot, is the keepalive on the cmdline, modules,
 #                                    panel, GPU, boot-logo order — the surface the deploy must show on
+#   verify  --card <boot-mount> [--storage <stor-mount>] [<boot.img>]
+#                                    the ETCHED card, in the Air, before it meets a rig:
+#                                    ::/KERNEL is a boot.img whose cmdline names the
+#                                    card's labels + keepalive, the relabelled stock is
+#                                    parked (KERNEL.md5 names it), and -- given the
+#                                    certified boot.img -- the slot IS that artifact
+#                                    relabelled (relabel_bootimg.py, derived here, never
+#                                    the lane's number); --storage judges the seeded
+#                                    heal bundle (chain=abl, staged sha == slot)
 #   restore --card <mountpoint>      the unit did not boot: card in the Air, put
 #                                    KERNEL.etk-stock back into KERNEL on the mounted
 #                                    boot partition (the one thing no rig-side tool
@@ -39,11 +48,12 @@ die()  { echo "ABL_SLOT_FAIL: $*" >&2; exit 1; }
 usage() { sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 
 MODE="${1:-}"; [ -n "$MODE" ] || usage; shift
-CAR=""; CARD=""; TARGET=""; IMG=""
+CAR=""; CARD=""; STOR=""; TARGET=""; IMG=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --car)  CAR="${2:?--car needs carN}"; shift 2 ;;
         --card) CARD="${2:?--card needs a mountpoint}"; shift 2 ;;
+        --storage) STOR="${2:?--storage needs a mountpoint}"; shift 2 ;;
         -h|--help) usage ;;
         -*) die "unknown option $1" ;;
         *) if [ -z "$TARGET" ]; then TARGET="$1"; elif [ -z "$IMG" ]; then IMG="$1"; else die "too many arguments"; fi; shift ;;
@@ -160,6 +170,65 @@ logo_verdict() {   # $1 = remote status output -> drawn | MISSING | unjudged
 }
 FLASH_LABEL="$R_FLASH"
 
+# ---- the etched card, in the Air (no rig involved) ----------------------------
+# The image lane verified the raw image inside the build container; this judges the
+# COPY that dd made, on the card that will boot. Same derivation as the lane: the
+# expected slot is the certified boot.img relabelled ROCKNIX->ROCKNIX-GTK,
+# STORAGE->GTKSTOR by relabel_bootimg.py (only the 512-byte cmdline field moves).
+CARD_BOOT_LABEL="${ABL_CARD_BOOT_LABEL:-ROCKNIX-GTK}"; CARD_STOR_LABEL="${ABL_CARD_STOR_LABEL:-GTKSTOR}"
+RELABEL="$ETK_ROOT/os-install/build/relabel_bootimg.py"
+card_verify() {
+    # no rig in card mode: the one positional is the boot.img, not a target
+    [ -n "$IMG" ] || { IMG="$TARGET"; TARGET=""; }
+    [ -d "$CARD" ] || die "$CARD is not a directory (mount the card's boot partition first)"
+    [ -z "$STOR" ] || [ -d "$STOR" ] || die "$STOR is not a directory (mount the card's storage partition first)"
+    PASS=0; FAIL=0
+    ok()  { echo "PASS: $1"; PASS=$((PASS+1)); }
+    bad() { echo "FAIL: $1"; FAIL=$((FAIL+1)); }
+    # the label is judged only when $CARD is itself a mountpoint (a subdirectory of some
+    # other filesystem -- the harness sandbox -- would report that filesystem's label)
+    local lbl=""; if [ "$(findmnt -n -o TARGET --target "$CARD" 2>/dev/null)" = "$(realpath "$CARD")" ]; then
+        lbl=$(lsblk -no LABEL "$(findmnt -n -o SOURCE --target "$CARD" 2>/dev/null)" 2>/dev/null | head -n1); fi
+    echo "card      : $CARD$( [ -n "$lbl" ] && echo " (label $lbl)")$( [ -n "$STOR" ] && echo " · storage $STOR")"
+    [ -f "$CARD/KERNEL" ] || { bad "no $CARD/KERNEL -- not the boot partition, or the dd did not land"; echo "ABL_SLOT_CARD FAIL ($FAIL failed, $PASS passed)"; exit 1; }
+    [ -z "$lbl" ] || { [ "$lbl" = "$CARD_BOOT_LABEL" ] && ok "boot partition label $lbl" || bad "boot partition label '$lbl' != $CARD_BOOT_LABEL (a stock-labelled card collides with an internal ROCKNIX)"; }
+    local info; info=$(bootimg_info "$CARD/KERNEL")
+    [ "$(field "$info" magic)" = ok ] && ok "::/KERNEL is a boot.img ($(field "$info" dtbs) DTBs, $(wc -c < "$CARD/KERNEL" | tr -d ' ') B)" || bad "::/KERNEL is not a boot.img"
+    local cmd slot; cmd=$(field "$info" cmdline); slot=$(sha256sum "$CARD/KERNEL" | cut -d' ' -f1)
+    echo "  cmdline : $cmd"
+    printf '%s' "$cmd" | grep -q "boot=LABEL=$CARD_BOOT_LABEL disk=LABEL=$CARD_STOR_LABEL" && ok "slot cmdline names the card's labels ($CARD_BOOT_LABEL/$CARD_STOR_LABEL)" || bad "slot cmdline does NOT name the card's labels -- this kernel would mount an internal ROCKNIX (split-brain): '$cmd'"
+    printf '%s' "$cmd" | grep -q 'msm.context_keepalive=1' && ok "msm.context_keepalive=1 baked in the slot cmdline" || bad "keepalive NOT in the slot cmdline"
+    if [ -f "$CARD/KERNEL.etk-stock" ]; then
+        [ "$(head -c 8 "$CARD/KERNEL.etk-stock")" = "ANDROID!" ] && ok "KERNEL.etk-stock parked (a boot.img)" || bad "KERNEL.etk-stock is not a boot.img"
+        local m o; m=$(md5sum "$CARD/KERNEL.etk-stock" | cut -d' ' -f1); o=$(cut -d' ' -f1 "$CARD/KERNEL.md5" 2>/dev/null)
+        [ -n "$o" ] && { [ "$m" = "$o" ] && ok "KERNEL.md5 names the parked stock (uninstall/osguard can prove it pristine)" || bad "KERNEL.md5 ($o) != parked stock md5 ($m)"; }
+        local scmd; scmd=$(field "$(bootimg_info "$CARD/KERNEL.etk-stock")" cmdline)
+        printf '%s' "$scmd" | grep -q "boot=LABEL=$CARD_BOOT_LABEL disk=LABEL=$CARD_STOR_LABEL" && ok "parked stock is relabelled too (a fallback that boots THIS card)" || bad "parked stock still names the stock labels -- a fallback that would mount an internal ROCKNIX: '$scmd'"
+    else bad "no KERNEL.etk-stock parked -- the slot has no fallback"; fi
+    if [ -n "$IMG" ]; then
+        [ -f "$IMG" ] || die "no such file: $IMG"
+        [ -f "$RELABEL" ] || die "relabel tool missing: $RELABEL"
+        local tmp; tmp=$(mktemp); 
+        if python3 -I "$RELABEL" "$IMG" "$tmp" ROCKNIX STORAGE "$CARD_BOOT_LABEL" "$CARD_STOR_LABEL" >/dev/null 2>&1; then
+            local want; want=$(sha256sum "$tmp" | cut -d' ' -f1)
+            [ "$slot" = "$want" ] && ok "slot == $(basename "$IMG") relabelled to the card (sha $(echo "$want" | cut -c1-12)…)" || bad "slot sha $slot != $(basename "$IMG") relabelled ($want) -- wrong kernel on the card, or a bad dd"
+        else bad "could not relabel $(basename "$IMG") for comparison (not the stock-labelled certified artifact?)"; fi
+        rm -f "$tmp"
+    else echo "NOTE: no boot.img given -- the slot is unjudged against the certified artifact (pass ~/rocknix-gtk/artifacts/<KNAME>)"; fi
+    if [ -n "$STOR" ]; then
+        local h="$STOR/rocknix-gtk/heal"
+        if [ -d "$h" ]; then
+            [ "$(cat "$h/chain" 2>/dev/null)" = abl ] && ok "heal bundle seeded: chain=abl" || bad "heal bundle chain is '$(cat "$h/chain" 2>/dev/null)', not abl"
+            local st; st=$(cat "$h/KERNEL.staged.sha256" 2>/dev/null | cut -d' ' -f1)
+            [ "$st" = "$slot" ] && ok "heal bundle's staged sha == the slot (osguard can re-stage after an OS update)" || bad "heal bundle staged sha ($st) != slot ($slot)"
+            [ -n "$(cat "$h/KERNEL.staged.release" 2>/dev/null)" ] && ok "heal bundle names the module tree ($(cat "$h/KERNEL.staged.release"))" || bad "heal bundle has no KERNEL.staged.release (osguard's re-stage gate would refuse)"
+        else bad "no heal bundle at $h (a card-born install could not self-heal an OS-update revert)"; fi
+    fi
+    echo
+    if [ "$FAIL" = 0 ]; then echo "ABL_SLOT_CARD PASS ($PASS checks) -- the card is ready for the rig"; exit 0
+    else echo "ABL_SLOT_CARD FAIL ($FAIL failed, $PASS passed)"; exit 1; fi
+}
+
 case "$MODE" in
 status)
     [ -n "$TARGET" ] || usage
@@ -168,6 +237,7 @@ status)
     ;;
 
 verify)
+    [ -n "$CARD" ] && card_verify
     [ -n "$TARGET" ] || usage
     car_gate
     p=$(rssh "$(remote_env) sh -s" <<< "$REMOTE_STATUS" 2>/dev/null)

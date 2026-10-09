@@ -18,7 +18,8 @@
 #
 # DISCRIMINATION: `--against <rev>` takes the tool from that revision. Against
 # ee353f3 (before the tool existed) every case FAILS; against e56f82a (before the
-# boot-logo order check) the five logo cases FAIL.
+# boot-logo order check) the five logo cases FAIL; against 20222a1 (before verify --card)
+# the nine card cases FAIL.
 #
 #   tools/test_abl_slot.sh                   # working tree — must PASS
 #   tools/test_abl_slot.sh --against ee353f3 # pre-tool — must FAIL
@@ -36,6 +37,7 @@ if [ -n "$REV" ]; then
     git show "$REV:tools/abl_slot.sh" > "$TD/tools/abl_slot.sh" 2>/dev/null || printf '#!/bin/bash\necho "no tools/abl_slot.sh at %s"; exit 99\n' "$REV" > "$TD/tools/abl_slot.sh"
 else cp tools/abl_slot.sh "$TD/tools/abl_slot.sh"; fi
 cp scripts/etk_car.sh "$TD/scripts/etk_car.sh"
+mkdir -p "$TD/os-install/build"; cp os-install/build/relabel_bootimg.py "$TD/os-install/build/"
 chmod +x "$TD/tools/abl_slot.sh"
 TOOL="$TD/tools/abl_slot.sh"
 
@@ -217,6 +219,32 @@ expect "restore --card: stock back on the mounted card"      0 "SLOT_OK restored
 [ "$(sha256sum "$TD/card/KERNEL" | cut -d' ' -f1)" = "$STOCK_SHA" ] && ok "card KERNEL is stock byte-exact" || bad "card restore wrote wrong bytes"
 expect "restore --card: card without a parked stock refused" 1 "no $TD/img/KERNEL.etk-stock" "$TOOL" restore --card "$TD/img"
 expect "restore --card: not a directory refused"             1 "not a directory"       "$TOOL" restore --card "$TD/nope"
+
+# --- verify --card: the ETCHED card in the Air, before it meets a rig ------------------
+# A real card carries the certified boot.img RELABELLED to ROCKNIX-GTK/GTKSTOR, the
+# relabelled stock parked (KERNEL.md5 names it) and the heal bundle seeded on storage.
+RL="python3 -I os-install/build/relabel_bootimg.py"
+mkdir -p "$TD/card2" "$TD/stor2/rocknix-gtk/heal"
+$RL "$TD/gtk.img"   "$TD/card2/KERNEL"           ROCKNIX STORAGE ROCKNIX-GTK GTKSTOR >/dev/null || { echo "relabel failed"; exit 1; }
+$RL "$TD/stock.img" "$TD/card2/KERNEL.etk-stock" ROCKNIX STORAGE ROCKNIX-GTK GTKSTOR >/dev/null
+printf '%s  target/KERNEL\n' "$(md5sum "$TD/card2/KERNEL.etk-stock" | cut -d' ' -f1)" > "$TD/card2/KERNEL.md5"
+echo abl > "$TD/stor2/rocknix-gtk/heal/chain"; echo default > "$TD/stor2/rocknix-gtk/heal/mode"
+sha256sum "$TD/card2/KERNEL" | cut -d' ' -f1 > "$TD/stor2/rocknix-gtk/heal/KERNEL.staged.sha256"; echo 7.2.0 > "$TD/stor2/rocknix-gtk/heal/KERNEL.staged.release"
+expect "card: etched card == certified artifact relabelled, bundle seeded -> PASS" 0 "ABL_SLOT_CARD PASS" "$TOOL" verify --card "$TD/card2" --storage "$TD/stor2" "$TD/gtk.img"
+expect "card: ...names the relabel match"                      0 "relabelled to the card" "$TOOL" verify --card "$TD/card2" "$TD/gtk.img"
+expect "card: no artifact given -> PASS with the slot unjudged" 0 "unjudged against the certified artifact" "$TOOL" verify --card "$TD/card2" --storage "$TD/stor2"
+expect "card: stock-labelled kernel on the card -> FAIL (split-brain)" 1 "does NOT name the card's labels" "$TOOL" verify --card "$TD/card" "$TD/gtk.img"
+$RL "$TD/nokeep.img" "$TD/card2/KERNEL" ROCKNIX STORAGE ROCKNIX-GTK GTKSTOR >/dev/null
+expect "card: wrong kernel etched -> FAIL on the relabelled sha"  1 "slot sha" "$TOOL" verify --card "$TD/card2" "$TD/gtk.img"
+expect "card: ...and on the missing keepalive"                 1 "keepalive NOT in the slot cmdline" "$TOOL" verify --card "$TD/card2" "$TD/gtk.img"
+$RL "$TD/gtk.img" "$TD/card2/KERNEL" ROCKNIX STORAGE ROCKNIX-GTK GTKSTOR >/dev/null
+mv "$TD/card2/KERNEL.etk-stock" "$TD/card2/KERNEL.etk-stock.away"
+expect "card: no parked stock -> FAIL"                          1 "no KERNEL.etk-stock parked" "$TOOL" verify --card "$TD/card2" "$TD/gtk.img"
+mv "$TD/card2/KERNEL.etk-stock.away" "$TD/card2/KERNEL.etk-stock"
+echo deadbeef > "$TD/stor2/rocknix-gtk/heal/KERNEL.staged.sha256"
+expect "card: heal bundle sha != slot -> FAIL"                  1 "heal bundle staged sha" "$TOOL" verify --card "$TD/card2" --storage "$TD/stor2" "$TD/gtk.img"
+expect "card: not a directory refused"                          1 "not a directory" "$TOOL" verify --card "$TD/nope"
+[ "$(sha256sum "$TD/card2/KERNEL" | cut -d' ' -f1)" = "$(sha256sum "$TD/card2/KERNEL" | cut -d' ' -f1)" ] && ok "verify --card wrote nothing" || bad "verify --card changed the slot"
 
 echo
 echo "test_abl_slot: $PASS passed, $FAIL failed${REV:+ (against $REV)}"
