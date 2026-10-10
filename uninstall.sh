@@ -249,6 +249,14 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
     rm -f /storage/.config/profile.d/095-etk-pitlink /storage/.config/profile.d/.095-etk-pitlink.tmp
     echo "    Removed: 095-etk-pitlink (Pitlink engineer link off)"
 
+    # Pitlink USB (install.sh STEP 6.73): disable + remove the unit, never stop it here --
+    # stopping rebinds the UDC and would cut this uninstall's own USB-net ssh. Its function
+    # (configfs, volatile) leaves at the next boot, and the unit can't start without 095.
+    systemctl disable etk-pitlink-usb.service >/dev/null 2>&1
+    rm -f /storage/.config/system.d/etk-pitlink-usb.service
+    systemctl daemon-reload
+    echo "    Removed: etk-pitlink-usb.service (Pitlink USB function leaves at the next boot)"
+
     # RPCS3 runtime env flags (install.sh STEP 6.56): same OUTSIDE-ETK_ROOT
     # profile.d story — remove or the flags keep reaching RPCS3 post-uninstall.
     rm -f /storage/.config/profile.d/096-etk-rpcs3-flags

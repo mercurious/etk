@@ -3603,6 +3603,58 @@ else
 fi
 
 # ==========================================================
+# STEP 6.73: PITLINK USB (the Engineer's raw-USB channel into RPCS3)
+# ==========================================================
+# bin/etk_pitlink_usbd.py adds a vendor FunctionFS function ("ETK Pitlink", 2 bulk eps) to
+# ROCKNIX's live cdc gadget NEXT TO NCM and relays each USB channel into RPCS3's own Pitlink
+# socket @etk-pitlink (PLUSB v1, tools/pitlink/plusb.py; docs/PITLINK_SPEC.md §2.9). The M1
+# side is tools/pitlink/usb_broker.py (libusb). Gated on the Pitstop TOOLS > Pitlink switch
+# (095-etk-pitlink); Pitstop starts/stops the unit live. Enabled here, NEVER started: starting
+# rebinds the UDC, which would cut this install's own USB-net ssh mid-flight -- it comes up at
+# the next boot (or the next Pitlink toggle). Kill-switch ETK_PITLINK_USB=0 removes it.
+if [ "${ETK_PITLINK_USB:-1}" = "1" ]; then
+    ssh $RIG_SSH "mkdir -p $ETK_ROOT/tools/pitlink" 2>/dev/null
+    rsync -az ./tools/pitlink/plusb.py "$RIG_SSH:$ETK_ROOT/tools/pitlink/plusb.py" >/dev/null 2>&1
+    PLUSB_OUT=$(ssh $RIG_SSH "sh -s" 2>&1 <<'PITLINKUSBREMOTE'
+mkdir -p /storage/.config/system.d
+cat << 'PLUSBUNIT' > /storage/.config/system.d/etk-pitlink-usb.service
+[Unit]
+Description=ETK Pitlink USB (raw USB channel: the Engineer's link into RPCS3)
+# After the gadget exists (ES autostart runs usbgadget --start; the heal repairs it) and the
+# game card is mounted (the daemon lives on it: the etk-blackbox lesson).
+After=rocknix-autostart.service etk-usbnet-heal.service etk-sd-rebind.service
+ConditionPathExists=/storage/.config/profile.d/095-etk-pitlink
+ConditionPathExists=/usr/bin/usbgadget
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /storage/games-internal/roms/etk/bin/etk_pitlink_usbd.py serve
+ExecStopPost=/usr/bin/python3 /storage/games-internal/roms/etk/bin/etk_pitlink_usbd.py detach
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=rocknix.target
+PLUSBUNIT
+systemctl daemon-reload
+systemctl enable /storage/.config/system.d/etk-pitlink-usb.service >/dev/null 2>&1
+python3 -c "import ast,sys; [ast.parse(open(f).read()) for f in sys.argv[1:]]" \
+    /storage/games-internal/roms/etk/bin/etk_pitlink_usbd.py /storage/games-internal/roms/etk/tools/pitlink/plusb.py \
+    && [ "$(systemctl is-enabled etk-pitlink-usb.service 2>/dev/null)" = enabled ] \
+    && echo "PITLINKUSB_OK active=$(systemctl is-active etk-pitlink-usb.service 2>/dev/null)" || echo "PITLINKUSB_FAIL"
+PITLINKUSBREMOTE
+)
+    if printf '%s' "$PLUSB_OUT" | grep -q PITLINKUSB_OK; then
+        say "${G}[ETK]${N} Pitlink USB armed (etk-pitlink-usb.service; up at next boot when TOOLS > Pitlink is on — $(printf '%s' "$PLUSB_OUT" | grep -o 'active=[a-z]*'))"
+    else
+        say "${Y}[WARN] Pitlink USB did not verify ($(printf '%s' "$PLUSB_OUT" | tail -n1)) — the Engineer falls back to TCP (GTK_PITLINK_TCP).${N}"
+    fi
+else
+    ssh $RIG_SSH "systemctl disable etk-pitlink-usb.service >/dev/null 2>&1; rm -f /storage/.config/system.d/etk-pitlink-usb.service; systemctl daemon-reload" 2>/dev/null
+    say "${G}[ETK]${N} Pitlink USB unit removed (kill-switch ETK_PITLINK_USB=0; a running function leaves at the next boot)"
+fi
+
+# ==========================================================
 # STEP 6.75: DP CAPTURE-AUDIO FORMAT PIN (WirePlumber S16 rule)
 # ==========================================================
 # The DP port's S24_LE path drops ~25 dB (q6 DSP bit-alignment; convicted by

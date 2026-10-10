@@ -167,6 +167,29 @@ bursts. Pushed, not polled.
 | `GTK_PITLINK_PORT` | 0 | which player port HANDS drives |
 | `GTK_PITLINK_TTL_MS` | 500 | dead-man timeout |
 
+### 2.9 Transport — raw USB (PLUSB v1), the default since 2026-10-10
+
+TCP over USB-net was the first transport and it was not good enough: ~1 in 4 one-shot
+connects stalled 8 s on a clean link. We own both ends of the cable, so the link is now a
+vendor-class USB function, with no IP stack between the Engineer and the game:
+
+- **Car:** `bin/etk_pitlink_usbd.py` (unit `etk-pitlink-usb.service`, install STEP 6.73) adds a
+  FunctionFS function "ETK Pitlink" (class ff/50/4c, one bulk IN + one bulk OUT) to ROCKNIX's
+  live `cdc` gadget **next to NCM**, so ssh/USB-net keep working. The attach rebinds the UDC,
+  verifies NCM kept its address (re-applies it + udhcpd if not), else rolls back to NCM-only.
+  configfs is volatile: a reboot always restores stock. Gated on the Pitstop switch (095);
+  Pitstop starts/stops the unit live.
+- **Link (`tools/pitlink/plusb.py`):** 12-byte segments `<4sHBBI` (`PLUB`, chan, kind, flags,
+  len); each local client is a channel; resync = vendor control request `VREQ_RESET` (ep0) +
+  HELLO with a 16-byte nonce, both sides hunting for their anchor. Targets per channel:
+  `pitlink` (relayed into RPCS3's own `@etk-pitlink` -- PLNK v1 unchanged end to end) and
+  `garage` (JSON lines in the daemon: launch / running / games via EmulationStation's local API).
+- **M1:** `tools/pitlink/usb_broker.py` claims the interface with libusb (ctypes) and serves
+  `@etk-pitlink-usb` (PLNK) and `@etk-garage-usb`; `PitlinkClient("usb")` -- the default
+  address -- spawns it on first use. Needs `tools/pitlink/71-etk-pitlink.rules` once.
+- **Measured (car8):** link RTT 0.63 ms median; PLNK ping 0.87 ms. Cold-boot validated
+  2026-10-10: unit up 1 s into boot, broker relinked 6 s after the rig reappeared.
+
 ---
 
 ## 3. PLNK v1 — the wire (normative; C++ server and Python host are both written to this)

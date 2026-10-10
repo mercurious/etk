@@ -70,6 +70,9 @@ os.environ.update(
     TELEMETRY_DIR=TEL,
     SHM_DIR=os.path.join(FIX, "shm"),
     PITLINK_PROFILE_D=PITLINK_FILE,
+    # The USB unit's file lives in the fixture, absent unless a test creates it: the
+    # toggle must NEVER reach this host's systemctl (2026-10-10: one polkit prompt per toggle).
+    PITLINK_USB_UNIT_FILE=os.path.join(FIX, "system.d", "etk-pitlink-usb.service"),
     SCREENSHOT_MODE_FILE=os.path.join(TEL, "screenshot_mode.txt"),
     BOG_CHORD_FILE=os.path.join(TEL, "bog_chord.txt"),
     PKG_STAGING_DIR=os.path.join(FIX, "pkg_install_drop"),
@@ -246,6 +249,37 @@ def _state():
               pit._read_pitlink_state(), "off")
         os.chmod(PITLINK_FILE, 0o644)
     reset_profile_dir()
+
+
+@suite("USB UNIT")
+def _usb_unit():
+    """the toggle drives etk-pitlink-usb.service on the rig, and only there."""
+    calls = []
+    real_run = pit.subprocess.run
+
+    def fake_run(argv, *a, **k):
+        calls.append(list(argv))
+        return subprocess.CompletedProcess(argv, 0, b"", b"")
+    pit.subprocess.run = fake_run
+    try:
+        reset_profile_dir()
+        unit = pit.PITLINK_USB_UNIT_FILE
+        if os.path.exists(unit):
+            os.remove(unit)
+        pit._toggle_pitlink()
+        pit._toggle_pitlink()
+        check("no unit file (any host but the rig): systemctl never runs", calls, [])
+        os.makedirs(os.path.dirname(unit), exist_ok=True)
+        write(unit, "[Unit]\n")
+        pit._toggle_pitlink()
+        pit._toggle_pitlink()
+        check("unit installed: on starts it, off stops it, never asking a password", calls,
+              [["systemctl", "--no-ask-password", "--no-block", "start", "etk-pitlink-usb.service"],
+               ["systemctl", "--no-ask-password", "--no-block", "stop", "etk-pitlink-usb.service"]])
+        os.remove(unit)
+    finally:
+        pit.subprocess.run = real_run
+        reset_profile_dir()
 
 
 @suite("TOGGLE")

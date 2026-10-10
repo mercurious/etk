@@ -2943,7 +2943,32 @@ def _toggle_pitlink():
             os.close(fd)
     except Exception:
         pass
-    return _read_pitlink_state()
+    now = _read_pitlink_state()
+    _pitlink_usb(now)
+    return now
+
+
+PITLINK_USB_UNIT = "etk-pitlink-usb.service"   # install.sh STEP 6.73
+PITLINK_USB_UNIT_FILE = os.environ.get(
+    'PITLINK_USB_UNIT_FILE', "/storage/.config/system.d/etk-pitlink-usb.service")
+
+
+def _pitlink_usb(state):
+    """The raw-USB channel follows the switch live: the unit's condition is the
+    profile.d file, so start/stop it now. Only where the unit is INSTALLED (the
+    rig): anywhere else -- a host running the tests, a kill-switched install --
+    this is a no-op. --no-ask-password: never a polkit prompt on anyone's screen
+    (2026-10-10: the host test run popped one per toggle). --no-block: the
+    daemon's own rebind runs after we return, so Pitstop never waits on the
+    ~3 s USB re-enumeration."""
+    if not os.path.exists(PITLINK_USB_UNIT_FILE):
+        return
+    try:
+        subprocess.run(["systemctl", "--no-ask-password", "--no-block",
+                        "start" if state == "on" else "stop", PITLINK_USB_UNIT],
+                       timeout=5, capture_output=True)
+    except Exception as e:
+        _log(f"pitlink: {PITLINK_USB_UNIT}: {e}")
 
 
 def _pitlink_status(was, now):
@@ -2951,7 +2976,7 @@ def _pitlink_status(was, now):
     panel). Says plainly WHEN it applies, and says so only if it changed."""
     if now == was:
         return f"Pitlink: still {now} - could not save the setting"
-    return f"Pitlink: {now} - takes effect at the next game launch"
+    return f"Pitlink: {now} - USB now, game at next game launch"
 
 
 def _tools_env():
