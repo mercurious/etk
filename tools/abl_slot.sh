@@ -86,6 +86,11 @@ print(f'dtbs={n}')
 PY
 }
 field() { printf '%s\n' "$1" | sed -n "s/^$2=//p" | head -n1; }
+pinned_os() {   # $1 sha256 -> the ROCKNIX release whose OFFICIAL stock boot.img it is (gtk_stack.json), or ""
+    [ -n "$1" ] || return 0
+    python3 -I -c 'import json,sys; m=json.load(open(sys.argv[1])).get("kernel",{}).get("stock_os_sha256",{}); print(next((k for k,v in m.items() if v==sys.argv[2]), ""))' \
+        "${ABL_MANIFEST:-$ETK_ROOT/config/gtk_stack.json}" "$1" 2>/dev/null
+}
 
 car_gate() {   # refuse unless the unit at $TARGET is $CAR (report-only without --car)
     [ -f "$ETK_ROOT/scripts/etk_car.sh" ] || { [ -z "$CAR" ] || die "--car given but scripts/etk_car.sh is missing"; return 0; }
@@ -128,7 +133,9 @@ echo "gpu=$(dmesg 2>/dev/null | grep -m1 -E "bound [0-9a-f]+\.gpu|loaded qcom/a[
 echo "a6xx_faults=$(dmesg 2>/dev/null | grep -c "a6xx_irq.*gpu fault")"
 echo "keepalive_rescues=$(dmesg 2>/dev/null | grep -c "context_keepalive: surviving hang")"
 echo "sound_cards=$(grep -c "^ *[0-9]" "$PROC/asound/cards" 2>/dev/null)"
-echo "boot_root_s=$(dmesg 2>/dev/null | grep -m1 "mmcblk0p2): mounted" | sed "s/^\[ *\([0-9.]*\)\].*/\1/")"
+SDEV=$(awk "\$2==\"/storage\"{print \$1; exit}" "$PROC/mounts" 2>/dev/null); SDEV=${SDEV##*/}; [ -n "$SDEV" ] || SDEV=mmcblk0p2
+echo "boot_root_dev=$SDEV"
+echo "boot_root_s=$(dmesg 2>/dev/null | grep -m1 "($SDEV): mounted" | sed "s/^\[ *\([0-9.]*\)\].*/\1/")"
 echo "boot_dsi_s=$(dmesg 2>/dev/null | grep -m1 "bound ae94000.dsi" | sed "s/^\[ *\([0-9.]*\)\].*/\1/")"
 echo "sbu_mux=$(lsmod 2>/dev/null | grep -q "^gpio_sbu_mux " && echo module || { [ -d "$SYS/bus/platform/drivers/gpio_sbu_mux" ] && echo builtin || echo absent; })"
 echo "flash_free_kb=$(df -k "$FLASH" 2>/dev/null | tail -n1 | awk "{print \$4}")"
@@ -144,10 +151,15 @@ print_status() {   # $1 = remote status output
     echo "slot      : $FLASH_LABEL/KERNEL $( [ "$magic" = "ANDROID!" ] && echo boot.img || echo "NOT a boot.img ($magic)") · $(field "$p" slot_size) B · sha $(field "$p" slot_sha | cut -c1-12)…"
     echo "  cmdline : $(field "$p" slot_cmdline)"
     local smd5 omd5; smd5=$(field "$p" slot_md5); omd5=$(field "$p" os_md5)
-    echo "  is stock: $( [ -n "$omd5" ] && { [ "$smd5" = "$omd5" ] && echo "yes (md5 matches KERNEL.md5)" || echo "NO (md5 $smd5 vs KERNEL.md5 $omd5)"; } || echo "unknown (no KERNEL.md5)")"
+    local spin; spin=$(pinned_os "$(field "$p" slot_sha)")
+    if [ -n "$omd5" ] && [ "$smd5" = "$omd5" ]; then echo "  is stock: yes (md5 matches KERNEL.md5)"
+    elif [ -n "$spin" ]; then echo "  is stock: yes (the official $spin stock boot.img, pinned in gtk_stack.json$( [ -n "$omd5" ] && echo "; KERNEL.md5 is stale -- the in-place updater never rewrites it"))"
+    elif [ -n "$omd5" ]; then echo "  is stock: NO (md5 $smd5 vs KERNEL.md5 $omd5; not a pinned official stock either)"
+    else echo "  is stock: unknown (no KERNEL.md5, not a pinned official stock)"; fi
     local stk; stk=$(field "$p" stock_sha)
     if [ "$stk" = none ]; then echo "fallback  : NONE parked (first stage will park $FLASH_LABEL/KERNEL as KERNEL.etk-stock)"
-    else echo "fallback  : KERNEL.etk-stock sha $(echo "$stk" | cut -c1-12)… $( [ "$(field "$p" stock_md5)" = "$omd5" ] && echo "(pristine: md5 matches KERNEL.md5)" || echo "(md5 does NOT match KERNEL.md5)")"; fi
+    else local kpin; kpin=$(pinned_os "$stk")
+        echo "fallback  : KERNEL.etk-stock sha $(echo "$stk" | cut -c1-12)… $( if [ "$(field "$p" stock_md5)" = "$omd5" ]; then echo "(pristine: md5 matches KERNEL.md5)"; elif [ -n "$kpin" ]; then echo "(pristine: the official $kpin stock, pinned)"; else echo "(md5 does NOT match KERNEL.md5, not a pinned official stock)"; fi)"; fi
     local exp; exp=$(field "$p" expected_sha)
     [ -n "$exp" ] && echo "install.sh: $(field "$p" expected_name) sha $(echo "$exp" | cut -c1-12)… $( [ "$exp" = "$(field "$p" slot_sha)" ] && echo "= slot" || echo "!= slot (slot was changed since)")"
     echo "running   : $(field "$p" run_version | cut -c1-110)"
@@ -163,6 +175,10 @@ print_status() {   # $1 = remote status output
 # once msm has bound ae94000.dsi. Stock 20261001 binds it at ~3.9 s (gpio-sbu-mux =m defers
 # the USB-C connector past switch_root); GTK >= 0.6.3 builds it in (upstream 187eb24f2e).
 # Verdict from dmesg ordering: DSI bound BEFORE the root mount = the logo had a framebuffer.
+# "Root mount" = init mounting STORAGE (disk=LABEL=STORAGE), the device /storage sits on:
+# mmcblk0p2 on a card-booted unit (car12), sda25 on the internal UFS (car8). Hardcoding
+# mmcblk0p2 judged car8 by its GAMES card, mounted by userspace at 6.1 s -- a false
+# "drawn" on stock 20261001 (2026-10-09; the operator saw no logo).
 logo_verdict() {   # $1 = remote status output -> drawn | MISSING | unjudged
     local rs ds; rs=$(field "$1" boot_root_s); ds=$(field "$1" boot_dsi_s)
     [ -n "$rs" ] && [ -n "$ds" ] || { echo unjudged; return; }

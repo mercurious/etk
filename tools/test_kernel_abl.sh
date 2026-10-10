@@ -22,6 +22,7 @@
 #
 #   tools/test_kernel_abl.sh                     # working tree — must PASS
 #   tools/test_kernel_abl.sh --against 6615699   # pre-change — must FAIL
+#   tools/test_kernel_abl.sh --against c8f0133   # before the stock pin + GRUB-era re-park — the OTA/leftover cases FAIL
 
 set -u
 cd "$(dirname "$0")/.." || exit 1
@@ -139,6 +140,33 @@ expect "stage: non-stock slot with no parked copy REFUSED" 1 "put stock back by 
 [ "$(slot_sha)" = "$(sha256sum "$TD/other.img" | cut -d' ' -f1)" ] && ok "refused slot left as found" || bad "refusal rewrote the slot"
 [ -e "$U/flash/KERNEL.etk-stock" ] && bad "refusal parked a non-stock fallback" || ok "refusal parked nothing"
 tail -n1 "$U/mount.log" | grep -q 'remount,ro' && ok "refusal left flash ro" || bad "refusal left flash rw"
+
+# in-place OTA (car8, 20260901 -> 20261001, 2026-10-09): the updater never rewrites
+# /flash/KERNEL.md5, which still names the 20260901 raw Image -- the pinned official
+# stock sha (gtk_stack.json kernel.stock_os_sha256) is what proves the slot stock
+STALE_MD5=ea10fd219e70272135fc3cdc3f056a1b
+reset_unit; printf '%s  KERNEL\n' "$STALE_MD5" > "$U/flash/KERNEL.md5"
+STOCK_SHAS="$STOCK_SHA" expect "stage: OTA'd unit (KERNEL.md5 stale) + pinned stock sha -> deployed, stock parked, proven by the pin" 0 "stock=new stock_md5=$STOCK_MD5 os_md5=$STALE_MD5 pristine=yes keepalive=on proof=pinned" stage "$TD/gtk.img"
+[ "$(slot_sha)" = "$GTK_SHA" ] && [ "$(md5sum "$U/flash/KERNEL.etk-stock" 2>/dev/null | cut -d' ' -f1)" = "$STOCK_MD5" ] && ok "OTA'd unit: GTK in the slot, the OTA's stock boot.img parked" || bad "OTA'd unit: slot/fallback wrong"
+reset_unit; printf '%s  KERNEL\n' "$STALE_MD5" > "$U/flash/KERNEL.md5"
+STOCK_SHAS="$(sha256sum "$TD/other.img" | cut -d' ' -f1)" expect "stage: KERNEL.md5 stale and the slot is NOT a pinned stock -> REFUSED" 1 "put stock back by hand" stage "$TD/gtk.img"
+[ "$(slot_sha)" = "$STOCK_SHA" ] && [ ! -e "$U/flash/KERNEL.etk-stock" ] && ok "unproven slot: nothing written, nothing parked" || bad "unproven slot was touched"
+
+# GRUB-era leftover: a 20260901 KERNEL.etk-stock (raw Image) survives the OTA when the
+# user skipped uninstall.sh -- the ABL cannot boot it, so it must never stand as the fallback
+grubera() { printf 'MZ\0\0raw 20260901 Image' > "$U/flash/KERNEL.etk-stock"; }
+reset_unit; grubera
+expect "stage: GRUB-era raw KERNEL.etk-stock -> replaced by the proven stock boot.img" 0 "stock=replaced-grub-era stock_md5=$STOCK_MD5" stage "$TD/gtk.img"
+[ "$(md5sum "$U/flash/KERNEL.etk-stock" | cut -d' ' -f1)" = "$STOCK_MD5" ] && ok "fallback is now the bootable stock boot.img" || bad "GRUB-era raw Image still stands as the fallback"
+reset_unit; grubera; printf '%s  KERNEL\n' "$STALE_MD5" > "$U/flash/KERNEL.md5"
+STOCK_SHAS="$STOCK_SHA" expect "stage: car8's state (leftover + stale md5 + pin) -> replaced, proven by the pin" 0 "stock=replaced-grub-era stock_md5=$STOCK_MD5 os_md5=$STALE_MD5 pristine=yes keepalive=on proof=pinned" stage "$TD/gtk.img"
+reset_unit; grubera; printf '%s  KERNEL\n' "$STALE_MD5" > "$U/flash/KERNEL.md5"
+expect "stage: leftover + stale md5 + no pin -> REFUSED" 1 "put stock back by hand" stage "$TD/gtk.img"
+[ "$(head -c 2 "$U/flash/KERNEL.etk-stock")" = "MZ" ] && [ "$(slot_sha)" = "$STOCK_SHA" ] && ok "refusal left the leftover and the slot as found" || bad "refusal changed the unit"
+reset_unit; grubera; cp "$TD/other.img" "$U/flash/KERNEL"
+expect "stage: leftover + a NON-stock slot -> REFUSED (never parks a non-stock)" 1 "put stock back by hand" stage "$TD/gtk.img"
+reset_unit; grubera
+expect "stage: mode=test names the GRUB-era leftover" 0 "stock=grub-era" stage "$TD/gtk.img" test
 
 reset_unit; mkdir -p "$U/flash/EFI"
 expect "stage: GRUB-era unit REFUSED" 1 "GRUB is present" stage "$TD/gtk.img"

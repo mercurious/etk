@@ -23,6 +23,7 @@
 #
 #   tools/test_abl_slot.sh                   # working tree — must PASS
 #   tools/test_abl_slot.sh --against ee353f3 # pre-tool — must FAIL
+#   tools/test_abl_slot.sh --against c8f0133 # before the /storage-device logo + pinned stock — those cases FAIL
 
 set -u
 cd "$(dirname "$0")/.." || exit 1
@@ -207,6 +208,24 @@ cp "$TD/gtk.img" "$U/flash/KERNEL"
 [ -s "$U/mount.log" ] && : > "$U/mount.log"
 "$TOOL" verify root@car12host >/dev/null 2>&1
 [ -s "$U/mount.log" ] && bad "verify wrote to the unit (mount called)" || ok "verify never remounts"
+
+# --- internal-storage unit (car8, 2026-10-09): STORAGE is sda25, mmcblk0p2 is the GAMES
+# card mounted by userspace at 6.1 s. The logo is judged against the device /storage sits
+# on; judging mmcblk0p2 read a false "drawn" on stock 20261001 (operator saw no logo).
+reset_unit
+printf '/dev/sda24 /flash vfat ro 0 0\n/dev/sda25 /storage ext4 rw 0 0\n/dev/mmcblk0p2 /storage/games-external ext4 rw 0 0\n' > "$U/proc/mounts"
+printf '[    1.1] msm_dpu ae01000.display-controller: bound 3d00000.gpu (ops a6xx_gpu_funcs)\n[    2.234395] EXT4-fs (sda25): mounted filesystem 59ba7104 r/w with ordered data mode. Quota mode: none.\n[    3.769378] msm_dpu ae01000.display-controller: bound ae94000.dsi (ops 0xffffa0637f1ea8d0)\n[    6.118330] EXT4-fs (mmcblk0p2): mounted filesystem f4618c8e r/w with ordered data mode. Quota mode: none.\n' > "$U/dmesg"
+expect "status: internal-storage unit judges the logo on /storage's device (sda25) -> MISSING" 0 "logo MISSING" "$TOOL" status root@car12host
+expect "status: ...and times the STORAGE mount, not the games card" 0 "root mounted 2.234395s" "$TOOL" status root@car12host
+
+# --- in-place OTA: KERNEL.md5 stale, the slot is the OFFICIAL stock pinned in gtk_stack.json
+reset_unit
+printf 'ea10fd219e70272135fc3cdc3f056a1b  KERNEL\n' > "$U/flash/KERNEL.md5"
+printf '{"kernel": {"stock_os_sha256": {"20261001": "%s"}}}\n' "$STOCK_SHA" > "$TD/manifest.json"
+ABL_MANIFEST="$TD/manifest.json" expect "status: stale KERNEL.md5 + pinned official sha -> is stock: yes (pinned)" 0 "is stock: yes (the official 20261001 stock boot.img" "$TOOL" status root@car12host
+printf '{"kernel": {"stock_os_sha256": {"20261001": "%s"}}}\n' "$GTK_SHA" > "$TD/manifest.json"
+ABL_MANIFEST="$TD/manifest.json" expect "status: stale KERNEL.md5 + NOT the pinned sha -> is stock: NO" 0 "is stock: NO" "$TOOL" status root@car12host
+reset_unit; staged_by_install   # the restore checks below expect a deployed GTK slot
 
 # --- restore over ssh is NOT this tool's job (uninstall.sh owns it) ---------------
 expect "restore <target>: refused, points at uninstall.sh" 1 "uninstall.sh" "$TOOL" restore root@car12host

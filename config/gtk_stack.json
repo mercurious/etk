@@ -7,7 +7,11 @@
     "tools/release_sanity.sh asserts the two stay in lockstep at every cut.",
     "kernel.requires_os: the ROCKNIX release whose module tree this kernel",
     "matches — bin/osguard.sh activates the staged kernel ONLY when the live",
-    "OS matches (stage now, activate when coherent; never boots a mismatch)."
+    "OS matches (stage now, activate when coherent; never boots a mismatch).",
+    "kernel.stock_os_sha256: the OFFICIAL stock boot.img per ROCKNIX release",
+    "(hashed from the upstream image's KERNEL). install.sh proves the slot is",
+    "stock against it before parking KERNEL.etk-stock: the in-place updater",
+    "never rewrites /flash/KERNEL.md5, so after an OTA that md5 is stale."
   ],
   "gtk_stack": "0.9.0",
   "kernel": {
@@ -15,7 +19,10 @@
     "sha256": "7254032f524af4fdd80d747fbeeca11c57d34957541ac05163ac27736442cf2d",
     "kernel_release": "7.2.0",
     "requires_os": "20261001",
-    "format": "boot.img"
+    "format": "boot.img",
+    "stock_os_sha256": {
+      "20261001": "4a5ddebdb2ce3a46e38e7543cbc13f90ecf825ea69d2cdd74aed161bb18f3b74"
+    }
   },
   "turnip": {
     "asset": "etk_turnip_rocknix_26.2.2_gtk_0.7.so",

@@ -1961,8 +1961,15 @@ if [ -n "${KERNEL_IMAGE:-}" ] && [ -f "${KERNEL_IMAGE:-}" ] && [ "$K_CHAIN" = "a
     # KERNEL_CONTEXT_KEEPALIVE=1 therefore REQUIRES the baked cmdline to carry
     # it (a boot.img without it would lose anti-lock net #2 silently).
     # FALLBACK CONTRACT: the first deploy parks the OS's own boot.img as
-    # /flash/KERNEL.etk-stock and proves it against the OS's KERNEL.md5; a slot
-    # that is already non-stock with no parked copy is REFUSED. There is no
+    # /flash/KERNEL.etk-stock and proves it stock — against the OS's KERNEL.md5
+    # OR the official stock sha pinned per release in gtk_stack.json
+    # (kernel.stock_os_sha256). The pin is load-bearing: the ROCKNIX in-place
+    # updater checks its payload with the .md5 files but never writes them to
+    # /flash, so after an OTA KERNEL.md5 still names the PREVIOUS kernel (car8,
+    # 20260901 -> 20261001, 2026-10-09). A slot that is neither, with no parked
+    # copy, is REFUSED. A parked copy that is not a boot.img is a GRUB-era
+    # leftover (the 20260901 raw Image) — never a fallback the ABL can boot —
+    # so it is replaced by the slot's proven stock, under the same proof. There is no
     # grub pick: recovery is uninstall.sh (restores the parked stock), or the
     # card in a PC (`cp KERNEL.etk-stock KERNEL`). KERNEL_DEPLOY_MODE=test
     # keeps the cold-boot gate's meaning — stage the heal bundle, leave the
@@ -2055,8 +2062,9 @@ PY
             fi
         fi
         K_RIG_SHA=$(ssh $RIG_SSH "sha256sum /flash/KERNEL 2>/dev/null | cut -d' ' -f1" 2>/dev/null)
+        K_STOCK_SHAS=$(python3 -I -c 'import json,sys; print(" ".join(json.load(open(sys.argv[1])).get("kernel", {}).get("stock_os_sha256", {}).values()))' ./config/gtk_stack.json 2>/dev/null)
         scp -q "$KERNEL_IMAGE" "$RIG_SSH:/storage/rocknix-gtk.KERNEL.staging" 2>/dev/null
-        K_OUT=$(ssh $RIG_SSH "HOST_SHA='$K_HOST_SHA' K_RELEASE='$K_RELEASE' K_MODE='$K_MODE' FLASH='/flash' HEAL='/storage/rocknix-gtk/heal' sh -s" 2>&1 << 'KERNELABLREMOTE'
+        K_OUT=$(ssh $RIG_SSH "HOST_SHA='$K_HOST_SHA' K_RELEASE='$K_RELEASE' K_MODE='$K_MODE' STOCK_SHAS='$K_STOCK_SHAS' FLASH='/flash' HEAL='/storage/rocknix-gtk/heal' sh -s" 2>&1 << 'KERNELABLREMOTE'
 set -e
 STAGING="${STAGING:-/storage/rocknix-gtk.KERNEL.staging}"
 ro() { mount -o remount,ro "$FLASH" 2>/dev/null || true; }
@@ -2076,25 +2084,37 @@ printf '%s\n' "$K_MODE"    > "$HEAL/mode"
 printf 'abl\n'             > "$HEAL/chain"
 rm -f "$HEAL/grub.block" "$HEAL/grub.block.stockdtb" "$HEAL/DTB.staged" "$HEAL/DTB.staged.sha256" "$HEAL/DTB.base.sha256"
 OSMD5=$(cut -d' ' -f1 "$FLASH/KERNEL.md5" 2>/dev/null)
+stock_proof() {   # $1 file -> md5 | pinned | "" (the OS's KERNEL.md5, or an official sha pinned in gtk_stack.json)
+    [ -n "$OSMD5" ] && [ "$(md5sum "$1" | cut -d' ' -f1)" = "$OSMD5" ] && { echo md5; return; }
+    _h=$(sha256sum "$1" | cut -d' ' -f1)
+    for _p in $STOCK_SHAS; do [ "$_h" = "$_p" ] && { echo pinned; return; }; done
+    return 0   # no proof = empty output; never a nonzero status (set -e: PROOF=$(...) would abort)
+}
+PARK=0   # 1 = no usable parked copy: none, or a GRUB-era raw Image that the ABL cannot boot
+[ -f "$FLASH/KERNEL.etk-stock" ] || PARK=1
+[ "$PARK" = 0 ] && [ "$(head -c 8 "$FLASH/KERNEL.etk-stock" | tr -d '\000')" != "ANDROID!" ] && PARK=1
 if [ "$K_MODE" != "default" ]; then
-    echo "KERNEL_OK chain=abl slot=untouched slot_sha=$(sha256sum "$FLASH/KERNEL" | cut -d' ' -f1) stock=$([ -f "$FLASH/KERNEL.etk-stock" ] && echo kept || echo none) pristine=n/a keepalive=n/a"
+    echo "KERNEL_OK chain=abl slot=untouched slot_sha=$(sha256sum "$FLASH/KERNEL" | cut -d' ' -f1) stock=$([ -f "$FLASH/KERNEL.etk-stock" ] && { [ "$PARK" = 1 ] && echo grub-era || echo kept; } || echo none) pristine=n/a keepalive=n/a"
     exit 0
 fi
 NEED=$(( $(wc -c < "$HEAL/KERNEL.staged") / 1024 ))
-[ -f "$FLASH/KERNEL.etk-stock" ] || NEED=$(( NEED + $(wc -c < "$FLASH/KERNEL") / 1024 ))
+[ "$PARK" = 1 ] && NEED=$(( NEED + $(wc -c < "$FLASH/KERNEL") / 1024 ))
 FREE=$(df -k "$FLASH" | tail -n1 | awk '{print $4}')
 [ "$FREE" -gt $(( NEED + 2048 )) ] || { echo "KERNEL_FAIL $FLASH has ${FREE} kB free, need ${NEED} kB + margin"; exit 1; }
 mount -o remount,rw "$FLASH" || { echo "KERNEL_FAIL cannot remount $FLASH rw"; exit 1; }
-if [ ! -f "$FLASH/KERNEL.etk-stock" ]; then
-    # Pristine-stock snapshot: taken once, proven against the OS's own md5.
+if [ "$PARK" = 1 ]; then
+    # Pristine-stock snapshot: taken once, proven stock (KERNEL.md5, or the
+    # pinned official sha when an in-place OTA left KERNEL.md5 stale).
     CUR=$(md5sum "$FLASH/KERNEL" | cut -d' ' -f1)
-    if [ -n "$OSMD5" ] && [ "$CUR" != "$OSMD5" ]; then
-        fail "no fallback copy exists and $FLASH/KERNEL ($CUR) is not the OS kernel per KERNEL.md5 ($OSMD5) -- put stock back by hand before deploying"
+    PROOF=$(stock_proof "$FLASH/KERNEL")
+    if [ -z "$PROOF" ] && { [ -n "$OSMD5" ] || [ -n "$STOCK_SHAS" ]; }; then
+        fail "no fallback copy exists and $FLASH/KERNEL ($CUR) is not the OS kernel per KERNEL.md5 (${OSMD5:-none}) nor a pinned official stock boot.img -- put stock back by hand before deploying"
     fi
+    PARKED=new
+    if [ -f "$FLASH/KERNEL.etk-stock" ]; then PARKED=replaced-grub-era; rm -f "$FLASH/KERNEL.etk-stock"; fi
     cp "$FLASH/KERNEL" "$FLASH/KERNEL.etk-stock" || fail "cannot park the stock kernel"
     sync
     [ "$(md5sum "$FLASH/KERNEL.etk-stock" | cut -d' ' -f1)" = "$CUR" ] || { rm -f "$FLASH/KERNEL.etk-stock"; fail "fallback copy read-back mismatch"; }
-    PARKED=new
 else
     PARKED=kept
 fi
@@ -2112,22 +2132,24 @@ else
     WROTE=written
 fi
 ro
-echo "KERNEL_OK chain=abl slot=$WROTE slot_sha=$F stock=$PARKED stock_md5=$STOCKMD5 os_md5=${OSMD5:-none} pristine=$([ -n "$OSMD5" ] && [ "$STOCKMD5" = "$OSMD5" ] && echo yes || echo UNPROVEN) keepalive=$(dd if="$FLASH/KERNEL" bs=1 skip=64 count=512 2>/dev/null | tr -d '\000' | grep -q 'msm.context_keepalive=1' && echo on || echo off)"
+echo "KERNEL_OK chain=abl slot=$WROTE slot_sha=$F stock=$PARKED stock_md5=$STOCKMD5 os_md5=${OSMD5:-none} pristine=$([ -n "$(stock_proof "$FLASH/KERNEL.etk-stock")" ] && echo yes || echo UNPROVEN) keepalive=$(dd if="$FLASH/KERNEL" bs=1 skip=64 count=512 2>/dev/null | tr -d '\000' | grep -q 'msm.context_keepalive=1' && echo on || echo off) proof=$(stock_proof "$FLASH/KERNEL.etk-stock" | sed 's/^$/none/')"
 KERNELABLREMOTE
 )
         if echo "$K_OUT" | grep -q KERNEL_OK; then
             K_SLOT=$(echo "$K_OUT" | sed -n 's/.* slot=\([^ ]*\).*/\1/p')
             K_STK=$(echo "$K_OUT" | sed -n 's/.* stock=\([^ ]*\).*/\1/p')
             K_PRI=$(echo "$K_OUT" | sed -n 's/.* pristine=\([^ ]*\).*/\1/p')
+            K_PROOF=$(echo "$K_OUT" | sed -n 's/.* proof=\([^ ]*\).*/\1/p')
             K_KA=$(echo "$K_OUT" | sed -n 's/.* keepalive=\([^ ]*\).*/\1/p')
             case "$K_SLOT" in
                 untouched) say "${Y}[ETK]${N} Custom kernel $(basename "$KERNEL_IMAGE") STAGED only (mode=test or a [GUARD] above): the ABL slot /flash/KERNEL still holds its current boot.img. Set KERNEL_DEPLOY_MODE=default (and clear the guard) to deploy." ;;
-                already)   say "${G}[ETK]${N} Custom kernel $(basename "$KERNEL_IMAGE") already in the ABL slot /flash/KERNEL (keepalive=${K_KA:-?}); stock parked as KERNEL.etk-stock (${K_STK}, pristine=${K_PRI})." ;;
-                *)         say "${G}[ETK]${N} Custom kernel $(basename "$KERNEL_IMAGE") -> ABL slot /flash/KERNEL (sha-verified read-back, keepalive=${K_KA:-?}); stock parked as KERNEL.etk-stock (${K_STK}, pristine=${K_PRI}). COLD boot on-device." ;;
+                already)   say "${G}[ETK]${N} Custom kernel $(basename "$KERNEL_IMAGE") already in the ABL slot /flash/KERNEL (keepalive=${K_KA:-?}); stock parked as KERNEL.etk-stock (${K_STK}, pristine=${K_PRI}, proof=${K_PROOF:-?})." ;;
+                *)         say "${G}[ETK]${N} Custom kernel $(basename "$KERNEL_IMAGE") -> ABL slot /flash/KERNEL (sha-verified read-back, keepalive=${K_KA:-?}); stock parked as KERNEL.etk-stock (${K_STK}, pristine=${K_PRI}, proof=${K_PROOF:-?}). COLD boot on-device." ;;
             esac
             case "$K_SLOT" in untouched) ;; *)
                 say "${C}[INFO] ABL boot chain: no menu, no grub pick. Fallback = ./uninstall.sh (restores the parked stock), or the card in a PC: cp KERNEL.etk-stock KERNEL. An OS update silently puts stock back in the slot; osguard names it, this installer restores it.${N}"
-                [ "$K_PRI" = "yes" ] || say "${Y}[WARN] The parked KERNEL.etk-stock does not match this OS's KERNEL.md5 — the fallback is whatever was in the slot, not a proven-pristine OS kernel.${N}" ;;
+                [ "$K_PRI" = "yes" ] || say "${Y}[WARN] The parked KERNEL.etk-stock is not proven stock (neither this OS's KERNEL.md5 nor a pinned official sha in gtk_stack.json) — the fallback is whatever was in the slot.${N}"
+                [ "$K_STK" = "replaced-grub-era" ] && say "${C}[INFO] A GRUB-era KERNEL.etk-stock (raw Image, unbootable under ABL) was replaced by this OS's proven stock boot.img.${N}" ;;
             esac
             # Kit DTB verdict under ABL: baked at MINT (rocknix-gtk pack_bootimg.sh +
             # etk_dtb_mic.py), read back here from the image's own Flip 2 DTBs. The
