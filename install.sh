@@ -3483,15 +3483,18 @@ rm -f "$BB_OUT_FILE"
 # panel and pins the game workspace to it, then mirrors. Idle (zero effect) until
 # a DP sink links — and DP only links in the Type-C "normal" orientation (kernel
 # AUX/SBU bug; reverse = no link = no mirror, see project_rocknix_usb_dp_videoout).
-# Toggle with ETK_DP_MIRROR in etk.conf (default on). Long-running; Restart=always.
-# 2026-08-08: the toggle is now real — the comment above promised it but the
-# step deployed unconditionally, so =0 could never take the daemon down and a
-# volatile systemctl stop died at every reboot (found live during the -0.4.x
-# kernel boot arms, where the daemon's pad-heal contaminates plug tests).
-# Kill-switch shape mirrors STEP 6.75.
+# TWO knobs, never one (2026-10-09). ETK_DP_MIRROR is the daemon's LIVE MODE,
+# read from etk.conf every few seconds: 1 = mirror (both screens), 0 =
+# record-only (game native on DP-1) -- record-only NEEDS the daemon.
+# ETK_DP_MIRROR_DAEMON is the install-time kill-switch: 0 = disable + remove the
+# unit (persists across boots; shape mirrors STEP 6.75). Long-running;
+# Restart=always. History: 2026-08-08 (edd93d8) made a kill-switch real for the
+# -0.4.x plug tests (the daemon's pad-heal reacts to every plug edge) but put it
+# on ETK_DP_MIRROR=0, so choosing record-only per etk.conf.example silently
+# removed the daemon record-only depends on. The PowerShell port always
+# deploys and treats the knob as the mode -- it was right all along.
 rig_toast 88 "Support services" || true
-ETK_DP_MIRROR="${ETK_DP_MIRROR:-1}"
-if [ "$ETK_DP_MIRROR" = "1" ]; then
+if [ "${ETK_DP_MIRROR_DAEMON:-1}" = "1" ]; then
 ssh $RIG_SSH "sh -s" > /dev/null 2>&1 <<'DPMIRRORREMOTE'
     mkdir -p /storage/.config/system.d/
 cat << 'SVC' > /storage/.config/system.d/etk-dpmirror.service
@@ -3513,10 +3516,10 @@ SVC
     systemctl restart etk-dpmirror.service >/dev/null 2>&1
     systemctl is-active --quiet etk-dpmirror.service && echo "DPMIRROR_OK" || echo "DPMIRROR_FAIL"
 DPMIRRORREMOTE
-say "${G}[ETK]${N} DP-mirror daemon deployed (etk-dpmirror.service — idle until a capture display links on DP-1)"
+say "${G}[ETK]${N} DP-mirror daemon deployed (etk-dpmirror.service — idle until a capture display links on DP-1; mode $([ "${ETK_DP_MIRROR:-1}" = "1" ] && echo mirror || echo record-only), ETK_DP_MIRROR read live)"
 else
     ssh $RIG_SSH "systemctl disable --now etk-dpmirror.service >/dev/null 2>&1; rm -f /storage/.config/system.d/etk-dpmirror.service; systemctl daemon-reload" 2>/dev/null
-    say "${G}[ETK]${N} DP-mirror daemon removed (kill-switch ETK_DP_MIRROR=0 — persists across boots)"
+    say "${G}[ETK]${N} DP-mirror daemon removed (kill-switch ETK_DP_MIRROR_DAEMON=0 — persists across boots)"
 fi
 
 # ==========================================================

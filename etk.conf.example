@@ -285,6 +285,10 @@ ETK_VERBOSE=0
 #       quality, NO wl-mirror = no FPS cost). Handheld screen sits idle.
 # NOTE: DP only links in the Type-C "normal" plug orientation (kernel AUX bug).
 ETK_DP_MIRROR=1
+# The daemon itself (install-time). 1 = deployed (default; needed by BOTH modes
+# above) · 0 = removed at the next install (e.g. for plug tests, where its
+# pad-heal reacts to every plug edge). Never use ETK_DP_MIRROR=0 for this.
+ETK_DP_MIRROR_DAEMON=1
 
 # --- USB-net heal (install.sh STEP 6.72) ---
 # ROCKNIX 20261001 can leave the USB network gadget half-configured at boot

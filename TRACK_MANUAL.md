@@ -704,7 +704,7 @@ knobs, writes the handoff, verifies afterward from read-only telemetry.
   `RIG_SSH`, `ETK_BUILD_TYPE` (FULL/LITE/RAW — tier-aware: FULL→LITE kills HUD/thermal
   daemons), `VAULT_SYNC`, `TURNIP_SO`, `KERNEL_*`, `RPCS3_APPIMAGE` (empty=certified
   auto-fetch / `stock` / dev path), `RPCS3_ENV_FLAGS`, `DEFAULT_MODE`, `ETK_HUD_MODE`,
-  `HUD_HEADER_HOLD_S`, `ETK_DP_MIRROR`, `ETK_DP_AUDIO_S16`/`ETK_CAPTURE_S16`, `ETK_INTERNAL_MIC`, `BOG_PROFILE_SECS`, `PADDOCK_TOKEN`/`PADDOCK_REPO`,
+  `HUD_HEADER_HOLD_S`, `ETK_DP_MIRROR` (the daemon's LIVE mode: 1 mirror · 0 record-only) / `ETK_DP_MIRROR_DAEMON` (install-time kill-switch — two knobs since 2026-10-09; `edd93d8` had put the kill-switch on the mode knob, so record-only removed the daemon it needs), `ETK_USBNET_HEAL`, `ETK_DP_AUDIO_S16`/`ETK_CAPTURE_S16`, `ETK_INTERNAL_MIC`, `BOG_PROFILE_SECS`, `PADDOCK_TOKEN`/`PADDOCK_REPO`,
   `FORGE_*`. Its comment block is the fork-build provenance changelog.
 - **⚠️ THE OS-UPDATER TRAP (cost a frankenboot):** the ROCKNIX in-place updater writes the
   new kernel over **whatever file the running boot used** (`BOOT_IMAGE=`) — on a rig booted

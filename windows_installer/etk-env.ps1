@@ -54,7 +54,7 @@ $Ps3LauncherDir     = "/storage/games-internal/roms/ps3"   # PS3_LAUNCHER_DIR (r
 $EtkBuildType  = "FULL"    # FULL | LITE | RAW    (ETK_BUILD_TYPE)
 $DefaultMode   = "RACE"    # RACE | PIT           (DEFAULT_MODE)
 $EtkHudMode    = "BASIC"   # BASIC | GINSTR       (ETK_HUD_MODE)
-$EtkDpMirror   = "1"       # 1 = DP capture mirror on (ETK_DP_MIRROR)
+$EtkDpMirror   = "1"       # ETK_DP_MIRROR, read live by the daemon: 1 = mirror (both screens), 0 = record-only (daemon stays deployed)
 $EtkDpAudioS16 = "1"       # 1 = deploy the DP capture-audio S16 pin (ETK_DP_AUDIO_S16)
 $EtkCaptureS16 = "1"       # 1 = deploy the capture S16 pin - fixes the Flip 2 jack mic (ETK_CAPTURE_S16)
 $HudHeaderHold = "15"      # seconds              (HUD_HEADER_HOLD_S)
