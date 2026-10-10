@@ -681,6 +681,16 @@ knobs, writes the handoff, verifies afterward from read-only telemetry.
   you find a rig daemon that isn't in the repo, flag it for the push list.
 - **uninstall.sh** restores stock governors, removes every unit/script/profile.d entry and
   the full kernel deploy, preserves the vault by default (`--zap-vault` to remove).
+  **The kernel restore lives in QUOTED heredocs** — `GRUBRESTORE` (GRUB era: both twins
+  rebuilt from the SYSTEM's canonical grub.cfg + the numeric pin on the device's own entry,
+  the KERNELCFGREMOTE transform; a kernel file the menu still boots is never deleted) and
+  `ABLRESTORE` (ABL era); the PowerShell port runs both by marker. **Paid for 2026-10-09:**
+  the grub block sat inside the UNQUOTED `CLEAN` heredoc, the host expanded `$CFG`/`$GE`/awk
+  `$0` to nothing, so every bash uninstall since at least c56c6a1 edited no grub.cfg and then
+  deleted `KERNEL.gtktest` — the default entry's kernel (the PS port, running CLEAN verbatim
+  on the rig, was spared). Rig-side `$` in an unquoted heredoc is a bug unless escaped.
+  Harness `tools/test_uninstall_grub.sh` (car8's real 20260901 files; `--rig` BusyBox leg;
+  `--against 43741cd` fails 24).
 - **Config = `etk.conf`** (gitignored; `etk.conf.example` is the template). Knobs:
   `RIG_SSH`, `ETK_BUILD_TYPE` (FULL/LITE/RAW — tier-aware: FULL→LITE kills HUD/thermal
   daemons), `VAULT_SYNC`, `TURNIP_SO`, `KERNEL_*`, `RPCS3_APPIMAGE` (empty=certified

@@ -80,6 +80,17 @@ Write-Step 3 $TOTAL "REMOVING ETK FILES FROM RIG..."
 $clean = Get-Heredoc -Path $UninstallSh -Marker "CLEAN"
 $out3 = Invoke-RigBash -Script $clean -EnvVars @{ ETK_ROOT = $EtkRoot; ZAP_VAULT = $zap }
 if ($out3) { $out3 | ForEach-Object { Write-Note $_ } }
+# The kernel restore runs in its own QUOTED heredocs (verbatim on the rig):
+# GRUBRESTORE (GRUB era: stock boot menu, then the GTK kernel files) and
+# ABLRESTORE (ROCKNIX-ABL era: the parked stock boot.img back into the slot).
+# Same env the bash uninstaller passes on its ssh line.
+$grub = Get-Heredoc -Path $UninstallSh -Marker "GRUBRESTORE"
+$outG = Invoke-RigBash -Script $grub -EnvVars @{ FLASH = "/flash"; CANON = "/usr/share/bootloader/boot/grub/grub.cfg" }
+if ($outG) { $outG | Where-Object { $_ -notmatch '^GRUBRESTORE_' } | ForEach-Object { Write-Note $_ } }
+if ($outG -match '^GRUBRESTORE_FAIL') { Write-Warn "Boot menu NOT restored; the GTK kernel files were kept so the menu can still boot." }
+$abl = Get-Heredoc -Path $UninstallSh -Marker "ABLRESTORE"
+$outA = Invoke-RigBash -Script $abl -EnvVars @{ FLASH = "/flash"; HEAL = "/storage/rocknix-gtk/heal" }
+if ($outA) { $outA | ForEach-Object { Write-Note $_ } }
 
 # ==========================================================
 # STEP 4: HOST-SIDE STATUS

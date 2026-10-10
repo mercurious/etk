@@ -297,51 +297,10 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
     rm -f /storage/.etk-osguard-last
     echo "    Removed: etk-osguard.service + heal bundle (KERNEL.osguard-displaced backup kept if present)"
 
-    # Custom kernel (Tier K / STEP 6.4): strip the ETK-managed grub entries
-    # (TEST + fallback-stock), un-seed the auto-boot if KERNEL_DEPLOY_MODE=
-    # default pointed saved_entry at the GTK kernel, and drop the staged
-    # Images. The DEFAULT device entries were never touched, so after this
-    # the next boot is pure stock. Safe even while running the GTK kernel
-    # (the Image is in RAM; the files are only read at boot).
-    if [ -f /flash/KERNEL.gtktest ] || grep -q etk-gtk-test /flash/EFI/BOOT/grub.cfg 2>/dev/null; then
-        mount -o remount,rw /flash 2>/dev/null
-        for CFG in /flash/EFI/BOOT/grub.cfg /flash/boot/grub/grub.cfg; do
-            [ -f "$CFG" ] || continue
-            awk '
-                (index($0,"etk-gtk") || index($0,"etk-fallback") || index($0,"etk-sdcard")) && /menuentry/ {inblk=1; next}
-                inblk && /^}/ {inblk=0; next}
-                inblk {next}
-                /^# etk-sdcard/ {next}
-                /^set fallback=/ {next}
-                {print}
-            ' "$CFG" > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"
-            # 20260901 grub generator: drop install.sh's ETK numeric-default
-            # pin (and its comment block) so the config reverts to stock
-            # default resolution. No-op on older grub.cfg. (The abl-counter
-            # rewrite this used to restore was retired 2026-08-28 — numeric
-            # default superseded it.)
-            awk '
-                /^# ETK: pin default NUMERICALLY/ { skip=2; next }
-                skip>0 && /^# / { next }
-                skip>0 && /^set default=/ { skip=1; next }
-                skip>0 && /^set timeout=/ { next }
-                skip>0 && /^$/ { skip=0; next }
-                { print }
-            ' "$CFG" > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"
-        done
-        for GE in /flash/EFI/BOOT/grubenv /flash/boot/grub/grubenv; do
-            if grep -qE 'saved_entry=(etk-gtk-test|etk-sdcard)' "$GE" 2>/dev/null; then
-                printf '# GRUB Environment Block\nsaved_entry=rpflip2\n' > "$GE.tmp"
-                N=$(wc -c < "$GE.tmp")
-                dd if=/dev/zero bs=1 count=$((1024 - N)) 2>/dev/null | tr '\0' '#' >> "$GE.tmp"
-                mv "$GE.tmp" "$GE"
-            fi
-        done
-        rm -f /flash/KERNEL.gtktest /flash/KERNEL.etk-stock /flash/boot/grub/etk-flip2.dtb
-        sync
-        mount -o remount,ro /flash 2>/dev/null
-        echo "    Removed: GTK kernel entries + staged Images (default boot = stock device entry)"
-    fi
+    # Custom kernel (Tier K / STEP 6.4): the grub restore runs in its own
+    # QUOTED heredoc below (GRUBRESTORE) -- it lived here until 2026-10-09 and
+    # this heredoc expanded its $CFG/$GE/awk $0 on the HOST, so it never edited
+    # a grub.cfg and then deleted the kernel the default entry still booted.
 
     # Private Paddock credential (0.3.0): contains the user's GitHub token —
     # must not survive an uninstall. The paddock repo itself is untouched
@@ -430,6 +389,106 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
         echo "    Removed:   ETK_ROOT scripts, bin, tools, config, logs, pro-tuning, etk.conf"
     fi
 CLEAN
+
+# ==========================================================
+# GRUB-ERA BOOT MENU (ROCKNIX <= 20260901): take the custom kernel out of the
+# boot path, then drop its files. Both grub twins are rebuilt from the SYSTEM's
+# canonical grub.cfg (exactly what update.sh deploys) plus ONE kit delta: the
+# NUMERIC default pinned on this device's own entry, the same transform as
+# install.sh's stock-convergence (KERNELCFGREMOTE). Without the pin a stock
+# 20260901 boots menu entry 0 (rp5) on the internal 4Kn ESP — the abl block's
+# string-id default does not resolve (manual §A.2, test_grub_default.sh). The
+# device entry comes from the canonical cfg's own abl model map; no canonical
+# cfg (an older OS) = strip the ETK entries + pin in place instead.
+# INVARIANT: a kernel file the menu still boots is never deleted — if either
+# twin still names KERNEL.gtktest/KERNEL.etk-stock, everything is kept and the
+# run says so (2026-10-09: the version of this block that lived in CLEAN above
+# expanded on the host, edited nothing, and deleted the default entry's kernel).
+# Quoted heredoc: everything below runs on the rig. Harness:
+# tools/test_uninstall_grub.sh (--against 43741cd fails).
+# ==========================================================
+G_OUT=$(ssh $RIG_SSH "FLASH='/flash' CANON='/usr/share/bootloader/boot/grub/grub.cfg' sh -s" 2>&1 << 'GRUBRESTORE'
+HAVE=""
+for CFG in "$FLASH/EFI/BOOT/grub.cfg" "$FLASH/boot/grub/grub.cfg"; do [ -f "$CFG" ] && HAVE="$HAVE $CFG"; done
+[ -n "$HAVE" ] || exit 0    # ABL chain: no grub (ABLRESTORE below owns the slot)
+ETK=0
+for CFG in $HAVE; do grep -q -e etk-gtk -e etk-fallback -e etk-sdcard -e '^# ETK: pin default' "$CFG" && ETK=1; done
+[ -f "$FLASH/KERNEL.gtktest" ] && ETK=1
+[ "$ETK" = 1 ] || exit 0
+MODEL=${MODEL:-$(tr -d '\000' < /proc/device-tree/model 2>/dev/null)}
+DEV=""; IDX=""
+if [ -f "$CANON" ] && [ -n "$MODEL" ]; then
+    DEV=$(awk -v m="\"$MODEL\"" 'index($0, "abl_model}\" = " m) { s=$0; sub(/.*set abl_dev="/, "", s); sub(/".*/, "", s); print s; exit }' "$CANON")
+    [ -n "$DEV" ] && IDX=$(awk -v q="'$DEV' {" '/^menuentry /{ if (index($0,q)) { print n+0; exit } n++ }' "$CANON")
+    printf '%s' "$IDX" | grep -Eq '^[0-9]+$' || IDX=""
+fi
+mount -o remount,rw "$FLASH" 2>/dev/null
+TS=$(date +%Y%m%d_%H%M%S)
+for CFG in $HAVE; do
+    cp "$CFG" "$CFG.etkbak-$TS"
+    if [ -n "$IDX" ]; then
+        awk -v idx="$IDX" '
+            /feature_menuentry_id/ && !ins {
+                print "# ETK: pin default NUMERICALLY (string-id defaults do not resolve on";
+                print "# this grub; the abl block above sets one and would fall to entry 0).";
+                print "set default=" idx;
+                print "set timeout=2";
+                print "";
+                ins=1
+            }
+            { print }
+            END { if (!ins) { print "set default=" idx; print "set timeout=2" } }
+        ' "$CANON" > "$CFG.new" && mv "$CFG.new" "$CFG"
+    else
+        awk '
+            (index($0,"etk-gtk") || index($0,"etk-fallback") || index($0,"etk-sdcard")) && /menuentry/ {inblk=1; next}
+            inblk && /^}/ {inblk=0; next}
+            inblk {next}
+            /^# etk-sdcard/ {next}
+            /^set fallback=/ {next}
+            {print}
+        ' "$CFG" | awk '
+            /^# ETK: pin default NUMERICALLY/ { skip=2; next }
+            skip>0 && /^# / { next }
+            skip>0 && /^set default=/ { skip=1; next }
+            skip>0 && /^set timeout=/ { next }
+            skip>0 && /^$/ { skip=0; next }
+            { print }
+        ' > "$CFG.new" && mv "$CFG.new" "$CFG"
+    fi
+done
+LEFT=$(grep -l -e '/KERNEL.gtktest' -e '/KERNEL.etk-stock' $HAVE 2>/dev/null | tr '\n' ' ')
+if [ -n "$LEFT" ]; then
+    rm -f "$FLASH/EFI/BOOT/grub.cfg.new" "$FLASH/boot/grub/grub.cfg.new"
+    sync; mount -o remount,ro "$FLASH" 2>/dev/null
+    echo "    FAILED: grub still boots the GTK kernel ($LEFT) -- KERNEL.gtktest/KERNEL.etk-stock KEPT so the menu can boot; backups *.etkbak-$TS"
+    echo "GRUBRESTORE_FAIL left=$LEFT"
+    exit 1
+fi
+for GE in "$FLASH/EFI/BOOT/grubenv" "$FLASH/boot/grub/grubenv"; do
+    if grep -q 'saved_entry=etk-' "$GE" 2>/dev/null; then
+        printf '# GRUB Environment Block\nsaved_entry=%s\n' "${DEV:-rpflip2}" > "$GE.tmp"
+        N=$(wc -c < "$GE.tmp")
+        dd if=/dev/zero bs=1 count=$((1024 - N)) 2>/dev/null | tr '\0' '#' >> "$GE.tmp"
+        mv "$GE.tmp" "$GE"
+    fi
+done
+rm -f "$FLASH/KERNEL.gtktest" "$FLASH/KERNEL.etk-stock" "$FLASH"/boot/grub/etk-*.dtb
+sync
+mount -o remount,ro "$FLASH" 2>/dev/null
+FIRST=$(echo $HAVE | cut -d' ' -f1)
+DEF=$(grep '^set default=' "$FIRST" | tail -1 | sed 's/^set default=//')
+NAME=""; [ -n "$DEF" ] && NAME=$(awk -F"'" -v d="$DEF" '/^menuentry /{ if (n == d+0) { print $2; exit } n++ }' "$FIRST")
+echo "    Restored: boot menu -> $([ -n "$IDX" ] && echo "canonical stock + default pinned on '$NAME' (index $DEF)" || echo "ETK entries stripped in place (no canonical cfg${DEV:+ }${DEV:-, device unknown})"); removed KERNEL.gtktest + KERNEL.etk-stock"
+echo "GRUBRESTORE_OK base=$([ -n "$IDX" ] && echo canonical || echo stripped) default_idx=${DEF:-none} default_entry='${NAME:-?}'"
+GRUBRESTORE
+)
+printf '%s\n' "$G_OUT" | grep -v '^GRUBRESTORE_' >> /tmp/etk_uninstall_clean.log
+case "$G_OUT" in
+    *GRUBRESTORE_OK*base=canonical*) tui_log "Boot menu: stock, default $(printf '%s' "$G_OUT" | sed -n "s/.*default_entry=//p")" ;;
+    *GRUBRESTORE_OK*)                tui_log "Boot menu: ETK entries stripped (no canonical cfg)" ;;
+    *GRUBRESTORE_FAIL*)              tui_log "[WARN] Boot menu NOT restored; GTK kernel kept (see log)" ;;
+esac
 
 # ==========================================================
 # ABL-ERA KERNEL SLOT (ROCKNIX 20261001+, ROCKNIX-ABL): put the parked stock
