@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """mcp_server — "pitlink": Claude's eyes and hands on the car, as an MCP server (stdio).
 
-  claude mcp add pitlink -e PITLINK_ADDR=169.254.170.2:47500 -- python3 tools/pitlink/mcp_server.py
+  claude mcp add pitlink -- python3 tools/pitlink/mcp_server.py   (default addr: usb)
 
 Hand-rolled JSON-RPC 2.0 over newline-delimited stdio (initialize ·
 notifications/initialized · tools/list · tools/call · ping) — no SDK, stdlib +

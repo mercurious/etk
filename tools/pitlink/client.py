@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """client — PitlinkClient: one PLNK v1 link into the car (or fake_server.py).
 
-  c = PitlinkClient("169.254.170.2:47500")   # TCP over USB-net (the rig)
+  c = PitlinkClient("usb")                   # raw USB (PLUSB via usb_broker.py) -- the default
+  c = PitlinkClient("169.254.170.2:47500")   # TCP over USB-net / WiFi (fallback)
   c = PitlinkClient("@etk-pitlink")          # Linux abstract unix socket (same host)
   c.hello(token)                             # role 0 = controller, 1 = observer
   c.video(640, 360, 30, CODEC_ZSTD); f = c.wait_frame(); f.image().save("x.png")
@@ -31,7 +32,10 @@ try:
 except ImportError:
     import plnk as P
 
-DEFAULT_ADDR = "169.254.170.2:47500"
+DEFAULT_ADDR = "usb"
+USB_SOCKET = "@etk-pitlink-usb"  # the broker's local socket (plusb.HOST_SOCKET)
+BROKER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "usb_broker.py")
+BROKER_LOG = os.path.expanduser("~/.cache/etk/pitlink-usb.log")
 FPS_FALLBACK = 60.0  # before any FRAME has told us the car's flip rate
 PRESS_LEAD = 2  # flips between "now" and the press edge: >= 1 full flip for the PAD to land
 TTL_MARGIN_MS = 500
@@ -56,7 +60,10 @@ def default_addr():
 
 
 def parse_addr(addr):
-    """'@name' -> (AF_UNIX, '\\0name') (abstract: no file to unlink) · 'host:port' -> (AF_INET*, (host, port))."""
+    """'usb' -> the USB broker's socket · '@name' -> (AF_UNIX, '\\0name') (abstract: no file to
+    unlink) · 'host:port' -> (AF_INET*, (host, port))."""
+    if addr == "usb":
+        addr = USB_SOCKET
     if addr.startswith("@"):
         return socket.AF_UNIX, "\0" + addr[1:]
     host, _, port = addr.rpartition(":")
@@ -66,15 +73,38 @@ def parse_addr(addr):
     return (socket.AF_INET6 if ":" in host else socket.AF_INET), (host, int(port))
 
 
+def spawn_broker():
+    """Start usb_broker.py detached (it outlives this process; one per M1)."""
+    import subprocess
+    import sys
+    os.makedirs(os.path.dirname(BROKER_LOG), exist_ok=True)
+    with open(BROKER_LOG, "ab") as logf:
+        subprocess.Popen([sys.executable, BROKER, "serve"], stdin=subprocess.DEVNULL, stdout=logf,
+                         stderr=logf, start_new_session=True, close_fds=True)
+
+
 def open_socket(addr, timeout=5.0):
     fam, sa = parse_addr(addr)
-    s = socket.socket(fam, socket.SOCK_STREAM)
-    s.settimeout(timeout)
-    try:
-        s.connect(sa)
-    except OSError:
-        s.close()
-        raise
+    deadline = time.monotonic() + timeout
+    spawned = False
+    while True:
+        s = socket.socket(fam, socket.SOCK_STREAM)
+        s.settimeout(max(0.1, deadline - time.monotonic()))
+        try:
+            s.connect(sa)
+            break
+        except (ConnectionRefusedError, FileNotFoundError):
+            s.close()
+            # "usb": the broker is started on first use, then we wait for its socket
+            if addr != "usb" or time.monotonic() >= deadline:
+                raise
+            if not spawned:
+                spawn_broker()
+                spawned = True
+            time.sleep(0.1)
+        except OSError:
+            s.close()
+            raise
     if fam != socket.AF_UNIX:
         s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)  # 32-byte PADs must not wait for Nagle
     s.settimeout(None)

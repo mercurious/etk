@@ -1,0 +1,6 @@
+# ETK Pitlink over raw USB (tools/pitlink/usb_broker.py): let the logged-in seat user (and
+# wheel, for ssh sessions) claim the rig's composite gadget with libusb. Matches ROCKNIX's
+# "cdc" gadget only (1d6b:0104 + manufacturer ROCKNIX), not every Linux gadget.
+# Install once on the M1:
+#   sudo install -m 0644 tools/pitlink/71-etk-pitlink.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger --subsystem-match=usb
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="1d6b", ATTR{idProduct}=="0104", ATTR{manufacturer}=="ROCKNIX", MODE="0660", GROUP="wheel", TAG+="uaccess"

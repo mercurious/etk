@@ -13,7 +13,8 @@
   pitlink.py pause | resume | step N [--wait] | exit [--savestate]
 
 --addr: @name (abstract unix, same host) or host:port; default $PITLINK_ADDR else
-169.254.170.2:47500 (USB-net). --token default $PITLINK_TOKEN.
+usb (raw USB via usb_broker.py, spawned on first use); host:port = TCP fallback.
+--token default $PITLINK_TOKEN.
 
 Each run is its own client. Only the controller (the first client to HELLO) may
 drive; while another client (e.g. the MCP server) holds the wheel, this CLI is
@@ -54,9 +55,13 @@ def parse_controls(specs, port=0):
 
 
 def fresh_frame(c, timeout):
-    """The next frame if the car is flipping, else the one the car pushed at HELLO (paused)."""
+    """A frame from AFTER this call: the car's flip now (PING), then the first frame past it.
+    The frame the car pushes at HELLO can be thousands of flips old (the tap only runs while
+    someone watches) -- 2026-10-10 it made two presses look ignored. It is the answer only
+    when no new flip comes (paused car)."""
+    flip, _ = c.ping()
     try:
-        return c.wait_frame(timeout=min(timeout, 1.0))
+        return c.wait_frame(timeout=min(timeout, 2.0), after_flip=flip)
     except PitlinkError:
         return c.latest_frame()
 
