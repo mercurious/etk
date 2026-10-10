@@ -58,3 +58,5 @@ pointer; git history is its archive.) Don't re-derive documented facts live: fro
 SM8250 / Adreno 650 (Retroid Pocket Flip 2), ROCKNIX + Mesa Turnip + RPCS3, whole stack
 forked and owned; primary title GT5P Spec III (NPEA00050). Cockpit skill drives the live
 rig (adb=Android / ssh=ROCKNIX).
+
+@AGENTS.md
