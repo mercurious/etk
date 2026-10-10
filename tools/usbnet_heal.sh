@@ -17,8 +17,9 @@
 # 20260901 and 20261001, and the same unit linked fine on stock 20261001 at 00:14,
 # so WHAT keeps udev busy on a kit/GTK boot is still open: `--trace` records it.
 #
-# This tool is the disposable on-rig harness (TRACK_MANUAL §1.4) for one cold boot;
-# integration into install.sh follows the operator's verdict.
+# INTEGRATED 2026-10-09 as install.sh STEP 6.72 (etk-usbnet-heal.service, kill-switch
+# ETK_USBNET_HEAL=0, removed by uninstall.sh). This tool keeps the instruments
+# (status, verify) and a disposable `stage` that writes install.sh's own bodies.
 #
 #   stage  <target> [--car carN] [--trace]
 #          write etk-usbnet-heal.service (+ script) under /storage/.config: after
@@ -92,46 +93,11 @@ if [ -s "$L" ]; then
 fi
 '
 
-HEAL_SH='#!/bin/sh
-# etk-usbnet-heal (ETK, tools/usbnet_heal.sh): ROCKNIX usbgadget --start can die on its
-# `udevadm wait --settle` timeout (set -e leaked from prepare_usb_network) AFTER binding the
-# NCM gadget, leaving the host a carrier-less link. Re-run the OS'"'"'s own start path.
-LOG=/storage/etk_usbnet_heal.log
-G=/sys/kernel/config/usb_gadget/cdc
-log() { echo "$(date "+%F %T") [$(cut -d" " -f1 /proc/uptime)s] $*" >> "$LOG"; echo "[etk-usbnet-heal] $*"; }
-USB_MODE=""
-[ -r /storage/.cache/usbgadget/usbgadget.conf ] && . /storage/.cache/usbgadget/usbgadget.conf
-if [ "$USB_MODE" != "cdc" ]; then log "USB_MODE=${USB_MODE:-unset}: not network mode, nothing to heal"; exit 0; fi
-UDC=$(cat $G/UDC 2>/dev/null); IF=$(cat $G/functions/ncm.usb0/ifname 2>/dev/null)
-QUEUE=$([ -e /run/udev/queue ] && echo busy || echo empty)
-if [ -n "$UDC" ] && [ -n "$IF" ] && ip addr show "$IF" 2>/dev/null | grep -q "inet "; then
-    log "healthy: $IF has an address, UDC=$UDC (udev queue $QUEUE)"; exit 0
-fi
-log "HALF-CONFIGURED: UDC=\"${UDC}\" iface=\"${IF}\" no inet, udhcpd=$(pgrep udhcpd >/dev/null && echo up || echo down), udev queue $QUEUE -> usbgadget stop; usbgadget start cdc"
-/usr/bin/usbgadget stop
-/usr/bin/usbgadget start cdc; RC=$?
-UDC=$(cat $G/UDC 2>/dev/null); IF=$(cat $G/functions/ncm.usb0/ifname 2>/dev/null)
-ADDR=$(ip addr show "$IF" 2>/dev/null | awk "/inet /{print \$2}" | head -1)
-if [ -n "$UDC" ] && [ -n "$ADDR" ] && pgrep udhcpd >/dev/null; then
-    log "HEALED: start rc=$RC UDC=$UDC $IF $ADDR udhcpd up"; exit 0
-fi
-log "HEAL FAILED: start rc=$RC UDC=\"$UDC\" iface=\"$IF\" addr=\"$ADDR\" udhcpd=$(pgrep udhcpd >/dev/null && echo up || echo down)"; exit 1
-'
-HEAL_UNIT='[Unit]
-Description=ETK USB-net heal (ROCKNIX usbgadget --start half-configured gadget)
-# After the ES autostart that runs usbgadget --start (081). Unknown units in After=
-# are ignored harmlessly on a tree that lacks them.
-After=rocknix-autostart.service
-ConditionPathExists=/usr/bin/usbgadget
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-ExecStart=/bin/sh /storage/.config/custom_scripts/etk-usbnet-heal.sh
-
-[Install]
-WantedBy=rocknix.target
-'
+# The heal script + unit are install.sh STEP 6.72's (USBNETHEAL / USBNETUNIT): stage writes
+# exactly those bodies, so the disposable stage and the kit can never drift apart.
+body() { awk -v m="$1" 'index($0, "<< \x27" m "\x27") {inb=1; next} inb && $0 == m {exit} inb {print}' "$ETK_ROOT/install.sh"; }
+HEAL_SH=$(body USBNETHEAL); HEAL_UNIT=$(body USBNETUNIT)
+[ -n "$HEAL_SH" ] && [ -n "$HEAL_UNIT" ] || { echo "USBNET_HEAL_FAIL: install.sh carries no USBNETHEAL/USBNETUNIT body" >&2; exit 1; }
 TRACE_UNIT='[Unit]
 Description=ETK udev trace (DIAGNOSTIC, removable): what is in the udev queue during boot
 DefaultDependencies=no
@@ -151,8 +117,8 @@ case "$MODE" in
 stage)
     car_gate
     rssh 'test -x /usr/bin/usbgadget && test -d /sys/kernel/config/usb_gadget' || die "$TARGET has no ROCKNIX usbgadget / configfs gadget — nothing to heal"
-    printf '%s' "$HEAL_SH"   | rssh 'mkdir -p /storage/.config/custom_scripts /storage/.config/system.d && cat > /storage/.config/custom_scripts/etk-usbnet-heal.sh && chmod +x /storage/.config/custom_scripts/etk-usbnet-heal.sh' || die "could not write the heal script"
-    printf '%s' "$HEAL_UNIT" | rssh 'cat > /storage/.config/system.d/etk-usbnet-heal.service' || die "could not write the heal unit"
+    printf '%s\n' "$HEAL_SH"   | rssh 'mkdir -p /storage/.config/custom_scripts /storage/.config/system.d && cat > /storage/.config/custom_scripts/etk-usbnet-heal.sh && chmod +x /storage/.config/custom_scripts/etk-usbnet-heal.sh' || die "could not write the heal script"
+    printf '%s\n' "$HEAL_UNIT" | rssh 'cat > /storage/.config/system.d/etk-usbnet-heal.service' || die "could not write the heal unit"
     if [ "$TRACE" = 1 ]; then
         printf '%s' "$TRACE_UNIT" | rssh 'cat > /storage/.config/system.d/etk-udevtrace.service' || die "could not write the trace unit"
     fi

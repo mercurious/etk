@@ -283,6 +283,18 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
     # cmdline token is NOT auto-reverted here (boot-path edits stay operator-
     # run: scripts/arm_blackbox.sh --revert); a stale 1MiB reservation is
     # harmless if left.
+    # DP-mirror daemon (install.sh STEP 6.7): never removed before 2026-10-09 -- it stayed
+    # enabled after an uninstall, restarting a script the bin/ removal below deletes.
+    systemctl disable --now etk-dpmirror.service 2>/dev/null
+    rm -f /storage/.config/system.d/etk-dpmirror.service
+    echo "    Removed: etk-dpmirror.service"
+
+    # USB-net heal (install.sh STEP 6.72) + the diagnostic udev trace that a
+    # tools/usbnet_heal.sh --trace stage may have left. The heal log is kept.
+    systemctl disable etk-usbnet-heal.service etk-udevtrace.service 2>/dev/null
+    rm -f /storage/.config/system.d/etk-usbnet-heal.service /storage/.config/system.d/etk-udevtrace.service /storage/.config/custom_scripts/etk-usbnet-heal.sh
+    echo "    Removed: etk-usbnet-heal.service (USB-net heal)"
+
     systemctl disable --now etk-blackbox.service 2>/dev/null
     rm -f /storage/.config/system.d/etk-blackbox.service
     rm -f /storage/.config/modules-load.d/etk-ramoops.conf /storage/.config/modprobe.d/etk-ramoops.conf

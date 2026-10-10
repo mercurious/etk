@@ -286,6 +286,13 @@ ETK_VERBOSE=0
 # NOTE: DP only links in the Type-C "normal" plug orientation (kernel AUX bug).
 ETK_DP_MIRROR=1
 
+# --- USB-net heal (install.sh STEP 6.72) ---
+# ROCKNIX 20261001 can leave the USB network gadget half-configured at boot
+# (the host sees the rig but never gets a link). A boot oneshot re-runs the
+# OS's own gadget start when that happens; a no-op otherwise. 1 = on (default)
+# · 0 = removed at the next install. Log: /storage/etk_usbnet_heal.log
+ETK_USBNET_HEAL=1
+
 # --- DP capture audio (mirror mode; read live by dpmirror_d) ---
 # EXPERIMENTAL — LEAVE OFF. The direct audio-tap approach breaks game launch
 # on this kernel (the ADSP cannot feed speaker and DP from one stream); a

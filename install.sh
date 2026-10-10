@@ -3520,6 +3520,86 @@ else
 fi
 
 # ==========================================================
+# STEP 6.72: USB-NET HEAL (ROCKNIX 20261001 half-configured NCM gadget)
+# ==========================================================
+# The rig's USB link is the kit's primary control path. On 20261001 ROCKNIX's
+# `usbgadget --start` binds the NCM gadget to the UDC, then dies on its own
+# `udevadm wait --settle` 5 s timeout (set -e leaked from prepare_usb_network):
+# the host enumerates the rig but never gets a carrier (car12: 7/7 boots). The
+# queue is held by ROCKNIX's 99-hdmi.rules -> hdmi_sense -> pactl, which reaches
+# the pulse socket before pipewire-pulse is up and waits out libpulse's 30 s
+# timeout (manual §0 USB-net row). This oneshot runs after the ES autostart:
+# healthy gadget (bound + an inet address) = log + exit 0; half-configured =
+# re-run the OS's own `usbgadget stop; usbgadget start cdc`. A no-op on a rig
+# not in network mode and on a tree without usbgadget (ConditionPathExists).
+# Cold-boot VALIDATED car12 2026-10-08 19:53 (HALF-CONFIGURED 15.0 s -> HEALED
+# 21.3 s) as tools/usbnet_heal.sh's disposable stage; that tool keeps the
+# instruments (status/verify) and now stages THESE bodies (one source).
+# Kill-switch ETK_USBNET_HEAL=0 removes it. Harness: tools/test_usbnet_heal.sh.
+# ==========================================================
+if [ "${ETK_USBNET_HEAL:-1}" = "1" ]; then
+    HEAL_OUT=$(ssh $RIG_SSH "sh -s" 2>&1 <<'USBNETHEALREMOTE'
+mkdir -p /storage/.config/custom_scripts /storage/.config/system.d
+cat << 'USBNETHEAL' > /storage/.config/custom_scripts/etk-usbnet-heal.sh
+#!/bin/sh
+# etk-usbnet-heal (ETK install.sh STEP 6.72): ROCKNIX usbgadget --start can die on its
+# `udevadm wait --settle` timeout (set -e leaked from prepare_usb_network) AFTER binding the
+# NCM gadget, leaving the host a carrier-less link. Re-run the OS's own start path.
+LOG=/storage/etk_usbnet_heal.log
+G=/sys/kernel/config/usb_gadget/cdc
+log() { echo "$(date "+%F %T") [$(cut -d" " -f1 /proc/uptime)s] $*" >> "$LOG"; echo "[etk-usbnet-heal] $*"; }
+USB_MODE=""
+[ -r /storage/.cache/usbgadget/usbgadget.conf ] && . /storage/.cache/usbgadget/usbgadget.conf
+if [ "$USB_MODE" != "cdc" ]; then log "USB_MODE=${USB_MODE:-unset}: not network mode, nothing to heal"; exit 0; fi
+UDC=$(cat $G/UDC 2>/dev/null); IF=$(cat $G/functions/ncm.usb0/ifname 2>/dev/null)
+QUEUE=$([ -e /run/udev/queue ] && echo busy || echo empty)
+if [ -n "$UDC" ] && [ -n "$IF" ] && ip addr show "$IF" 2>/dev/null | grep -q "inet "; then
+    log "healthy: $IF has an address, UDC=$UDC (udev queue $QUEUE)"; exit 0
+fi
+log "HALF-CONFIGURED: UDC=\"${UDC}\" iface=\"${IF}\" no inet, udhcpd=$(pgrep udhcpd >/dev/null && echo up || echo down), udev queue $QUEUE -> usbgadget stop; usbgadget start cdc"
+/usr/bin/usbgadget stop
+/usr/bin/usbgadget start cdc; RC=$?
+UDC=$(cat $G/UDC 2>/dev/null); IF=$(cat $G/functions/ncm.usb0/ifname 2>/dev/null)
+ADDR=$(ip addr show "$IF" 2>/dev/null | awk "/inet /{print \$2}" | head -1)
+if [ -n "$UDC" ] && [ -n "$ADDR" ] && pgrep udhcpd >/dev/null; then
+    log "HEALED: start rc=$RC UDC=$UDC $IF $ADDR udhcpd up"; exit 0
+fi
+log "HEAL FAILED: start rc=$RC UDC=\"$UDC\" iface=\"$IF\" addr=\"$ADDR\" udhcpd=$(pgrep udhcpd >/dev/null && echo up || echo down)"; exit 1
+USBNETHEAL
+chmod +x /storage/.config/custom_scripts/etk-usbnet-heal.sh
+cat << 'USBNETUNIT' > /storage/.config/system.d/etk-usbnet-heal.service
+[Unit]
+Description=ETK USB-net heal (ROCKNIX usbgadget --start half-configured gadget)
+# After the ES autostart that runs usbgadget --start (081). Unknown units in After=
+# are ignored harmlessly on a tree that lacks them.
+After=rocknix-autostart.service
+ConditionPathExists=/usr/bin/usbgadget
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh /storage/.config/custom_scripts/etk-usbnet-heal.sh
+
+[Install]
+WantedBy=rocknix.target
+USBNETUNIT
+systemctl daemon-reload
+systemctl enable /storage/.config/system.d/etk-usbnet-heal.service >/dev/null 2>&1
+sh -n /storage/.config/custom_scripts/etk-usbnet-heal.sh && [ "$(systemctl is-enabled etk-usbnet-heal.service 2>/dev/null)" = enabled ] \
+    && echo "USBNETHEAL_OK last=$(tail -n1 /storage/etk_usbnet_heal.log 2>/dev/null | cut -c1-90)" || echo "USBNETHEAL_FAIL"
+USBNETHEALREMOTE
+)
+    if printf '%s' "$HEAL_OUT" | grep -q USBNETHEAL_OK; then
+        say "${G}[ETK]${N} USB-net heal armed (etk-usbnet-heal.service — repairs a half-configured NCM gadget at boot; log /storage/etk_usbnet_heal.log)"
+    else
+        say "${Y}[WARN] USB-net heal did not verify ($(printf '%s' "$HEAL_OUT" | tail -n1)) — the USB link may come up carrier-less on 20261001; WiFi still works.${N}"
+    fi
+else
+    ssh $RIG_SSH "systemctl disable etk-usbnet-heal.service >/dev/null 2>&1; rm -f /storage/.config/system.d/etk-usbnet-heal.service /storage/.config/custom_scripts/etk-usbnet-heal.sh; systemctl daemon-reload" 2>/dev/null
+    say "${G}[ETK]${N} USB-net heal removed (kill-switch ETK_USBNET_HEAL=0)"
+fi
+
+# ==========================================================
 # STEP 6.75: DP CAPTURE-AUDIO FORMAT PIN (WirePlumber S16 rule)
 # ==========================================================
 # The DP port's S24_LE path drops ~25 dB (q6 DSP bit-alignment; convicted by

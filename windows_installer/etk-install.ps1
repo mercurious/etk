@@ -737,6 +737,14 @@ $dpBody = Get-Heredoc -Path $InstallSh -Marker "DPMIRRORREMOTE"
 Invoke-RigBash -Script $dpBody | Out-Null
 Write-Ok "DP-mirror daemon deployed (idle until an external DisplayPort links)."
 
+# --- STEP 6.72: USB-NET HEAL  (install.sh Step 6.72) ---------------------
+# ROCKNIX 20261001 usbgadget --start can leave the NCM gadget half-configured
+# (carrier-less USB link); a boot oneshot re-runs the OS's start path.
+# USBNETHEALREMOTE verbatim.
+$healOut = Invoke-RigBash -Script (Get-Heredoc -Path $InstallSh -Marker "USBNETHEALREMOTE")
+if ("$healOut" -match "USBNETHEAL_OK") { Write-Ok "USB-net heal armed (repairs a half-configured USB gadget at boot)." }
+else { Write-Warn "USB-net heal did not verify - the USB link may come up carrier-less on 20261001; WiFi still works." }
+
 # --- STEP 6.75: DP CAPTURE-AUDIO FORMAT PIN  (install.sh Step 6.75) -----
 # WirePlumber rule pinning the HDMI/DP capture sink to S16LE — the DP port's
 # S24 path loses ~25 dB (see config/wireplumber-dp-s16.conf for the record).
