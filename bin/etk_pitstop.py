@@ -132,6 +132,26 @@ TURNIP_PROFILE_D = os.environ.get(
 ACTIVE_TUNE_FILE = os.environ.get(
     'ACTIVE_TUNE_FILE', f"{TELEMETRY_DIR}/active_tune.txt")
 
+# TOOLS > Pitlink (docs/PITLINK_SPEC.md): the Engineer's live link into RPCS3,
+# an in-place on/off in the TOOLS menu (operator decision 2026-10-10). It rides
+# the same proven profile.d vector as the DRIVER dials above: ROCKNIX's
+# /etc/profile sources /storage/.config/profile.d/* at every game launch, so
+# the switch reaches RPCS3 at the NEXT launch and survives a cold boot.
+#   present + GTK_PITLINK=1  = on      absent / unreadable / anything else = off
+# Off is the fork's own default, so "off" is simply no file. 095 sorts BEFORE
+# 096-etk-rpcs3-flags (the glob is name-ordered), so a GTK_PITLINK* pair set in
+# etk.conf RPCS3_ENV_FLAGS is exported later and wins over this toggle. A core
+# built without the feature ignores unknown GTK_* vars, so "on" there is a
+# harmless no-op -- nothing to gate on the core version here.
+PITLINK_PROFILE_D = os.environ.get(
+    'PITLINK_PROFILE_D', "/storage/.config/profile.d/095-etk-pitlink")
+PITLINK_EXPORTS = ("export GTK_PITLINK=1",
+                   "export GTK_PITLINK_TCP=gadget:47500",
+                   "export GTK_PITLINK_PAD=merge")
+PITLINK_PROFILE_BODY = (
+    "# ETK Pitlink (Pitstop > TOOLS). Engineer link into RPCS3 -- see "
+    "docs/PITLINK_SPEC.md.\n" + "".join(e + "\n" for e in PITLINK_EXPORTS))
+
 # DRIVER BUILD selector (Stage IV — catalog of bindable Turnip .so builds).
 # Distinct from the env-var dials above: the dials tune whatever driver is
 # loaded (next-launch); the BUILD selector picks WHICH .so binds over the stock
@@ -2789,7 +2809,8 @@ def handle_telemetry_pad(state, etype, code, val):
 # actions clear RPCS3's caches, which is not what "Manage Shaders" promised.
 _TOOLS_MENU = ["Manage Shaders & Caches", "Install a staged PS3 Package",
                "Uninstall a Game", "Trigger Calibration", "Screenshot on L1+L2",
-               "Bog Sampler", "Install PS3 Firmware", "Check for ETK Updates"]
+               "Bog Sampler", "Pitlink (Engineer link)", "Install PS3 Firmware",
+               "Check for ETK Updates"]
 _TOOLS_CACHE_IDX = 0        # Manage Shaders & Caches sub-screen entry
 _TOOLS_INSTALL_IDX = 1      # staged-PKG installer
 _TOOLS_UNINSTALL_IDX = 2    # game uninstaller
@@ -2797,10 +2818,13 @@ _TOOLS_TRIGCAL_IDX = 3      # L2/R2 trigger deadzone calibration (H7)
 # In-place toggle items (label gets ": <state>" appended at draw). The two
 # chord switches sit together: both exist because an ETK chord can steal a
 # control the game itself binds, and the operator is the one who finds out.
+# Pitlink closes the toggle group; unlike the chords it is read at the NEXT
+# game launch (profile.d), not live.
 _TOOLS_SCREENSHOT_IDX = 4
 _TOOLS_BOG_IDX = 5          # R1+DPAD-Down bog-profiler chord on/off
-_TOOLS_FIRMWARE_IDX = 6     # headless PS3 firmware (PS3UPDAT.PUP) installer
-_TOOLS_UPDATE_IDX = 7       # hostless self-update (middleware layer)
+_TOOLS_PITLINK_IDX = 6      # Pitlink engineer link on/off (profile.d, next launch)
+_TOOLS_FIRMWARE_IDX = 7     # headless PS3 firmware (PS3UPDAT.PUP) installer
+_TOOLS_UPDATE_IDX = 8       # hostless self-update (middleware layer)
 
 
 def _read_screenshot_mode():
@@ -2857,6 +2881,77 @@ def _toggle_bog_chord():
         return nxt
     except Exception:
         return cur
+
+
+def _read_pitlink_state():
+    """'on' iff PITLINK_PROFILE_D exists and the LAST GTK_PITLINK assignment
+    in it is 1 -- what the shell actually exports when start_rpcs3.sh sources
+    it. Absent / unreadable / anything else = 'off' (the fork's default)."""
+    val = None
+    try:
+        with open(PITLINK_PROFILE_D) as f:
+            for ln in f:
+                ln = ln.strip()
+                if ln.startswith("export "):
+                    ln = ln[len("export "):].lstrip()
+                if ln.startswith("GTK_PITLINK="):
+                    val = (ln.split("=", 1)[1].split("#", 1)[0]
+                           .strip().strip('"').strip("'"))
+    except Exception:
+        return "off"
+    return "on" if val == "1" else "off"
+
+
+def _toggle_pitlink():
+    """Flip off <-> on. ON writes the profile.d file atomically (H2 tmp +
+    os.replace, fsync'd first -- the cold-boot rule); OFF removes it. Returns
+    the state READ BACK after the attempt, never the intended one, so the
+    status line cannot claim a change that did not land."""
+    path = PITLINK_PROFILE_D
+    d = os.path.dirname(path) or "."
+    if _read_pitlink_state() == "off":
+        # Dot-prefixed tmp, NOT path + ".tmp": ROCKNIX's /etc/profile sources
+        # profile.d/* and that glob skips dotfiles. A tmp stranded by a failed
+        # replace must never be sourced as a second Pitlink switch.
+        tmp = os.path.join(d, "." + os.path.basename(path) + ".tmp")
+        try:
+            os.makedirs(d, exist_ok=True)
+            with open(tmp, "w") as f:
+                f.write(PITLINK_PROFILE_BODY)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, path)
+        except Exception as e:
+            _log(f"pitlink: could not write {path}: {e}")
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+    else:
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            _log(f"pitlink: could not remove {path}: {e}")
+    # Best-effort: persist the rename/unlink itself before a cold boot.
+    try:
+        fd = os.open(d, os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    except Exception:
+        pass
+    return _read_pitlink_state()
+
+
+def _pitlink_status(was, now):
+    """Footer line for a Pitlink toggle (fits w-6 = 54 cols on the 60-col
+    panel). Says plainly WHEN it applies, and says so only if it changed."""
+    if now == was:
+        return f"Pitlink: still {now} - could not save the setting"
+    return f"Pitlink: {now} - takes effect at the next game launch"
 
 
 def _tools_env():
@@ -6188,6 +6283,8 @@ def draw_tools(stdscr, state):
                 label = f"{label}: {_read_screenshot_mode()}"
             elif i == _TOOLS_BOG_IDX:
                 label = f"{label}: {_read_bog_chord_state()}"
+            elif i == _TOOLS_PITLINK_IDX:
+                label = f"{label}: {_read_pitlink_state()}"
             sel = (i == cur)
             put(y, 4, "> " if sel else "  ",
                 curses.color_pair(1) if sel else curses.A_NORMAL)
@@ -6205,6 +6302,10 @@ def draw_tools(stdscr, state):
         # outright when the list leaves no space, because two help lines that
         # overwrite two menu entries are not an improvement on no help lines.
         ty = min(y + 1, h - 6)
+        # Nine entries end exactly at h-5 on the rig's ~22-row terminal: give up the
+        # blank separator row rather than the help band (it still clears the h-3 rule).
+        if ty < y and y + 1 <= h - 4:
+            ty = y
         room = (ty >= y) and (ty + 1 <= h - 4)
         if not room:
             pass
@@ -6226,6 +6327,11 @@ def draw_tools(stdscr, state):
             put(ty, 4, "R1 + DPAD-Down records a 30s performance sample.",
                 curses.A_DIM)
             put(ty + 1, 4, "Turn it off if a game needs that button combo.",
+                curses.A_DIM)
+        elif cur == _TOOLS_PITLINK_IDX:
+            put(ty, 4, "Lets the engineer's computer see and drive RPCS3.",
+                curses.A_DIM)
+            put(ty + 1, 4, "on / off  (CONFIRM toggles; applies next launch)",
                 curses.A_DIM)
         elif cur == _TOOLS_FIRMWARE_IDX:
             put(ty, 4, "Firmware drop folder (place PS3UPDAT.PUP):",
@@ -6910,7 +7016,12 @@ def _tools_select(state):
             state["tools_action"] = ("update_check",)
         elif state.get("tools_cursor", 0) == _TOOLS_BOG_IDX:       # Bog chord
             state["status"] = f"Bog Sampler: {_toggle_bog_chord()}"
-        else:                                     # Screenshot-chord toggle
+        elif state.get("tools_cursor", 0) == _TOOLS_PITLINK_IDX:   # Pitlink
+            was = _read_pitlink_state()
+            state["status"] = _pitlink_status(was, _toggle_pitlink())
+        # Explicit, not a bare else: an unmatched index must do nothing rather
+        # than silently cycle the screenshot chord.
+        elif state.get("tools_cursor", 0) == _TOOLS_SCREENSHOT_IDX:  # Screenshot
             state["status"] = f"Screenshot on L1+L2: {_cycle_screenshot_mode()}"
 
     elif mode == "install_confirm":

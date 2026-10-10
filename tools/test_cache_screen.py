@@ -276,7 +276,7 @@ def _geom():
                   [r for r in help_rows if r > h - 4], [])
             check(f"menu help {w}x{h} cur={cur}: never over a menu entry",
                   sorted(set(help_rows) & item_rows), [])
-            if h >= 19:                      # the whole list fits; be strict
+            if h >= 11 + len(pit._TOOLS_MENU):  # whole list fits (rows 8..h-4); be strict
                 check(f"menu {w}x{h} cur={cur}: every entry is drawn",
                       len(item_rows), len(pit._TOOLS_MENU))
 

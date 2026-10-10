@@ -30,12 +30,28 @@ log "banked pre-reset diff: $(wc -l < "$RUNDIR/rpcs3-pre-reset.diff") lines"
 
 log "reset --hard $BASE + apply $PATCH"
 git reset --hard "$BASE" >/dev/null
+
+# Files the patch CREATES (0.10.0's Emu/pitlink/ was the first): `reset --hard` leaves
+# untracked copies from an earlier apply, and git apply refuses to overwrite them. Bank
+# each one into the run dir (no state is silently destroyed), then remove it.
+for f in $(git apply --summary "$RUNDIR/$PATCH" | awk '$1 == "create" {print $NF}'); do
+    if [ -e "$f" ] && ! git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
+        mkdir -p "$RUNDIR/banked-untracked/$(dirname "$f")"
+        cp -p "$f" "$RUNDIR/banked-untracked/$f"
+        rm -f "$f"
+        log "banked + removed untracked $f (the patch creates it)"
+    fi
+done
+
 git apply --check "$RUNDIR/$PATCH"
 git apply "$RUNDIR/$PATCH"
 
-# canonical packager + gate from the fork repo (one source of truth)
-install -m 0755 "$RUNDIR/package-appimage.sh" scripts/package-appimage.sh
-install -m 0755 "$RUNDIR/verify-markers.sh"  scripts/verify-markers.sh
+# canonical packager + gate from the fork repo (one source of truth). -D: the tree
+# carries no scripts/ of its own -- it only ever existed as an untracked leftover of
+# earlier mints, so a freshly provisioned node (etk-cloud rebuilt 2026-10-04) failed
+# here with "cannot create regular file" before building anything (2026-10-10).
+install -D -m 0755 "$RUNDIR/package-appimage.sh" scripts/package-appimage.sh
+install -D -m 0755 "$RUNDIR/verify-markers.sh"  scripts/verify-markers.sh
 
 # build/ is root-owned (the container writes the bind mount as root), so a
 # plain rm hits EPERM — clear it from inside the container instead

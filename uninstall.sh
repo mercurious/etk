@@ -243,6 +243,12 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
     rm -f /storage/.config/profile.d/097-etk-turnip-dials
     echo "    Removed: 097-etk-turnip-dials (Turnip dials reverted to default)"
 
+    # Pitlink switch (Pitstop TOOLS > Pitlink): same OUTSIDE-ETK_ROOT profile.d
+    # story — remove or GTK_PITLINK keeps reaching RPCS3 post-uninstall. The
+    # dot-tmp is the toggle's atomic-write scratch (never sourced; swept too).
+    rm -f /storage/.config/profile.d/095-etk-pitlink /storage/.config/profile.d/.095-etk-pitlink.tmp
+    echo "    Removed: 095-etk-pitlink (Pitlink engineer link off)"
+
     # RPCS3 runtime env flags (install.sh STEP 6.56): same OUTSIDE-ETK_ROOT
     # profile.d story — remove or the flags keep reaching RPCS3 post-uninstall.
     rm -f /storage/.config/profile.d/096-etk-rpcs3-flags

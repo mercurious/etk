@@ -116,6 +116,13 @@ done
 if [ ! -d "$HOME/rpcs3/.git" ]; then
     git clone -q -o armsx3 https://github.com/ARMSX2/ARMSX3.git "$HOME/rpcs3"
 fi
+# ...and ALSO as `origin`: .gitmodules uses relative URLs (../../RPCS3/ffmpeg-core.git), which
+# git resolves against `origin` on a detached HEAD. With only `armsx3`, the CI script's
+# `submodule update --init` resolved them to bare paths (ip7z/7zip.git), every clone failed,
+# and the first rpcs3 mint on the rebuilt node died before compiling (2026-10-10). The old node
+# never showed it: its submodules were checked out long before.
+git -C "$HOME/rpcs3" remote get-url origin >/dev/null 2>&1 \
+    || git -C "$HOME/rpcs3" remote add origin https://github.com/ARMSX2/ARMSX3.git
 # --recurse-submodules=no: containers re-own .git/modules as root (Leapfrog 2026-08-20)
 git -C "$HOME/rpcs3" fetch -q --recurse-submodules=no --tags armsx3
 git -C "$HOME/rpcs3" cat-file -e "$BASE^{commit}" || { echo "BASE $BASE not in ~/rpcs3" >&2; exit 1; }
@@ -398,6 +405,7 @@ done
 # rpcs3
 git -C ~/rpcs3 cat-file -e "$BASE^{commit}" 2>/dev/null; row rpcs3 "~/rpcs3 has BASE $BASE" "$(ok $?)"
 git -C ~/rpcs3 remote get-url armsx3 >/dev/null 2>&1; row rpcs3 "~/rpcs3 remote 'armsx3'" "$(ok $?)"
+git -C ~/rpcs3 remote get-url origin >/dev/null 2>&1; row rpcs3 "~/rpcs3 remote 'origin' (submodule URLs)" "$(ok $?)"
 if [ -n "$(docker images -q "$IMG" 2>/dev/null)" ]; then row rpcs3 "image $IMG" READY
 elif [ -f ~/forge-runs/toolchain-rpcs3.pid ] && kill -0 "$(cat ~/forge-runs/toolchain-rpcs3.pid)" 2>/dev/null; then
     row rpcs3 "image $IMG" "BUILDING $(( ($(date +%s) - $(stat -c %Y ~/forge-runs/toolchain-rpcs3.pid)) / 60 )) min — $(tail -n 1 ~/forge-runs/toolchain-rpcs3.log | tr -d '\r' | cut -c1-48)"
