@@ -650,7 +650,15 @@ knobs, writes the handoff, verifies afterward from read-only telemetry.
   prunes the rig's `selected`) → 6.55 RPCS3 AppImage (sha-verified; free-space preflight)
   → 6.553 NEXT-BOOT BIND verdict → 6.56 env flags → 6.57 watchdog teardown → 6.6 power
   applier → 6.65 black box (+ grub-drift tripwire) → 6.7 DP-mirror → 6.75 S16 pins (DP + capture) → 6.76 internal-mic UCM → 6.8 Stage III →
-  6.85 SD rebind (label-based v3) → 7 PADDOCK link.
+  6.85 SD rebind (label-based v3) → 7 PADDOCK link. **SD REBIND PREFLIGHT** (after the beacon,
+  before STEP 0): on a crash-card rig (an SDGAMES card with `games-internal/`) ETK_ROOT lives
+  ON THE CARD, so install.sh runs STEP 6.85's own script (extracted by marker; idempotent by
+  device:inode, never `mountpoint -q` — 20261001 already mounts `/storage/roms`) and judges it
+  in `REBINDPRE` before the first push; a card it cannot bind REFUSES the install. **Paid for
+  2026-10-09 (car8):** uninstall removed the rebind, the OTA + install boots ran unbound, the
+  kit landed on the INTERNAL `/storage/games-internal`, and the next cold boot hid it under the
+  card's copy — no env.sh → no Sentry/SHM/HUD/input_d (L1+R3 dead)/ledger. Harness
+  `tools/test_sd_rebind.sh` (`--rig`; `--against ac40b4a` fails). PS port runs the same bodies.
 - **The emulator lane's deploy surface is STEP 6.553 NEXT-BOOT BIND** — printed at
   every install, read from the rig AFTER the bind service restarts (truth, not
   prediction): what `rpcs3-sa` binds next boot, which certified build, wrapper

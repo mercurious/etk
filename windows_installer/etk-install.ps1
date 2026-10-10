@@ -273,6 +273,21 @@ try {
 # mutated yet, and the handheld says so before the first pkill.
 Invoke-RigToast 2 "ETK install starting"
 
+# SD REBIND PREFLIGHT (install.sh parity, 2026-10-09): on a crash-card rig ETK_ROOT
+# lives on the SDGAMES card once STEP 6.85's rebind is up. If it is not up now (after
+# an uninstall, or an OS update's boots), every push below lands on the internal
+# directory and the next cold boot hides it under the card's copy (no Sentry, no SHM,
+# no HUD, no L1+R3). Bind BEFORE the first push. Both bodies come from install.sh by
+# marker: RBND (the rebind script, idempotent by device:inode) and REBINDPRE (the verdict).
+# After the beacon's announcement: this is the first rig mutation of the run.
+Send-Text -Content (Get-Heredoc -Path $InstallSh -Marker "RBND") -RemotePath "/tmp/etk-sd-rebind.preflight.sh" -Executable
+$rebindPre = Invoke-RigBash -Script (Get-Heredoc -Path $InstallSh -Marker "REBINDPRE")
+if ("$rebindPre" -match "REBIND_PRE bound was=n") { Write-Ok "SD game tree: the SDGAMES card was NOT bound - bound it now, BEFORE the push, so ETK_ROOT lands on the card." }
+elseif ("$rebindPre" -match "REBIND_PRE bound was=y") { Write-Note "SD game tree: SDGAMES card bound - ETK_ROOT is on the card." }
+elseif ("$rebindPre" -notmatch "REBIND_PRE (none|nocardtree)") {
+    throw "An SDGAMES card is present but its game tree is not bound over /storage/games-internal - install refused. Pushing now would put the kit UNDER the card's copy at the next boot. Cold-boot the rig, then re-run."
+}
+
 # ==========================================================
 # STEP 0: PROBE & QUIESCE  (install.sh Step 0)
 # Kill ETK workers before file ops. Resolve the rig game ID purely to

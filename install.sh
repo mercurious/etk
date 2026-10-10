@@ -462,6 +462,55 @@ if [ "$RESTORE_STATE" = "1" ]; then
 fi
 
 # ==========================================================
+# SD REBIND PREFLIGHT (2026-10-09) — bind the game tree BEFORE the first push.
+# On a crash-card rig ETK_ROOT lives on the SDGAMES card: STEP 6.85's rebind
+# stacks the card's games-internal/ over /storage/games-internal at boot. When
+# that bind is NOT up now (uninstall.sh removed the unit; an OS update's boots
+# ran without it), every push below lands on the INTERNAL directory, and the
+# next cold boot hides it under the card's copy: no env.sh -> no Sentry, no
+# SHM, no HUD, no input_d (L1+R3 dead), no ledger. Paid for on car8 right
+# after its 20261001 migration. No game holds these paths (the live-session
+# guard), and the beacon has already announced the install on the handheld, so
+# this reaches the boot-time state early -- the first rig mutation of the run. It runs STEP 6.85's own script,
+# extracted from this file (one source), which is idempotent by device:inode —
+# then the REBINDPRE body judges the result (the PowerShell port runs the same
+# two bodies by marker) —
+# on a rig already bound, or with no SDGAMES card, it changes nothing.
+# A card that is present but cannot be bound REFUSES the install.
+# Harness: tools/test_sd_rebind.sh.
+# ==========================================================
+# >>> SD REBIND PREFLIGHT
+REBIND_BODY=$(awk '/^cat << .RBND. > \/storage\/\.config\/custom_scripts\/etk-sd-rebind\.sh$/ {inb=1; next} inb && /^RBND$/ {exit} inb {print}' "${BASH_SOURCE[0]}")
+[ -n "$REBIND_BODY" ] || { echo -e "${R}>>> Install refused: the SD rebind script could not be read out of install.sh (incomplete checkout?).${N}"; exit 1; }
+printf '%s\n' "$REBIND_BODY" | ssh $RIG_SSH 'cat > /tmp/etk-sd-rebind.preflight.sh' 2>/dev/null
+REBIND_PRE=$(ssh $RIG_SSH "sh -s" 2>&1 << 'REBINDPRE'
+same() { [ "$(stat -L -c %d:%i "$1" 2>/dev/null)" = "$(stat -L -c %d:%i "$2" 2>/dev/null)" ]; }
+T=/tmp/etk-sd-rebind.preflight.sh
+[ -s "$T" ] || { echo "REBIND_PRE FAIL script-not-delivered"; exit 0; }
+B0=n; same /storage/sdgames/games-internal /storage/games-internal && B0=y
+bash "$T"; R=$?; rm -f "$T"
+if [ ! -e /dev/disk/by-label/SDGAMES ]; then echo "REBIND_PRE none"
+elif [ ! -d /storage/sdgames/games-internal ]; then echo "REBIND_PRE nocardtree"
+elif same /storage/sdgames/games-internal /storage/games-internal && same /storage/sdgames/games-internal/roms /storage/roms; then echo "REBIND_PRE bound was=$B0"
+else echo "REBIND_PRE FAIL rc=$R"; fi
+REBINDPRE
+)
+case "$REBIND_PRE" in
+    *"REBIND_PRE none"*|*"REBIND_PRE nocardtree"*) ;;   # no crash-card model on this rig: nothing to bind
+    *"REBIND_PRE bound was=y"*) say "${C}[ETK] SD game tree: SDGAMES card bound — ETK_ROOT is on the card.${N}" ;;
+    *"REBIND_PRE bound was=n"*) say "${G}[ETK] SD game tree was NOT bound — bound it BEFORE the push (ETK_ROOT on the card).${N}" ;;
+    *)  REBIND_WHY="SDGAMES card present but its game tree is not bound over /storage/games-internal ($(printf '%s' "$REBIND_PRE" | tail -n1)) — pushing now would put the kit UNDER the card's copy at the next boot. Cold-boot the rig, then re-run."
+        if [ "$TUI_ACTIVE" = "1" ]; then
+            etk_toast_verdict_stopped || true   # tui_fail disarms the EXIT trap (see the launcher check)
+            tui_fail "Install refused: $REBIND_WHY"
+        else
+            echo -e "    ${R}[FAIL] Install refused: $REBIND_WHY${N}"
+            exit 1
+        fi ;;
+esac
+# <<< SD REBIND PREFLIGHT
+
+# ==========================================================
 # STEP 0: PROBE & QUIESCE
 # Kill all ETK worker processes on the rig before any file
 # operations to prevent partial-write races during repair/update.
@@ -1229,7 +1278,7 @@ else
         # the EXIT trap before the shell ever reaches it (measured, not assumed
         # — bash clears the handler, so the beacon would go silent on exactly
         # the stops that matter most). These three tui_fail sites are the only
-        # ones in this file; send the verdict here rather than reach into
+        # ones in this file (plus the SD REBIND PREFLIGHT's); send the verdict here rather than reach into
         # tui.sh's cleanup contract.
         etk_toast_verdict_stopped || true
         tui_fail "Launcher missing or lacks +x permissions"
@@ -3665,8 +3714,9 @@ fi
 # and being Before=sway that stalled UI bring-up ~30s every boot. v3 discovers
 # the card by LABEL=SDGAMES (labels survive fs-resize/re-creation; UUIDs do
 # not) and EXITS 0 when no SDGAMES card is present, so it is a near-instant
-# no-op on single-card rigs. NOT restarted at install time (it bind-mounts over
-# live game paths — unsafe mid-session); it re-runs on the next cold boot.
+# no-op on single-card rigs. The unit is NOT restarted here (it bind-mounts over
+# live game paths); the install-time bind already happened in the SD REBIND
+# PREFLIGHT at the top of this file, before the first push (2026-10-09).
 # ==========================================================
 rig_toast 94 "Storage rebind" || true
 tui_log "Writing SD game-tree rebind (label-based, non-stalling)"
@@ -3703,8 +3753,15 @@ if [ ! -d /storage/sdgames/games-internal ]; then
   echo "$(date) SDGAMES card ($DEV) has no games-internal/ - skipping (ok)" >> "$LOG"
   exit 0
 fi
-mount --bind /storage/sdgames/games-internal /storage/games-internal || echo "$(date) WARN: games-internal bind failed" >> "$LOG"
-mount --bind /storage/sdgames/games-internal/roms /storage/roms || echo "$(date) WARN: roms bind failed" >> "$LOG"
+# Idempotent (2026-10-09): install.sh runs this same script BEFORE its first push
+# (SD REBIND PREFLIGHT), so a second run must not stack binds. "Already bound" is
+# judged by WHICH tree sits there (device:inode), never by mountpoint -q -- on
+# 20261001 /storage/roms already carries an OS mount, and that is not ours.
+same() { [ "$(stat -L -c %d:%i "$1" 2>/dev/null)" = "$(stat -L -c %d:%i "$2" 2>/dev/null)" ]; }
+if same /storage/sdgames/games-internal /storage/games-internal; then echo "$(date) games-internal already bound (ok)" >> "$LOG"
+else mount --bind /storage/sdgames/games-internal /storage/games-internal || echo "$(date) WARN: games-internal bind failed" >> "$LOG"; fi
+if same /storage/sdgames/games-internal/roms /storage/roms; then echo "$(date) roms already bound (ok)" >> "$LOG"
+else mount --bind /storage/sdgames/games-internal/roms /storage/roms || echo "$(date) WARN: roms bind failed" >> "$LOG"; fi
 echo "$(date) rebind v3 OK ($DEV): $(ls /storage/roms 2>/dev/null | wc -l) entries in /storage/roms" >> "$LOG"
 exit 0
 RBND
