@@ -183,7 +183,11 @@ vendor-class USB function, with no IP stack between the Engineer and the game:
   len); each local client is a channel; resync = vendor control request `VREQ_RESET` (ep0) +
   HELLO with a 16-byte nonce, both sides hunting for their anchor. Targets per channel:
   `pitlink` (relayed into RPCS3's own `@etk-pitlink` -- PLNK v1 unchanged end to end) and
-  `garage` (JSON lines in the daemon: launch / running / games via EmulationStation's local API).
+  `garage` (JSON lines in the daemon: launch / running / games via EmulationStation's local API;
+  `log` = RPCS3.log by offset/grep; `dump_threads` = ARMSX3's on-request dump of every PPU/SPU/RSX
+  thread, returned with the log it wrote; `debug_env` = allow-listed `ARMSX3_*` diagnostics for
+  the next launch in profile.d `099-etk-debug-env`, values limited to `[A-Za-z0-9_.,:-]` because
+  the file is shell-sourced). CLI: `pitlink.py garage OP [k=v ...]`.
 - **M1:** `tools/pitlink/usb_broker.py` claims the interface with libusb (ctypes) and serves
   `@etk-pitlink-usb` (PLNK) and `@etk-garage-usb`; `PitlinkClient("usb")` -- the default
   address -- spawns it on first use. Needs `tools/pitlink/71-etk-pitlink.rules` once.

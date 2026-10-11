@@ -11,7 +11,9 @@ USB channel into RPCS3's own Pitlink socket @etk-pitlink. No IP, no TCP on the E
 
 Garage (the link's second target, JSON lines): launch / running / games / notify / emukill,
 through EmulationStation's own local API (127.0.0.1:1234) -- a launch is exactly a menu launch
-(runemu.sh, the per-title core wrapper, the human's pad as Player 1).
+(runemu.sh, the per-title core wrapper, the human's pad as Player 1); log / dump_threads (RPCS3's
+log and ARMSX3's on-request thread dump); debug_env (allow-listed ARMSX3_* env for the next
+launch, profile.d 099).
 
 Safety: configfs is volatile (a reboot restores stock); functionfs is mounted no_disconnect=1
 so a dead daemon cannot unbind the gadget under NCM; the attach rebinds the UDC and VERIFIES
@@ -43,6 +45,16 @@ LINK = G + "/configs/c.1/ffs.pitlink"
 MNT = "/dev/ffs-pitlink"
 TARGET = os.environ.get("PITLINK_USB_TARGET", L.CAR_TARGET)
 ES_API = os.environ.get("ETK_ES_API", "http://127.0.0.1:1234")
+# RPCS3's own dirs on the car: fs::get_config_dir() (dump_threads trigger) and its log.
+RPCS3_CONFIG = os.environ.get("ETK_RPCS3_CONFIG", "/storage/.config/rpcs3/")
+RPCS3_LOG = os.environ.get("ETK_RPCS3_LOG", "/storage/.cache/rpcs3/RPCS3.log")
+LOG_REPLY_MAX = 512 * 1024
+# Diagnostic env for the NEXT game launch (start_rpcs3.sh sources /etc/profile -> profile.d).
+# 099 sorts after the install-time 096 flags, so a debug run overrides them. Allow-listed and
+# character-checked: this file is sourced by a shell at every launch.
+DEBUG_ENV_FILE = os.environ.get("ETK_DEBUG_ENV_FILE", "/storage/.config/profile.d/099-etk-debug-env")
+DEBUG_ENV_KEY = re.compile(r"^ARMSX3_[A-Z0-9_]+$")
+DEBUG_ENV_VAL = re.compile(r"^[A-Za-z0-9_.,:-]*$")
 SERIAL = re.compile(r"\b([A-Z]{4}\d{5})\b")
 
 # ---- FunctionFS ABI (include/uapi/linux/usb/functionfs.h) ---------------------------------
@@ -306,7 +318,133 @@ def garage(req):
         return {"es": es("/emukill").strip()[:200]}
     if op == "status":
         return {"daemon": VERSION, "running": running()}
-    raise ValueError(f"unknown garage op {op!r} (launch, running, games, notify, emukill, status)")
+    if op == "log":
+        return read_log(req)
+    if op == "dump_threads":
+        return dump_threads(float(req.get("timeout", 6.0)))
+    if op == "debug_env":
+        return debug_env(req)
+    raise ValueError(f"unknown garage op {op!r} (launch, running, games, notify, emukill, status, log, dump_threads, debug_env)")
+
+
+def log_size():
+    try:
+        return os.path.getsize(RPCS3_LOG)
+    except OSError:
+        return 0
+
+
+def read_log(req):
+    """RPCS3.log by byte offset: {"from": off} (default: the last `tail` lines), optional
+    {"grep": regex}. Replies capped at LOG_REPLY_MAX bytes of text, with the next offset."""
+    size = log_size()
+    start = req.get("from")
+    tail = int(req.get("tail", 200))
+    with open(RPCS3_LOG, "rb") as f:
+        if start is None:
+            f.seek(max(0, size - 4 * 1024 * 1024))
+        else:
+            f.seek(min(int(start), size))
+        data = f.read(size - f.tell())
+    lines = data.decode(errors="replace").splitlines()
+    if req.get("grep"):
+        rx = re.compile(req["grep"])
+        lines = [ln for ln in lines if rx.search(ln)]
+    if start is None:
+        lines = lines[-tail:]
+    text = "\n".join(lines)
+    if len(text) > LOG_REPLY_MAX:
+        text = text[-LOG_REPLY_MAX:]
+    return {"size": size, "lines": len(lines), "text": text}
+
+
+def read_debug_env():
+    env = {}
+    try:
+        with open(DEBUG_ENV_FILE) as f:
+            for ln in f:
+                m = re.match(r"^export ([A-Z0-9_]+)='(.*)'$", ln.strip())
+                if m:
+                    env[m.group(1)] = m.group(2)
+    except FileNotFoundError:
+        pass
+    return env
+
+
+def debug_env(req):
+    """{"action": "show" | "set" | "clear", ...}. "set" REPLACES the whole file with the
+    ARMSX3_* keys given (top-level fields or "env": {}); it applies at the next launch."""
+    action = req.get("action", "show")
+    if action == "show":
+        return {"file": DEBUG_ENV_FILE, "env": read_debug_env()}
+    if action == "clear":
+        for p in (DEBUG_ENV_FILE, os.path.join(os.path.dirname(DEBUG_ENV_FILE),
+                                               "." + os.path.basename(DEBUG_ENV_FILE) + ".tmp")):
+            try:
+                os.remove(p)
+            except FileNotFoundError:
+                pass
+        log("garage: debug_env cleared")
+        return {"file": DEBUG_ENV_FILE, "env": {}}
+    if action != "set":
+        raise ValueError(f"debug_env action {action!r}: show | set | clear")
+    env = dict(req.get("env") or {})
+    env.update({k: v for k, v in req.items() if k.startswith("ARMSX3_")})
+    if not env:
+        raise ValueError("debug_env set: no ARMSX3_* keys given (use clear to remove all)")
+    for k, v in env.items():
+        v = str(v)
+        if not DEBUG_ENV_KEY.match(k):
+            raise ValueError(f"debug_env: key {k!r} is not an ARMSX3_* diagnostic")
+        if not DEBUG_ENV_VAL.match(v):
+            raise ValueError(f"debug_env: value for {k} has characters outside [A-Za-z0-9_.,:-]")
+        env[k] = v
+    body = "# ETK debug env (garage debug_env) -- applies at the next game launch; clear when done.\n"
+    body += "".join(f"export {k}='{v}'\n" for k, v in sorted(env.items()))
+    d = os.path.dirname(DEBUG_ENV_FILE)
+    tmp = os.path.join(d, "." + os.path.basename(DEBUG_ENV_FILE) + ".tmp")  # profile.d skips dotfiles
+    with open(tmp, "w") as f:
+        f.write(body)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, DEBUG_ENV_FILE)
+    fd = os.open(d, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    log(f"garage: debug_env set {' '.join(f'{k}={v}' for k, v in sorted(env.items()))}")
+    return {"file": DEBUG_ENV_FILE, "env": read_debug_env()}
+
+
+def dump_threads(timeout=6.0):
+    """ARMSX3's on-request thread dump (lv2.cpp ppu_dump_threads_on_request): create
+    <config>/dump_threads; RPCS3's syscall-usage thread consumes it within ~1 s while the
+    game is NOT paused, pauses every PPU thread, logs registers + call stack + code around
+    PC (and SPU / renderer threads), releases them. Returns the log written meanwhile."""
+    trigger = os.path.join(RPCS3_CONFIG, "dump_threads")
+    start = log_size()
+    with open(trigger, "w"):
+        pass
+    deadline = time.time() + timeout
+    while os.path.exists(trigger) and time.time() < deadline:
+        time.sleep(0.1)
+    consumed = not os.path.exists(trigger)
+    if not consumed:
+        try:
+            os.remove(trigger)  # never leave a trigger armed for a later, unrelated boot
+        except OSError:
+            pass
+        return {"consumed": False, "why": "RPCS3 did not take the trigger (no game running, or paused)"}
+    last, stable_since = log_size(), time.time()
+    while time.time() - stable_since < 1.0 and time.time() < deadline + 10:
+        time.sleep(0.2)
+        now = log_size()
+        if now != last:
+            last, stable_since = now, time.time()
+    rep = read_log({"from": start, "tail": 10 ** 9})
+    log(f"garage: dump_threads -> {rep['lines']} log lines")
+    return {"consumed": True, "from": start, **rep}
 
 
 # ---- the relay -----------------------------------------------------------------------------

@@ -257,6 +257,11 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
     systemctl daemon-reload
     echo "    Removed: etk-pitlink-usb.service (Pitlink USB function leaves at the next boot)"
 
+    # Pitlink garage debug_env (ARMSX3_* diagnostics for the next launch): same
+    # OUTSIDE-ETK_ROOT profile.d story; the dot-tmp is its atomic-write scratch.
+    rm -f /storage/.config/profile.d/099-etk-debug-env /storage/.config/profile.d/.099-etk-debug-env.tmp
+    echo "    Removed: 099-etk-debug-env (Pitlink debug env cleared)"
+
     # RPCS3 runtime env flags (install.sh STEP 6.56): same OUTSIDE-ETK_ROOT
     # profile.d story — remove or the flags keep reaching RPCS3 post-uninstall.
     rm -f /storage/.config/profile.d/096-etk-rpcs3-flags

@@ -11,6 +11,9 @@
   pitlink.py watch 0xADDR:size ... [--secs 3]      set the per-flip WATCH list, print frame-aligned values
   pitlink.py ram 0xADDR size                       hexdump guest RAM
   pitlink.py pause | resume | step N [--wait] | exit [--savestate]
+  pitlink.py garage OP [k=v ...] [--out F]         car control over USB, no game needed:
+             status | running | games [filter=gt] | launch game=BCUS98296 | log [grep=RX tail=N]
+             | dump_threads (ARMSX3 thread dump: every PPU/SPU/RSX thread, returns its log)
 
 --addr: @name (abstract unix, same host) or host:port; default $PITLINK_ADDR else
 usb (raw USB via usb_broker.py, spawned on first use); host:port = TCP fallback.
@@ -30,7 +33,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import plnk as P  # noqa: E402
-from client import PitlinkClient, PitlinkError, default_addr  # noqa: E402
+from client import PitlinkClient, garage, PitlinkError, default_addr  # noqa: E402
 
 CONTROL = {"press", "hold", "release", "watch", "pause", "resume", "step", "exit"}
 
@@ -109,7 +112,30 @@ def main():
     p.add_argument("--wait", action="store_true", help="block for EVENT 7 (step complete)")
     p = sub.add_parser("exit")
     p.add_argument("--savestate", action="store_true")
+    p = sub.add_parser("garage")
+    p.add_argument("op")
+    p.add_argument("kv", nargs="*", help="k=v request fields")
+    p.add_argument("--out", default=None, help="also write the reply's text to this file")
     a = ap.parse_args()
+
+    if a.cmd == "garage":  # needs no running game: the car's daemon answers, not RPCS3
+        import json
+        req = {"op": a.op}
+        for kv in a.kv:
+            k, _, v = kv.partition("=")
+            req[k] = int(v) if v.lstrip("-").isdigit() else v
+        try:
+            rep = garage(req, timeout=max(a.timeout, 30.0))
+        except (OSError, PitlinkError) as e:
+            sys.exit(f"pitlink: garage {a.op}: {e}")
+        text = rep.pop("text", None)
+        if a.out and text is not None:
+            with open(a.out, "w") as f:
+                f.write(text + "\n")
+        print(json.dumps(rep, indent=1))
+        if text and not a.out:
+            print(text)
+        return
 
     try:
         c = PitlinkClient(a.addr or default_addr(), timeout=a.timeout)

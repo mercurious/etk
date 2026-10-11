@@ -36,6 +36,7 @@ DEFAULT_ADDR = "usb"
 USB_SOCKET = "@etk-pitlink-usb"  # the broker's local socket (plusb.HOST_SOCKET)
 BROKER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "usb_broker.py")
 BROKER_LOG = os.path.expanduser("~/.cache/etk/pitlink-usb.log")
+GARAGE_SOCKET = os.environ.get("PITLINK_GARAGE", "@etk-garage-usb")  # car control, same USB link
 FPS_FALLBACK = 60.0  # before any FRAME has told us the car's flip rate
 PRESS_LEAD = 2  # flips between "now" and the press edge: >= 1 full flip for the PAD to land
 TTL_MARGIN_MS = 500
@@ -81,6 +82,39 @@ def spawn_broker():
     with open(BROKER_LOG, "ab") as logf:
         subprocess.Popen([sys.executable, BROKER, "serve"], stdin=subprocess.DEVNULL, stdout=logf,
                          stderr=logf, start_new_session=True, close_fds=True)
+
+
+def garage(req, timeout=30.0, addr=GARAGE_SOCKET):
+    """One request to the car's garage service (launch / running / games / log / dump_threads
+    ...) over the USB link: JSON line out, JSON line back. Starts the broker if needed."""
+    import json
+    deadline = time.monotonic() + timeout
+    spawned = False
+    while True:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            s.connect("\0" + addr.lstrip("@"))
+            break
+        except (ConnectionRefusedError, FileNotFoundError):
+            s.close()
+            if time.monotonic() >= deadline:
+                raise
+            if not spawned:
+                spawn_broker()
+                spawned = True
+            time.sleep(0.2)
+    with s:
+        s.settimeout(max(1.0, deadline - time.monotonic()))
+        f = s.makefile("rwb")
+        f.write((json.dumps(req) + "\n").encode())
+        f.flush()
+        line = f.readline()
+    if not line:
+        raise PitlinkClosed("garage: the car closed the session (USB link down?)")
+    rep = json.loads(line)
+    if not rep.get("ok"):
+        raise PitlinkError(f"garage {req.get('op')}: {rep.get('err')}")
+    return rep
 
 
 def open_socket(addr, timeout=5.0):

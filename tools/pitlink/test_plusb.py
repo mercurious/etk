@@ -126,7 +126,9 @@ class Chain:
     def __init__(self, stale=b""):
         self.car = FakeCar(listen=(name("car"),), fps=60, video=(64, 36, 60, test_pitlink.P.CODEC_RAW),
                            ram=(test_pitlink.RAM, 0x10000), native=(128, 72)).start()
-        self.relay = L.CarRelay(target=self.car.addrs[0], status=lambda: "fake car")
+        import etk_pitlink_usbd as D
+        self.relay = L.CarRelay(target=self.car.addrs[0], status=lambda: "fake car",
+                                services={"garage": lambda sock: L.serve_json_lines(sock, D.garage)})
         self.pipes = []
 
         def open_pipe():
@@ -218,6 +220,111 @@ class TestLinkUsb(test_pitlink.LinkBase, unittest.TestCase):
         for c in self.clients:
             c.close()
         self.chain.stop()
+
+
+# ======================================================================== [GARAGE]
+class FakeRpcs3Dumper:
+    """Stands in for RPCS3's syscall-usage thread: consumes <config>/dump_threads like
+    lv2.cpp's ppu_dump_threads_on_request (remove, then log the dump)."""
+
+    def __init__(self, cfg, logf):
+        self.cfg, self.logf = cfg, logf
+        self.stop = threading.Event()
+        threading.Thread(target=self.run, daemon=True).start()
+
+    def run(self):
+        trig = os.path.join(self.cfg, "dump_threads")
+        while not self.stop.wait(0.05):
+            if os.path.exists(trig):
+                os.remove(trig)
+                with open(self.logf, "a") as f:
+                    f.write("PPU: Thread dump: PPU[0x1000020] loader CIA=0x123450 in _sys_lwmutex_lock\n")
+                    f.write("PPU: Thread dump: done\n")
+
+
+class TestGarage(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        import etk_pitlink_usbd as D
+        self.D = D
+        self.tmp = tempfile.mkdtemp(prefix="plusb-garage-")
+        self.cfg = self.tmp + "/"
+        self.logf = os.path.join(self.tmp, "RPCS3.log")
+        with open(self.logf, "w") as f:
+            f.write("".join(f"boot line {i}\n" for i in range(50)))
+        self.envf = os.path.join(self.tmp, "099-etk-debug-env")
+        self.saved = (D.RPCS3_CONFIG, D.RPCS3_LOG, D.DEBUG_ENV_FILE)
+        D.RPCS3_CONFIG, D.RPCS3_LOG, D.DEBUG_ENV_FILE = self.cfg, self.logf, self.envf
+
+    def tearDown(self):
+        self.D.RPCS3_CONFIG, self.D.RPCS3_LOG, self.D.DEBUG_ENV_FILE = self.saved
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_dump_threads_returns_only_the_new_log(self):
+        rpcs3 = FakeRpcs3Dumper(self.cfg, self.logf)
+        try:
+            rep = self.D.dump_threads(timeout=3)
+        finally:
+            rpcs3.stop.set()
+        self.assertTrue(rep["consumed"])
+        self.assertIn("_sys_lwmutex_lock", rep["text"])
+        self.assertNotIn("boot line", rep["text"])
+        self.assertFalse(os.path.exists(os.path.join(self.cfg, "dump_threads")))
+
+    def test_unconsumed_trigger_is_never_left_armed(self):
+        rep = self.D.dump_threads(timeout=0.5)
+        self.assertFalse(rep["consumed"])
+        self.assertFalse(os.path.exists(os.path.join(self.cfg, "dump_threads")))
+
+    def test_log_tail_and_grep(self):
+        rep = self.D.read_log({"tail": 3})
+        self.assertEqual(rep["text"].splitlines(), ["boot line 47", "boot line 48", "boot line 49"])
+        rep = self.D.read_log({"grep": r"line 1[0-2]$", "from": 0})
+        self.assertEqual(rep["lines"], 3)
+
+    def sourced(self, key):
+        import subprocess
+        return subprocess.run(["sh", "-c", f'. "$1" && printf %s "${key}"', "sh", self.envf],
+                              capture_output=True, text=True).stdout
+
+    def test_debug_env_set_show_clear(self):
+        D = self.D
+        rep = D.debug_env({"action": "set", "ARMSX3_PPU_INTERP": "10000-2000000", "ARMSX3_WATCH_LWCOND": 1})
+        self.assertEqual(rep["env"], {"ARMSX3_PPU_INTERP": "10000-2000000", "ARMSX3_WATCH_LWCOND": "1"})
+        self.assertEqual(self.sourced("ARMSX3_PPU_INTERP"), "10000-2000000")
+        rep = D.debug_env({"action": "set", "env": {"ARMSX3_PPU_INTERP": "10000-800000"}})
+        self.assertEqual(rep["env"], {"ARMSX3_PPU_INTERP": "10000-800000"})  # set replaces the file
+        self.assertEqual(D.debug_env({"action": "show"})["env"], {"ARMSX3_PPU_INTERP": "10000-800000"})
+        D.debug_env({"action": "clear"})
+        self.assertFalse(os.path.exists(self.envf))
+        self.assertEqual(D.debug_env({"action": "show"})["env"], {})
+
+    def test_debug_env_refuses_anything_a_shell_could_run(self):
+        D = self.D
+        for bad in ({"ARMSX3_X": "$(reboot)"}, {"ARMSX3_X": "a'b"}, {"ARMSX3_X": "a b"},
+                    {"ARMSX3_X": "a;b"}, {"ARMSX3_X": "a`b`"}):
+            with self.assertRaises(ValueError):
+                D.debug_env({"action": "set", "env": bad})
+        for bad_key in ("LD_PRELOAD", "PATH", "GTK_PITLINK", "armsx3_x", "ARMSX3_X;Y"):
+            with self.assertRaises(ValueError):
+                D.debug_env({"action": "set", "env": {bad_key: "1"}})
+        self.assertFalse(os.path.exists(self.envf))  # nothing refused ever reaches the file
+
+    def test_cli_garage_dump_threads_over_usb(self):
+        ch = Chain()
+        rpcs3 = FakeRpcs3Dumper(self.cfg, self.logf)
+        try:
+            import subprocess
+            env = dict(os.environ, PITLINK_GARAGE=ch.garage)
+            out = subprocess.run([sys.executable, os.path.join(HERE, "pitlink.py"), "garage", "dump_threads",
+                                  "timeout=3"], capture_output=True, text=True, timeout=30, env=env)
+            self.assertEqual(out.returncode, 0, out.stderr)
+            self.assertIn('"consumed": true', out.stdout)
+            self.assertIn("_sys_lwmutex_lock", out.stdout)
+        finally:
+            rpcs3.stop.set()
+            ch.stop()
 
 
 # =========================================================================== [FFS]
