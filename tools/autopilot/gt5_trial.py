@@ -41,7 +41,9 @@ Macro lines (one step each; # comments): `sleep S` · `press BTN[+BTN] [MS]` ·
 `hold K=V ... secs=S` (gtdrive's controls, e.g. r2=0.8 lx=-0.3) · `wait_lit [S]` ·
 `snap NAME` · `drive GTDRIVE-ARGS...` (the last step: hands the wheel to gtdrive.py -- the
 trial lets go of the controller seat, gtdrive takes it, the trial rejoins as an observer;
-gtdrive's output goes to OUT/drive.log). The macro runs beside the watch; a death mid-macro
+gtdrive's output goes to OUT/drive.log) · `observe N` (the last step: let go of the wheel and
+stay off it for N s so another client -- a menu driver, then gtdrive -- can take it; the trial
+rejoins as an observer and keeps watching). The macro runs beside the watch; a death mid-macro
 is still a PANIC.
 """
 import argparse
@@ -103,6 +105,8 @@ def parse_macro(text):
                 steps.append(("snap", args[0]))
             elif verb == "drive":
                 steps.append(("drive", args))
+            elif verb == "observe":
+                steps.append(("observe", float(args[0])))
             else:
                 raise ValueError(f"unknown verb {verb!r}")
         except (IndexError, KeyError, ValueError) as e:
@@ -214,6 +218,10 @@ def run_macro(c_holder, steps, out, log, stop):
                 f = c.snap(timeout=5.0)          # native frame: the tap may be idle
                 if f is not None:
                     f.png(os.path.join(out, f"{arg}.png"), max_w=640)
+            elif verb == "observe":
+                c_holder["pause_until"] = time.time() + arg
+                c.close()
+                c_holder["c"] = None
             elif verb == "drive":
                 c_holder["pause_until"] = time.time() + 15   # keep the watch from re-taking the wheel
                 c.close()

@@ -34,6 +34,7 @@ steps = gt.parse_macro("# GT5 Arcade\nsleep 2\npress cross\npress down+cross 200
                        "drive --no-map --restart-every 40\n")
 check("all verbs parsed", [s[0] for s in steps], ["sleep", "press", "press", "hold", "wait_lit", "snap", "drive"])
 check("drive keeps gtdrive's args verbatim", steps[-1][1], ["--no-map", "--restart-every", "40"])
+check("observe N parses", gt.parse_macro("observe 20")[0], ("observe", 20.0))
 check("press default 120 ms, chords split on +", (steps[1][1], steps[2][1]), ((["cross"], 120), (["down", "cross"], 200)))
 check("hold controls are floats, secs split off", steps[3][1], ({"r2": 0.8, "lx": -0.3}, 3.0))
 for bad in ("jump 3", "hold r2=0.8", "sleep soon"):

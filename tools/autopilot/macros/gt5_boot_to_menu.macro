@@ -1,0 +1,12 @@
+# GT5 (BCUS98114): boot dialog -> title -> the main menu, then let go of the wheel (observe) so a
+# menu driver can pick the mode (GT5 remembers the main-menu cursor: the same X lands in GT Mode
+# or Arcade, hunt-20261011-gt5 t1 vs t5). Starts after the first lit frame.
+sleep 60
+snap r1_boot_dialog
+press cross
+sleep 25
+snap r2_title
+press start
+sleep 10
+snap r3_main_menu
+observe 20
