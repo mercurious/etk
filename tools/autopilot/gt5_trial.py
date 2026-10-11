@@ -32,7 +32,10 @@ Unattended GT5 runs need a valid hunt grant for BCUS98114 with panic budget left
 so it rides on the operator's signature, never on the Engineer's say-so. Each PANIC is
 audited (`hunt.py panic --trial DIR`), which is what spends the budget. All car reads are read-only ssh (cat/ls/tail).
 
-  gt5_trial.py --out DIR [--secs 1500] [--macro FILE] [--label TEXT] [--host etk-rig]
+  gt5_trial.py --out DIR [--secs 1500] [--macro FILE] [--label TEXT] [--host etk-rig] [--attach]
+
+--attach watches a GT5 that is ALREADY running (driven by another Pitlink client that holds
+the wheel, e.g. while a menu route is being mapped): no launch, this trial is an observer.
 
 Macro lines (one step each; # comments): `sleep S` · `press BTN[+BTN] [MS]` ·
 `hold K=V ... secs=S` (gtdrive's controls, e.g. r2=0.8 lx=-0.3) · `wait_lit [S]` ·
@@ -265,6 +268,7 @@ def main():
     ap.add_argument("--macro", help="menu-path macro file (see the docstring)")
     ap.add_argument("--label", default="")
     ap.add_argument("--host", default=os.environ.get("ETK_RIG", "etk-rig"))
+    ap.add_argument("--attach", action="store_true", help="watch the GT5 already running; do not launch")
     ap.add_argument("--lost-secs", type=float, default=20, help="link silent this long = check the car")
     ap.add_argument("--return-secs", type=float, default=600, help="dark longer than this = UNREACHABLE")
     ap.add_argument("--freeze-secs", type=float, default=90, help="flips stopped this long (after a lit frame) = FREEZE")
@@ -297,7 +301,11 @@ def main():
         print(json.dumps(verdict), flush=True)
         sys.exit(code)
 
-    if garage({"op": "running"})["running"]:
+    running = garage({"op": "running"})["running"]
+    if a.attach:
+        if not running or "Turismo 5 (" not in (running.get("name") or "") + (running.get("path") or ""):
+            finish("NO_GAME", 2, note=f"--attach: GT5 is not the running game ({running})")
+    elif running:
         finish("NO_GAME", 2, note="a game is already running: recover first (gtpilot.py recover)")
     base_boot = boot_id(a.host)
     if not base_boot:
@@ -307,13 +315,14 @@ def main():
     base_pon, battery = (o.splitlines() + ["", ""])[:2]
     verdict.update(boot_id=base_boot, battery_pct_start=battery.strip())
     log0 = garage({"op": "log", "tail": 1})["size"]
-    garage({"op": "launch", "game": GAME})
+    if not a.attach:
+        garage({"op": "launch", "game": GAME})
     t0 = time.time()
-    log(f"launched ({a.label or 'no label'}), boot {base_boot[:8]}, battery {battery.strip()}%, "
+    log(f"{'attached' if a.attach else 'launched'} ({a.label or 'no label'}), boot {base_boot[:8]}, battery {battery.strip()}%, "
         f"{len(steps)} macro steps")
 
     holder, macro_t = {"c": None}, None
-    rotated, lit, last_ok = log0 == 0, False, time.time()
+    rotated, lit, last_ok = log0 == 0 or a.attach, False, time.time()
     last_flip, flip_t, last_log_check = None, time.time(), 0.0
     while True:
         now = time.time()

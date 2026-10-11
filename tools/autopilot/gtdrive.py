@@ -142,6 +142,14 @@ def main():
     ap.add_argument("--cruise", type=float, default=1.0, help="throttle on a blue line")
     ap.add_argument("--blind-thr", type=float, default=0.45, help="throttle with no line in view (asphalt fallback)")
     ap.add_argument("--map-y1", type=int, default=0, help="minimap search box bottom row (Daytona: 155)")
+    ap.add_argument("--restart-every", type=float, default=0,
+                    help="race Restart every S seconds regardless (GT5 at HSR: the car parks nose-on "
+                         "to a wall with the scenery still moving, which no stuck rule sees); keeps it "
+                         "racing for a crash hunt. Timed restarts do not count against --max-restarts")
+    ap.add_argument("--no-map", action="store_true",
+                    help="ignore the minimap dot (GT5's HSR map is small-scale: a Vitz at 30 mph moves "
+                         "its marker < 1.5 px in 4 s, which reads as parked -> a restart every 4 s); "
+                         "stuck = frozen picture only")
     ap.add_argument("--no-line", action="store_true", help="ignore the driving line: asphalt + walls only (ovals)")
     ap.add_argument("--mt", action="store_true", help="manual box: shift on the tach needle (default: AT, no shifts)")
     ap.add_argument("--track", default="", help="track-specific minimap zones: hsr (High Speed Ring); "
@@ -184,6 +192,7 @@ def main():
     shift_left, shift_dir, last_shift = 0, 0, 0.0
     brake_since = stuck_since = prev_small = zone_since = dot_anchor = None
     rc, restarts = 0, 0
+    last_restart = time.time()
     next_snap, n = t0, 0
     try:
         while time.time() - t0 < a.secs:
@@ -252,7 +261,7 @@ def main():
                 brk = max(brk, 0.6 * tight)
             # Track position: brake zones off the minimap dot (line chevrons are too sparse at
             # 77 mph to warn in time).
-            dot = map_dot(rgb, a.map_y1)
+            dot = None if a.no_map else map_dot(rgb, a.map_y1)
             zones = a.track == "hsr"
             if not zones:
                 pass
@@ -286,11 +295,14 @@ def main():
             else:  # a lost dot is not a parked car (run 7 left the map box at y 132 and restarted)
                 dot_anchor = None
             parked = dot_anchor is not None and now - dot_anchor[1] > 4.0
-            if ((nb < 30 or wall) and motion < 2.0) or parked:
+            timed = a.restart_every and now - last_restart > a.restart_every
+            if ((nb < 30 or wall) and motion < 2.0) or parked or timed:
                 stuck_since = stuck_since or now
-                if parked or now - stuck_since > 3.0:
-                    restarts += 1
-                    why = "dot parked 4 s" if parked else "picture frozen 3 s"
+                if parked or timed or now - stuck_since > 3.0:
+                    restarts += 0 if timed else 1
+                    last_restart = now
+                    why = (f"timed, every {a.restart_every:g} s" if timed else
+                           "dot parked 4 s" if parked else "picture frozen 3 s")
                     print(f"gtdrive: STUCK at map {dot and tuple(round(v) for v in dot)} ({why})"
                           f" -- race Restart {restarts}/{a.max_restarts}", flush=True)
                     if restarts > a.max_restarts:
