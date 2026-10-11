@@ -478,8 +478,8 @@ fp_compute() {  # <lane> -> fingerprint string on stdout
                     "$(sha256_of "$FORGE_RPCS3_FORK/scripts/verify-markers.sh")" \
                     "$(probe_section IMAGEID | head -1)" ;;
         turnip) printf 'vers=%s gtk=%s tip=%s' "$FORGE_TURNIP_VERS" "$FORGE_TURNIP_GTKVER" "$TURNIP_TIP" ;;
-        kernel) printf 'tip=%s name=%s kcc=gcc-15%s' "$KERNEL_TIP" "$KNAME" \
-                    "${FORGE_KERNEL_SFX:+ basedate=$FORGE_KERNEL_BASEDATE}" ;;
+        kernel) printf 'tip=%s name=%s kcc=gcc-15%s forensics=%s' "$KERNEL_TIP" "$KNAME" \
+                    "${FORGE_KERNEL_SFX:+ basedate=$FORGE_KERNEL_BASEDATE}" "${ETK_FORENSICS:-0}" ;;
         # kit=%s IS LOAD-BEARING. The image bakes the ETK middleware straight
         # out of the build node's checkout, but this fingerprint only ever
         # hashed the three BINARIES, the base date and the recipe. The
@@ -570,8 +570,8 @@ lane_env() {  # <lane> -> env assignments for the node-side recipe
         # ETK_GPIO_SBU_BUILTIN: the boot-logo fix (upstream ROCKNIX 187eb24f2e,
         # CONFIG_TYPEC_MUX_GPIO_SBU m->y as a config delta); default ON, =0 is the
         # pure-parity A/B arm that reproduces 20261001's missing splash.
-        kernel) printf 'KNAME=%s FORGE_KERNEL_BUILD=%s FORGE_KERNEL_BASEDATE=%s ETK_KIT_DTB=%s ETK_INTERNAL_MIC=%s ETK_GPIO_SBU_BUILTIN=%s' \
-                    "$KNAME" "$FORGE_KERNEL_BUILD" "$FORGE_KERNEL_BASEDATE" "${ETK_KIT_DTB:-1}" "${ETK_INTERNAL_MIC:-1}" "${ETK_GPIO_SBU_BUILTIN:-1}" ;;
+        kernel) printf 'KNAME=%s FORGE_KERNEL_BUILD=%s FORGE_KERNEL_BASEDATE=%s ETK_KIT_DTB=%s ETK_INTERNAL_MIC=%s ETK_GPIO_SBU_BUILTIN=%s ETK_FORENSICS=%s' \
+                    "$KNAME" "$FORGE_KERNEL_BUILD" "$FORGE_KERNEL_BASEDATE" "${ETK_KIT_DTB:-1}" "${ETK_INTERNAL_MIC:-1}" "${ETK_GPIO_SBU_BUILTIN:-1}" "${ETK_FORENSICS:-0}" ;;
         # The three baked names come from the MANIFEST (see the preflight
         # note above), never from the build knobs — an image is a shipped
         # asset and must carry exactly the certified stack.

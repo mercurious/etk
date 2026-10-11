@@ -48,14 +48,18 @@ ETK_INTERNAL_MIC="${ETK_INTERNAL_MIC:-1}"
 # stock 20261001 loses the splash because msm binds after load_splash. Default
 # ON; =0 is the pure-parity A/B arm. The drift log gains exactly one line.
 ETK_GPIO_SBU_BUILTIN="${ETK_GPIO_SBU_BUILTIN:-1}"
+# FORENSICS hunt kernel (2026-10-11, GT5 op): rocknix-gtk build_72.sh ETK_FORENSICS=1 adds the
+# wdt sysfs + pretimeout govs, log-only lockup detectors, pseudo-NMI and a ramoops console. 0 =
+# every certified mint, unchanged. Never a release kernel.
+ETK_FORENSICS="${ETK_FORENSICS:-0}"
 if [ "$KLANE" = 72 ] && [ "$BASEDATE" -ge 20261001 ] && [ "$ETK_KIT_DTB" = 1 ]; then
     SPL="$HOME/etk/bin/etk_dtb_mic.py"
     [ -f "$SPL" ] || { log "FATAL: $SPL missing on the node (pull ~/etk) -- or ETK_KIT_DTB=0 for a pure-parity mint"; exit 1; }
     docker cp "$SPL" rocknix-gtk-kernel-sid:/kernel/staging/etk_dtb_mic.py
     log "kit DTB splicer staged: etk_dtb_mic.py sha $(sha256sum "$SPL" | cut -c1-16) from ~/etk @ $(git -C "$HOME/etk" rev-parse --short HEAD 2>/dev/null || echo '?') (mic=$ETK_INTERNAL_MIC)"
 fi
-log "build_${KLANE}.sh BASEDATE=$BASEDATE (KCC=gcc-15, enforced in-recipe; kit DTB=$ETK_KIT_DTB; gpio-sbu-mux built-in=$ETK_GPIO_SBU_BUILTIN)"
-docker exec rocknix-gtk-kernel-sid bash -lc "KCC=gcc-15 BASEDATE=$BASEDATE ETK_KIT_DTB=$ETK_KIT_DTB ETK_INTERNAL_MIC=$ETK_INTERNAL_MIC ETK_GPIO_SBU_BUILTIN=$ETK_GPIO_SBU_BUILTIN bash /work/scripts/build_${KLANE}.sh"
+log "build_${KLANE}.sh BASEDATE=$BASEDATE (KCC=gcc-15, enforced in-recipe; kit DTB=$ETK_KIT_DTB; gpio-sbu-mux built-in=$ETK_GPIO_SBU_BUILTIN; forensics=$ETK_FORENSICS)"
+docker exec rocknix-gtk-kernel-sid bash -lc "KCC=gcc-15 BASEDATE=$BASEDATE ETK_KIT_DTB=$ETK_KIT_DTB ETK_INTERNAL_MIC=$ETK_INTERNAL_MIC ETK_GPIO_SBU_BUILTIN=$ETK_GPIO_SBU_BUILTIN ETK_FORENSICS=$ETK_FORENSICS bash /work/scripts/build_${KLANE}.sh"
 
 echo "=== config drift vs rig ground truth (expect INITRAMFS/FIRMWARE paths + toolchain-probe lines; + ONE TYPEC_MUX_GPIO_SBU m->y line when the boot-logo fix is on) ==="
 docker exec rocknix-gtk-kernel-sid cat "/kernel/config${KLANE}${SFX}.drift" || true
