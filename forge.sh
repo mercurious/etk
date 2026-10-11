@@ -365,12 +365,21 @@ if [ "$MODE" = cloud ] && ! FSSH true 2>/dev/null; then
 fi
 tui_step_progress 0 30
 
-# a hunt builds in its own worktree of the certified tree (shared objects, so any
-# fetched ARMSX3 commit is a valid base); the certified tree's resting state never moves
+# a hunt builds in its own COPY of the certified tree (every fetched ARMSX3 commit is a
+# valid base; the certified tree's resting state never moves). A copy, not a `git worktree`:
+# the build container mounts only the tree, and a worktree's .git is a pointer back into
+# the certified repo, so git inside the container died (hunt m01, 2026-10-10). The copy has
+# its own .git and the certified tree's submodule checkouts (relative gitdirs); build/ is
+# left behind (root-owned, rebuilt anyway). A worktree left by that first attempt is removed.
 if [ -n "$HUNT_ID" ] && lane_selected rpcs3; then
-    FSSH "[ -e '$FORGE_RPCS3_TREE/.git' ] || git -C '$FORGE_RPCS3_SRC' worktree add --detach '$FORGE_RPCS3_TREE' '$FORGE_RPCS3_BASE'" \
-        > "$LOGDIR/hunt-worktree.log" 2>&1 \
-        || tui_fail "hunt: could not create the worktree $FORGE_RPCS3_TREE (see $LOGDIR/hunt-worktree.log)"
+    FSSH "set -e
+          if [ -f '$FORGE_RPCS3_TREE/.git' ]; then
+              git -C '$FORGE_RPCS3_SRC' worktree remove --force '$FORGE_RPCS3_TREE' || rm -rf '$FORGE_RPCS3_TREE'
+              git -C '$FORGE_RPCS3_SRC' worktree prune
+          fi
+          [ -d '$FORGE_RPCS3_TREE/.git' ] || rsync -a --exclude=/build '$FORGE_RPCS3_SRC/' '$FORGE_RPCS3_TREE/'" \
+        > "$LOGDIR/hunt-tree.log" 2>&1 \
+        || tui_fail "hunt: could not prepare the hunt tree $FORGE_RPCS3_TREE (see $LOGDIR/hunt-tree.log)"
 fi
 
 # one consolidated probe (fast-arming discipline: never a dozen round-trips)

@@ -9,7 +9,7 @@ any other host and runs the command locally with HOME=<sandbox>/node, a director
 real git checkout as the "certified tree", so the worktree, reset, patch-apply and staging
 logic execute for real. tools/hunt/hunt.py is a stub whose answer the test sets.
 
-  [HUNT]    a granted mint builds in <tree>-hunt (a worktree), leaves the certified tree
+  [HUNT]    a granted mint builds in <tree>-hunt (a self-contained copy), leaves the certified tree
             untouched, stages emulators/hunt/<artifact> (+ .sha256) host- and node-side,
             keeps status under state/hunt/<id>/forge, uses the active_hunt_ marker, checks the
             grant with the node fingerprint at preflight and again before staging
@@ -53,6 +53,8 @@ sys.exit(subprocess.run(["bash", "-c", cmd], env=env, cwd=env["HOME"]).returncod
 FAKE_RSYNC = r'''#!/usr/bin/env python3
 import os, shutil, sys
 src, dst = [x for x in sys.argv[1:] if not x.startswith("-")][-2:]
+if ":" not in src:                      # a local copy (the node preparing its hunt tree)
+    os.execv("/usr/bin/rsync", ["rsync"] + sys.argv[1:])
 host, path = src.split(":", 1)
 if host != "fakenode.invalid":
     sys.exit(f"fake rsync: refusing real host {host}")
@@ -196,7 +198,8 @@ class HuntTests(Sandbox):
         self.assertTrue(self.exists("node", "etk", "emulators", "hunt", self.art))
         self.assertFalse(self.exists("node", "etk", "emulators", self.art), "a hunt never stages node-side in the catalog dir")
         self.assertFalse(self.exists("repo", "emulators", self.art))
-        self.assertTrue(self.exists("node", "rpcs3-hunt", ".git"), "the hunt builds in its own worktree")
+        self.assertTrue(os.path.isdir(os.path.join(self.node, "rpcs3-hunt", ".git")),
+                        "the hunt tree is self-contained: the build container mounts only the tree (m01)")
         self.assertEqual(sh("git", "-C", self.tree, "status", "--porcelain"), "", "the certified tree is untouched")
         self.assertIn("rpcs3\tDONE", self.read("repo", "state", "hunt", GID, "forge", "status.tsv"))
         self.assertFalse(self.exists("repo", "state", "forge"), "a hunt never writes the certified forge state")
@@ -215,6 +218,14 @@ class HuntTests(Sandbox):
             out = (e.stdout or b"").decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
         self.assertIn("REATTACHED to live build", out)
         self.assertNotIn("node-busy", out)
+
+
+    def test_replaces_a_worktree(self):
+        sh("git", "-C", self.tree, "worktree", "add", "-q", "--detach", os.path.join(self.node, "rpcs3-hunt"), self.base)
+        rc, out = self.forge("--hunt", GID, "rpcs3", "--verbose")
+        self.assertEqual(rc, 0, out[-1500:])
+        self.assertTrue(os.path.isdir(os.path.join(self.node, "rpcs3-hunt", ".git")))
+        self.assertNotIn("rpcs3-hunt", sh("git", "-C", self.tree, "worktree", "list"))
 
 
 class RefuseTests(Sandbox):
