@@ -1,7 +1,33 @@
 {
-  "_comment": "ETK POWER profiles (SM8250). Runtime sysfs power knobs ONLY \u2014 no OC beyond the OPP table (GPU caps at 800 MHz, CPU at rated max). Pulldown options are real OPP steps; the Pitstop POWER tab resolves a preset/knobs into a flat path<TAB>value profile that etk-power.service re-applies at boot. Per-SoC: a new chipset ships its own JSON.",
+  "_comment": "ETK POWER profiles (SM8250). Runtime sysfs power knobs ONLY. Pulldown options are real OPP steps; the Pitstop POWER tab resolves a preset/knobs into a flat path<TAB>value profile that etk-power.service re-applies at boot. GPU: Qualcomm's spec for the Adreno 650 is 587 MHz (670 on the 870 bin); the ROCKNIX device tree adds overclock OPPs (to 800 MHz through the 20260901 era, to 925 MHz on 20261001), and the `performance` governor rides to whatever the table's top is -- gpu_ceiling caps it (2026-10-11, GT5 op: every GT5 death the flight recorder caught ran at 925 MHz). Per-SoC: a new chipset ships its own JSON.",
   "soc": "SM8250",
   "knobs": [
+    {
+      "id": "gpu_ceiling",
+      "label": "GPU clock ceiling",
+      "paths": [
+        "/sys/class/devfreq/3d00000.gpu/max_freq"
+      ],
+      "note": "Qualcomm spec 587; above it = overclock",
+      "options": [
+        {
+          "v": "925000000",
+          "l": "925 MHz (OPP top, no cap)"
+        },
+        {
+          "v": "800000000",
+          "l": "800 MHz"
+        },
+        {
+          "v": "670000000",
+          "l": "670 MHz (870 bin spec)"
+        },
+        {
+          "v": "587000000",
+          "l": "587 MHz (Qualcomm spec)"
+        }
+      ]
+    },
     {
       "id": "gpu_gov",
       "label": "GPU governor",
@@ -29,7 +55,7 @@
       "paths": [
         "/sys/class/devfreq/3d00000.gpu/min_freq"
       ],
-      "note": "ceiling 800 (OPP cap)",
+      "note": "a floor above the ceiling clamps to the ceiling",
       "options": [
         {
           "v": "305000000",
@@ -152,7 +178,7 @@
     {
       "id": "RACE",
       "label": "RACE",
-      "desc": "GPU pinned 800 MHz \u00b7 max heat \u00b7 thermal-guarded",
+      "desc": "GPU pinned to the ceiling (default: the OPP top) \u00b7 max heat \u00b7 thermal-guarded",
       "values": {
         "gpu_gov": "performance",
         "gpu_floor": "800000000",

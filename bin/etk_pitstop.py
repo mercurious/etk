@@ -7897,6 +7897,12 @@ def _power_tag(model):
     g = model["values"].get("grid")
     if g and g != "off":
         tag += "+g" + g
+    # The GPU ceiling rides the tag the same way (race+c587): presets omit it, and its
+    # first option is the OPP top (no cap), so an uncapped profile's tag is unchanged.
+    k = _power_knob(model["schema"], "gpu_ceiling")
+    c = model["values"].get("gpu_ceiling")
+    if k and k.get("options") and c and c != k["options"][0]["v"]:
+        tag += "+c" + str(int(c) // 1000000)
     return tag
 
 

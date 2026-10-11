@@ -1,0 +1,41 @@
+# GT5 (BCUS98114) -> GT Mode -> Practice -> High Speed Ring A-Spec Free Run, then gtdrive.
+# Mapped by hand over Pitlink on car8, 2026-10-11 (hunt-20261011-gt5, core m01 = the 0.10.0 RC),
+# car8's save: GT Mode, Vitz F '99, Driving Options AT / line on / TC 5 / SRF on.
+# Starts after the first lit frame; each snap lands in the trial's --out dir.
+sleep 60
+snap r1_boot_dialog          # "Accessing game data ... OK" waits for input
+press cross
+sleep 25
+snap r2_title                # the "5" title
+press start
+sleep 10
+snap r3_main_menu            # cursor on GT Mode
+press cross
+sleep 30
+snap r4_my_home              # GT Life; the first right lands on A-Spec Events
+press right
+sleep 1.5
+press right
+sleep 1.5
+press down
+sleep 1.5
+snap r5_practice_tile
+press cross
+sleep 10
+snap r6_practice             # first visit only: an info dialog (OK) over the track list
+press cross
+sleep 4
+snap r7_track
+press cross                  # High Speed Ring -> A-Spec Free Run
+sleep 6
+snap r8_options
+press cross                  # Driving Options OK -> the track loads
+sleep 45
+snap r9_prerace
+press cross                  # Start (rolling start)
+sleep 40
+snap r10_racing_or_options
+press cross                  # if the info dialog shifted every X by one, this is Start; in a race X is throttle
+sleep 30
+snap r11_racing
+drive --wait-race 120 --no-map --restart-every 40 --secs 3000 --max-restarts 60 --snap-every 60

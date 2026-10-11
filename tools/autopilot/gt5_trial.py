@@ -39,7 +39,10 @@ the wheel, e.g. while a menu route is being mapped): no launch, this trial is an
 
 Macro lines (one step each; # comments): `sleep S` · `press BTN[+BTN] [MS]` ·
 `hold K=V ... secs=S` (gtdrive's controls, e.g. r2=0.8 lx=-0.3) · `wait_lit [S]` ·
-`snap NAME`. The macro runs beside the watch; a death mid-macro is still a PANIC.
+`snap NAME` · `drive GTDRIVE-ARGS...` (the last step: hands the wheel to gtdrive.py -- the
+trial lets go of the controller seat, gtdrive takes it, the trial rejoins as an observer;
+gtdrive's output goes to OUT/drive.log). The macro runs beside the watch; a death mid-macro
+is still a PANIC.
 """
 import argparse
 import importlib.util
@@ -98,6 +101,8 @@ def parse_macro(text):
                 steps.append(("wait_lit", float(args[0]) if args else 120.0))
             elif verb == "snap":
                 steps.append(("snap", args[0]))
+            elif verb == "drive":
+                steps.append(("drive", args))
             else:
                 raise ValueError(f"unknown verb {verb!r}")
         except (IndexError, KeyError, ValueError) as e:
@@ -206,9 +211,17 @@ def run_macro(c_holder, steps, out, log, stop):
                     if f is not None and f.rgb().mean() > 3:
                         break
             elif verb == "snap":
-                f = c.wait_frame(timeout=3.0)
+                f = c.snap(timeout=5.0)          # native frame: the tap may be idle
                 if f is not None:
-                    f.png(os.path.join(out, f"{arg}.png"))
+                    f.png(os.path.join(out, f"{arg}.png"), max_w=640)
+            elif verb == "drive":
+                c_holder["pause_until"] = time.time() + 15   # keep the watch from re-taking the wheel
+                c.close()
+                c_holder["c"] = None
+                d_out = os.path.join(out, "drive")
+                c_holder["driver"] = subprocess.Popen(
+                    [sys.executable, os.path.join(HERE, "gtdrive.py"), "--out", d_out] + list(arg),
+                    stdout=open(os.path.join(out, "drive.log"), "w"), stderr=subprocess.STDOUT)
             log(f"macro: {verb} {arg}")
         except (PitlinkError, OSError, AttributeError) as e:
             log(f"macro stopped at {verb} {arg}: {e}")
@@ -329,7 +342,9 @@ def main():
         if now - t0 > a.secs:
             finish("SURVIVED", 0, last_flip=last_flip)
         c = holder["c"]
-        if c is None or c.closed:
+        if (c is None or c.closed) and now < holder.get("pause_until", 0):
+            c = None
+        elif c is None or c.closed:
             try:
                 c = PitlinkClient("usb", timeout=4)
                 c.hello()
