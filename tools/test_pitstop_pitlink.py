@@ -110,6 +110,7 @@ EXPECTED_LABELS = {
     "_TOOLS_SCREENSHOT_IDX": "Screenshot on L1+L2",
     "_TOOLS_BOG_IDX": "Bog Sampler",
     "_TOOLS_PITLINK_IDX": "Pitlink (Engineer link)",
+    "_TOOLS_AUTONOMY_IDX": "Autonomy (Engineer hunts)",
     "_TOOLS_FIRMWARE_IDX": "Install PS3 Firmware",
     "_TOOLS_UPDATE_IDX": "Check for ETK Updates",
 }
@@ -532,11 +533,11 @@ def _draw():
                      if c == 4 and any(m in t for m in markers)]
             check(f"{w}x{h} [{want}]: help never over a menu entry",
                   sorted(set(helps) & items), [])
-            # The help band needs the whole list + a spacer row + 2 lines above
-            # h-4. With nine entries from row 8 that is h >= 23 (eight entries
-            # managed it at 22); below that the band is suppressed by design
-            # (_draw_tools' `room`), never drawn over the list.
-            if h >= 23:
+            # The help band needs the whole list + 2 lines above h-4. Ten entries
+            # (Autonomy, 2026-10-10) fit with the band at the rig's 22 rows by giving
+            # up the breathing line above the title (h >= 22); below that the band is
+            # suppressed by design (_draw_tools' `room`), never drawn over the list.
+            if h >= 22:
                 check(f"{w}x{h} [{want}]: both help lines shown", len(helps), 2)
             else:
                 check_true(f"{w}x{h} [{want}]: help all-or-nothing",

@@ -1,4 +1,4 @@
-# ETK Autonomy — Hunt Grants (spec v0.5 — APPROVED 2026-10-10; P1 + P2 BUILT 2026-10-10: grant, guard, hunt mint)
+# ETK Autonomy — Hunt Grants (spec v0.6 — APPROVED 2026-10-10; P1–P3 BUILT 2026-10-10: grant, guard, mint, car)
 
 > Goal (operator, 2026-10-10): point the Engineer at one game and let it run trial-and-error
 > crash hunting with full autonomy overnight, so a core or driver regression is fixed by
@@ -112,7 +112,29 @@ independently, so expiry and revocation hold even if the host is wrong.
 3. **The car.** New garage ops `put` (chunked over the USB link, sha256-verified, path
    allow-list, size cap), `pin` and `unpin` (hunt override only) work only while the rig
    grant is valid **and** Pitstop **TOOLS → Autonomy** is on. The daemon never writes
-   outside `emulators/hunt/`, `drivers/hunt/` and the 099 debug env.
+   outside `emulators/hunt/`, `drivers/hunt/` and the 099 debug env. **As built (P3,
+   `bin/etk_pitlink_usbd.py`):**
+   - The car's gate, checked at every `put`/`pin`: a rig grant exists; its `expires_epoch`
+     is in the future by the car's clock; the car's clock is not behind `issued_epoch`
+     (an unsynced clock can't judge expiry); its `usb_serial` is this gadget's own; Autonomy
+     is exactly `on`; the pin's game is the grant's.
+   - `put {kind core|driver, name, total, sha256, offset, data}`: names must match
+     `rpcs3-etk_hunt-*.AppImage` / `etk_turnip_hunt-*.so` (no paths); sequential chunks
+     (≤ 1 MiB) into a dot-`.part`; the last chunk verifies sha256 and renames; caps of
+     512 MiB (core) and 128 MiB (driver); a free-space check; artifacts are never replaced
+     (an identical re-put is a no-op).
+   - `pin {game, core?, driver?}` re-hashes the artifact against its `.sha256` and writes
+     `emulators/hunt/override.tsv` (`game<TAB>core<TAB>driver`, `-` = none).
+   - `unpin {game | all}` and `hunt_end` need neither grant nor switch: undoing is always
+     allowed. `hunt_end` empties both hunt dirs, clears the debug env and deletes the rig
+     grant. `hunt_status` reports the grant, the refusals, the switch, the override and the
+     files.
+   - Host side: `hunt.py put|pin mNN` only accept an artifact **minted under this grant**
+     whose local sha still matches the audit; `put` streams it in 768 KiB chunks over one
+     `client.GarageSession`. `unpin`, `rollback` (unpin all) and `end` (`hunt_end`) run
+     without a valid grant. `status --probe` adds the car's view. The guard denies
+     `pitlink.py garage put|pin` (they go through `hunt.py`) and any ssh/scp/rsync naming
+     `etk-autonomy`, `etk-hunt.grant` or the hunt dirs (no self-escalation at the car).
 4. **The forge.** `forge.sh --hunt <id>` builds only the granted lanes from the fork branch
    `hunt/<id>`. Artifacts go to `emulators/hunt/` (invisible to `release_sanity`'s core cap
    and to install's staging loop, like `retired/`). There's no crowning and no catalog
@@ -146,8 +168,8 @@ independently, so expiry and revocation hold even if the host is wrong.
 
 | Payload | Where | How it takes effect |
 |---|---|---|
-| core AppImage | `$ETK_ROOT/emulators/hunt/` | `pin` writes `emulators/hunt/override.tsv` (game → core); the launch wrapper honours it only while the rig grant is valid |
-| Turnip `.so` | `$ETK_ROOT/drivers/hunt/` | same override file; the wrapper points the title's Vulkan ICD at it |
+| core AppImage | `$ETK_ROOT/emulators/hunt/` | `pin` writes `emulators/hunt/override.tsv` (game → core); the launch wrapper honours it only while the rig grant is valid. **Built (P3):** install.sh STEP 6.55's wrapper, after the `core_map.tsv` pick, applies the same gate as the daemon (grant names this title, unexpired, clock not behind, this car's serial, Autonomy exactly `on`) and runs `emulators/hunt/<core>`; the ledger token reads `hunt:<core>`. Any miss leaves the pinned/certified choice |
+| Turnip `.so` | `$ETK_ROOT/drivers/hunt/` | same override file; the wrapper points the title's Vulkan ICD at it. **Built (P3):** it copies the system `freedreno_icd*.json` with `library_path` swapped to the hunt `.so` into `/tmp/etk-hunt-icd.json` and exports `VK_ICD_FILENAMES` / `VK_DRIVER_FILES` for that launch only (token `+hunt:<so>`). Unexercised until the turnip hunt lane exists |
 | diagnostics env | profile.d `099-etk-debug-env` | exists today (`garage debug_env`, ARMSX3_* allow-list) |
 
 Never injectable: kit scripts, daemons, Pitstop, install payloads (those stay `install.sh`),
@@ -163,7 +185,10 @@ debug env and removes the rig grant. The morning state is the certified rig plus
 - `tools/hunt/grant.sh revoke` (it asks for sudo): deletes the host grant and the rig grant,
   and audits the revocation.
 - **Pitstop TOOLS → Autonomy: off**, at the car: the daemon refuses every hunt op and the
-  wrapper drops the overrides.
+  wrapper drops the overrides. (P3: the row `Autonomy (Engineer hunts): on|off` follows
+  Pitlink; `/storage/.config/etk-autonomy` holding exactly `on` = on, absent = off, the
+  default. It takes effect at the next request/launch and survives a cold boot.
+  `uninstall.sh` removes it, the rig grant and the hunt dirs.)
 - Remove the allow rule from `.claude/settings.local.json`.
 - Expiry. Hours are the budget (hard cap 12 h).
 
@@ -221,6 +246,6 @@ All settled by the operator, 2026-10-10:
 |---|---|---|
 | P1 | **BUILT 2026-10-10.** `tools/hunt/grant.sh` (→ `grantctl.py`; sudo-signed; node fingerprint + always-free judge, car + USB serial binding, reserve check, `--lanes`, `--supervised`), `grantlib.py` (validation, audit chain), `hunt.py` (status / check / audit; later subcommands refuse with their phase), `guard.py` (registered); `tools/hunt/test_hunt.py` (45 tests, incl. mutants); TRACK_MANUAL §1.1 amendment. **Validated end to end 2026-10-10** with a 1 h supervised grant `hunt-20261011-p1check`: sudo-signed root:root 0644, rig copy written and read back, `status --probe` VALID (node unchanged, car8 on USB), `mint` stub audited (exit 3), the guard froze an Edit to `tools/hunt/`, `revoke` removed both copies and audited it | nothing (no atoms) |
 | P2 | **BUILT 2026-10-10 (rpcs3 lane).** `hunt.py mint` + `forge.sh --hunt` (§3.4); `lane_rpcs3.sh` gains `STAGE`. Tests: `tools/hunt/test_hunt.py` (52, incl. mint) and `tools/hunt/test_forge_hunt.py` (8: the real forge.sh + lane in a sandbox with fake ssh/rsync/docker and a real git node tree; 7 fail against the pre-P2 forge, the 8th is the certified-mint no-regression check). Turnip hunt lane not built | the operator's review of the `forge.sh` diff; the first hunt mint runs under a grant (P4) |
-| P3 | daemon `put`/`pin`/`unpin`, launch-wrapper override (core + Turnip ICD), Pitstop **Autonomy** kill switch | one ordinary install |
+| P3 | **BUILT 2026-10-10.** daemon `hunt_status`/`put`/`pin`/`unpin`/`hunt_end` (§3.3), launch-wrapper override (core + Turnip ICD, §4), Pitstop **TOOLS → Autonomy** (§5), `hunt.py put/pin/unpin/rollback/end`, `client.GarageSession`, guard rules, uninstall coverage. Tests: `tools/hunt/test_car_hunt.py` (18, all fail on the pre-P3 daemon), `tools/hunt/test_wrapper_hunt.py` (12; runs the generated wrapper: HONOUR fails pre-P3), `tools/test_pitstop_autonomy.py` (incl. a CONTRACT suite: Pitstop, daemon and wrapper read one path with one test), `test_hunt.py` 57; `test_pitstop_pitlink`, `test_cache_screen`, `test_plusb`, `test_installers` still pass. TOOLS now has ten rows: the breathing line above the title gives way so all ten + help fit the rig's 22 rows | **one ordinary install + a cold boot** (the operator) |
 | P4 | first **supervised** hunt with the operator awake: the GT6 commit bisect (`GT6Deadlock_0.10.0_20261010.md`) | a grant |
 | P5 | first overnight hunt | a grant |

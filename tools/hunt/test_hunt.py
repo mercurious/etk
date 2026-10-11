@@ -260,6 +260,7 @@ class IssueTests(Tmp):
         self.assertEqual(gl.load_grant(self.gp, UID, NOW)[2], [])
         self.assertIn("inside always-free", text)
         self.assertIn("expires_at=2026-10-11T12:00:00Z", self.rig_bodies[0])
+        self.assertIn(f"issued_epoch={int(NOW)}", self.rig_bodies[0])   # the car judges its own clock
         e, p = gl.audit_verify(os.path.join(self.d, "grants", g["id"], "audit.jsonl"),
                                gl.sha256(gl.load_grant(self.gp, UID, NOW)[1]))
         self.assertEqual((p, e[0]["action"]), ([], "issued"))
@@ -362,11 +363,11 @@ class HuntTests(Tmp):
         gl.audit_append(ap, gl.sha256(raw), "issued", [], "ok", NOW)
         self.assertEqual(self.run_hunt("check", "--game", "BCUS98296", "--lane", "rpcs3")[0], 0)
         self.assertEqual(self.run_hunt("check", "--lane", "turnip")[0], 1)
-        rc, text = self.run_hunt("pin", "BCUS98296", "x.AppImage")
+        rc, text = self.run_hunt("trial", "--label", "x")
         self.assertEqual(rc, 3)
-        self.assertIn("P3", text)
+        self.assertIn("P4", text)
         e, p = gl.audit_verify(ap, gl.sha256(raw))
-        self.assertEqual((p, [x["action"] for x in e]), ([], ["issued", "pin"]))
+        self.assertEqual((p, [x["action"] for x in e]), ([], ["issued", "trial"]))
         rc, text = self.run_hunt("status")
         self.assertEqual(rc, 0)
         self.assertIn("chain intact", text)
@@ -375,7 +376,7 @@ class HuntTests(Tmp):
         self.write(grant())
         ap = os.path.join(self.d, "hunt-20261011-gt6", "audit.jsonl")
         gl.audit_append(ap, "wrong" * 8, "issued", [], "ok", NOW)
-        rc, text = self.run_hunt("pin", "x")
+        rc, text = self.run_hunt("pin", "m01")
         self.assertEqual(rc, 1)
         self.assertIn("chain is broken", text)
 
@@ -513,6 +514,118 @@ class MintTests(Tmp):
         self.assertIn("one at a time", text)
 
 
+class FakeGarage:
+    """Stands in for client.GarageSession: records requests, answers like the car daemon."""
+    def __init__(self, log, fail=None):
+        self.log, self.fail, self.data = log, fail, bytearray()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *e):
+        pass
+
+    def call(self, req, timeout=None):
+        import base64
+        if self.fail and req["op"] == self.fail:
+            raise RuntimeError("garage put: hunt refused at the car: Pitstop TOOLS -> Autonomy is off")
+        self.log.append({k: v for k, v in req.items() if k != "data"})
+        if req["op"] == "put":
+            self.data += base64.b64decode(req["data"])
+            return {"ok": True, "received": len(self.data), "done": len(self.data) == req["total"]}
+        if req["op"] == "pin":
+            return {"ok": True, "override": {req["game"]: {"core": req["core"], "driver": "-"}}}
+        if req["op"] == "hunt_end":
+            return {"ok": True, "removed": ["emulators/hunt/x"]}
+        return {"ok": True, "override": {}}
+
+
+class CarTests(Tmp):
+    """hunt.py put / pin / unpin / rollback / end (P3) against a fake garage."""
+
+    def setUp(self):
+        super().setUp()
+        self.stage = os.path.join(self.d, "stage")
+        os.makedirs(self.stage)
+        self.art = "rpcs3-etk_hunt-20261011-gt6-m01_armsx3-a74a0f3e0_linux_aarch64.AppImage"
+        self.blob = os.urandom(2 * hunt.PUT_CHUNK + 123)
+        with open(os.path.join(self.stage, self.art), "wb") as f:
+            f.write(self.blob)
+        self.calls, self.fail = [], None
+        self.saved = (hunt.HUNT_STAGE, hunt.garage_session)
+        hunt.HUNT_STAGE = self.stage
+        self.garages = []
+
+        def fake(timeout):
+            g = FakeGarage(self.calls, self.fail)
+            self.garages.append(g)
+            return g
+        hunt.garage_session = fake
+        self.write(grant())
+        self.raw = gl.load_grant(self.path, UID, NOW)[1]
+        self.audit = os.path.join(self.d, "hunt-20261011-gt6", "audit.jsonl")
+        gl.audit_append(self.audit, gl.sha256(self.raw), "issued", [], "ok", NOW)
+        gl.audit_append(self.audit, gl.sha256(self.raw), "minted", {"m": 1, "base": "a74a0f3e0"},
+                        {"artifact": self.art, "sha256": gl.sha256(self.blob)}, NOW)
+
+    def tearDown(self):
+        hunt.HUNT_STAGE, hunt.garage_session = self.saved
+        super().tearDown()
+
+    def run_hunt(self, *argv, now=NOW):
+        out = []
+        rc = hunt.main(list(argv), out.append, self.path, UID, now)
+        return rc, "\n".join(out)
+
+    def last(self):
+        e, p = gl.audit_verify(self.audit, gl.sha256(self.raw))
+        self.assertEqual(p, [])
+        return e[-1]
+
+    def test_put_chunked(self):
+        rc, text = self.run_hunt("put", "m01")
+        self.assertEqual(rc, 0, text)
+        self.assertEqual(bytes(self.garages[0].data), self.blob)
+        self.assertEqual([c["offset"] for c in self.calls], [0, hunt.PUT_CHUNK, 2 * hunt.PUT_CHUNK])
+        self.assertTrue(all(c["sha256"] == gl.sha256(self.blob) and c["total"] == len(self.blob) for c in self.calls))
+        self.assertEqual((self.last()["action"], self.last()["result"]["bytes"]), ("put", len(self.blob)))
+
+    def test_put_only_what_was_minted_here(self):
+        rc, text = self.run_hunt("put", "rpcs3-etk_hunt-20261011-gt6-m09_armsx3-deadbeef0_linux_aarch64.AppImage")
+        self.assertEqual(rc, 1)
+        self.assertIn("not minted under", text)
+        with open(os.path.join(self.stage, self.art), "r+b") as f:
+            f.write(b"X")
+        rc, text = self.run_hunt("put", self.art)
+        self.assertEqual(rc, 1)
+        self.assertIn("no longer matches", text)
+        self.assertEqual(self.calls, [])
+
+    def test_pin_uses_the_grants_game(self):
+        rc, _ = self.run_hunt("pin", "m01")
+        self.assertEqual(rc, 0)
+        self.assertEqual(self.calls, [{"op": "pin", "game": "BCUS98296", "core": self.art}])
+
+    def test_car_refusal_is_audited(self):
+        self.fail = "pin"
+        rc, text = self.run_hunt("pin", "m01")
+        self.assertEqual(rc, 1)
+        self.assertIn("Autonomy", text)
+        self.assertIn("error", self.last()["result"])
+
+    def test_undo_without_a_valid_grant(self):
+        later = gl.parse_iso("2026-10-11T12:00:00Z")      # the grant expired at 11:00
+        self.assertEqual(self.run_hunt("put", "m01", now=later)[0], 1)
+        for cmd, op in (("unpin", {"op": "unpin", "game": "BCUS98296"}), ("rollback", {"op": "unpin", "all": True}),
+                        ("end", {"op": "hunt_end"})):
+            rc, text = self.run_hunt(cmd, now=later)
+            self.assertEqual(rc, 0, text)
+            self.assertEqual(self.calls[-1], op)
+            self.assertEqual(self.last()["action"], cmd)
+        os.remove(self.path)
+        self.assertEqual(self.run_hunt("end")[0], 0)      # no grant at all: still undoes
+
+
 ETK = guard.ETK
 DENY, ALLOW = True, False
 # (command, grant valid?, denied?)
@@ -564,6 +677,17 @@ BASH_TABLE = [
     ("git checkout main", False, ALLOW),
     ("git -C /home/dave/etk-rpcs3-gtk checkout -b hunt/hunt-20261011-gt6", True, ALLOW),
     ("python3 tools/pitlink/pitlink.py garage launch game=BCUS98296", True, ALLOW),
+    ("python3 /home/dave/etk/tools/pitlink/pitlink.py garage put kind=core name=x", True, DENY),
+    ("python3 tools/pitlink/pitlink.py garage pin game=BCUS98296 core=x", True, DENY),
+    ("python3 tools/pitlink/pitlink.py garage hunt_status", False, ALLOW),
+    ("ssh root@SM8250.local 'echo on > /storage/.config/etk-autonomy'", False, DENY),
+    ("ssh root@169.254.170.2 \"sed -i s/expires_epoch=.*/expires_epoch=9999999999/ /storage/.config/etk-hunt.grant\"", True, DENY),
+    ("scp x.AppImage root@SM8250.local:/storage/games-internal/roms/etk/emulators/hunt/", True, DENY),
+    ("ssh root@SM8250.local 'cat /proc/uptime'", True, ALLOW),
+    ("python3 /home/dave/etk/tools/hunt/hunt.py end", False, ALLOW),
+    ("python3 /home/dave/etk/tools/hunt/hunt.py rollback", False, ALLOW),
+    ("python3 /home/dave/etk/tools/hunt/hunt.py put m01", False, DENY),
+    ("python3 /home/dave/etk/tools/hunt/hunt.py pin m01", True, ALLOW),
     ("git -C /home/dave/etk-rpcs3-gtk tag --sort=creatordate 2>/dev/null | tail -3", False, ALLOW),
     ("ssh flip2-12g 'cd /storage/k && ./kexec --version 2>&1'", False, ALLOW),
     ("ssh flip2-12g 'cd /storage/k && ./kexec -e'", False, DENY),

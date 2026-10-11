@@ -152,6 +152,14 @@ PITLINK_PROFILE_BODY = (
     "# ETK Pitlink (Pitstop > TOOLS). Engineer link into RPCS3 -- see "
     "docs/PITLINK_SPEC.md.\n" + "".join(e + "\n" for e in PITLINK_EXPORTS))
 
+# TOOLS > Autonomy (docs/AUTONOMY_SPEC.md §5): the operator's kill switch, AT THE CAR, for
+# an Engineer's autonomous crash hunt. A hunt also needs a grant the operator signed
+# (tools/hunt/grant.sh), so "on" alone changes nothing; "off" stops every hunt here at once:
+# the car daemon refuses put/pin and the launch wrapper ignores the hunt override (both read
+# this file at each request / launch). Default off: absent = off, so no install ever lets a
+# hunt act. on = the file holds "on".
+AUTONOMY_FILE = os.environ.get('AUTONOMY_FILE', "/storage/.config/etk-autonomy")
+
 # DRIVER BUILD selector (Stage IV — catalog of bindable Turnip .so builds).
 # Distinct from the env-var dials above: the dials tune whatever driver is
 # loaded (next-launch); the BUILD selector picks WHICH .so binds over the stock
@@ -2809,8 +2817,8 @@ def handle_telemetry_pad(state, etype, code, val):
 # actions clear RPCS3's caches, which is not what "Manage Shaders" promised.
 _TOOLS_MENU = ["Manage Shaders & Caches", "Install a staged PS3 Package",
                "Uninstall a Game", "Trigger Calibration", "Screenshot on L1+L2",
-               "Bog Sampler", "Pitlink (Engineer link)", "Install PS3 Firmware",
-               "Check for ETK Updates"]
+               "Bog Sampler", "Pitlink (Engineer link)", "Autonomy (Engineer hunts)",
+               "Install PS3 Firmware", "Check for ETK Updates"]
 _TOOLS_CACHE_IDX = 0        # Manage Shaders & Caches sub-screen entry
 _TOOLS_INSTALL_IDX = 1      # staged-PKG installer
 _TOOLS_UNINSTALL_IDX = 2    # game uninstaller
@@ -2823,8 +2831,9 @@ _TOOLS_TRIGCAL_IDX = 3      # L2/R2 trigger deadzone calibration (H7)
 _TOOLS_SCREENSHOT_IDX = 4
 _TOOLS_BOG_IDX = 5          # R1+DPAD-Down bog-profiler chord on/off
 _TOOLS_PITLINK_IDX = 6      # Pitlink engineer link on/off (profile.d, next launch)
-_TOOLS_FIRMWARE_IDX = 7     # headless PS3 firmware (PS3UPDAT.PUP) installer
-_TOOLS_UPDATE_IDX = 8       # hostless self-update (middleware layer)
+_TOOLS_AUTONOMY_IDX = 7     # hunt kill switch on/off (live: daemon + wrapper read it)
+_TOOLS_FIRMWARE_IDX = 8     # headless PS3 firmware (PS3UPDAT.PUP) installer
+_TOOLS_UPDATE_IDX = 9       # hostless self-update (middleware layer)
 
 
 def _read_screenshot_mode():
@@ -2977,6 +2986,63 @@ def _pitlink_status(was, now):
     if now == was:
         return f"Pitlink: still {now} - could not save the setting"
     return f"Pitlink: {now} - USB now, game at next game launch"
+
+
+def _read_autonomy_state():
+    """'on' iff AUTONOMY_FILE holds exactly "on" (trailing newlines aside) -- the test the
+    car daemon and the launch wrapper's `$(cat ...)` apply. Anything else = 'off'."""
+    try:
+        with open(AUTONOMY_FILE) as f:
+            return "on" if f.read().rstrip("\n") == "on" else "off"
+    except Exception:
+        return "off"
+
+
+def _toggle_autonomy():
+    """Flip off <-> on: ON writes the file atomically (dot-tmp, fsync, os.replace), OFF
+    removes it. Returns the state READ BACK, never the intended one."""
+    path = AUTONOMY_FILE
+    d = os.path.dirname(path) or "."
+    if _read_autonomy_state() == "off":
+        tmp = os.path.join(d, "." + os.path.basename(path) + ".tmp")
+        try:
+            os.makedirs(d, exist_ok=True)
+            with open(tmp, "w") as f:
+                f.write("on\n")
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, path)
+        except Exception as e:
+            _log(f"autonomy: could not write {path}: {e}")
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+    else:
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            _log(f"autonomy: could not remove {path}: {e}")
+    try:
+        fd = os.open(d, os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    except Exception:
+        pass
+    return _read_autonomy_state()
+
+
+def _autonomy_status(was, now):
+    """Footer line for the Autonomy toggle (fits w-6 = 54 cols on the 60-col panel)."""
+    if now == was:
+        return f"Autonomy: still {now} - could not save the setting"
+    if now == "on":
+        return "Autonomy: on - a granted hunt may act on this car"
+    return "Autonomy: off - hunts stopped at this car, now"
 
 
 def _tools_env():
@@ -6263,7 +6329,12 @@ def draw_tools(stdscr, state):
             pass
 
     if mode == "menu":
-        y += 1  # extra breathing line between the chrome rules and the title
+        # Extra breathing line between the chrome rules and the title -- unless it is the
+        # row that would cost the help band: ten entries (Autonomy, 2026-10-10) from row 8
+        # leave no room for it on the rig's 22-row panel, and the help IS the instructions
+        # for Install, Firmware and Autonomy. The whole list still draws whenever it fits.
+        if 5 + 3 + len(_TOOLS_MENU) + 2 <= h - 3:
+            y += 1
         put(y, 2, "TOOLS", curses.A_BOLD); y += 1
         put(y, 2, "-" * (w - 4), curses.A_DIM); y += 1
         # Live background-install line. The toasts are the primary surface,
@@ -6310,6 +6381,8 @@ def draw_tools(stdscr, state):
                 label = f"{label}: {_read_bog_chord_state()}"
             elif i == _TOOLS_PITLINK_IDX:
                 label = f"{label}: {_read_pitlink_state()}"
+            elif i == _TOOLS_AUTONOMY_IDX:
+                label = f"{label}: {_read_autonomy_state()}"
             sel = (i == cur)
             put(y, 4, "> " if sel else "  ",
                 curses.color_pair(1) if sel else curses.A_NORMAL)
@@ -6357,6 +6430,11 @@ def draw_tools(stdscr, state):
             put(ty, 4, "Lets the engineer's computer see and drive RPCS3.",
                 curses.A_DIM)
             put(ty + 1, 4, "on / off  (CONFIRM toggles; applies next launch)",
+                curses.A_DIM)
+        elif cur == _TOOLS_AUTONOMY_IDX:
+            put(ty, 4, "Lets a granted Engineer hunt swap cores here.",
+                curses.A_DIM)
+            put(ty + 1, 4, "on / off  (CONFIRM toggles; off stops it now)",
                 curses.A_DIM)
         elif cur == _TOOLS_FIRMWARE_IDX:
             put(ty, 4, "Firmware drop folder (place PS3UPDAT.PUP):",
@@ -7044,6 +7122,9 @@ def _tools_select(state):
         elif state.get("tools_cursor", 0) == _TOOLS_PITLINK_IDX:   # Pitlink
             was = _read_pitlink_state()
             state["status"] = _pitlink_status(was, _toggle_pitlink())
+        elif state.get("tools_cursor", 0) == _TOOLS_AUTONOMY_IDX:  # Autonomy
+            was = _read_autonomy_state()
+            state["status"] = _autonomy_status(was, _toggle_autonomy())
         # Explicit, not a bare else: an unmatched index must do nothing rather
         # than silently cycle the screenshot chord.
         elif state.get("tools_cursor", 0) == _TOOLS_SCREENSHOT_IDX:  # Screenshot

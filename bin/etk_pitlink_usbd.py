@@ -13,13 +13,16 @@ Garage (the link's second target, JSON lines): launch / running / games / notify
 through EmulationStation's own local API (127.0.0.1:1234) -- a launch is exactly a menu launch
 (runemu.sh, the per-title core wrapper, the human's pad as Player 1); log / dump_threads (RPCS3's
 log and ARMSX3's on-request thread dump); debug_env (allow-listed ARMSX3_* env for the next
-launch, profile.d 099).
+launch, profile.d 099); hunt_status / put / pin / unpin / hunt_end -- the car's side of a hunt
+grant (docs/AUTONOMY_SPEC.md §3.3, §4).
 
 Safety: configfs is volatile (a reboot restores stock); functionfs is mounted no_disconnect=1
 so a dead daemon cannot unbind the gadget under NCM; the attach rebinds the UDC and VERIFIES
 NCM kept its address, else rolls back to NCM-only. Log: journal (stderr).
 """
+import base64
 import errno
+import hashlib
 import json
 import os
 import re
@@ -56,6 +59,20 @@ DEBUG_ENV_FILE = os.environ.get("ETK_DEBUG_ENV_FILE", "/storage/.config/profile.
 DEBUG_ENV_KEY = re.compile(r"^ARMSX3_[A-Z0-9_]+$")
 DEBUG_ENV_VAL = re.compile(r"^[A-Za-z0-9_.,:-]*$")
 SERIAL = re.compile(r"\b([A-Z]{4}\d{5})\b")
+# Hunt grants (docs/AUTONOMY_SPEC.md §3.3, §4): the car's own check, independent of the host.
+# put / pin write only emulators/hunt/ and drivers/hunt/, and only while the rig grant that
+# grant.sh mirrored here is unexpired by the car's clock, names THIS car's USB serial, and the
+# operator's Pitstop TOOLS -> Autonomy switch is on. Undoing (unpin, hunt_end) needs neither.
+HUNT_GRANT_FILE = os.environ.get("ETK_HUNT_GRANT_FILE", "/storage/.config/etk-hunt.grant")
+AUTONOMY_FILE = os.environ.get("ETK_AUTONOMY_FILE", "/storage/.config/etk-autonomy")
+ETK_ROOT = os.environ.get("ETK_ROOT", "/storage/games-internal/roms/etk")
+GADGET_SERIAL = G + "/strings/0x409/serialnumber"
+HUNT_KINDS = {  # kind -> (dir under ETK_ROOT, name rule, size cap)
+    "core": ("emulators/hunt", re.compile(r"^rpcs3-etk_hunt-[A-Za-z0-9._-]+\.AppImage$"), 512 << 20),
+    "driver": ("drivers/hunt", re.compile(r"^etk_turnip_hunt-[A-Za-z0-9._-]+\.so$"), 128 << 20),
+}
+PUT_CHUNK_MAX = 1 << 20
+CLOCK_SKEW = 300
 
 # ---- FunctionFS ABI (include/uapi/linux/usb/functionfs.h) ---------------------------------
 DESC_MAGIC_V2, STRINGS_MAGIC = 3, 2
@@ -324,7 +341,10 @@ def garage(req):
         return dump_threads(float(req.get("timeout", 6.0)))
     if op == "debug_env":
         return debug_env(req)
-    raise ValueError(f"unknown garage op {op!r} (launch, running, games, notify, emukill, status, log, dump_threads, debug_env)")
+    if op in HUNT_OPS:
+        return HUNT_OPS[op](req)
+    raise ValueError(f"unknown garage op {op!r} (launch, running, games, notify, emukill, status, log, dump_threads, "
+                     f"debug_env, {', '.join(HUNT_OPS)})")
 
 
 def log_size():
@@ -415,6 +435,232 @@ def debug_env(req):
         os.close(fd)
     log(f"garage: debug_env set {' '.join(f'{k}={v}' for k, v in sorted(env.items()))}")
     return {"file": DEBUG_ENV_FILE, "env": read_debug_env()}
+
+
+# ---- hunt ops (docs/AUTONOMY_SPEC.md §3.3) -------------------------------------------------
+
+def hunt_dir(kind):
+    return os.path.join(ETK_ROOT, HUNT_KINDS[kind][0])
+
+
+def override_file():
+    return os.path.join(hunt_dir("core"), "override.tsv")
+
+
+def rig_grant():
+    """grant.sh's key=value mirror, or None."""
+    try:
+        with open(HUNT_GRANT_FILE) as f:
+            return dict(ln.rstrip("\n").split("=", 1) for ln in f if "=" in ln)
+    except OSError:
+        return None
+
+
+def own_serial():
+    return (rd(GADGET_SERIAL) or "").strip()
+
+
+def autonomy():
+    """Exactly "on" (trailing newlines aside): Pitstop's and the launch wrapper's test."""
+    try:
+        with open(AUTONOMY_FILE) as f:
+            return "on" if f.read().rstrip("\n") == "on" else "off"
+    except OSError:
+        return "off"
+
+
+def gate_problems(game=None, now=None):
+    now = time.time() if now is None else now
+    g = rig_grant()
+    if g is None:
+        return ["no rig grant (the operator issues one: tools/hunt/grant.sh issue)"]
+    p = []
+    try:
+        exp, iss = int(g.get("expires_epoch", "0")), int(g.get("issued_epoch", "0"))
+    except ValueError:
+        return ["the rig grant is malformed"]
+    if now >= exp:
+        p.append(f"the rig grant expired at {g.get('expires_at')}")
+    if now < iss - CLOCK_SKEW:
+        p.append("the car's clock is behind the grant's issue time (unsynced?): expiry cannot be judged")
+    if g.get("usb_serial") != own_serial():
+        p.append("the rig grant names another car's USB serial")
+    if autonomy() != "on":
+        p.append("Pitstop TOOLS -> Autonomy is off")
+    if game is not None and game != g.get("game"):
+        p.append(f"game {game} is outside the grant ({g.get('game')})")
+    return p
+
+
+def gate(game=None):
+    p = gate_problems(game)
+    if p:
+        raise PermissionError("hunt refused at the car: " + "; ".join(p))
+    return rig_grant()
+
+
+def read_override():
+    rows = {}
+    try:
+        with open(override_file()) as f:
+            for ln in f:
+                parts = ln.rstrip("\n").split("\t")
+                if len(parts) == 3 and not ln.startswith("#"):
+                    rows[parts[0]] = {"core": parts[1], "driver": parts[2]}
+    except OSError:
+        pass
+    return rows
+
+
+def write_atomic(path, data):
+    d = os.path.dirname(path)
+    os.makedirs(d, exist_ok=True)
+    tmp = os.path.join(d, "." + os.path.basename(path) + ".tmp")
+    with open(tmp, "wb") as f:
+        f.write(data)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+    fd = os.open(d, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def write_override(rows):
+    body = "# ETK hunt override (garage pin) -- the launch wrapper honours it only under a valid rig grant\n"
+    body += "".join(f"{g}\t{r['core']}\t{r['driver']}\n" for g, r in sorted(rows.items()))
+    write_atomic(override_file(), body.encode())
+
+
+def file_sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for b in iter(lambda: f.read(1 << 20), b""):
+            h.update(b)
+    return h.hexdigest()
+
+
+def hunt_files(kind):
+    out = []
+    try:
+        names = sorted(os.listdir(hunt_dir(kind)))
+    except OSError:
+        return out
+    for n in names:
+        if HUNT_KINDS[kind][1].match(n):
+            sha = (rd(os.path.join(hunt_dir(kind), n + ".sha256")) or "").split(" ")[0]
+            out.append({"name": n, "size": os.path.getsize(os.path.join(hunt_dir(kind), n)), "sha256": sha})
+    return out
+
+
+def hunt_status(req):
+    return {"grant": rig_grant(), "refusals": gate_problems(), "autonomy": autonomy(), "serial": own_serial(),
+            "now": int(time.time()), "override": read_override(),
+            "files": {k: hunt_files(k) for k in HUNT_KINDS}}
+
+
+def hunt_put(req):
+    """{"kind": core|driver, "name", "total", "sha256", "offset", "data": base64} -- sequential
+    chunks into .<name>.part; the last one verifies the sha256 and renames into place."""
+    kind, name = req.get("kind"), str(req.get("name", ""))
+    if kind not in HUNT_KINDS or not HUNT_KINDS[kind][1].match(name):
+        raise ValueError(f"put: {kind}/{name!r} is not a hunt artifact name")
+    gate()
+    total, offset, want = int(req["total"]), int(req["offset"]), str(req["sha256"])
+    data = base64.b64decode(req.get("data", ""), validate=True)
+    if not 0 < total <= HUNT_KINDS[kind][2] or len(data) > PUT_CHUNK_MAX or offset + len(data) > total:
+        raise ValueError("put: size out of bounds")
+    d = hunt_dir(kind)
+    final, part = os.path.join(d, name), os.path.join(d, "." + name + ".part")
+    if os.path.exists(final):
+        if file_sha256(final) == want:
+            return {"received": total, "done": True, "sha256": want, "already": True}
+        raise FileExistsError(f"put: {name} exists with different content (hunt artifacts are never replaced)")
+    os.makedirs(d, exist_ok=True)
+    if offset == 0:
+        import shutil
+        if shutil.disk_usage(d).free < total + (256 << 20):
+            raise OSError(errno.ENOSPC, f"put: not enough space for {total} bytes in {d}")
+        open(part, "wb").close()
+    elif not os.path.exists(part) or os.path.getsize(part) != offset:
+        raise ValueError(f"put: chunk at {offset} out of sequence (restart from 0)")
+    with open(part, "ab") as f:
+        f.write(data)
+    got = offset + len(data)
+    if got < total:
+        return {"received": got, "done": False}
+    sha = file_sha256(part)
+    if sha != want:
+        os.remove(part)
+        raise ValueError(f"put: sha256 mismatch ({sha[:12]} != {want[:12]}): discarded")
+    if kind == "core":
+        os.chmod(part, 0o755)
+    os.replace(part, final)
+    write_atomic(final + ".sha256", f"{sha}  {name}\n".encode())
+    log(f"garage: hunt put {kind} {name} {total} B sha {sha[:12]}")
+    return {"received": got, "done": True, "sha256": sha}
+
+
+def hunt_pin(req):
+    """{"game", "core"?, "driver"?} -- the wrapper runs this game on these hunt artifacts."""
+    g = gate(req.get("game"))
+    row = {"core": "-", "driver": "-"}
+    for kind in HUNT_KINDS:
+        name = req.get(kind)
+        if not name:
+            continue
+        path = os.path.join(hunt_dir(kind), str(name))
+        if not HUNT_KINDS[kind][1].match(str(name)) or not os.path.isfile(path):
+            raise FileNotFoundError(f"pin: no hunt {kind} {name!r} on the car (put it first)")
+        side = (rd(path + ".sha256") or "").split(" ")[0]
+        if not side or file_sha256(path) != side:
+            raise ValueError(f"pin: {name} does not match its .sha256: refusing")
+        row[kind] = str(name)
+    if row == {"core": "-", "driver": "-"}:
+        raise ValueError("pin: name a core and/or a driver")
+    rows = read_override()
+    rows[g["game"]] = row
+    write_override(rows)
+    log(f"garage: hunt pin {g['game']} core={row['core']} driver={row['driver']}")
+    return {"override": read_override()}
+
+
+def hunt_unpin(req):
+    """{"game"} or {"all": true}. Undoing needs no grant."""
+    rows = read_override()
+    if req.get("all"):
+        rows = {}
+    else:
+        rows.pop(str(req.get("game", "")), None)
+    write_override(rows)
+    log(f"garage: hunt unpin {'all' if req.get('all') else req.get('game')}")
+    return {"override": read_override()}
+
+
+def hunt_end(req):
+    """Back to the certified car: no overrides, no hunt artifacts, no debug env, no rig grant."""
+    removed = []
+    for kind in HUNT_KINDS:
+        d = hunt_dir(kind)
+        for n in (os.listdir(d) if os.path.isdir(d) else []):
+            try:
+                os.remove(os.path.join(d, n))
+                removed.append(f"{HUNT_KINDS[kind][0]}/{n}")
+            except OSError:
+                pass
+    debug_env({"action": "clear"})
+    try:
+        os.remove(HUNT_GRANT_FILE)
+        removed.append(HUNT_GRANT_FILE)
+    except FileNotFoundError:
+        pass
+    log(f"garage: hunt_end removed {len(removed)} files")
+    return {"removed": removed}
+
+
+HUNT_OPS = {"hunt_status": hunt_status, "put": hunt_put, "pin": hunt_pin, "unpin": hunt_unpin, "hunt_end": hunt_end}
 
 
 def dump_threads(timeout=6.0):

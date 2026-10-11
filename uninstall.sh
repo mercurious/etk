@@ -262,6 +262,13 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
     rm -f /storage/.config/profile.d/099-etk-debug-env /storage/.config/profile.d/.099-etk-debug-env.tmp
     echo "    Removed: 099-etk-debug-env (Pitlink debug env cleared)"
 
+    # Hunt grants (docs/AUTONOMY_SPEC.md): the rig grant and the Pitstop TOOLS > Autonomy
+    # switch live OUTSIDE ETK_ROOT; the hunt cores/drivers + override are removed here too,
+    # because the keep-vault branch below preserves emulators/.
+    rm -f /storage/.config/etk-autonomy /storage/.config/.etk-autonomy.tmp /storage/.config/etk-hunt.grant /storage/.config/etk-hunt.grant.tmp
+    rm -rf $ETK_ROOT/emulators/hunt $ETK_ROOT/drivers/hunt
+    echo "    Removed: hunt grant, Autonomy switch, hunt cores/drivers (no hunt can act)"
+
     # RPCS3 runtime env flags (install.sh STEP 6.56): same OUTSIDE-ETK_ROOT
     # profile.d story — remove or the flags keep reaching RPCS3 post-uninstall.
     rm -f /storage/.config/profile.d/096-etk-rpcs3-flags

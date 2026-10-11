@@ -84,17 +84,13 @@ def spawn_broker():
                          stderr=logf, start_new_session=True, close_fds=True)
 
 
-def garage(req, timeout=30.0, addr=GARAGE_SOCKET):
-    """One request to the car's garage service (launch / running / games / log / dump_threads
-    ...) over the USB link: JSON line out, JSON line back. Starts the broker if needed."""
-    import json
-    deadline = time.monotonic() + timeout
+def _garage_connect(addr, deadline):
     spawned = False
     while True:
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
             s.connect("\0" + addr.lstrip("@"))
-            break
+            return s
         except (ConnectionRefusedError, FileNotFoundError):
             s.close()
             if time.monotonic() >= deadline:
@@ -103,18 +99,49 @@ def garage(req, timeout=30.0, addr=GARAGE_SOCKET):
                 spawn_broker()
                 spawned = True
             time.sleep(0.2)
-    with s:
-        s.settimeout(max(1.0, deadline - time.monotonic()))
-        f = s.makefile("rwb")
-        f.write((json.dumps(req) + "\n").encode())
-        f.flush()
-        line = f.readline()
-    if not line:
-        raise PitlinkClosed("garage: the car closed the session (USB link down?)")
-    rep = json.loads(line)
-    if not rep.get("ok"):
-        raise PitlinkError(f"garage {req.get('op')}: {rep.get('err')}")
-    return rep
+
+
+class GarageSession:
+    """Several garage requests over ONE session (a chunked hunt put is hundreds of them).
+    `with GarageSession() as g: g.call({...})` -- each call: a JSON line out, one back."""
+
+    def __init__(self, timeout=60.0, addr=GARAGE_SOCKET):
+        self.timeout = timeout
+        self.sock = _garage_connect(addr, time.monotonic() + timeout)
+        self.f = self.sock.makefile("rwb")
+
+    def call(self, req, timeout=None):
+        import json
+        self.sock.settimeout(timeout or self.timeout)
+        self.f.write((json.dumps(req) + "\n").encode())
+        self.f.flush()
+        line = self.f.readline()
+        if not line:
+            raise PitlinkClosed("garage: the car closed the session (USB link down?)")
+        rep = json.loads(line)
+        if not rep.get("ok"):
+            raise PitlinkError(f"garage {req.get('op')}: {rep.get('err')}")
+        return rep
+
+    def close(self):
+        try:
+            self.f.close()
+        finally:
+            self.sock.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+
+def garage(req, timeout=30.0, addr=GARAGE_SOCKET):
+    """One request to the car's garage service (launch / running / games / log / dump_threads
+    ...) over the USB link: JSON line out, JSON line back. Starts the broker if needed."""
+    deadline = time.monotonic() + timeout
+    with GarageSession(timeout, addr) as g:
+        return g.call(req, timeout=max(1.0, deadline - time.monotonic()))
 
 
 def open_socket(addr, timeout=5.0):

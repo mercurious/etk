@@ -15,9 +15,18 @@ state/hunt/<id>/audit.jsonl, whether it acts or refuses.
                                 one rpcs3 mint on etk-cloud: the base commit + the patch
                                 committed on fork branch hunt/<id>, through forge.sh --hunt,
                                 staged to emulators/hunt/ (P2). Long: run it in the background.
+  hunt.py put mNN|<artifact>    copy a core minted under THIS grant (sha as audited) to the
+                                car's emulators/hunt/ over the USB garage, chunked (P3)
+  hunt.py pin mNN|<artifact>    the grant's game launches on it (the wrapper's hunt override)
+  hunt.py unpin | rollback      drop the game's override | every override: the next launch
+                                runs the certified/pinned core again
+  hunt.py end                   the car back to certified: no overrides, no hunt files, no
+                                debug env, no rig grant (the host grant stays until expiry/revoke)
+unpin, rollback and end only undo, so they run without a valid grant too. The car checks its
+own copy of the grant and Pitstop TOOLS -> Autonomy before any put/pin.
 
 Not yet built (each validates, audits the attempt and refuses with its phase):
-  put, pin, unpin, rollback, end (P3: car daemon + wrapper) · trial, recover, report (P4)
+  trial, recover, report (P4: the supervised hunt)
 Exit: 0 ok · 1 no valid grant / refused / failed · 3 not built yet.
 """
 import argparse
@@ -38,8 +47,9 @@ ETK = os.path.abspath(os.path.join(HERE, "..", ".."))
 FORGE = [os.path.join(ETK, "forge.sh")]
 HUNT_STAGE = os.path.join(ETK, "emulators", "hunt")
 READ_ONLY = ("status", "audit", "check")
-LATER = {"put": "P3", "pin": "P3", "unpin": "P3", "rollback": "P3", "end": "P3",
-         "trial": "P4", "recover": "P4", "report": "P4"}
+UNDO = ("unpin", "rollback", "end")
+LATER = {"trial": "P4", "recover": "P4", "report": "P4"}
+PUT_CHUNK = 768 << 10                    # raw bytes per garage put (the car takes <= 1 MiB)
 FORK_FILES = ("scripts/package-appimage.sh", "scripts/verify-markers.sh")
 
 
@@ -93,7 +103,26 @@ def probe(g, out):
     out("probe     node " + ("unchanged, always-free" if not np else "; ".join(np)))
     on = g["rig"]["usb_serial"] in grantctl.host_usb_serials()
     out(f"probe     hunt car on the host's USB: {'yes' if on else 'NO'}")
-    return 0 if on and not np else 1
+    car_ok = False
+    if on:
+        try:
+            with garage_session(20.0) as gs:
+                st = gs.call({"op": "hunt_status"})
+            rg = st.get("grant") or {}
+            out(f"car       grant {rg.get('id', 'none')}  autonomy {st.get('autonomy')}  "
+                + ("ACCEPTS hunt ops" if not st.get("refusals") else "refuses: " + "; ".join(st["refusals"])))
+            out(f"car       override {st.get('override') or '{}'}  cores {[f['name'] for f in st['files']['core']]}")
+            car_ok = rg.get("id") == g["id"] and not st.get("refusals")
+        except Exception as e:
+            out(f"car       hunt_status: {e}")
+    return 0 if on and not np and car_ok else 1
+
+
+def garage_session(timeout):
+    """The USB garage (tools/pitlink/client.py); tests replace this."""
+    sys.path.insert(0, os.path.join(HERE, "..", "pitlink"))
+    from client import GarageSession
+    return GarageSession(timeout)
 
 
 def cmd_audit(a, g, raw, problems, out, now, grant_path):
@@ -226,6 +255,77 @@ def mint_locked(a, g, hdir, out, audit, genesis):
     return 0 if action in ("minted", "mint dry-run") else 1
 
 
+# ---- the car (P3) --------------------------------------------------------------------------
+
+def minted(entries, which):
+    """mNN or an artifact name -> the 'minted' audit result under THIS grant, or None."""
+    for e in reversed(entries):
+        if e["action"] != "minted":
+            continue
+        r = e["result"]
+        if which == r.get("artifact") or (which.startswith("m") and which[1:].isdigit()
+                                         and int(which[1:]) == e["args"].get("m")):
+            return r
+    return None
+
+
+def cmd_car(a, g, raw, out, audit, entries):
+    """put / pin / unpin / rollback / end. -> rc. Audits (when a grant file exists) every attempt."""
+    genesis = gl.sha256(raw) if raw else None
+
+    def record(action, args, result):
+        if genesis:
+            gl.audit_append(audit, genesis, action, args, result)
+
+    try:
+        if a.cmd in ("put", "pin"):
+            m = minted(entries, a.what)
+            if not m:
+                record(a.cmd, [a.what], {"refused": "not minted under this grant"})
+                out(f"hunt {a.cmd}: REFUSED -- {a.what} was not minted under grant {g['id']} (hunt.py audit)")
+                return 1
+            path = os.path.join(HUNT_STAGE, m["artifact"])
+            if a.cmd == "put":
+                with open(path, "rb") as f:
+                    data = f.read()
+                if gl.sha256(data) != m["sha256"]:
+                    record("put", [m["artifact"]], {"refused": "local file differs from the minted sha"})
+                    out(f"hunt put: REFUSED -- {path} no longer matches the sha minted under the grant")
+                    return 1
+                t0 = time.time()
+                with garage_session(120.0) as gs:
+                    for off in range(0, len(data), PUT_CHUNK):
+                        import base64
+                        rep = gs.call({"op": "put", "kind": "core", "name": m["artifact"], "total": len(data),
+                                       "sha256": m["sha256"], "offset": off,
+                                       "data": base64.b64encode(data[off:off + PUT_CHUNK]).decode()})
+                secs = round(time.time() - t0, 1)
+                record("put", [m["artifact"]], {"sha256": m["sha256"], "bytes": len(data), "secs": secs,
+                                                "already": bool(rep.get("already"))})
+                out(f"hunt put: {m['artifact']} on the car ({len(data) >> 20} MiB in {secs} s, sha verified there)")
+                return 0
+            with garage_session(60.0) as gs:
+                rep = gs.call({"op": "pin", "game": g["game"], "core": m["artifact"]})
+            record("pin", [g["game"], m["artifact"]], {"override": rep.get("override")})
+            out(f"hunt pin: {g['game']} -> {m['artifact']} from its next launch")
+            return 0
+        req = {"unpin": {"op": "unpin", "game": (g or {}).get("game", "")},
+               "rollback": {"op": "unpin", "all": True}, "end": {"op": "hunt_end"}}[a.cmd]
+        with garage_session(60.0) as gs:
+            rep = gs.call(req)
+        rep.pop("ok", None)
+        record(a.cmd, [], rep)
+        out(f"hunt {a.cmd}: done -- {json.dumps(rep)[:300]}")
+        if a.cmd == "end":
+            out("hunt end: the car is back to certified; the host grant stays until it expires or the "
+                "operator runs tools/hunt/grant.sh revoke")
+        return 0
+    except Exception as e:
+        record(a.cmd, [getattr(a, "what", "")], {"error": str(e)[:300]})
+        out(f"hunt {a.cmd}: FAILED -- {e}")
+        return 1
+
+
 def main(argv=None, out=print, grant_path=gl.GRANT_PATH, owner_uid=0, now=None):
     ap = argparse.ArgumentParser(prog="hunt.py", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -245,6 +345,10 @@ def main(argv=None, out=print, grant_path=gl.GRANT_PATH, owner_uid=0, now=None):
     s.add_argument("--marker")
     s.add_argument("--label", default="")
     s.add_argument("--dry-run", action="store_true")
+    for name in ("put", "pin"):
+        sub.add_parser(name).add_argument("what", help="mNN or the artifact name")
+    for name in UNDO:
+        sub.add_parser(name)
     for name in LATER:
         sub.add_parser(name, add_help=False)
     a, a.rest = ap.parse_known_args(argv)
@@ -255,6 +359,10 @@ def main(argv=None, out=print, grant_path=gl.GRANT_PATH, owner_uid=0, now=None):
     if a.cmd in READ_ONLY:
         return {"status": cmd_status, "audit": cmd_audit, "check": cmd_check}[a.cmd](a, g, raw, problems, out, now, grant_path)
 
+    if a.cmd in UNDO and (g is None or problems):   # undoing never needs a valid grant
+        audit = os.path.join(gl.hunt_dir(g["id"], grant_path), "audit.jsonl") if g else None
+        ok_chain = g is not None and not gl.audit_verify(audit, gl.sha256(raw))[1]
+        return cmd_car(a, g, raw if ok_chain else None, out, audit, [])
     if g is None or problems:
         out(f"hunt {a.cmd}: REFUSED -- no valid grant ({'; '.join(problems)})")
         return 1
@@ -265,6 +373,8 @@ def main(argv=None, out=print, grant_path=gl.GRANT_PATH, owner_uid=0, now=None):
         return 1
     if a.cmd == "mint":
         return cmd_mint(a, g, raw, out, now, grant_path, audit)
+    if a.cmd in ("put", "pin") + UNDO:
+        return cmd_car(a, g, raw, out, audit, entries)
     gl.audit_append(audit, gl.sha256(raw), a.cmd, a.rest, f"not built ({LATER[a.cmd]})", now)
     out(f"hunt {a.cmd}: grant {g['id']} is valid, but {a.cmd} lands in {LATER[a.cmd]} "
         f"(docs/AUTONOMY_SPEC.md §10); recorded in the audit")

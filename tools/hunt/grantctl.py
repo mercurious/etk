@@ -300,8 +300,8 @@ def issue(a, probes, confirm, signer, out=print, now=None, grant_path=gl.GRANT_P
                     {"mode": g["mode"], "sha": sha}, now)
 
     body = (f"id={g['id']}\ngame={g['game']}\nexpires_at={g['expires_at']}\n"
-            f"expires_epoch={int(gl.parse_iso(g['expires_at']))}\nusb_serial={g['rig']['usb_serial']}\n"
-            f"lanes={','.join(a.lanes)}\n")
+            f"expires_epoch={int(gl.parse_iso(g['expires_at']))}\nissued_epoch={int(gl.parse_iso(g['issued_at']))}\n"
+            f"usb_serial={g['rig']['usb_serial']}\nlanes={','.join(a.lanes)}\n")
     if signer["rig_write"](rig, body):
         out(f"rig grant mirrored to {a.rig}:{RIG_GRANT}")
     else:

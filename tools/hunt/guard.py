@@ -9,8 +9,10 @@ Always denied (TRACK_MANUAL §1.1, §1.5), grant or not:
   running forge.sh, tools/forge/lane_*.sh, tools/rocknix-bin/build_*.sh, install.sh,
   uninstall.sh, etk-install.ps1 (a `bash -n` syntax check is fine; reading them is fine)
   gh release create|upload|edit|delete|delete-asset · creating/deleting a git tag ·
-  pushing tags · reboot/poweroff/halt (locally or over ssh) · grant.sh issue
-hunt.py: status/audit/check always; anything else only under a valid grant.
+  pushing tags · reboot/poweroff/halt (locally or over ssh) · grant.sh issue ·
+  ssh/scp/rsync naming the car's hunt state (etk-autonomy, etk-hunt.grant, hunt/ dirs)
+hunt.py: status/audit/check and the undo commands (unpin/rollback/end) always; anything else
+only under a valid grant. `pitlink.py garage put|pin` always: those go through hunt.py.
 While a grant is valid, the enforcement surface is frozen: no edits to tools/hunt/,
 .claude/ settings or ~/.claude/hooks, and no git command that restores etk files from local history.
 
@@ -34,7 +36,12 @@ SHELLS = {"bash", "sh", "dash", "zsh", "ksh", "busybox", "pwsh", "powershell"}
 PYTHONS = re.compile(r"^python[\d.]*$")
 SEPARATORS = {";", "&&", "||", "|", "&", "|&", "(", ")", ";;", "{", "}", "!"}
 SSH_ARG_OPTS = set("bcDEeFIiJLlmOopQRSWw")
-HUNT_READ_ONLY = {"status", "audit", "check", "-h", "--help", None}
+# The car's hunt state changes only through the garage daemon (validated) and Pitstop (the
+# operator's switch): a remote shell that names it -- to flip Autonomy on, rewrite the rig
+# grant, drop a core into hunt/ -- is self-escalation at the car.
+CAR_HUNT_STATE = ("etk-autonomy", "etk-hunt.grant", "emulators/hunt", "drivers/hunt", "override.tsv")
+REMOTE = {"ssh", "scp", "rsync", "sftp"}
+HUNT_NO_GRANT = {"status", "audit", "check", "unpin", "rollback", "end", "-h", "--help", None}   # read or undo
 # rewrite local files from local history; pull/merge/rebase (integrating origin, §1.6) stay open
 GIT_TREE_WRITERS = {"checkout", "switch", "reset", "restore", "stash", "apply", "am", "cherry-pick",
                     "revert", "clean", "rm", "mv"}
@@ -167,6 +174,9 @@ def judge_argv(argv, cwd, grant_ok, depth):
     if not argv:
         return None
     b = os.path.basename(argv[0])
+    if b in REMOTE and any(x in t for t in argv[1:] for x in CAR_HUNT_STATE):
+        return ("the car's hunt state (Autonomy switch, rig grant, hunt/ files) changes only through "
+                "tools/hunt/hunt.py and Pitstop; read it with `hunt.py status --probe`")
     inner = ssh_inner(argv)
     if inner:
         return judge(inner, "/", grant_ok, depth + 1)
@@ -210,8 +220,10 @@ def judge_argv(argv, cwd, grant_ok, depth):
             argv, b = argv[script:], os.path.basename(argv[script])
     if b == "hunt.py":
         sub = next((x for x in argv[1:] if not x.startswith("-")), None)
-        if sub not in HUNT_READ_ONLY and not grant_ok() and not {"-h", "--help"} & set(argv[1:]):
+        if sub not in HUNT_NO_GRANT and not grant_ok() and not {"-h", "--help"} & set(argv[1:]):
             return f"hunt.py {sub} needs a valid hunt grant (tools/hunt/hunt.py status says why there is none)"
+    if b == "pitlink.py" and argv[1:2] == ["garage"] and len(argv) > 2 and argv[2] in ("put", "pin"):
+        return f"garage {argv[2]} is a hunt act: run it as tools/hunt/hunt.py {argv[2]} (validated + audited)"
     if grant_ok():
         targets = list(redirs)
         if b in FILE_WRITERS or (b in ("sed", "perl") and any(x.startswith("-i") for x in argv[1:])):

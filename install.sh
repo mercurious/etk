@@ -3100,6 +3100,42 @@ if [ -n "$SERIAL" ] && [ -f "${RPCS3_CORE_MAP:-}" ]; then
     fi
 fi
 
+# HUNT OVERRIDE (docs/AUTONOMY_SPEC.md §4): an Engineer's crash hunt may run THIS title on
+# a core / Turnip build it put in emulators/hunt/ / drivers/hunt/ (garage pin). Honoured
+# only while the rig grant (tools/hunt/grant.sh) names this title, is unexpired by this
+# car's clock (and that clock is not behind its issue time), names this car's USB serial,
+# and the operator's Pitstop TOOLS -> Autonomy switch is on. Any miss leaves the choice
+# above untouched; the ledger token reads hunt:<name>.
+HG=/storage/.config/etk-hunt.grant
+if [ -n "$SERIAL" ] && [ -f "$HG" ] && [ "$(cat /storage/.config/etk-autonomy 2>/dev/null)" = "on" ]; then
+    hv() { sed -n "s/^$1=//p" "$HG" | head -n 1; }
+    NOW=$(date +%s); HEXP=$(hv expires_epoch); HISS=$(hv issued_epoch)
+    case "$HEXP$HISS" in *[!0-9]*|"") HEXP=0 ;; esac
+    if [ "$(hv game)" = "$SERIAL" ] && [ "$NOW" -lt "${HEXP:-0}" ] && [ "$NOW" -ge $(( ${HISS:-0} - 300 )) ] \
+       && [ "$(hv usb_serial)" = "$(cat /sys/kernel/config/usb_gadget/cdc/strings/0x409/serialnumber 2>/dev/null)" ]; then
+        HROW=$(awk -F'\t' -v s="$SERIAL" '$1==s {print $2 "\t" $3; exit}' "${RPCS3_CORES_DIR:-/nonexistent}/hunt/override.tsv" 2>/dev/null)
+        HCORE=$(printf '%s' "$HROW" | cut -f1); HDRV=$(printf '%s' "$HROW" | cut -f2)
+        case "$HCORE" in */*) HCORE="" ;; rpcs3-etk_hunt-*.AppImage) ;; *) HCORE="" ;; esac
+        case "$HDRV" in */*) HDRV="" ;; etk_turnip_hunt-*.so) ;; *) HDRV="" ;; esac
+        if [ -n "$HCORE" ] && [ -f "$RPCS3_CORES_DIR/hunt/$HCORE" ]; then
+            chmod +x "$RPCS3_CORES_DIR/hunt/$HCORE" 2>/dev/null
+            TARGET="$RPCS3_CORES_DIR/hunt/$HCORE"
+            TOKEN="hunt:$HCORE"
+        fi
+        if [ -n "$HDRV" ] && [ -f "$ETK_ROOT/drivers/hunt/$HDRV" ]; then
+            # the loader reads only this ICD: the system's own manifest, library_path swapped
+            SYS_ICD=$(ls /usr/share/vulkan/icd.d/freedreno_icd*.json 2>/dev/null | head -n 1)
+            HICD=/tmp/etk-hunt-icd.json
+            if [ -n "$SYS_ICD" ] && sed "s#\"library_path\"[^,}]*#\"library_path\": \"$ETK_ROOT/drivers/hunt/$HDRV\"#" "$SYS_ICD" > "$HICD"; then
+                export VK_ICD_FILENAMES="$HICD" VK_DRIVER_FILES="$HICD"
+                TOKEN="$TOKEN+hunt:$HDRV"
+            else
+                echo "[$(date '+%H:%M:%S.%N')] CORE WRAPPER: hunt driver $HDRV not applied (no system freedreno ICD)" >> "${TRIPWIRE_LOG:-/storage/etk_tripwire.log}" 2>/dev/null
+            fi
+        fi
+    fi
+fi
+
 # Ledger markers (active_tune.txt pattern; PERSISTENT so a PANIC row still
 # knows its core + patch set). Fail-silent: attribution must never block a
 # launch. The patches marker is ALWAYS rewritten — an empty line overwrites
