@@ -580,7 +580,11 @@ repair → corrective rebuild skipped as fresh; `kit=` term added. **The standin
 verify what the card CONTAINS, not what the build was TOLD.**
 
 Reading a run: `state/forge/status.tsv` (`lane state pct runid note`); logs in
-`state/forge/logs/<runid>/`. **A run that finishes in seconds built nothing** — check for
+`state/forge/logs/<runid>/`. **Hunt mints** (`forge.sh --hunt <id>`, started only by
+`tools/hunt/hunt.py mint` under a valid hunt grant, §1.1) keep their own status/logs under
+`state/hunt/<id>/forge/`, build in the node worktree `~/rpcs3-hunt`, and stage to
+`emulators/hunt/`. They never touch the certified tree, the catalog or `release_sanity`, and
+never run beside a certified build (`docs/AUTONOMY_SPEC.md` §3.4). **A run that finishes in seconds built nothing** — check for
 `SKIP … fresh` before trusting a fast result.
 
 #### The mint loop against etk-cloud — recoveries, not surprises (2026-08-27: the 0.9.0.1 mint took FIVE runs)

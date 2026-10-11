@@ -9,8 +9,10 @@
 #           fork clone — the node's untracked copies are never consulted)
 #   IMG     toolchain image (etk-rpcs3-jammy-aarch64:llvm22)
 #   MARKER  symbol that must be in the built binary (stale-build tripwire)
-#   ANAME   staged artifact name under ~/etk/emulators/
+#   ANAME   staged artifact name under $STAGE
 #   RUNDIR  this run's directory (logs, banked diffs, pushed scripts)
+#   STAGE   node-side staging dir (default ~/etk/emulators; a hunt mint stages to
+#           ~/etk/emulators/hunt, out of the image lane's way -- docs/AUTONOMY_SPEC.md)
 #
 # Encoded traps (ForgeScript_Handoff_20260807 §3.1):
 #   * .ci/build-linux-aarch64.sh does `mkdir build` and FAILS if build/ exists
@@ -83,9 +85,10 @@ docker run --rm -v "$TREE":/rpcs3 -v "$RUNDIR":/rundir "$IMG" sh -c "
 
 # stage node-side where the image lane reads (trap #2: gitignored payloads
 # never travel by git pull — they are STAGED, explicitly)
-mkdir -p "$HOME/etk/emulators"
-cp "$APPIMG" "$HOME/etk/emulators/$ANAME"
-( cd "$HOME/etk/emulators" && sha256sum "$ANAME" > "$ANAME.sha256" )
-log "artifact: $ANAME $(stat -c %s "$HOME/etk/emulators/$ANAME") B"
-log "sha256  : $(cut -d' ' -f1 "$HOME/etk/emulators/$ANAME.sha256")"
+STAGE="${STAGE:-$HOME/etk/emulators}"
+mkdir -p "$STAGE"
+cp "$APPIMG" "$STAGE/$ANAME"
+( cd "$STAGE" && sha256sum "$ANAME" > "$ANAME.sha256" )
+log "artifact: $ANAME $(stat -c %s "$STAGE/$ANAME") B"
+log "sha256  : $(cut -d' ' -f1 "$STAGE/$ANAME.sha256")"
 log "LANE OK"

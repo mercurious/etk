@@ -351,7 +351,7 @@ class HuntTests(Tmp):
     def test_no_grant(self):
         self.assertEqual(self.run_hunt("status")[0], 1)
         self.assertEqual(self.run_hunt("check")[0], 1)
-        rc, text = self.run_hunt("mint", "--commit", "abc")
+        rc, text = self.run_hunt("mint", "--base", "abc1234")
         self.assertEqual(rc, 1)
         self.assertIn("REFUSED", text)
 
@@ -362,11 +362,11 @@ class HuntTests(Tmp):
         gl.audit_append(ap, gl.sha256(raw), "issued", [], "ok", NOW)
         self.assertEqual(self.run_hunt("check", "--game", "BCUS98296", "--lane", "rpcs3")[0], 0)
         self.assertEqual(self.run_hunt("check", "--lane", "turnip")[0], 1)
-        rc, text = self.run_hunt("mint", "--commit", "abc")
+        rc, text = self.run_hunt("pin", "BCUS98296", "x.AppImage")
         self.assertEqual(rc, 3)
-        self.assertIn("P2", text)
+        self.assertIn("P3", text)
         e, p = gl.audit_verify(ap, gl.sha256(raw))
-        self.assertEqual((p, [x["action"] for x in e]), ([], ["issued", "mint"]))
+        self.assertEqual((p, [x["action"] for x in e]), ([], ["issued", "pin"]))
         rc, text = self.run_hunt("status")
         self.assertEqual(rc, 0)
         self.assertIn("chain intact", text)
@@ -378,6 +378,139 @@ class HuntTests(Tmp):
         rc, text = self.run_hunt("pin", "x")
         self.assertEqual(rc, 1)
         self.assertIn("chain is broken", text)
+
+
+FAKE_FORGE = r"""#!/usr/bin/env python3
+import json, os, sys
+rec = {"argv": sys.argv[1:], "env": {k: v for k, v in os.environ.items() if k.startswith("HUNT_")}}
+rec["patch"] = open(os.environ["HUNT_PATCH"]).read()
+rec["scripts"] = sorted(os.listdir(os.path.join(os.environ["HUNT_FORK"], "scripts")))
+json.dump(rec, open(os.environ["FAKE_RECORD"], "w"))
+print("fake forge:", " ".join(sys.argv[1:]))
+rc = int(os.environ.get("FAKE_RC", "0"))
+if rc == 0 and "--dry-run" not in sys.argv:
+    os.makedirs(os.environ["FAKE_STAGE"], exist_ok=True)
+    open(os.path.join(os.environ["FAKE_STAGE"], os.environ["HUNT_ARTIFACT"]), "wb").write(b"appimage")
+sys.exit(rc)
+"""
+
+
+class MintTests(Tmp):
+    """hunt.py mint (P2): committed branch inputs -> forge.sh --hunt env -> audit."""
+
+    def setUp(self):
+        super().setUp()
+        import subprocess
+        self.sp = subprocess
+        self.fork = os.path.join(self.d, "fork")
+        self.stage = os.path.join(self.d, "stage")
+        os.makedirs(os.path.join(self.fork, "patches"))
+        os.makedirs(os.path.join(self.fork, "scripts"))
+        for rel, body in (("patches/gt6.patch", "COMMITTED PATCH\n"), ("scripts/package-appimage.sh", "pkg\n"),
+                          ("scripts/verify-markers.sh", "vm\n")):
+            with open(os.path.join(self.fork, rel), "w") as f:
+                f.write(body)
+        g = ["git", "-C", self.fork, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"]
+        self.sp.run(g[:3] + ["init", "-q", "-b", "main"], check=True)
+        self.sp.run(g + ["add", "-A"], check=True)
+        self.sp.run(g + ["commit", "-q", "--no-verify", "-m", "x"], check=True)
+        self.sp.run(g[:3] + ["branch", "hunt/hunt-20261011-gt6"], check=True)
+        with open(os.path.join(self.fork, "patches/gt6.patch"), "w") as f:
+            f.write("UNCOMMITTED EDIT\n")             # the working tree must never be minted
+        fake = os.path.join(self.d, "forge.sh")
+        with open(fake, "w") as f:
+            f.write(FAKE_FORGE)
+        os.chmod(fake, 0o755)
+        self.record = os.path.join(self.d, "record.json")
+        os.environ.update(FAKE_RECORD=self.record, FAKE_STAGE=self.stage, FAKE_RC="0")
+        self.saved = (hunt.FORGE, hunt.HUNT_STAGE, hunt.fork_dir)
+        hunt.FORGE, hunt.HUNT_STAGE, hunt.fork_dir = [fake], self.stage, lambda: self.fork
+        self.write(grant())
+        self.raw = gl.load_grant(self.path, UID, NOW)[1]
+        self.audit = os.path.join(self.d, "hunt-20261011-gt6", "audit.jsonl")
+        gl.audit_append(self.audit, gl.sha256(self.raw), "issued", [], "ok", NOW)
+
+    def tearDown(self):
+        hunt.FORGE, hunt.HUNT_STAGE, hunt.fork_dir = self.saved
+        for k in ("FAKE_RECORD", "FAKE_STAGE", "FAKE_RC"):
+            os.environ.pop(k, None)
+        super().tearDown()
+
+    def mint(self, *argv):
+        out = []
+        rc = hunt.main(["mint", *argv], out.append, self.path, UID, NOW)
+        return rc, "\n".join(out)
+
+    def actions(self):
+        e, p = gl.audit_verify(self.audit, gl.sha256(self.raw))
+        self.assertEqual(p, [])
+        return e
+
+    def test_minted(self):
+        rc, text = self.mint("--base", "a74a0f3e0aa", "--label", "endpoint good")
+        self.assertEqual(rc, 0, text)
+        with open(self.record) as f:
+            rec = json.load(f)
+        self.assertEqual(rec["argv"], ["--hunt", "hunt-20261011-gt6", "rpcs3", "--verbose"])
+        self.assertEqual(rec["patch"], "COMMITTED PATCH\n")
+        self.assertEqual(rec["scripts"], ["package-appimage.sh", "verify-markers.sh"])
+        art = "rpcs3-etk_hunt-20261011-gt6-m01_armsx3-a74a0f3e0_linux_aarch64.AppImage"
+        self.assertEqual((rec["env"]["HUNT_BASE"], rec["env"]["HUNT_ARTIFACT"]), ("a74a0f3e0aa", art))
+        e = self.actions()
+        self.assertEqual([x["action"] for x in e], ["issued", "mint", "minted"])
+        self.assertEqual(e[1]["args"]["patch_sha"], gl.sha256(b"COMMITTED PATCH\n"))
+        self.assertEqual(e[2]["result"]["sha256"], gl.sha256(b"appimage"))
+        rc, _ = self.mint("--base", "8290349e5")
+        self.assertIn("m02_armsx3-8290349e5", self.actions()[-1]["result"]["artifact"])
+
+    def test_forge_fails(self):
+        os.environ["FAKE_RC"] = "1"
+        rc, text = self.mint("--base", "a74a0f3e0")
+        self.assertEqual(rc, 1)
+        self.assertEqual(self.actions()[-1]["action"], "mint failed")
+        self.assertIn("fake forge", self.actions()[-1]["result"]["tail"])
+
+    def test_dry_run(self):
+        rc, _ = self.mint("--base", "a74a0f3e0", "--dry-run")
+        self.assertEqual(rc, 0)
+        with open(self.record) as f:
+            self.assertIn("--dry-run", json.load(f)["argv"])
+        self.assertEqual(self.actions()[-1]["action"], "mint dry-run")
+
+    def test_refusals(self):
+        self.assertEqual(self.mint("--base", "not-a-sha")[0], 1)
+        self.sp.run(["git", "-C", self.fork, "branch", "-q", "-m", "hunt/hunt-20261011-gt6", "hunt/other"], check=True)
+        rc, text = self.mint("--base", "a74a0f3e0")
+        self.assertEqual(rc, 1)
+        self.assertIn("refused", self.actions()[-1]["result"])
+        self.assertFalse(os.path.exists(self.record), "forge must not run on a refusal")
+
+    def test_unsafe_names(self):
+        self.assertEqual(self.mint("--base", "a74a0f3e0", "--patch", "patches/x;reboot.patch")[0], 1)
+        self.assertIn("must be patches/", self.actions()[-1]["result"]["refused"])
+        self.assertEqual(self.mint("--base", "a74a0f3e0", "--marker", "a b")[0], 1)
+        self.assertFalse(os.path.exists(self.record))
+
+    def test_lane_not_granted(self):
+        self.write(grant(mint={"lanes": ["turnip"], "one_at_a_time": True, "budget": "hours"}))
+        self.raw = gl.load_grant(self.path, UID, NOW)[1]
+        os.remove(self.audit)
+        gl.audit_append(self.audit, gl.sha256(self.raw), "issued", [], "ok", NOW)
+        rc, text = self.mint("--base", "a74a0f3e0")
+        self.assertEqual(rc, 1)
+        self.assertIn("lane rpcs3 is not granted", text)
+
+    def test_one_at_a_time(self):
+        import fcntl
+        os.makedirs(os.path.dirname(self.audit), exist_ok=True)
+        held = open(os.path.join(os.path.dirname(self.audit), "mint.lock"), "w")
+        fcntl.flock(held, fcntl.LOCK_EX)
+        try:
+            rc, text = self.mint("--base", "a74a0f3e0")
+        finally:
+            held.close()
+        self.assertEqual(rc, 1)
+        self.assertIn("one at a time", text)
 
 
 ETK = guard.ETK

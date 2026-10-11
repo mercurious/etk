@@ -37,6 +37,8 @@
 #   ./forge.sh --force            # rebuild even if fingerprints are fresh
 #   ./forge.sh --local            # colima fallback (compact; node down / IP moved)
 #   ./forge.sh --verbose | -v     # raw output, no TUI (this is also the CI path)
+#   ./forge.sh --hunt <id> rpcs3  # a HUNT mint (docs/AUTONOMY_SPEC.md §3.4): only under a
+#                                 # valid hunt grant, run by tools/hunt/hunt.py mint
 #
 # Structural laws (each one paid for during the hand-forged v0.8.4 cut):
 #   * conductor, not a second install.sh — lane logic lives in the fork repos
@@ -102,8 +104,12 @@ RRUNDIR="forge-runs/$RUNID"          # node-side, relative to $HOME
 # --- CLI ------------------------------------------------------------------
 MODE=cloud DRY=0 FORCE=0 DO_STATUS=0
 SEL_LANES=""
+HUNT_ID="" _want_hunt=0
 for a in "$@"; do
+    if [ "$_want_hunt" = 1 ]; then HUNT_ID="$a"; _want_hunt=0; continue; fi
     case "$a" in
+        --hunt)    _want_hunt=1 ;;
+        --hunt=*)  HUNT_ID="${a#--hunt=}" ;;
         --dry-run) DRY=1 ;;
         --force)   FORCE=1 ;;
         --local)   MODE=local ;;
@@ -115,6 +121,60 @@ for a in "$@"; do
         *) echo "unknown arg: $a (lanes: rpcs3 turnip kernel chiaki wlmirror image)" >&2; exit 2 ;;
     esac
 done
+[ "$_want_hunt" = 1 ] && { echo "--hunt needs a grant id" >&2; exit 2; }
+
+# --- HUNT MODE (docs/AUTONOMY_SPEC.md §3.4) ---------------------------------
+# A hunt mint is the one forge run the Engineer may start, and only through
+# tools/hunt/hunt.py mint, only while the root-owned hunt grant is valid. It
+# builds the granted lane from the fork branch hunt/<id> (hunt.py extracts the
+# branch's committed patch + scripts into HUNT_FORK) on its own node worktree,
+# stages into emulators/hunt/ (invisible to release_sanity and install.sh), and
+# keeps its status, fingerprints and logs under state/hunt/<id>/forge. No image,
+# no crowning, no catalog. The grant is checked here too, independently of
+# hunt.py: at preflight (with etk-cloud's shape fingerprint) and again before
+# staging, so a grant that expires mid-build stages nothing.
+ACTIVE_PFX="active_"               # node-side reattach markers: forge-runs/<pfx><lane>
+NODE_STAGE="etk/emulators"         # node-side rpcs3 staging, relative to $HOME
+HOST_STAGE="emulators"             # host-side rpcs3 staging
+hunt_check() {  # [hunt.py check args] -> rc of the grant check
+    python3 -I "$REPO_ROOT/tools/hunt/hunt.py" check --lane rpcs3 "$@"
+}
+if [ -n "$HUNT_ID" ]; then
+    case "$HUNT_ID" in hunt-[0-9]*) ;; *) echo "--hunt: '$HUNT_ID' is not a grant id" >&2; exit 2 ;; esac
+    [ "$MODE" = cloud ] || { echo "--hunt builds on the grant's node only (no --local)" >&2; exit 2; }
+    [ -n "$SEL_LANES" ] || SEL_LANES="rpcs3"
+    for L in $SEL_LANES; do
+        [ "$L" = rpcs3 ] || { echo "--hunt: lane $L is not a hunt lane (rpcs3 only; turnip hunts are not built yet)" >&2; exit 2; }
+    done
+    FORGE_STATE="$REPO_ROOT/state/hunt/$HUNT_ID/forge"
+    LOGDIR="$FORGE_STATE/logs/$RUNID"
+    if [ "$DO_STATUS" != 1 ]; then
+        hunt_check --node-host "$FORGE_HOST" --id "$HUNT_ID" \
+            || { echo "--hunt: REFUSED -- no valid hunt grant for $HUNT_ID on $FORGE_HOST (tools/hunt/hunt.py status)" >&2; exit 3; }
+        for v in HUNT_BASE HUNT_FORK HUNT_PATCH HUNT_ARTIFACT; do
+            eval "_v=\${$v:-}"
+            [ -n "$_v" ] || { echo "--hunt: $v is not set (run it through tools/hunt/hunt.py mint)" >&2; exit 2; }
+        done
+        printf '%s' "$HUNT_BASE" | grep -Eq '^[0-9a-f]{7,40}$' || { echo "--hunt: HUNT_BASE '$HUNT_BASE' is not a commit" >&2; exit 2; }
+        # these names reach shell command strings on the node: plain characters only
+        printf '%s' "$HUNT_ARTIFACT" | grep -Eq '^rpcs3-etk_hunt-[A-Za-z0-9._-]+\.AppImage$' \
+            || { echo "--hunt: artifact name must be rpcs3-etk_hunt-<[A-Za-z0-9._-]>.AppImage" >&2; exit 2; }
+        basename "$HUNT_PATCH" | grep -Eq '^[A-Za-z0-9._-]+\.patch$' \
+            || { echo "--hunt: patch file name must be [A-Za-z0-9._-]+.patch" >&2; exit 2; }
+        printf '%s' "${HUNT_MARKER:-x}" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]*$' \
+            || { echo "--hunt: HUNT_MARKER must be a symbol name" >&2; exit 2; }
+        FORGE_RPCS3_BASE="$HUNT_BASE"
+        FORGE_RPCS3_FORK="$HUNT_FORK"
+        FORGE_RPCS3_PATCH="$HUNT_PATCH"
+        FORGE_RPCS3_ARTIFACT="$HUNT_ARTIFACT"
+        FORGE_RPCS3_MARKER="${HUNT_MARKER:-$FORGE_RPCS3_MARKER}"
+    fi
+    FORGE_RPCS3_SRC="$FORGE_RPCS3_TREE"            # the certified tree: never touched by a hunt
+    FORGE_RPCS3_TREE="${FORGE_RPCS3_TREE}-hunt"    # a git worktree of it, disposable
+    ACTIVE_PFX="active_hunt_"
+    NODE_STAGE="etk/emulators/hunt"
+    HOST_STAGE="emulators/hunt"
+fi
 [ -n "$SEL_LANES" ] || SEL_LANES="rpcs3 turnip kernel chiaki wlmirror image"
 lane_selected() { case " $SEL_LANES " in *" $1 "*) return 0;; *) return 1;; esac; }
 
@@ -305,6 +365,14 @@ if [ "$MODE" = cloud ] && ! FSSH true 2>/dev/null; then
 fi
 tui_step_progress 0 30
 
+# a hunt builds in its own worktree of the certified tree (shared objects, so any
+# fetched ARMSX3 commit is a valid base); the certified tree's resting state never moves
+if [ -n "$HUNT_ID" ] && lane_selected rpcs3; then
+    FSSH "[ -e '$FORGE_RPCS3_TREE/.git' ] || git -C '$FORGE_RPCS3_SRC' worktree add --detach '$FORGE_RPCS3_TREE' '$FORGE_RPCS3_BASE'" \
+        > "$LOGDIR/hunt-worktree.log" 2>&1 \
+        || tui_fail "hunt: could not create the worktree $FORGE_RPCS3_TREE (see $LOGDIR/hunt-worktree.log)"
+fi
+
 # one consolidated probe (fast-arming discipline: never a dozen round-trips)
 PROBE=$(FSSH "
   echo '@CONTAINERS'; docker ps -a --format '{{.Names}} {{.Status}}' 2>/dev/null
@@ -319,6 +387,8 @@ PROBE=$(FSSH "
                         [ -e \"\$f\" ] && echo \"OK \$f\" || echo \"MISSING \$f\"; done
   echo '@RPCS3TREE';  cd '$FORGE_RPCS3_TREE' 2>/dev/null && git diff --stat | tail -1
   echo '@RPCS3BASE';  git -C '$FORGE_RPCS3_TREE' cat-file -e '$FORGE_RPCS3_BASE^{commit}' 2>/dev/null && echo OK || echo MISSING
+  echo '@ACTIVE';     for f in \$HOME/forge-runs/active_*; do [ -f \"\$f\" ] || continue
+                        p=\$(awk '{print \$2}' \"\$f\"); kill -0 \"\$p\" 2>/dev/null && echo \"\${f##*/}\"; done
   echo '@END'
 " 2>/dev/null)
 probe_section() { printf '%s\n' "$PROBE" | awk -v s="@$1" '$0==s{f=1;next} /^@/{f=0} f'; }
@@ -347,6 +417,14 @@ fi
 if lane_selected turnip && probe_section TURNIPTREES | grep -qx unknown; then
     MISSING_PRE="$MISSING_PRE turnip:no-/work/mesa-<V>-tree(provision_node.sh-trees)"
 fi
+# ONE BUILD AT A TIME on a 4-core node: a hunt never runs beside a certified build
+# and a certified build never beside a hunt (a live marker of our own = reattach).
+for _a in $(probe_section ACTIVE); do
+    case "$_a" in
+        "$ACTIVE_PFX"*) case "$_a" in active_hunt_*) [ -n "$HUNT_ID" ] || MISSING_PRE="$MISSING_PRE node-busy:$_a" ;; esac ;;
+        *) MISSING_PRE="$MISSING_PRE node-busy:$_a" ;;
+    esac
+done
 if lane_selected image && probe_section IMGINPUTS | grep -q '^MISSING'; then
     MISSING_PRE="$MISSING_PRE image:$(probe_section IMGINPUTS | awk '/^MISSING/{print $2}' | tr '\n' ',')"
 fi
@@ -363,6 +441,8 @@ if lane_selected rpcs3; then
         FTAR -C "$(dirname "$FORGE_RPCS3_PATCH")" "$(basename "$FORGE_RPCS3_PATCH")" | FPUSH_TAR "$RRUNDIR"
         if FSSH "cd '$FORGE_RPCS3_TREE' && git apply -R --check \$HOME/$RRUNDIR/$(basename "$FORGE_RPCS3_PATCH") 2>/dev/null"; then
             TREE_STATE="patch-applied (resting state)"
+        elif [ -n "$HUNT_ID" ]; then
+            TREE_STATE="hunt worktree, prior state (the lane banks its diff before the reset)"
         else
             FSSH "cd '$FORGE_RPCS3_TREE' && git diff > \$HOME/$RRUNDIR/preflight-dirty.diff" 2>/dev/null
             MISSING_PRE="$MISSING_PRE rpcs3:tree-has-UNKNOWN-changes(banked:~/$RRUNDIR/preflight-dirty.diff)"
@@ -471,9 +551,9 @@ forge_status preflight DONE 100 "node green; tree: $TREE_STATE"
 # ==========================================================
 lane_env() {  # <lane> -> env assignments for the node-side recipe
     case "$1" in
-        rpcs3)  printf 'TREE=%s BASE=%s PATCH=%s IMG=%s MARKER=%s ANAME=%s' \
+        rpcs3)  printf 'TREE=%s BASE=%s PATCH=%s IMG=%s MARKER=%s ANAME=%s STAGE=$HOME/%s' \
                     "$FORGE_RPCS3_TREE" "$FORGE_RPCS3_BASE" "$(basename "$FORGE_RPCS3_PATCH")" \
-                    "$FORGE_RPCS3_IMAGE" "$FORGE_RPCS3_MARKER" "$FORGE_RPCS3_ARTIFACT" ;;
+                    "$FORGE_RPCS3_IMAGE" "$FORGE_RPCS3_MARKER" "$FORGE_RPCS3_ARTIFACT" "$NODE_STAGE" ;;
         turnip) printf 'VERS="%s" GTKVER=%s' "$FORGE_TURNIP_VERS" "$FORGE_TURNIP_GTKVER" ;;
         # ETK_KIT_DTB / ETK_INTERNAL_MIC: the boot.img lane splices the Flip 2 kit
         # DTB deltas at mint (ABL era); both default ON, etk.conf's ETK_INTERNAL_MIC
@@ -498,7 +578,7 @@ lane_launch_or_attach() {  # <lane>  — sets ATTACH_DIR (node-relative rundir p
     local L="$1"
     ATTACH_DIR="$RRUNDIR"
     local act
-    act=$(FSSH "cat \$HOME/forge-runs/active_$L 2>/dev/null" || true)
+    act=$(FSSH "cat \$HOME/forge-runs/$ACTIVE_PFX$L 2>/dev/null" || true)
     if [ -n "$act" ]; then
         local adir apid
         adir=$(printf '%s' "$act" | awk '{print $1}')
@@ -512,7 +592,7 @@ lane_launch_or_attach() {  # <lane>  — sets ATTACH_DIR (node-relative rundir p
             # trap #6: a crash must not look like "still running"
             say "$L: prior build DIED without an exit marker -- relaunching"
         fi
-        FSSH "rm -f \$HOME/forge-runs/active_$L"
+        FSSH "rm -f \$HOME/forge-runs/$ACTIVE_PFX$L"
     fi
     # The wrapper records ITS OWN pid ($$ after setsid): a backgrounded setsid
     # forks when it is the group leader, so the launcher's $! can die instantly
@@ -520,7 +600,7 @@ lane_launch_or_attach() {  # <lane>  — sets ATTACH_DIR (node-relative rundir p
     FSSH "cd \$HOME/$RRUNDIR || exit 1
 env $(lane_env "$L") RUNDIR=\$HOME/$RRUNDIR setsid nohup bash -c 'echo \$\$ > lane_$L.pid; bash lane_$L.sh; echo \$? > lane_$L.rc' >> lane_$L.log 2>&1 < /dev/null &
 sleep 1
-printf '%s %s\n' \"\$PWD\" \"\$(cat lane_$L.pid 2>/dev/null)\" > \$HOME/forge-runs/active_$L"
+printf '%s %s\n' \"\$PWD\" \"\$(cat lane_$L.pid 2>/dev/null)\" > \$HOME/forge-runs/$ACTIVE_PFX$L"
 }
 
 lane_poll() {  # <lane> <step_idx> [<extra probe cmd>] -> rc in LANE_RC
@@ -573,7 +653,7 @@ lane_poll() {  # <lane> <step_idx> [<extra probe cmd>] -> rc in LANE_RC
         fi
         sleep 8
     done
-    FSSH "rm -f \$HOME/forge-runs/active_$L" 2>/dev/null
+    FSSH "rm -f \$HOME/forge-runs/$ACTIVE_PFX$L" 2>/dev/null
     # bank the log + adaptive size expectation Air-side
     FSSH "cat \$HOME/$ATTACH_DIR/lane_$L.log 2>/dev/null" > "$LOGDIR/lane_$L.log" 2>/dev/null
     [ -n "${xtra:-}" ] && [ "${xtra:-0}" -gt 0 ] 2>/dev/null && echo "$xtra" > "$FORGE_STATE/fingerprints/$L.expected"
@@ -613,14 +693,18 @@ if lane_selected rpcs3; then
         lane_poll rpcs3 1
         if [ "$LANE_RC" = "0" ]; then
             tui_step_progress 1 90
-            NSHA=$(FSSH "sha256sum \$HOME/etk/emulators/$FORGE_RPCS3_ARTIFACT 2>/dev/null | cut -d' ' -f1")
-            mkdir -p emulators
+            NSHA=$(FSSH "sha256sum \$HOME/$NODE_STAGE/$FORGE_RPCS3_ARTIFACT 2>/dev/null | cut -d' ' -f1")
+            mkdir -p "$HOST_STAGE"
+            if [ -n "$HUNT_ID" ] && ! hunt_check --id "$HUNT_ID" >/dev/null; then
+                mark_fail rpcs3 90 "the hunt grant ended during the build: nothing staged (artifact left on the node, ~/$NODE_STAGE)"
+            else
             say "rpcs3: fetching AppImage (~80 MB)"
-            tui_rsync 1 90 98 "rpcs3 fetch" "$FORGE_HOST:etk/emulators/$FORGE_RPCS3_ARTIFACT" "emulators/$FORGE_RPCS3_ARTIFACT.forge-tmp"
-            if stage_artifact rpcs3 "emulators/$FORGE_RPCS3_ARTIFACT" "$NSHA"; then
-                fp_bank rpcs3 "emulators/$FORGE_RPCS3_ARTIFACT"
+            tui_rsync 1 90 98 "rpcs3 fetch" "$FORGE_HOST:$NODE_STAGE/$FORGE_RPCS3_ARTIFACT" "$HOST_STAGE/$FORGE_RPCS3_ARTIFACT.forge-tmp"
+            if stage_artifact rpcs3 "$HOST_STAGE/$FORGE_RPCS3_ARTIFACT" "$NSHA"; then
+                fp_bank rpcs3 "$HOST_STAGE/$FORGE_RPCS3_ARTIFACT"
                 forge_status rpcs3 DONE 100 "gates green; ${NSHA:0:12}.."
                 tui_step_done 1
+            fi
             fi
         else
             mark_fail rpcs3 50 "lane rc=$LANE_RC — see $LOGDIR/lane_rpcs3.log"
@@ -766,7 +850,9 @@ fi
 # GATES + STAGE (step 6) — release_sanity + the evidence summary
 # ==========================================================
 tui_step_start 6
-if bash tools/release_sanity.sh > "$LOGDIR/release_sanity.log" 2>&1; then
+if [ -n "$HUNT_ID" ]; then
+    say "release_sanity: skipped (a hunt mint stages to $HOST_STAGE/, outside the release catalog)"
+elif bash tools/release_sanity.sh > "$LOGDIR/release_sanity.log" 2>&1; then
     say "release_sanity: PASS"
     SANITY=PASS
 else

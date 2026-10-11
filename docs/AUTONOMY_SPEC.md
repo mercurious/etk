@@ -1,4 +1,4 @@
-# ETK Autonomy — Hunt Grants (spec v0.4 — APPROVED 2026-10-10; P1 BUILT 2026-10-10: grant.sh, hunt.py, guard)
+# ETK Autonomy — Hunt Grants (spec v0.5 — APPROVED 2026-10-10; P1 + P2 BUILT 2026-10-10: grant, guard, hunt mint)
 
 > Goal (operator, 2026-10-10): point the Engineer at one game and let it run trial-and-error
 > crash hunting with full autonomy overnight, so a core or driver regression is fixed by
@@ -117,7 +117,30 @@ independently, so expiry and revocation hold even if the host is wrong.
    `hunt/<id>`. Artifacts go to `emulators/hunt/` (invisible to `release_sanity`'s core cap
    and to install's staging loop, like `retired/`). There's no crowning and no catalog
    staging. It records mints and node-minutes in the audit and refuses after expiry or on a
-   changed node fingerprint.
+   changed node fingerprint. **As built (P2):**
+   - `hunt.py mint --base <sha> [--patch patches/X.patch] [--marker SYM] [--label T] [--dry-run]`
+     is the Engineer's only way in. It takes the patch, `package-appimage.sh` and
+     `verify-markers.sh` from the **committed** content of fork branch `hunt/<id>` (never the
+     working tree), names the artifact `rpcs3-etk_<id>-mNN_armsx3-<base9>_linux_aarch64.AppImage`,
+     holds a per-hunt lock (one mint at a time), runs `forge.sh --hunt <id> rpcs3 --verbose`
+     with `HUNT_*` inputs (they override `etk.conf`, which forge sources first), and audits
+     `mint` (inputs, branch and patch shas) → `minted` (sha256, node-minutes) or `mint failed`
+     (log tail). Logs: `state/hunt/<id>/mints/mNN/`.
+   - `forge.sh --hunt` re-checks the grant itself (`hunt.py check --node-host --id`: the grant
+     is valid and in scope, and etk-cloud's shape still matches it and is free) **before any
+     ssh**, and again before staging: a grant that ends mid-build stages nothing. It refuses
+     `--local` and every lane but rpcs3. It builds in `~/rpcs3-hunt`, a `git worktree` of the
+     certified tree (shared objects, so any fetched ARMSX3 commit is a base; the certified
+     tree's resting state never moves; the hunt tree's prior state is banked by the lane, not
+     a preflight failure). It stages node-side to `~/etk/emulators/hunt/` (lane `STAGE`),
+     host-side to `emulators/hunt/`, keeps status/fingerprints/logs under
+     `state/hunt/<id>/forge/`, and uses its own reattach marker (`active_hunt_rpcs3`). A hunt
+     never runs beside a certified build and vice versa (`node-busy`). `release_sanity` is
+     skipped: the hunt stages outside the release catalog.
+   - The lane's own gates still apply to a hunt build: the `MARKER` symbol and the
+     `GTK Edition` literal. A bisect patch on an intermediate ARMSX3 commit must carry both
+     (P4's patch work).
+   - **Not built:** the turnip hunt lane (`drivers/hunt/`); `--hunt` refuses it for now.
 
 ## 4. Inject without install — what a hunt may change on the car
 
@@ -197,7 +220,7 @@ All settled by the operator, 2026-10-10:
 | Phase | What | Needs |
 |---|---|---|
 | P1 | **BUILT 2026-10-10.** `tools/hunt/grant.sh` (→ `grantctl.py`; sudo-signed; node fingerprint + always-free judge, car + USB serial binding, reserve check, `--lanes`, `--supervised`), `grantlib.py` (validation, audit chain), `hunt.py` (status / check / audit; later subcommands refuse with their phase), `guard.py` (registered); `tools/hunt/test_hunt.py` (45 tests, incl. mutants); TRACK_MANUAL §1.1 amendment. **Validated end to end 2026-10-10** with a 1 h supervised grant `hunt-20261011-p1check`: sudo-signed root:root 0644, rig copy written and read back, `status --probe` VALID (node unchanged, car8 on USB), `mint` stub audited (exit 3), the guard froze an Edit to `tools/hunt/`, `revoke` removed both copies and audited it | nothing (no atoms) |
-| P2 | `forge.sh --hunt`, building from the fork branch into `emulators/hunt/` | a review; the first hunt mint runs under a grant |
+| P2 | **BUILT 2026-10-10 (rpcs3 lane).** `hunt.py mint` + `forge.sh --hunt` (§3.4); `lane_rpcs3.sh` gains `STAGE`. Tests: `tools/hunt/test_hunt.py` (52, incl. mint) and `tools/hunt/test_forge_hunt.py` (8: the real forge.sh + lane in a sandbox with fake ssh/rsync/docker and a real git node tree; 7 fail against the pre-P2 forge, the 8th is the certified-mint no-regression check). Turnip hunt lane not built | the operator's review of the `forge.sh` diff; the first hunt mint runs under a grant (P4) |
 | P3 | daemon `put`/`pin`/`unpin`, launch-wrapper override (core + Turnip ICD), Pitstop **Autonomy** kill switch | one ordinary install |
 | P4 | first **supervised** hunt with the operator awake: the GT6 commit bisect (`GT6Deadlock_0.10.0_20261010.md`) | a grant |
 | P5 | first overnight hunt | a grant |
