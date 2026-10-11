@@ -22,9 +22,11 @@
 """
 import argparse
 import contextlib
+import datetime as dt
 import io
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -240,7 +242,8 @@ class IssueTests(Tmp):
 
     def issue(self, a=None, typed=None, tamper=False):
         out = []
-        g = grantctl.issue(a or args(), self.probes(), lambda p: typed if typed is not None else "hunt-20261011-gt6",
+        g = grantctl.issue(a or args(), self.probes(),
+                           lambda p: typed if typed is not None else re.search(r"\((hunt-[^)]+)\)", p).group(1),
                            self.signer(tamper), out.append, NOW, self.gp, UID)
         return g, "\n".join(out)
 
@@ -253,6 +256,7 @@ class IssueTests(Tmp):
     def test_overnight(self):
         g, text = self.issue()
         self.assertEqual(g["mode"], "overnight")
+        self.assertEqual(g["id"], f"hunt-{dt.datetime.fromtimestamp(NOW):%Y%m%d}-gt6")  # local, not UTC
         self.assertEqual(gl.load_grant(self.gp, UID, NOW)[2], [])
         self.assertIn("inside always-free", text)
         self.assertIn("expires_at=2026-10-11T12:00:00Z", self.rig_bodies[0])

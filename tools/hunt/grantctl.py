@@ -178,7 +178,7 @@ def rig_remove(target):
 # ---- issue / show / revoke ----------------------------------------------------------------
 
 def compose(a, now, node_host, fp, rig, rig_probe, reserve, res_probe, tools):
-    gid = f"hunt-{dt.datetime.fromtimestamp(now, dt.timezone.utc):%Y%m%d}-{a.name or a.game.lower()}"
+    gid = f"hunt-{dt.datetime.fromtimestamp(now):%Y%m%d}-{a.name or a.game.lower()}"  # the operator's date
     return {
         "schema": gl.SCHEMA,
         "id": gid,

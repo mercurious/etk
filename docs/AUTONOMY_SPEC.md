@@ -196,7 +196,7 @@ All settled by the operator, 2026-10-10:
 
 | Phase | What | Needs |
 |---|---|---|
-| P1 | **BUILT 2026-10-10.** `tools/hunt/grant.sh` (→ `grantctl.py`; sudo-signed; node fingerprint + always-free judge, car + USB serial binding, reserve check, `--lanes`, `--supervised`), `grantlib.py` (validation, audit chain), `hunt.py` (status / check / audit; later subcommands refuse with their phase), `guard.py` (registered); `tools/hunt/test_hunt.py` (45 tests, incl. mutants); TRACK_MANUAL §1.1 amendment | nothing (no atoms) |
+| P1 | **BUILT 2026-10-10.** `tools/hunt/grant.sh` (→ `grantctl.py`; sudo-signed; node fingerprint + always-free judge, car + USB serial binding, reserve check, `--lanes`, `--supervised`), `grantlib.py` (validation, audit chain), `hunt.py` (status / check / audit; later subcommands refuse with their phase), `guard.py` (registered); `tools/hunt/test_hunt.py` (45 tests, incl. mutants); TRACK_MANUAL §1.1 amendment. **Validated end to end 2026-10-10** with a 1 h supervised grant `hunt-20261011-p1check`: sudo-signed root:root 0644, rig copy written and read back, `status --probe` VALID (node unchanged, car8 on USB), `mint` stub audited (exit 3), the guard froze an Edit to `tools/hunt/`, `revoke` removed both copies and audited it | nothing (no atoms) |
 | P2 | `forge.sh --hunt`, building from the fork branch into `emulators/hunt/` | a review; the first hunt mint runs under a grant |
 | P3 | daemon `put`/`pin`/`unpin`, launch-wrapper override (core + Turnip ICD), Pitstop **Autonomy** kill switch | one ordinary install |
 | P4 | first **supervised** hunt with the operator awake: the GT6 commit bisect (`GT6Deadlock_0.10.0_20261010.md`) | a grant |
