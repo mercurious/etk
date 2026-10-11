@@ -76,6 +76,67 @@ check("idle sample writes '-' for game",
       bb.flightrec_row(1, "", m, 0, 0, 0, 0, 0, 0, 0).split("\t")[1], "-")
 check("temps and MHz are ints", (cols[9], cols[10]), ("74", "587"))
 
+print("\n[4] PMIC reset reason (harvest_pon)")
+# car8 PM8150 (SID 0) after an operator cold boot, read live 2026-10-11.
+CAR8_COLD = {0x804: 0x01, 0x805: 0x04, 0x8C0: 0x81, 0x8C4: 0x80, 0x8C5: 0x02,
+             0x8C7: 0x80}
+
+
+def dump(vals, lo=0x0000, hi=0x10000):
+    return "".join(f"{a:04x}: {vals.get(a, 0):02x}\n" for a in range(lo, hi))
+
+
+regs = bb.parse_regmap_dump(dump(CAR8_COLD, 0x800, 0x8E0))
+check("dump parsed by address", (regs[0x8C0], regs[0x8C5]), (0x81, 0x02))
+holey = bb.parse_regmap_dump("08c0: 81\ngarbage\n08c5: 02\n")
+check("a hole or junk line never shifts addresses", holey, {0x8C0: 0x81, 0x8C5: 0x02})
+cold = bb.decode_pon(regs)
+check("cold boot decodes pon_reason bits",
+      "pon_reason=81(HARD_RESET+KPDPWR)" in cold, True)
+check("zero registers listed for diffing", "warm_reset=00" in cold and "fault1=00" in cold, True)
+check("cold boot verdict", bb.pon_verdict(["0-00 " + cold]), "COLD")
+check("not a PON peripheral -> None", bb.decode_pon({0x804: 0x2C}), None)
+warm = bb.decode_pon(bb.parse_regmap_dump(dump({**CAR8_COLD, 0x8C2: 0x02}, 0x800, 0x8E0)))
+check("PS_HOLD warm reset -> WARM", bb.pon_verdict(["0-00 " + warm]), "WARM")
+uvlo = bb.decode_pon(bb.parse_regmap_dump(dump({**CAR8_COLD, 0x8C8: 0x40}, 0x800, 0x8E0)))
+check("UVLO fault -> BROWNOUT (outranks warm)",
+      bb.pon_verdict(["0-00 " + warm, "0-02 " + uvlo]), "BROWNOUT")
+otst = bb.decode_pon(bb.parse_regmap_dump(dump({**CAR8_COLD, 0x8C9: 0x80}, 0x800, 0x8E0)))
+check("OTST3 -> OVERTEMP", bb.pon_verdict(["0-00 " + otst]), "OVERTEMP")
+
+import tempfile  # noqa: E402
+with tempfile.TemporaryDirectory() as tmp:
+    maps = os.path.join(tmp, "regmap")
+    for sid, vals in (("0-00", {**CAR8_COLD, 0x8C2: 0x02}), ("0-01", {})):
+        os.makedirs(os.path.join(maps, sid))
+        with open(os.path.join(maps, sid, "name"), "w") as f:
+            f.write("pmic-spmi\n")
+        with open(os.path.join(maps, sid, "registers"), "w") as f:
+            f.write(dump(vals))
+    os.makedirs(os.path.join(maps, "9200000.llcc"))
+    bb.BB_DIR = os.path.join(tmp, "bb")
+    os.makedirs(bb.BB_DIR)
+    bb.PON_REGMAP_GLOB = os.path.join(maps, "*")
+    bb.TRIPWIRE_LOG = os.path.join(tmp, "tripwire.log")
+    bb._boot_id = lambda: "boot-A"
+    bb.harvest_pon()
+    pons = [p for p in os.listdir(bb.BB_DIR) if p.startswith("pon-")]
+    check("one pon-<epoch>.txt written", len(pons), 1)
+    body = open(os.path.join(bb.BB_DIR, pons[0])).read() if pons else ""
+    check("file carries boot_id and verdict", "boot_id=boot-A" in body and "verdict=WARM" in body, True)
+    check("seek-read of the PON window found SID 0 only (SID 1 TYPE != PON)",
+          [ln.split()[0] for ln in body.splitlines() if "subtype=" in ln], ["0-00"])
+    check("raw bytes kept beside the decode", "0-00 raw 8c0-8cf: 81 00 02" in body, True)
+    check("tripwire line written", "PON last reset = WARM" in open(bb.TRIPWIRE_LOG).read(), True)
+    bb.harvest_pon()
+    check("same boot (install-time restart) -> no second file",
+          len([p for p in os.listdir(bb.BB_DIR) if p.startswith("pon-")]), 1)
+    bb.PON_REGMAP_GLOB = os.path.join(tmp, "absent", "*")
+    bb._boot_id = lambda: "boot-B"
+    bb.harvest_pon()
+    check("no debugfs -> nothing written, no raise",
+          len([p for p in os.listdir(bb.BB_DIR) if p.startswith("pon-")]), 1)
+
 print()
 if FAILS:
     print(f"FAILED: {len(FAILS)} check(s) -> {FAILS}")

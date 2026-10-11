@@ -104,6 +104,153 @@ def harvest_pstore():
     tripwire(f"harvested {len(copied)} panic record(s) -> {dest}")
 
 
+# --- PMIC RESET REASON (how the LAST boot started; the panic discriminator) --
+# 2026-10-11 (GT5 op): the fast PANIC class leaves no kmsg text and no pstore,
+# but every Qualcomm PMIC latches WHY it last powered on/off in its PON
+# peripheral, and the bytes survive until the next power event. Read once per
+# boot they separate a warm reset (PS_HOLD: kernel panic / watchdog / TZ)
+# from a brownout (UVLO), a PMIC watchdog or an over-temperature cut, with no
+# panic text needed. Read-only: debugfs regmap, seek-read of ONE window per
+# PMIC (7 ms on car8), never a write, never the whole 64K map.
+PON_REGMAP_GLOB = os.environ.get('ETK_PON_REGMAP_GLOB',
+                                 '/sys/kernel/debug/regmap/0-0*')
+PON_BASE = 0x800
+PON_SPAN = 0xE0
+PON_KEEP = 24
+# Bit names per the downstream qpnp-power-on GEN2 map (PON subtype 0x04/0x08).
+# UNVERIFIED on PM8150: the raw bytes are always written beside the decode,
+# so a wrong name can be re-read later; a diff vs a known cold boot is sound
+# whatever the names.
+PON_GEN2 = {
+    0xC0: ("pon_reason", ("HARD_RESET", "SMPL", "RTC", "DC_CHG", "USB_CHG",
+                          "PON1", "CBL", "KPDPWR")),
+    0xC2: ("warm_reset", ("SOFT", "PS_HOLD", "PMIC_WD", "GP1", "GP2",
+                          "KPDPWR_AND_RESIN", "RESIN", "KPDPWR")),
+    0xC5: ("poff_reason", ("SOFT", "PS_HOLD", "PMIC_WD", "GP1", "GP2",
+                           "KPDPWR_AND_RESIN", "RESIN", "KPDPWR")),
+    0xC8: ("fault1", ("GP_FAULT0", "GP_FAULT1", "GP_FAULT2", "GP_FAULT3",
+                      "MBG_FAULT", "OVLO", "UVLO", "AVDD_RB")),
+    0xC9: ("fault2", ("bit0", "bit1", "bit2", "FAULT_N", "PBS_WATCHDOG",
+                      "PBS_NACK", "RESTART_PON", "OTST3")),
+    0xCA: ("s3_reset", ("bit0", "bit1", "bit2", "bit3", "FAULT_N",
+                        "PBS_WATCHDOG", "PBS_NACK", "KPDPWR_ANDOR_RESIN")),
+}
+
+
+def parse_regmap_dump(text):
+    """{addr: value} from debugfs regmap `registers` text ("0800: 01" lines).
+    Malformed lines are skipped; the ADDRESSES are parsed, never assumed from
+    a seek offset (a regmap with holes would shift every line)."""
+    regs = {}
+    for ln in text.splitlines():
+        a, sep, v = ln.partition(':')
+        if not sep:
+            continue
+        try:
+            regs[int(a.strip(), 16)] = int(v.strip(), 16)
+        except ValueError:
+            pass
+    return regs
+
+
+def decode_pon(regs, base=PON_BASE):
+    """One summary line for a PMIC's PON window, or None when the window is
+    not a PON peripheral (TYPE register base+4 != 0x01). Bits are named per
+    PON_GEN2; zero registers are listed as `name=00` so a diff is easy."""
+    if regs.get(base + 0x04) != 0x01:
+        return None
+    parts = [f"subtype={regs.get(base + 0x05, 0):02x}"]
+    for off, (name, bits) in sorted(PON_GEN2.items()):
+        v = regs.get(base + off)
+        if v is None:
+            parts.append(f"{name}=??")
+            continue
+        names = [bits[i] for i in range(8) if v >> i & 1]
+        parts.append(f"{name}={v:02x}" + (f"({'+'.join(names)})" if names else ""))
+    return " ".join(parts)
+
+
+def pon_verdict(lines):
+    """Coarse class of the reset that started this boot, from decode_pon
+    lines (SID 0 = the primary PMIC first). WARM = a PS_HOLD/soft warm reset
+    (kernel panic, watchdog bite, TZ reset); BROWNOUT / OVERTEMP / PMIC_WD =
+    the PMIC itself cut power; COLD = an ordinary power-on."""
+    joined = " ".join(lines)
+    if "UVLO" in joined or "SMPL" in joined:
+        return "BROWNOUT"
+    if "OTST3" in joined:
+        return "OVERTEMP"
+    if "PMIC_WD" in joined or "PBS_WATCHDOG" in joined:
+        return "PMIC_WD"
+    for ln in lines:
+        for tok in ln.split():
+            if tok.startswith("warm_reset=") and not tok.startswith("warm_reset=00"):
+                return "WARM"
+    return "COLD"
+
+
+def _boot_id():
+    return _read_first('/proc/sys/kernel/random/boot_id').strip() or 'unknown'
+
+
+def harvest_pon():
+    """Snapshot every PMIC's PON window once per boot into
+    blackbox/pon-<epoch>.txt (boot_id inside, so an install-time restart of
+    this daemon does not write a second file for the same boot). Fail-silent:
+    no debugfs, no PMIC or an unreadable map just logs and returns."""
+    bid = _boot_id()
+    marker = os.path.join(BB_DIR, 'pon_last_boot_id')
+    if _read_first(marker).strip() == bid:
+        return
+    lines, raw = [], []
+    for d in sorted(glob.glob(PON_REGMAP_GLOB)):
+        if _read_first(os.path.join(d, 'name')).strip() != 'pmic-spmi':
+            continue
+        try:
+            with open(os.path.join(d, 'registers')) as f:
+                f.seek(PON_BASE * 9)            # "0800: 01\n" = 9 bytes/line
+                text = f.read(PON_SPAN * 9)
+        except Exception:
+            continue
+        regs = parse_regmap_dump(text)
+        summary = decode_pon(regs)
+        if summary is None:
+            continue
+        sid = os.path.basename(d)
+        lines.append(f"{sid} {summary}")
+        raw.append(f"{sid} raw 8c0-8cf: " + " ".join(
+            f"{regs.get(0x8C0 + i, 0):02x}" for i in range(16)))
+    if not lines:
+        log("PON: no PMIC reset-reason window readable (debugfs absent?)")
+        return
+    verdict = pon_verdict(lines)
+    epoch = int(time.time())
+    try:
+        up = float(_read_first('/proc/uptime').split()[0])
+    except (ValueError, IndexError):
+        up = -1.0
+    body = (f"# epoch={epoch} boot_id={bid} uptime_s={up:.1f} verdict={verdict}\n"
+            "# bit names: downstream qpnp-power-on GEN2 map, UNVERIFIED on PM8150\n"
+            + "\n".join(lines + raw) + "\n")
+    try:
+        path = os.path.join(BB_DIR, f'pon-{epoch}.txt')
+        with open(path, 'w') as f:
+            f.write(body)
+            f.flush()
+            os.fsync(f.fileno())
+        with open(marker, 'w') as f:
+            f.write(bid + "\n")
+        pons = sorted(glob.glob(os.path.join(BB_DIR, 'pon-*.txt')),
+                      key=lambda p: os.path.getmtime(p))
+        for p in pons[:-PON_KEEP] if len(pons) > PON_KEEP else []:
+            os.unlink(p)
+    except Exception as e:
+        log(f"PON: write failed: {e}")
+        return
+    log(f"PON: last reset = {verdict} -> {path}")
+    tripwire(f"PON last reset = {verdict}: {lines[0]}")
+
+
 def prune_kmsg_logs():
     try:
         logs = sorted(glob.glob(os.path.join(BB_DIR, 'kmsg-*.log*')),
@@ -127,7 +274,8 @@ def prune_flightrec_logs():
 # --- FLIGHT RECORDER (resource curve; the silent-death witness) -----------
 # 2026-08-27 census: on the fast PANIC class the kmsg log ends AT ignition —
 # no OOM line, no GPU fault, no panic text. pstore is empty (ramoops
-# falsified) and the PMIC PON reason is not logged, so the ONLY forensics a
+# falsified) and until 2026-10-11 the PMIC PON reason was not logged (now:
+# harvest_pon above), so the ONLY forensics a
 # silent instant death can leave is a resource curve written continuously
 # and fsync'd as it goes. These helpers are PURE (tools/test_flightrec.py
 # feeds them fixtures); the sampler thread below stays fail-silent and
@@ -352,6 +500,10 @@ if __name__ == '__main__':
     while True:
         try:
             os.makedirs(BB_DIR, exist_ok=True)
+            try:
+                harvest_pon()
+            except Exception as e:
+                log(f"PON harvest error: {e}")
             harvest_pstore()
             prune_kmsg_logs()
             kmsg_recorder()   # blocks forever in normal operation
