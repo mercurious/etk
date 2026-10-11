@@ -213,8 +213,9 @@ grant → hunt.py status → [ hypothesis → commit on fork branch hunt/<id> �
   may launch. Every PANIC verdict is a hash-chained audit line; `hunt.py check --panic`
   refuses a launch once N are spent, so the N+1th launch never happens. Still a hard stop
   at any count: the car dark for more than 10 min (UNREACHABLE), a reset the PMIC made
-  itself (BROWNOUT / OVERTEMP / PMIC_WD: a hardware question for a human; a panic reads
-  SOC_RESET, the same class as a reboot, because both take the PSCI restart path), or a boot that comes back without the kit (no Pitlink on USB).
+  itself (BROWNOUT / OVERTEMP / PMIC_WD: a hardware question for a human). The first GT5 death
+  ridden through (2026-10-11 17:12) read WARM -- a firmware warm reset 11.4 s after a healthy
+  sample under `panic=30`, so Linux never panicked; a reboot reads SOC_RESET, or a boot that comes back without the kit (no Pitlink on USB).
   The hunt car's `/storage` should be internal storage (car8's UFS), not the SD card, so a
   hard reset never lands mid-write on the card that holds the games.
 - **Morning deliverable:** a dossier with the verdict table and the convicting commit or

@@ -102,6 +102,10 @@ check("HARD_RESET without the power key -> SOC_RESET (reboot / panic path)",
 check("not a PON peripheral -> None", bb.decode_pon({0x804: 0x2C}), None)
 warm = bb.decode_pon(bb.parse_regmap_dump(dump({**CAR8_COLD, 0x8C2: 0x02}, 0x800, 0x8E0)))
 check("PS_HOLD warm reset -> WARM", bb.pon_verdict(["0-00 " + warm]), "WARM")
+# car8's GT5 death, 2026-10-11 17:12 (raw 8c0-8cf: 01 00 02 00 40 02 00 80): HARD_RESET + warm PS_HOLD
+gt5 = bb.decode_pon(bb.parse_regmap_dump(dump({**CAR8_COLD, 0x8C0: 0x01, 0x8C2: 0x02, 0x8C4: 0x40}, 0x800, 0x8E0)))
+check("GT5 death bytes -> WARM, not SOC_RESET (the warm bit outranks HARD_RESET)",
+      bb.pon_verdict(["0-00 " + gt5]), "WARM")
 uvlo = bb.decode_pon(bb.parse_regmap_dump(dump({**CAR8_COLD, 0x8C8: 0x40}, 0x800, 0x8E0)))
 check("UVLO fault -> BROWNOUT (outranks warm)",
       bb.pon_verdict(["0-00 " + warm, "0-02 " + uvlo]), "BROWNOUT")

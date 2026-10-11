@@ -174,12 +174,15 @@ def pon_verdict(lines):
     """Coarse class of the reset that started this boot, from decode_pon
     lines (SID 0 = the primary PMIC first):
       BROWNOUT / OVERTEMP / PMIC_WD  the PMIC itself cut power (any PMIC);
-      WARM       a warm reset (warm_reset != 0);
-      SOC_RESET  the primary's pon_reason is HARD_RESET without KPDPWR: the
-                 SoC asked for the reset. A Linux reboot reads exactly this
-                 (car8, 2026-10-11 15:45: pon_reason=01), and a kernel panic
-                 takes the same PSCI restart path, so a GT5 death is expected
-                 here, told apart from a reboot by the ledger's PANIC row;
+      WARM       a warm reset (warm_reset != 0): NOT Linux's restart path.
+                 The GT5 death on car8, 2026-10-11 17:12, read warm_reset=02
+                 (PS_HOLD), ON_REASON 0x40, and the new kernel started 11.4 s
+                 after a healthy flightrec sample, under panic=30: the secure
+                 firmware reset the SoC, Linux never panicked;
+      SOC_RESET  the primary's pon_reason is HARD_RESET without KPDPWR and no
+                 warm bit: Linux asked for a (cold) reset -- a reboot reads
+                 exactly this (car8, 2026-10-11 15:45: pon_reason=01), and a
+                 real Linux panic (panic=N) takes the same PSCI path;
       COLD       an ordinary power-on (power key, charger, cable)."""
     joined = " ".join(lines)
     if "UVLO" in joined or "SMPL" in joined:
