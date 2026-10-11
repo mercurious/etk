@@ -108,7 +108,7 @@ def harvest_pstore():
 # 2026-10-11 (GT5 op): the fast PANIC class leaves no kmsg text and no pstore,
 # but every Qualcomm PMIC latches WHY it last powered on/off in its PON
 # peripheral, and the bytes survive until the next power event. Read once per
-# boot they separate a warm reset (PS_HOLD: kernel panic / watchdog / TZ)
+# boot they separate a SoC-requested reset (kernel panic / reboot / watchdog)
 # from a brownout (UVLO), a PMIC watchdog or an over-temperature cut, with no
 # panic text needed. Read-only: debugfs regmap, seek-read of ONE window per
 # PMIC (7 ms on car8), never a write, never the whole 64K map.
@@ -172,9 +172,15 @@ def decode_pon(regs, base=PON_BASE):
 
 def pon_verdict(lines):
     """Coarse class of the reset that started this boot, from decode_pon
-    lines (SID 0 = the primary PMIC first). WARM = a PS_HOLD/soft warm reset
-    (kernel panic, watchdog bite, TZ reset); BROWNOUT / OVERTEMP / PMIC_WD =
-    the PMIC itself cut power; COLD = an ordinary power-on."""
+    lines (SID 0 = the primary PMIC first):
+      BROWNOUT / OVERTEMP / PMIC_WD  the PMIC itself cut power (any PMIC);
+      WARM       a warm reset (warm_reset != 0);
+      SOC_RESET  the primary's pon_reason is HARD_RESET without KPDPWR: the
+                 SoC asked for the reset. A Linux reboot reads exactly this
+                 (car8, 2026-10-11 15:45: pon_reason=01), and a kernel panic
+                 takes the same PSCI restart path, so a GT5 death is expected
+                 here, told apart from a reboot by the ledger's PANIC row;
+      COLD       an ordinary power-on (power key, charger, cable)."""
     joined = " ".join(lines)
     if "UVLO" in joined or "SMPL" in joined:
         return "BROWNOUT"
@@ -186,6 +192,10 @@ def pon_verdict(lines):
         for tok in ln.split():
             if tok.startswith("warm_reset=") and not tok.startswith("warm_reset=00"):
                 return "WARM"
+    primary = lines[0].split() if lines else []
+    pon = next((t for t in primary if t.startswith("pon_reason=")), "")
+    if "HARD_RESET" in pon and "KPDPWR" not in pon:
+        return "SOC_RESET"
     return "COLD"
 
 

@@ -19,6 +19,7 @@ import stat
 GRANT_PATH = "/etc/etk/grants/hunt.json"
 SCHEMA = "etk-hunt-grant/1"
 MAX_HOURS = 12.0
+MAX_PANICS = 6                          # kernel panics one grant may ride through (spec §6)
 LANES = ("rpcs3", "turnip")              # grantable mint lanes; kernel/image never are
 INJECT = ("emulators/hunt/", "drivers/hunt/", "debug_env")
 NEVER = ("publish", "tags", "garage remote", "rig reboot", "CERT pins",
@@ -134,7 +135,15 @@ def check_fields(g, now):
         p.append("node recorded outside always-free: " + "; ".join(always_free(fp)))
     if sorted(g.get("inject") or []) != sorted(INJECT):
         p.append("inject paths differ from the fixed set")
+    n = g.get("panics", 0)
+    if isinstance(n, bool) or not isinstance(n, int) or not 0 <= n <= MAX_PANICS:
+        p.append(f"panics {n!r} must be an integer in [0, {MAX_PANICS}]")
     return p
+
+
+def panics_spent(entries):
+    """Kernel panics this grant has already ridden through: its audited `panic` lines."""
+    return sum(1 for e in entries if e.get("action") == "panic")
 
 
 def check_owner(path, owner_uid=0):

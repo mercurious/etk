@@ -1,4 +1,4 @@
-# ETK Autonomy — Hunt Grants (spec v0.6 — APPROVED 2026-10-10; P1–P3 BUILT 2026-10-10: grant, guard, mint, car)
+# ETK Autonomy — Hunt Grants (spec v0.7 — APPROVED 2026-10-10; P1–P3 BUILT 2026-10-10; panic budget BUILT 2026-10-11, operator-set panics=3 for GT5)
 
 > Goal (operator, 2026-10-10): point the Engineer at one game and let it run trial-and-error
 > crash hunting with full autonomy overnight, so a core or driver regression is fixed by
@@ -203,8 +203,7 @@ grant → hunt.py status → [ hypothesis → commit on fork branch hunt/<id> �
 - **Recovery** is the R3 path only (`recovery.sh`). **Never a reboot.** If the rig is
   unreachable for more than 10 min, or the kernel panics, the hunt **stops**, writes its
   report and state, and waits for a human (no notification channel; operator, 2026-10-10).
-- **Panic budget (v0.7, GT5 op, 2026-10-11; PROPOSED until the operator signs a grant
-  carrying it).** Some titles kill the car's kernel (GT5: 46 PANIC rows, median 164 s), so
+- **Panic budget (v0.7, GT5 op, 2026-10-11; operator: "panic=3 to start").** Some titles kill the car's kernel (GT5: 46 PANIC rows, median 164 s), so
   for them the panic IS the event under study. A grant may carry `panics: N` (`grant.sh
   issue --panics N`, default 0 = the stop rule above, unchanged for every existing grant).
   With N > 0 the hunt **rides through** up to N kernel panics: the car's own kernel reboots
@@ -213,9 +212,9 @@ grant → hunt.py status → [ hypothesis → commit on fork branch hunt/<id> �
   (PMIC reset reason, flight recorder, kmsg, RPCS3.log, the PANIC row), and the next trial
   may launch. Every PANIC verdict is a hash-chained audit line; `hunt.py check --panic`
   refuses a launch once N are spent, so the N+1th launch never happens. Still a hard stop
-  at any count: the car dark for more than 10 min (UNREACHABLE), a reset class other than
-  a warm reset (BROWNOUT / OVERTEMP / PMIC_WD: the PMIC cut power, which is a hardware
-  question for a human), or a boot that comes back without the kit (no Pitlink on USB).
+  at any count: the car dark for more than 10 min (UNREACHABLE), a reset the PMIC made
+  itself (BROWNOUT / OVERTEMP / PMIC_WD: a hardware question for a human; a panic reads
+  SOC_RESET, the same class as a reboot, because both take the PSCI restart path), or a boot that comes back without the kit (no Pitlink on USB).
   The hunt car's `/storage` should be internal storage (car8's UFS), not the SD card, so a
   hard reset never lands mid-write on the card that holds the games.
 - **Morning deliverable:** a dossier with the verdict table and the convicting commit or

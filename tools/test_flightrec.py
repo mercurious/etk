@@ -94,7 +94,11 @@ cold = bb.decode_pon(regs)
 check("cold boot decodes pon_reason bits",
       "pon_reason=81(HARD_RESET+KPDPWR)" in cold, True)
 check("zero registers listed for diffing", "warm_reset=00" in cold and "fault1=00" in cold, True)
-check("cold boot verdict", bb.pon_verdict(["0-00 " + cold]), "COLD")
+check("power-key boot verdict", bb.pon_verdict(["0-00 " + cold]), "COLD")
+# car8 after the operator's reboot, 2026-10-11 15:45 (same window, pon_reason 0x01)
+soc = bb.decode_pon(bb.parse_regmap_dump(dump({**CAR8_COLD, 0x8C0: 0x01}, 0x800, 0x8E0)))
+check("HARD_RESET without the power key -> SOC_RESET (reboot / panic path)",
+      bb.pon_verdict(["0-00 " + soc, "0-02 " + cold]), "SOC_RESET")
 check("not a PON peripheral -> None", bb.decode_pon({0x804: 0x2C}), None)
 warm = bb.decode_pon(bb.parse_regmap_dump(dump({**CAR8_COLD, 0x8C2: 0x02}, 0x800, 0x8E0)))
 check("PS_HOLD warm reset -> WARM", bb.pon_verdict(["0-00 " + warm]), "WARM")

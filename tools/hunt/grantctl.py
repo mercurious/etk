@@ -7,7 +7,7 @@ The single privileged step is `sudo install`ing the grant the operator just read
 sudo password is the signature.
 
   grant.sh issue --game BCUS98296 --hours 10 [--lanes rpcs3,turnip] [--name gt6]
-                 [--rig car8] [--reserve car12] [--supervised]
+                 [--rig car8] [--reserve car12] [--supervised] [--panics N]
   grant.sh show
   grant.sh revoke
 
@@ -195,6 +195,7 @@ def compose(a, now, node_host, fp, rig, rig_probe, reserve, res_probe, tools):
                     "car_check": res_probe["message"]},
         "node": {"host": node_host, "fingerprint": fp, "sha": gl.fingerprint_sha(fp)},
         "mint": {"lanes": a.lanes, "one_at_a_time": True, "budget": "hours"},
+        "panics": a.panics,
         "inject": list(gl.INJECT),
         "never": list(gl.NEVER),
         "issuer": {"user": getpass.getuser(), "host": socket.gethostname()},
@@ -218,6 +219,9 @@ def envelope(g, raw):
         f"  node      {g['node']['host']}: {n['shape']} {n['ocpus']:g} OCPU / {n['memory_gb']:g} GB /"
         f" {n['disk_bytes'] / 1024 ** 3:.0f} GiB, {n['arch']} -- inside always-free",
         f"  mint      lanes {', '.join(g['mint']['lanes'])}; one at a time; no count budget (compute is free)",
+        f"  panics    " + (f"rides through up to {g['panics']} kernel panic(s): the car's own panic=30 reboot, "
+                             "then harvest and relaunch (the Engineer never reboots)" if g.get("panics")
+                             else "0: the hunt STOPS at the first kernel panic"),
         f"  inject    {', '.join(g['inject'])}",
         f"  never     {', '.join(g['never'])}",
         f"  tools     tools/hunt at {g['tools']['tools_hunt']}"
@@ -240,6 +244,8 @@ def issue(a, probes, confirm, signer, out=print, now=None, grant_path=gl.GRANT_P
         raise Refused(f"--hours must be in (0, {gl.MAX_HOURS:g}]")
     if any(l not in gl.LANES for l in a.lanes) or not a.lanes:
         raise Refused(f"--lanes must be a subset of {','.join(gl.LANES)} (kernel and image are never grantable)")
+    if not 0 <= a.panics <= gl.MAX_PANICS:
+        raise Refused(f"--panics must be in [0, {gl.MAX_PANICS}]")
     if a.name and not re.match(r"^[a-z0-9][a-z0-9-]{0,31}$", a.name):
         raise Refused("--name: lowercase letters, digits and dashes")
     if a.rig == a.reserve:
@@ -353,6 +359,8 @@ def main(argv=None):
     i.add_argument("--rig", default="car8")
     i.add_argument("--reserve", default="car12")
     i.add_argument("--supervised", action="store_true")
+    i.add_argument("--panics", type=int, default=0,
+                   help="kernel panics the hunt may ride through (default 0 = stop at the first)")
     sub.add_parser("show")
     sub.add_parser("revoke")
     a = ap.parse_args(argv)

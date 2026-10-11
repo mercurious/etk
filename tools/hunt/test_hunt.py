@@ -114,6 +114,13 @@ class GrantTests(Tmp):
         os.symlink(real, self.path)
         self.assertEqual(self.problems(), ["grant is not a regular file"])
 
+    def test_panics_field(self):
+        self.write(grant(panics=3))
+        self.assertEqual(self.problems(), [])
+        for bad in (7, -1, True, "3", 2.0):
+            self.write(grant(panics=bad))
+            self.assertTrue(any("panics" in p for p in self.problems()), bad)
+
     def test_writable_parent(self):
         self.write(grant())
         os.chmod(self.d, 0o777)
@@ -205,7 +212,7 @@ class AuditTests(Tmp):
 
 def args(**kw):
     a = dict(game="BCUS98296", hours=10.0, lanes=["rpcs3"], name="gt6", rig="car8", reserve="car12",
-             supervised=False)
+             supervised=False, panics=0)
     a.update(kw)
     return argparse.Namespace(**a)
 
@@ -304,9 +311,21 @@ class IssueTests(Tmp):
     def test_swapped_file(self):
         self.refused("not the one you read", tamper=True)
 
+    def test_panics(self):
+        g, text = self.issue(a=args(panics=3))
+        self.assertEqual(g["panics"], 3)
+        self.assertIn("rides through up to 3 kernel panic", text)
+        self.assertEqual(gl.load_grant(self.gp, UID, NOW)[2], [])
+
+    def test_panics_default_stops(self):
+        g, text = self.issue()
+        self.assertEqual(g["panics"], 0)
+        self.assertIn("STOPS at the first kernel panic", text)
+
     def test_bad_args(self):
         for kw, needle in (({"hours": 13}, "--hours"), ({"lanes": ["kernel"]}, "--lanes"),
-                           ({"game": "gt6"}, "PS3 serial"), ({"reserve": "car8"}, "reserve car")):
+                           ({"game": "gt6"}, "PS3 serial"), ({"reserve": "car8"}, "reserve car"),
+                           ({"panics": 7}, "--panics"), ({"panics": -1}, "--panics")):
             self.refused(needle, a=args(**kw))
 
 
@@ -371,6 +390,45 @@ class HuntTests(Tmp):
         rc, text = self.run_hunt("status")
         self.assertEqual(rc, 0)
         self.assertIn("chain intact", text)
+
+    def test_panic_budget(self):
+        self.write(grant(game="BCUS98114", panics=2))
+        raw = gl.load_grant(self.path, UID, NOW)[1]
+        ap = os.path.join(self.d, "hunt-20261011-gt6", "audit.jsonl")
+        gl.audit_append(ap, gl.sha256(raw), "issued", [], "ok", NOW)
+        rc, text = self.run_hunt("check", "--game", "BCUS98114", "--panic")
+        self.assertEqual((rc, "2 of 2 left" in text), (0, True))
+        self.assertEqual(self.run_hunt("panic", "--trial", "t/1", "--pon", "SOC_RESET")[0], 0)
+        rc, text = self.run_hunt("check", "--game", "BCUS98114", "--panic")
+        self.assertEqual((rc, "1 of 2 left" in text), (0, True))
+        rc, text = self.run_hunt("panic", "--trial", "t/2", "--pon", "SOC_RESET")
+        self.assertIn("budget SPENT", text)
+        rc, text = self.run_hunt("check", "--game", "BCUS98114", "--panic")
+        self.assertEqual((rc, "panic budget spent (2 of 2)" in text), (1, True))
+        self.assertEqual(self.run_hunt("check", "--game", "BCUS98114")[0], 0)   # non-panicking work goes on
+        self.assertIn("panics    2 of 2", self.run_hunt("status")[1])
+        e, p = gl.audit_verify(ap, gl.sha256(raw))
+        self.assertEqual((p, [x["action"] for x in e]), ([], ["issued", "panic", "panic"]))
+        self.assertEqual(e[1]["args"], {"trial": "t/1", "pon": "SOC_RESET"})
+
+    def test_panic_needs_budget(self):
+        self.write(grant(game="BCUS98114"))           # an existing grant: no panics field = 0
+        raw = gl.load_grant(self.path, UID, NOW)[1]
+        gl.audit_append(os.path.join(self.d, "hunt-20261011-gt6", "audit.jsonl"), gl.sha256(raw), "issued", [], "ok", NOW)
+        rc, text = self.run_hunt("check", "--game", "BCUS98114", "--panic")
+        self.assertEqual((rc, "0 of 0" in text), (1, True))
+
+    def test_panic_recorded_after_expiry(self):
+        self.write(grant(game="BCUS98114", panics=1))
+        raw = gl.load_grant(self.path, UID, NOW)[1]
+        ap = os.path.join(self.d, "hunt-20261011-gt6", "audit.jsonl")
+        gl.audit_append(ap, gl.sha256(raw), "issued", [], "ok", NOW)
+        out = []
+        rc = hunt.main(["panic", "--trial", "t/9", "--pon", "SOC_RESET"], out.append, self.path, UID,
+                       gl.parse_iso("2026-10-11T11:30:00Z"))
+        self.assertEqual(rc, 0)
+        e, _ = gl.audit_verify(ap, gl.sha256(raw))
+        self.assertIn("expired", e[-1]["result"]["grant"])
 
     def test_broken_chain_refuses(self):
         self.write(grant())

@@ -8,9 +8,14 @@ state/hunt/<id>/audit.jsonl, whether it acts or refuses.
   hunt.py status [--probe]      the grant, time left, the audit chain; --probe re-reads
                                 etk-cloud's shape and the host's USB (read-only)
   hunt.py audit [--tail N]      verify the chain, print the last N lines
-  hunt.py check [--game G] [--lane L] [--id ID] [--node-host H]
+  hunt.py check [--game G] [--lane L] [--id ID] [--node-host H] [--panic]
                                 exit 0 iff the grant is valid and in scope; --node-host
-                                also re-reads that node's shape against the grant's
+                                also re-reads that node's shape against the grant's;
+                                --panic also needs panic budget left (a launch that may
+                                kill the car's kernel: GT5)
+  hunt.py panic --trial DIR --pon CLASS
+                                audit a kernel panic a trial rode through (spends one of the
+                                grant's `panics`); recorded even if the grant expired mid-trial
   hunt.py mint --base SHA [--patch patches/X.patch] [--marker SYM] [--label TEXT] [--dry-run]
                                 one rpcs3 mint on etk-cloud: the base commit + the patch
                                 committed on fork branch hunt/<id>, through forge.sh --hunt,
@@ -47,6 +52,7 @@ ETK = os.path.abspath(os.path.join(HERE, "..", ".."))
 FORGE = [os.path.join(ETK, "forge.sh")]
 HUNT_STAGE = os.path.join(ETK, "emulators", "hunt")
 READ_ONLY = ("status", "audit", "check")
+RECORD = ("panic",)                      # facts that happened: audited under an expired grant too
 UNDO = ("unpin", "rollback", "end")
 LATER = {"trial": "P4", "recover": "P4", "report": "P4"}
 PUT_CHUNK = 768 << 10                    # raw bytes per garage put (the car takes <= 1 MiB)
@@ -74,6 +80,8 @@ def cmd_status(a, g, raw, problems, out, now, grant_path):
         f"  fp {g.get('node', {}).get('sha', '')[:12]}")
     entries, ap = gl.audit_verify(os.path.join(gl.hunt_dir(g.get("id", "?"), grant_path), "audit.jsonl"), gl.sha256(raw))
     out(f"audit     {len(entries)} lines, chain " + ("intact" if not ap else "BROKEN: " + "; ".join(ap)))
+    out(f"panics    {gl.panics_spent(entries)} of {g.get('panics', 0)} ridden through"
+        + ("" if g.get("panics") else " (0 = stop at the first)"))
     mints = [e for e in entries if e["action"] == "minted"]
     if mints:
         out(f"mints     {len(mints)}; last {mints[-1]['result'].get('artifact')}")
@@ -142,8 +150,37 @@ def cmd_check(a, g, raw, problems, out, now, grant_path):
         p.append(f"the grant is {g.get('id')}, not {a.id}")
     if g and not p and a.node_host:
         p += node_problems(g, a.node_host)
-    out("valid" if not p else "invalid: " + "; ".join(p))
+    note = ""
+    if g and not p and a.panic:
+        entries, ap_ = gl.audit_verify(os.path.join(gl.hunt_dir(g["id"], grant_path), "audit.jsonl"), gl.sha256(raw))
+        spent, budget = gl.panics_spent(entries), g.get("panics", 0)
+        if ap_:
+            p.append("the audit chain is broken: " + "; ".join(ap_))
+        elif spent >= budget:
+            p.append(f"panic budget spent ({spent} of {budget}): the next launch could kill the car's kernel "
+                     "again; the operator re-issues or the hunt ends")
+        else:
+            note = f" (panic budget {budget - spent} of {budget} left)"
+    out("valid" + note if not p else "invalid: " + "; ".join(p))
     return 0 if not p else 1
+
+
+def cmd_panic(a, g, raw, problems, out, now, grant_path):
+    """Record a kernel panic a trial rode through. A fact, not an action: it is audited under
+    the grant it happened under even if that grant expired meanwhile."""
+    if g is None:
+        out(f"hunt panic: no grant to record it under ({'; '.join(problems)}); keep the trial dir")
+        return 1
+    audit = os.path.join(gl.hunt_dir(g["id"], grant_path), "audit.jsonl")
+    entries, ap_ = gl.audit_verify(audit, gl.sha256(raw))
+    if ap_:
+        out(f"hunt panic: the audit chain is broken ({'; '.join(ap_)}); not recorded, the operator must look")
+        return 1
+    spent, budget = gl.panics_spent(entries) + 1, g.get("panics", 0)
+    gl.audit_append(audit, gl.sha256(raw), "panic", {"trial": a.trial, "pon": a.pon},
+                    {"spent": spent, "budget": budget, "grant": "valid" if not problems else "; ".join(problems)}, now)
+    out(f"hunt panic: recorded {spent} of {budget}" + (" -- budget SPENT, no further launches" if spent >= budget else ""))
+    return 0
 
 
 # ---- mint (P2) ----------------------------------------------------------------------------
@@ -339,6 +376,10 @@ def main(argv=None, out=print, grant_path=gl.GRANT_PATH, owner_uid=0, now=None):
     s.add_argument("--lane")
     s.add_argument("--id")
     s.add_argument("--node-host")
+    s.add_argument("--panic", action="store_true")
+    s = sub.add_parser("panic")
+    s.add_argument("--trial", required=True)
+    s.add_argument("--pon", default="unknown")
     s = sub.add_parser("mint")
     s.add_argument("--base", required=True)
     s.add_argument("--patch")
@@ -358,6 +399,8 @@ def main(argv=None, out=print, grant_path=gl.GRANT_PATH, owner_uid=0, now=None):
     g, raw, problems = gl.load_grant(grant_path, owner_uid, now)
     if a.cmd in READ_ONLY:
         return {"status": cmd_status, "audit": cmd_audit, "check": cmd_check}[a.cmd](a, g, raw, problems, out, now, grant_path)
+    if a.cmd in RECORD:
+        return cmd_panic(a, g, raw, problems, out, now, grant_path)
 
     if a.cmd in UNDO and (g is None or problems):   # undoing never needs a valid grant
         audit = os.path.join(gl.hunt_dir(g["id"], grant_path), "audit.jsonl") if g else None
