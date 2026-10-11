@@ -17,13 +17,17 @@ Verdicts (verdict.json in --out; exit code):
   PANIC        1  the car went dark and came back on a NEW boot_id; evidence harvested
   NO_GAME      2  the launch did not take, or a game was already running
   CRASH        3  RPCS3 logged a guest fault / froze the emulation (recover: gtpilot.py recover)
-  UNREACHABLE  4  dark for longer than --return-secs: the hunt STOPS and waits for a human
+  UNREACHABLE  4  dark for longer than --return-secs, or back WITHOUT the kit (no Pitlink
+                  garage on USB): the hunt STOPS and waits for a human
   FREEZE       5  car up, game running, flips stopped for --freeze-secs (recover: gtpilot.py recover)
   EXITED       6  the game left on its own (back at ES), the car never went down
+  POWER_CUT    7  the car came back, but its PMIC cut power (BROWNOUT / OVERTEMP / PMIC_WD):
+                  a hardware question, the hunt STOPS (AUTONOMY_SPEC §6 panic budget)
 
-Unattended GT5 runs need a valid hunt grant for BCUS98114 (`hunt.py check --game
-BCUS98114`): a GT5 launch knowingly risks the car's kernel, so it rides on the operator's
-signature, never on the Engineer's say-so. All car reads are read-only ssh (cat/ls/tail).
+Unattended GT5 runs need a valid hunt grant for BCUS98114 with panic budget left
+(`hunt.py check --game BCUS98114 --panic`): a GT5 launch knowingly risks the car's kernel,
+so it rides on the operator's signature, never on the Engineer's say-so. Each PANIC is
+audited (`hunt.py panic --trial DIR`), which is what spends the budget. All car reads are read-only ssh (cat/ls/tail).
 
   gt5_trial.py --out DIR [--secs 1500] [--macro FILE] [--label TEXT] [--host etk-rig]
 
@@ -269,8 +273,11 @@ def main():
         with open(os.path.join(a.out, "trial.log"), "a") as fh:
             fh.write(line + "\n")
 
-    if subprocess.run([sys.executable, HUNT, "check", "--game", GAME], capture_output=True).returncode != 0:
-        sys.exit("gt5_trial: no valid hunt grant for BCUS98114 (hunt.py check --game BCUS98114); "
+    gate = subprocess.run([sys.executable, HUNT, "check", "--game", GAME, "--panic"],
+                          capture_output=True, text=True)
+    if gate.returncode != 0:
+        sys.exit("gt5_trial: no valid hunt grant for BCUS98114 with panic budget left "
+                 f"(hunt.py check --game BCUS98114 --panic: {(gate.stdout or '').strip()}); "
                  "an unattended GT5 launch rides on the operator's signature")
     verdict = {"label": a.label, "game": GAME, "macro": a.macro,
                "debug_env": garage({"op": "debug_env", "action": "show"})["env"]}
@@ -350,11 +357,25 @@ def main():
                 back = round(time.time() - t_down)
                 log(f"car BACK on boot {bid[:8]} after {back}s; harvesting")
                 ev = harvest(a.host, a.out, base_pon.strip(), log)
-                finish("PANIC", 1, died_secs=round(t_down - t0), back_secs=back, new_boot_id=bid,
-                       first_lit=lit, pon=pon_verdict_of(ev.get("pon")) or ev.get("pon_direct_verdict"),
-                       pon_direct=ev.get("pon_direct_verdict"),
-                       last_sample=last_game_sample(ev.get("flightrec", "")),
-                       ledger_row=(ev.get("ledger_tail", "").strip().splitlines() or [""])[-1][:200])
+                pon = pon_verdict_of(ev.get("pon")) or ev.get("pon_direct_verdict")
+                audit = subprocess.run([sys.executable, HUNT, "panic", "--trial", a.out, "--pon", str(pon)],
+                                       capture_output=True, text=True)
+                verdict["audit"] = (audit.stdout or audit.stderr or "").strip()[-300:]
+                kit = None
+                t_kit = time.time()
+                while kit is None and time.time() - t_kit < 180:
+                    kit = gsafe({"op": "status"}, timeout=10)
+                    if kit is None:
+                        time.sleep(10)
+                common = dict(died_secs=round(t_down - t0), back_secs=back, new_boot_id=bid, first_lit=lit,
+                              pon=pon, pon_direct=ev.get("pon_direct_verdict"),
+                              last_sample=last_game_sample(ev.get("flightrec", "")),
+                              ledger_row=(ev.get("ledger_tail", "").strip().splitlines() or [""])[-1][:200])
+                if pon in ("BROWNOUT", "OVERTEMP", "PMIC_WD"):
+                    finish("POWER_CUT", 7, note="the PMIC cut power: a hardware question, STOP for a human", **common)
+                if kit is None:
+                    finish("UNREACHABLE", 4, note="car back but no Pitlink garage within 180 s: STOP", **common)
+                finish("PANIC", 1, **common)
         if lit and now - flip_t > a.freeze_secs and now - last_ok < a.lost_secs \
                 and (gsafe({"op": "running"}) or {}).get("running"):
             dump = (gsafe({"op": "dump_threads", "timeout": 8}, {}, timeout=60) or {}).get("text", "")

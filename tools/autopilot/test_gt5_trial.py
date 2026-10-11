@@ -76,7 +76,7 @@ class FakeFrame:
         open(path, "wb").close()
 
 
-def run_scenario(die_at=None, back_at=None, freeze_at=None, secs=600, lit_frames=True, granted=True):
+def run_scenario(die_at=None, back_at=None, freeze_at=None, secs=600, lit_frames=True, granted=True, uvlo=False):
     """Run gt5_trial.main() against a fake car. die_at/back_at/freeze_at are seconds after
     launch. Returns (exit code, verdict dict, out dir)."""
     Clock.t = 1000.0
@@ -130,6 +130,8 @@ def run_scenario(die_at=None, back_at=None, freeze_at=None, secs=600, lit_frames
             return {"launched": {}}
         if op == "log":
             return {"size": 10, "lines": 0, "text": ""}
+        if op == "status":
+            return {"daemon": "fake", "running": None}
         if op == "dump_threads":
             return {"text": "PPU[0x1000000]; State: ..."}
         raise AssertionError(op)
@@ -143,7 +145,8 @@ def run_scenario(die_at=None, back_at=None, freeze_at=None, secs=600, lit_frames
         if cmd.startswith("cat /proc/sys/kernel/random/boot_id"):
             return 0, boot + "\n"
         if cmd == gt.PON_READ:
-            regs = {0x804: 0x01, 0x805: 0x04, 0x8C0: 0x81, 0x8C2: 0x02 if rebooted() else 0, 0x8C5: 0x02}
+            regs = {0x804: 0x01, 0x805: 0x04, 0x8C0: 0x81, 0x8C2: 0x02 if rebooted() else 0, 0x8C5: 0x02,
+                    0x8C8: 0x40 if uvlo and rebooted() else 0}
             win = "".join(f"{a:04x}: {regs.get(a, 0):02x}\n" for a in range(0x800, 0x8E0))
             return 0, "== 0-00\n" + win + "== 0-01\n" + "".join(f"{a:04x}: 00\n" for a in range(0x800, 0x8E0))
         if "pon-*.txt" in cmd and "capacity" in cmd:
@@ -151,7 +154,8 @@ def run_scenario(die_at=None, back_at=None, freeze_at=None, secs=600, lit_frames
         if "pon-*.txt" in cmd:
             return 0, ("/bb/pon-2.txt\n" if rebooted() else "/bb/pon-1.txt\n")
         if cmd.startswith("cat /bb/pon-2.txt"):
-            return 0, "# epoch=2 boot_id=boot-B uptime_s=40.0 verdict=WARM\n0-00 subtype=04 warm_reset=02(PS_HOLD)\n"
+            return 0, (f"# epoch=2 boot_id=boot-B uptime_s=40.0 verdict={'BROWNOUT' if uvlo else 'WARM'}\n"
+                       "0-00 subtype=04 warm_reset=02(PS_HOLD)\n")
         if "flightrec-*.tsv" in cmd:
             return 0, "/bb/flightrec-NEW.tsv\n/bb/flightrec-DEAD.tsv\n"
         if "kmsg-*.log" in cmd:
@@ -170,13 +174,22 @@ def run_scenario(die_at=None, back_at=None, freeze_at=None, secs=600, lit_frames
 
     class FakeRun:
         returncode = 0 if granted else 1
+        stdout = "valid" if granted else "invalid: panic budget spent (2 of 2)"
+        stderr = ""
+
+    calls = []
+
+    def fake_run(argv, **k):
+        calls.append(argv[2:])
+        return FakeRun()
 
     gt.time.time = now
     gt.time.sleep = sleep
     gt.PitlinkClient = FakeClient
     gt.garage = fake_garage
     gt.ssh = fake_ssh
-    gt.subprocess.run = lambda *a, **k: FakeRun()
+    gt.subprocess.run = fake_run
+    run_scenario.calls = calls
     gt.threading.Event.wait = lambda self, t=None: sleep(t or 0)
     out = tempfile.mkdtemp(prefix="gt5trial-")
     sys.argv = ["gt5_trial.py", "--out", out, "--secs", str(secs), "--return-secs", "300"]
@@ -208,6 +221,13 @@ check("evidence files written",
       ["RPCS3_dead_session.log", "flightrec_dead_boot.tsv", "kmsg_dead_boot.log", "ledger_tail.tsv",
        "pon.txt", "pon_direct.txt", "tripwire_tail.log"])
 check("battery at start recorded", v.get("battery_pct_start"), "87")
+check("launch gated on the panic budget; the PANIC audited (spends it)",
+      [c[:4] if c[0] == "check" else c[:2] for c in run_scenario.calls],
+      [["check", "--game", "BCUS98114", "--panic"], ["panic", "--trial"]])
+
+print("\n[3b] back, but the PMIC cut power (UVLO)")
+code, v, _ = run_scenario(die_at=164, back_at=240, uvlo=True)
+check("verdict POWER_CUT, exit 7 (STOP)", (v.get("verdict"), code, v.get("pon")), ("POWER_CUT", 7, "BROWNOUT"))
 
 print("\n[4] the car never comes back")
 code, v, _ = run_scenario(die_at=100, back_at=None)
@@ -223,7 +243,8 @@ check("no lit frame yet (PPU compile / loading) -> never FREEZE", (v.get("verdic
 
 print("\n[7] no grant for BCUS98114")
 code, launched, _ = run_scenario(granted=False)
-check("refuses before launching anything", (isinstance(code, str) and "no valid hunt grant" in code, launched), (True, {}))
+check("refuses before launching anything, naming the budget",
+      (isinstance(code, str) and "panic budget spent" in code, launched), (True, {}))
 
 print("\n[6] survives the window")
 code, v, _ = run_scenario(secs=300)
