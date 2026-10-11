@@ -23,6 +23,9 @@ Verdicts (verdict.json in --out; exit code):
   EXITED       6  the game left on its own (back at ES), the car never went down
   POWER_CUT    7  the car came back, but its PMIC cut power (BROWNOUT / OVERTEMP / PMIC_WD):
                   a hardware question, the hunt STOPS (AUTONOMY_SPEC §6 panic budget)
+  GUEST_OOM    8  the PS3 guest ran its user memory dry and loops on CELL_ENOMEM (0.9.1 core,
+                  2026-10-11: before the menu, `lv2_memory: Cannot allocate 0x100000`);
+                  recover: gtpilot.py recover
 
 Unattended GT5 runs need a valid hunt grant for BCUS98114 with panic budget left
 (`hunt.py check --game BCUS98114 --panic`): a GT5 launch knowingly risks the car's kernel,
@@ -55,6 +58,8 @@ BB = ETK + "/etk_telemetry/blackbox"
 LEDGER = ETK + "/etk_telemetry/sessions.tsv"
 RPCS3_LOG = "/storage/.cache/rpcs3/RPCS3.log"
 TRIPWIRE = "/storage/etk_tripwire.log"
+GUEST_OOM = re.compile(r"lv2_memory::on_id_create\(\): Cannot allocate")
+GUEST_OOM_MIN = 50          # one failed alloc can be a probe; a loop is hundreds a second
 FAULT = re.compile(r"VM: Access violation|SYS: Emulation has been frozen|Unhandled exception|PPU: Trap")
 HUNT = os.path.join(HERE, "..", "hunt", "hunt.py")
 # the blackbox's own PON parser/decoder (pure functions; importing runs no daemon code)
@@ -392,6 +397,13 @@ def main():
                     with open(os.path.join(a.out, "log_tail.txt"), "w") as fh:
                         fh.write(garage({"op": "log", "tail": 400}).get("text", ""))
                     finish("CRASH", 3, fault=bad["text"][-1200:])
+                oom = garage({"op": "log", "from": 0, "grep": GUEST_OOM.pattern}) if rotated else {"lines": 0}
+                if oom["lines"] >= GUEST_OOM_MIN:
+                    mem = garage({"op": "log", "from": 0, "grep": r"sys_memory_get_user_memory_size"})
+                    with open(os.path.join(a.out, "guest_memory.txt"), "w") as fh:
+                        fh.write(mem.get("text", ""))
+                    finish("GUEST_OOM", 8, failed_allocs=oom["lines"], first_lit=lit,
+                           last_user_memory=(mem.get("text", "").splitlines() or [""])[-1][-120:])
             except (OSError, PitlinkError, KeyError, ValueError):
                 pass       # the garage socket rides the same USB link: a death shows up above
         time.sleep(2)

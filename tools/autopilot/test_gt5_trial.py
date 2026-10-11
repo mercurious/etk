@@ -76,7 +76,7 @@ class FakeFrame:
         open(path, "wb").close()
 
 
-def run_scenario(die_at=None, back_at=None, freeze_at=None, secs=600, lit_frames=True, granted=True, uvlo=False):
+def run_scenario(die_at=None, back_at=None, freeze_at=None, secs=600, lit_frames=True, granted=True, uvlo=False, oom_at=None):
     """Run gt5_trial.main() against a fake car. die_at/back_at/freeze_at are seconds after
     launch. Returns (exit code, verdict dict, out dir)."""
     Clock.t = 1000.0
@@ -129,6 +129,10 @@ def run_scenario(die_at=None, back_at=None, freeze_at=None, secs=600, lit_frames
             launched["t"] = Clock.t
             return {"launched": {}}
         if op == "log":
+            if oom_at is not None and rel() >= oom_at and "Cannot allocate" in req.get("grep", ""):
+                return {"size": 10, "lines": 400, "text": "·E lv2_memory::on_id_create(): Cannot allocate 0x100000"}
+            if oom_at is not None and "user_memory_size" in req.get("grep", ""):
+                return {"size": 10, "lines": 1, "text": "sys_memory_get_user_memory_size: Avail=0x98000, Total=0xd500000"}
             return {"size": 10, "lines": 0, "text": ""}
         if op == "status":
             return {"daemon": "fake", "running": None}
@@ -240,6 +244,11 @@ check("stopped >= --freeze-secs", v.get("stopped_secs", 0) >= 90, True)
 check("thread dump banked", os.path.exists(os.path.join(out, "dump.txt")), True)
 code, v, _ = run_scenario(freeze_at=120, lit_frames=False, secs=400)
 check("no lit frame yet (PPU compile / loading) -> never FREEZE", (v.get("verdict"), code), ("SURVIVED", 0))
+
+print("\n[5b] the guest runs its memory dry (0.9.1 pre-menu)")
+code, v, out = run_scenario(oom_at=60)
+check("verdict GUEST_OOM, exit 8", (v.get("verdict"), code), ("GUEST_OOM", 8))
+check("guest memory lines banked", "Avail=0x98000" in open(os.path.join(out, "guest_memory.txt")).read(), True)
 
 print("\n[7] no grant for BCUS98114")
 code, launched, _ = run_scenario(granted=False)
