@@ -2,7 +2,10 @@
 """gt6_trial -- one unattended GT6 (BCUS98296) boot trial for the 0.9.1-base deadlock.
 
 Launches GT6 through the Pitlink garage (USB), then decides:
-  PASS      a non-black frame arrived (GT6 never draws one when the deadlock forms)
+  PASS      a non-black frame arrived (GT6 never draws one when the deadlock forms), or the
+            precursor came and L1 was still FREE (owner 0xffffffff) at both looks, 30 s
+            and ~2 min after it (hunt m02, 2026-10-10: no frame reached the trial, but L1's
+            owner word decided it)
   DEADLOCK  the known precursor appeared (thread 9qstY: cellUserInfoGetList, then
             sys_rsx_context_iomap io=0x2700000) and 30 s later the signature holds: the main
             thread sleeps in _sys_lwcond_queue_wait while lwmutex L1 (0x16a8d08) is owned by
@@ -12,7 +15,9 @@ Evidence (thread dump, the log slice since launch, last frame, verdict.json) goe
 It does not recover the car; run `gtpilot.py recover` after (the kit's R3 path).
 Set the run's diagnostics first: `pitlink.py garage debug_env action=set ARMSX3_...=...`.
 
-  gt6_trial.py --out DIR [--secs 1200] [--label TEXT]
+  gt6_trial.py --out DIR [--secs 2400] [--label TEXT]
+--secs covers a fresh core's PPU compile: a core from another ARMSX3 base recompiles GT6's
+modules first (hunt m02: ~15 min before the real boot began).
 Exit: 0 PASS, 1 DEADLOCK, 2 TIMEOUT / no game.
 """
 import argparse
@@ -50,7 +55,7 @@ def thread_table(text):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--secs", type=float, default=1200)
+    ap.add_argument("--secs", type=float, default=2400)
     ap.add_argument("--label", default="")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
@@ -70,9 +75,12 @@ def main():
     t0 = time.time()
     print(f"gt6_trial: launched ({a.label or 'no label'}), env {verdict['debug_env']}", flush=True)
 
-    # RPCS3 rewrites RPCS3.log at boot; until the size drops below the pre-launch size the file
-    # is still the PREVIOUS boot's, which contains the precursor too.
+    # RPCS3 rewrites RPCS3.log at boot; until then the file is still the PREVIOUS boot's, which
+    # contains the precursor too. A smaller file proves the rewrite; so does time -- RPCS3 is up
+    # within seconds of a launch, and a new log can already be bigger than a short previous one
+    # (hunt m02: it was, so the trial never grepped the new log).
     c, precursor_t, last_log_check, rotated = None, None, 0.0, log0 == 0
+    free_looks = 0
     while time.time() - t0 < a.secs:
         if c is None:
             try:
@@ -95,7 +103,7 @@ def main():
         if now - last_log_check > 10:
             last_log_check = now
             if not rotated:
-                rotated = garage({"op": "log", "tail": 1})["size"] < log0
+                rotated = garage({"op": "log", "tail": 1})["size"] < log0 or now - t0 > 45
             rep = garage({"op": "log", "from": 0, "grep": PRECURSOR.pattern}) if rotated else {"lines": 0}
             if rep["lines"] and precursor_t is None:
                 precursor_t = now
@@ -122,6 +130,9 @@ def main():
                         lwmutex_blocked=[k for k, v in tt.items() if v.get("func") == "_sys_lwmutex_lock"])
             if sig:
                 finish("DEADLOCK", 1, **info)
+            free_looks = free_looks + 1 if owner == 0xffffffff else 0
+            if free_looks >= 2:
+                finish("PASS", 0, note="L1 still free ~2 min after the precursor: no deadlock", **info)
             print(f"gt6_trial: precursor seen but no deadlock signature yet: {info}", flush=True)
             precursor_t = now + 60  # look again in 90 s
         time.sleep(0.5)
