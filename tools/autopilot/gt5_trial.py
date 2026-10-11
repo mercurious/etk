@@ -295,9 +295,15 @@ def harvest(host, out, base_pon, log):
         if "\tPANIC\t" in last[0]:
             break
         time.sleep(10)
+    # pstore (forensics kernel 0.6.4.2+: ramoops console in reserved RAM). GT5's death is a WARM reset
+    # and RAM survives it (2026-10-11 f1: the dead boot's console-ramoops-0 came back); blackbox_d
+    # harvests /sys/fs/pstore at boot into blackbox/pstore/<stamp>/. Newest stamp only.
+    _, o = ssh(host, f"d=$(ls -td {BB}/pstore/*/ 2>/dev/null | head -1); [ -n \"$d\" ] && "
+                     "for f in \"$d\"*; do echo \"=== $f\"; cat \"$f\"; done")
+    ev["pstore"] = o
     _, ev["rpcs3_log_tail"] = ssh(host, f"tail -n 4000 {RPCS3_LOG}", timeout=60)
     _, ev["tripwire_tail"] = ssh(host, f"tail -n 60 {TRIPWIRE}")
-    names = {"pon": "pon.txt", "pon_direct": "pon_direct.txt", "flightrec": "flightrec_dead_boot.tsv", "kmsg": "kmsg_dead_boot.log",
+    names = {"pon": "pon.txt", "pon_direct": "pon_direct.txt", "pstore": "pstore.txt", "flightrec": "flightrec_dead_boot.tsv", "kmsg": "kmsg_dead_boot.log",
              "ledger_tail": "ledger_tail.tsv", "rpcs3_log_tail": "RPCS3_dead_session.log",
              "tripwire_tail": "tripwire_tail.log"}
     for k, v in ev.items():

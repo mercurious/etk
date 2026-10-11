@@ -178,6 +178,8 @@ def run_scenario(die_at=None, back_at=None, freeze_at=None, secs=600, lit_frames
             return 0, "6,1,1,-;quiet\n"
         if "sessions.tsv" in cmd:
             return 0, ledger + ("1788447694\t164\tFULL\tBCUS98114\tPANIC\t0.0\n" if rebooted() else "")
+        if "/pstore/" in cmd:
+            return 0, "=== /bb/pstore/x/console-ramoops-0\n[ 0.97] DSI PLL(0) lock failed\n"
         if "RPCS3.log" in cmd:
             return 0, "·E 0:02:41 last line\n"
         if "tripwire" in cmd:
@@ -233,7 +235,7 @@ check("ledger PANIC row captured", "\tPANIC" in v.get("ledger_row", ""), True)
 check("evidence files written",
       sorted(f for f in os.listdir(out) if f.endswith((".txt", ".tsv", ".log")) and f != "trial.log"),
       ["RPCS3_dead_session.log", "flightrec_dead_boot.tsv", "kmsg_dead_boot.log", "ledger_tail.tsv",
-       "pon.txt", "pon_direct.txt", "tripwire_tail.log"])
+       "pon.txt", "pon_direct.txt", "pstore.txt", "tripwire_tail.log"])
 check("battery at start recorded", v.get("battery_pct_start"), "87")
 check("launch gated on the panic budget; the PANIC audited (spends it)",
       [c[:4] if c[0] == "check" else c[:2] for c in run_scenario.calls],
