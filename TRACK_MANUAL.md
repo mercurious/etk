@@ -109,6 +109,23 @@ or build node; every host-side gate/analysis tool (`release_sanity.sh`, `tools/t
 `etk_dyno.py`); staging artifacts; editing `etk.conf` knobs; `git` under the trunk protocol.
 Preparing a bytes-to-atoms tool's inputs is the whole job — running it is not part of it.
 
+**HUNT GRANTS (operator, 2026-10-10; `docs/AUTONOMY_SPEC.md`).** Because etk-cloud is sized
+inside the always-free tier (a mint costs no money) and the garage holds a reserve car (losing
+the hunt car is survivable), the operator may, for an autonomous crash hunt, sign one grant
+(`tools/hunt/grant.sh issue`, at their terminal, signed with `sudo`) that moves the human
+moment from each mint and deploy to the grant itself: one game, one rig, bounded in hours (cap
+12), the rpcs3 lane (turnip when granted), injection only into `hunt/` paths and the debug env,
+R3 recovery only. **Publish, tags, reboots, kernel/image lanes, certified pins and
+install/uninstall are never grantable.** Both facts are enforced, not assumed: `issue` refuses a
+node outside the always-free shape, and `hunt.py mint` re-checks its fingerprint; an overnight
+grant needs the reserve verified at issue, otherwise it is `--supervised`. Under a valid grant
+the Engineer acts only through `tools/hunt/hunt.py` (every action validated and hash-chain
+audited); without one, nothing here changes. Revocation: `grant.sh revoke`, Pitstop TOOLS →
+Autonomy off, or expiry. **The concept's approval is not a grant**: until `hunt.py status`
+says VALID, every mint and deploy is the operator's, as above. The PreToolUse guard
+`tools/hunt/guard.py` denies the Engineer the raw controls (forge, lanes, builds,
+install/uninstall, release, tags, reboots) whether or not a grant exists.
+
 ### 1.2 Always-reboot gate
 Every tune/config change must survive a COLD boot; reboot is the only honest validation.
 `/storage` persists; nothing else does (`/dev/shm` and `/tmp` die every boot).

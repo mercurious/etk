@@ -27,7 +27,9 @@ pointer; git history is its archive.) Don't re-derive documented facts live: fro
   humans' machines; the PRODUCT, not the source: ordinary dev pushes to `origin/main` are
   normal). `--dry-run`/`--status` are NOT exemptions. The test for a tool not on the list:
   could it brick hardware, spend someone's money, or reach another human's computer? Any
-  yes = hand it over; when unsure, it crosses — ask.
+  yes = hand it over; when unsure, it crosses — ask. **Hunt grants (§1.1, `docs/AUTONOMY_SPEC.md`):**
+  only while `tools/hunt/hunt.py status` says VALID may the Engineer mint/inject, and only through
+  `hunt.py`; the guard hook (`tools/hunt/guard.py`) denies the raw controls either way.
 - **The operator runs the controls; Claude preps and hands off.** Never reboot the rig
   remotely; never run install/forge/publish "to check." A handoff ends with the exact
   command in its own ```bash fenced block (ONE command, no `$`) so the operator gets a Run

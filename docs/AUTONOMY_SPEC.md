@@ -1,4 +1,4 @@
-# ETK Autonomy — Hunt Grants (spec v0.3 — APPROVED 2026-10-10, all decisions settled; mechanism not built)
+# ETK Autonomy — Hunt Grants (spec v0.4 — APPROVED 2026-10-10; P1 BUILT 2026-10-10: grant.sh, hunt.py, guard)
 
 > Goal (operator, 2026-10-10): point the Engineer at one game and let it run trial-and-error
 > crash hunting with full autonomy overnight, so a core or driver regression is fixed by
@@ -20,7 +20,11 @@ grantable.** Nothing a grant covers reaches another human's machine.
 
 The guarantee against self-escalation: a grant is a **root-owned file created with `sudo`**.
 The Engineer has no sudo (it asks for a password), so it can read a grant but never create,
-extend or widen one.
+extend or widen one. **Root runs no repo code** (P1): `grant.sh` runs as the operator, probes
+read-only, prints the envelope and its sha256, asks the operator to type the grant id, and
+only then `sudo install`s that exact file; it re-reads the installed bytes and removes the grant
+if they differ from what was printed. A repo script under `sudo` would hand root to whoever last
+edited it.
 
 ### 1.1 Why the guardrails can relax now: the two facts that changed the atoms (operator, 2026-10-10)
 
@@ -41,43 +45,70 @@ confined to user-space payloads under `hunt/` paths, R3-only recovery, and no re
 
 ## 2. The grant
 
-`/etc/etk/grants/hunt.json` (root:root 0644), created by the operator:
+`/etc/etk/grants/hunt.json` (root:root 0644), created by the operator at a terminal, as
+themself (not under `sudo`; the script refuses root):
 
 ```bash
-sudo /home/dave/etk/tools/hunt/grant.sh issue --game BCUS98296 --hours 10 [--lanes rpcs3,turnip]
+/home/dave/etk/tools/hunt/grant.sh issue --game BCUS98296 --hours 10 [--lanes rpcs3,turnip] [--supervised]
 ```
 
-The script prints the envelope and requires the password: **that's the human moment**. Fields:
+The script prints the envelope, the operator types the grant id, and `sudo` asks for the
+password: **that's the human moment**. `grant.sh show` prints the current grant; `grant.sh
+revoke` removes it (host and rig). Before the signature, `issue` refuses unless: the guard is a
+registered PreToolUse hook; etk-cloud's OCI shape is inside always-free; the hunt car passes
+`scripts/etk_car.sh verify` and its USB gadget serial is one the host sees on 1d6b:0104; no
+other grant is valid. Fields:
 
 | Field | Example | Meaning |
 |---|---|---|
-| `id` | `hunt-20261011-gt6` | names the fork branch `hunt/<id>`, the audit log and the report |
+| `id` | `hunt-20261011-gt6` | names the fork branch `hunt/<id>`, the audit log and the report (`--name gt6`; default the serial) |
 | `issued_at` / `expires_at` | +10 h (hard cap 12 h) | after expiry every layer refuses |
 | `game` | `BCUS98296` | the only title that may be pinned or overridden |
 | `rig` | car8 (USB serial `32906f627cfd…`) | the only car the hunt may touch; the other car is the reserve |
-| `reserve` | car12 (`flip2-12g`), last verified bootable | required for an overnight grant (§1.1); absent = supervised-only |
+| `mode` | `overnight` / `supervised` | overnight only with a verified reserve; otherwise `issue` refuses unless `--supervised` |
+| `reserve` | car12 (`flip2-12g`), last verified bootable | **verified** = passes `etk_car.sh verify` with its name assigned, reports its boot time, and carries Pitstop (`roms/etk/bin/etk_pitstop.py`). Required for an overnight grant (§1.1) |
 | `node` | etk-cloud shape fingerprint at issue | `mint` refuses if the node changed (always-free sizing, §1.1) |
 | `mint` | lanes `rpcs3` (default) + `turnip` when `--lanes` names it | core-oriented, Turnip-capable. No mint-count or node-hour budget, since compute is free (§1.1); one mint at a time. `kernel` and `image` lanes are **never** grantable (brick risk) |
 | `inject` | `emulators/hunt/`, `drivers/hunt/`, `debug_env` | the only rig paths a hunt may write |
 | `never` | publish, tags, `garage` remote, rig reboot, CERT pins, kernel/DTB/firmware, `/flash`, install/uninstall | fixed, not configurable |
+| `tools` | `tools/hunt` commit, clean or not | what the operator trusted; the envelope flags uncommitted changes |
 
-At issue, `grant.sh` also mirrors a **rig grant** (id + expiry + game) to
-`/storage/.config/etk-hunt.grant` over the operator's own ssh. The car checks it
+At issue, `grant.sh` also mirrors a **rig grant** (id, game, expiry, USB serial, lanes as
+`key=value` lines) to `/storage/.config/etk-hunt.grant` over the operator's own ssh. The car checks it
 independently, so expiry and revocation hold even if the host is wrong.
 
 ## 3. Enforcement (defence in depth)
 
 1. **One entry point.** `tools/hunt/hunt.py` is the only command the Engineer runs for a hunt
-   (`status · mint · put · pin · unpin · trial · recover · rollback · end · report`). Every
-   subcommand first validates the grant (root-owned, not dave-writable, unexpired, node
-   fingerprint unchanged, in scope), then appends a **hash-chained** line to `state/hunt/<id>/audit.jsonl`
-   (time, action, args, result; mints and node-minutes are recorded, not budgeted).
+   (`status · check · audit · mint · put · pin · unpin · trial · recover · rollback · end · report`).
+   Every acting subcommand first validates the grant (a regular file, root-owned, writable by
+   no one else, in root-owned directories; unexpired; at most 12 h; the node fingerprint's sha
+   matches its fields and those fields are always-free; in scope), refuses on a broken audit
+   chain, then appends a **hash-chained** line to `state/hunt/<id>/audit.jsonl` (time, action,
+   args, result; mints and node-minutes are recorded, not budgeted). The chain's first link is
+   the sha256 of the grant bytes, so a log only verifies under the grant it ran under. It is
+   tamper-evident, not tamper-proof: the file is the Engineer's. P1 builds `status [--probe]`,
+   `check [--game --lane]` and `audit`; the rest validate, audit the attempt and exit 3 naming
+   their phase.
 2. **Claude Code permissions.** The only new allow rule is
-   `Bash(python3 /home/dave/etk/tools/hunt/hunt.py:*)`. Raw `forge.sh`, `lane_*.sh`,
-   `install.sh`, `uninstall.sh`, `gh release`, `git tag` and ssh writes stay gated as today.
-   A PreToolUse guard (next to the identity firewall) denies those commands outright and
-   denies `hunt.py` when no valid grant exists. That's belt-and-braces; the root-owned grant
-   is the real lock.
+   `Bash(python3 /home/dave/etk/tools/hunt/hunt.py:*)` (the operator adds it). Raw `forge.sh`,
+   `lane_*.sh`, `install.sh`, `uninstall.sh`, `gh release`, `git tag` and ssh writes stay gated
+   as today. The PreToolUse guard `tools/hunt/guard.py` (registered in
+   `.claude/settings.local.json` on `Bash|Edit|Write|MultiEdit|NotebookEdit`) parses each
+   command (wrappers, `bash -c`, `ssh HOST '…'`, heredocs that feed a shell) and **always**
+   denies: running `forge.sh`, `lane_*.sh`, `build_*.sh`, `install.sh`, `uninstall.sh`,
+   `etk-install.ps1` (`--dry-run`/`--status`/`--help` included, per §1.1); `gh release
+   create|upload|edit|delete`; creating, deleting or pushing a tag; reboot/poweroff/halt,
+   locally or over ssh; `grant.sh issue`. `hunt.py` beyond `status/check/audit` is denied
+   without a valid grant. **While a grant is valid the enforcement surface is frozen:** no
+   edit or shell write to `tools/hunt/`, `.claude/` or `~/.claude/` settings and hooks, and no
+   `git checkout/reset/restore/stash/apply/cherry-pick/revert/clean/rm/mv` in the etk repo
+   (pull/rebase stay open). It sees only the Engineer's tool calls; the operator's shell mode
+   and Run button never pass through it. A crash in it allows the call (a non-blocking hook
+   error). Replayed over this project's 3,576 recorded Engineer commands, it denies 13: real
+   mints (`forge.sh`, incl. `--status`), two `gh release create`, one `install.sh --help`, and
+   the probe that proved it live. That's belt-and-braces; the root-owned grant is
+   the real lock.
 3. **The car.** New garage ops `put` (chunked over the USB link, sha256-verified, path
    allow-list, size cap), `pin` and `unpin` (hunt override only) work only while the rig
    grant is valid **and** Pitstop **TOOLS → Autonomy** is on. The daemon never writes
@@ -106,7 +137,8 @@ debug env and removes the rig grant. The morning state is the certified rig plus
 
 ## 5. Revocation — any one, immediate
 
-- `sudo tools/hunt/grant.sh revoke`: deletes the host grant and pushes the rig revoke.
+- `tools/hunt/grant.sh revoke` (it asks for sudo): deletes the host grant and the rig grant,
+  and audits the revocation.
 - **Pitstop TOOLS → Autonomy: off**, at the car: the daemon refuses every hunt op and the
   wrapper drops the overrides.
 - Remove the allow rule from `.claude/settings.local.json`.
@@ -140,7 +172,7 @@ timing-based.
 > **HUNT GRANTS (operator, 2026-10-10).** Because etk-cloud is sized inside the always-free
 > tier (a mint costs no money) and the garage holds a reserve car (losing the hunt car is
 > survivable), the operator may, for an autonomous crash hunt, sign
-> one grant (`sudo tools/hunt/grant.sh issue`) that moves the human moment from each mint
+> one grant (`tools/hunt/grant.sh issue`, signed with `sudo`) that moves the human moment from each mint
 > and deploy to the grant itself: one game, one rig, bounded in hours, the rpcs3 lane
 > (turnip when granted), injection only into `hunt/` paths and the debug env, R3 recovery
 > only. **Publish, tags, reboots, kernel/image lanes, certified pins and install/uninstall
@@ -164,7 +196,7 @@ All settled by the operator, 2026-10-10:
 
 | Phase | What | Needs |
 |---|---|---|
-| P1 | `grant.sh` (sudo; node fingerprint + reserve check; `--lanes`), `hunt.py` skeleton (status / audit / validation), the PreToolUse guard; host tests; TRACK_MANUAL §1.1 amendment | nothing (no atoms) |
+| P1 | **BUILT 2026-10-10.** `tools/hunt/grant.sh` (→ `grantctl.py`; sudo-signed; node fingerprint + always-free judge, car + USB serial binding, reserve check, `--lanes`, `--supervised`), `grantlib.py` (validation, audit chain), `hunt.py` (status / check / audit; later subcommands refuse with their phase), `guard.py` (registered); `tools/hunt/test_hunt.py` (45 tests, incl. mutants); TRACK_MANUAL §1.1 amendment | nothing (no atoms) |
 | P2 | `forge.sh --hunt`, building from the fork branch into `emulators/hunt/` | a review; the first hunt mint runs under a grant |
 | P3 | daemon `put`/`pin`/`unpin`, launch-wrapper override (core + Turnip ICD), Pitstop **Autonomy** kill switch | one ordinary install |
 | P4 | first **supervised** hunt with the operator awake: the GT6 commit bisect (`GT6Deadlock_0.10.0_20261010.md`) | a grant |
