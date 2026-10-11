@@ -1,4 +1,4 @@
-# ETK Autonomy — Hunt Grants (spec v0.2 — concept APPROVED 2026-10-10; mechanism not built)
+# ETK Autonomy — Hunt Grants (spec v0.3 — APPROVED 2026-10-10, all decisions settled; mechanism not built)
 
 > Goal (operator, 2026-10-10): point the Engineer at one game and let it run trial-and-error
 > crash hunting with full autonomy overnight, so a core or driver regression is fixed by
@@ -9,13 +9,13 @@ Pitlink 0.10.0 made the inner loop autonomous: launch from the game menu, drive,
 system event, harvest evidence, recover via R3, relaunch, and get a verdict in ~2 min
 (`gt6_trial.py`). Two human gates remain per iteration: **mint** (a new core on etk-cloud)
 and **deploy** (`install.sh`). This spec turns them into one **grant**, issued by the human,
-which is scoped, budgeted, expiring and revocable at the car.
+which is scoped, budgeted in hours, expiring and revocable at the car.
 
 ## 1. Principle — the law stays; the human moment moves
 
 Manual §1.1 (bytes-to-atoms) is unchanged in spirit. A human is still accountable for every
 atom: but for a **hunt** the operator signs once for a bounded envelope (one game, one rig,
-N mints, H hours, these paths) instead of pressing each control. **Publish is never
+H hours, these paths) instead of pressing each control. **Publish is never
 grantable.** Nothing a grant covers reaches another human's machine.
 
 The guarantee against self-escalation: a grant is a **root-owned file created with `sudo`**.
@@ -44,7 +44,7 @@ confined to user-space payloads under `hunt/` paths, R3-only recovery, and no re
 `/etc/etk/grants/hunt.json` (root:root 0644), created by the operator:
 
 ```bash
-sudo /home/dave/etk/tools/hunt/grant.sh issue --game BCUS98296 --hours 10 --mints 12 --node-hours 8
+sudo /home/dave/etk/tools/hunt/grant.sh issue --game BCUS98296 --hours 10 [--lanes rpcs3,turnip]
 ```
 
 The script prints the envelope and requires the password: **that's the human moment**. Fields:
@@ -57,7 +57,7 @@ The script prints the envelope and requires the password: **that's the human mom
 | `rig` | car8 (USB serial `32906f627cfd…`) | the only car the hunt may touch; the other car is the reserve |
 | `reserve` | car12 (`flip2-12g`), last verified bootable | required for an overnight grant (§1.1); absent = supervised-only |
 | `node` | etk-cloud shape fingerprint at issue | `mint` refuses if the node changed (always-free sizing, §1.1) |
-| `mint` | lanes `rpcs3` (+ `turnip` if granted), `max_mints`, `max_node_hours` | `kernel` and `image` lanes are **never** grantable (brick risk) |
+| `mint` | lanes `rpcs3` (default) + `turnip` when `--lanes` names it | core-oriented, Turnip-capable. No mint-count or node-hour budget, since compute is free (§1.1); one mint at a time. `kernel` and `image` lanes are **never** grantable (brick risk) |
 | `inject` | `emulators/hunt/`, `drivers/hunt/`, `debug_env` | the only rig paths a hunt may write |
 | `never` | publish, tags, `garage` remote, rig reboot, CERT pins, kernel/DTB/firmware, `/flash`, install/uninstall | fixed, not configurable |
 
@@ -69,9 +69,9 @@ independently, so expiry and revocation hold even if the host is wrong.
 
 1. **One entry point.** `tools/hunt/hunt.py` is the only command the Engineer runs for a hunt
    (`status · mint · put · pin · unpin · trial · recover · rollback · end · report`). Every
-   subcommand first validates the grant (root-owned, not dave-writable, unexpired, budget
-   left, in scope), then appends a **hash-chained** line to `state/hunt/<id>/audit.jsonl`
-   (time, action, args, result, mints and node-minutes used).
+   subcommand first validates the grant (root-owned, not dave-writable, unexpired, node
+   fingerprint unchanged, in scope), then appends a **hash-chained** line to `state/hunt/<id>/audit.jsonl`
+   (time, action, args, result; mints and node-minutes are recorded, not budgeted).
 2. **Claude Code permissions.** The only new allow rule is
    `Bash(python3 /home/dave/etk/tools/hunt/hunt.py:*)`. Raw `forge.sh`, `lane_*.sh`,
    `install.sh`, `uninstall.sh`, `gh release`, `git tag` and ssh writes stay gated as today.
@@ -85,7 +85,8 @@ independently, so expiry and revocation hold even if the host is wrong.
 4. **The forge.** `forge.sh --hunt <id>` builds only the granted lanes from the fork branch
    `hunt/<id>`. Artifacts go to `emulators/hunt/` (invisible to `release_sanity`'s core cap
    and to install's staging loop, like `retired/`). There's no crowning and no catalog
-   staging. It counts mints and node-minutes into the audit and refuses at budget.
+   staging. It records mints and node-minutes in the audit and refuses after expiry or on a
+   changed node fingerprint.
 
 ## 4. Inject without install — what a hunt may change on the car
 
@@ -109,7 +110,7 @@ debug env and removes the rig grant. The morning state is the certified rig plus
 - **Pitstop TOOLS → Autonomy: off**, at the car: the daemon refuses every hunt op and the
   wrapper drops the overrides.
 - Remove the allow rule from `.claude/settings.local.json`.
-- Expiry (hard cap 12 h) or budget exhaustion.
+- Expiry. Hours are the budget (hard cap 12 h).
 
 ## 6. The overnight loop
 
@@ -120,16 +121,17 @@ grant → hunt.py status → [ hypothesis → commit on fork branch hunt/<id> �
 ```
 
 - **Recovery** is the R3 path only (`recovery.sh`). **Never a reboot.** If the rig is
-  unreachable for more than 10 min, or the kernel panics, the hunt **stops**, sends a phone
-  notification, and waits for a human.
+  unreachable for more than 10 min, or the kernel panics, the hunt **stops**, writes its
+  report and state, and waits for a human (no notification channel; operator, 2026-10-10).
 - **Morning deliverable:** a dossier with the verdict table and the convicting commit or
   function, the fork branch `hunt/<id>` pushed (an ordinary dev push), a candidate fix
   **unminted for release**, and the rig rolled back to certified. Publishing stays a human
   act, as always.
 
-## 7. Defaults (proposal)
+## 7. Defaults (settled 2026-10-10)
 
-12 h cap, 12 mints, 8 node-hours, 1 game, 1 rig (car8), lanes `rpcs3` (+ `turnip` on request),
+Budget = hours (default 10, hard cap 12); no mint or node-hour budget (compute is free); 1 game,
+1 rig (car8; car12 the reserve), lane `rpcs3` (+ `turnip` per grant), one mint at a time,
 trial timeout 10 min, N=1 for pass/fail verdicts (deterministic bugs) and N≥3 for anything
 timing-based.
 
@@ -139,28 +141,31 @@ timing-based.
 > tier (a mint costs no money) and the garage holds a reserve car (losing the hunt car is
 > survivable), the operator may, for an autonomous crash hunt, sign
 > one grant (`sudo tools/hunt/grant.sh issue`) that moves the human moment from each mint
-> and deploy to the grant itself: one game, one rig, bounded mints, node-hours and hours,
-> rpcs3/turnip lanes only, injection only into `hunt/` paths and the debug env, R3 recovery
+> and deploy to the grant itself: one game, one rig, bounded in hours, the rpcs3 lane
+> (turnip when granted), injection only into `hunt/` paths and the debug env, R3 recovery
 > only. **Publish, tags, reboots, kernel/image lanes, certified pins and install/uninstall
 > are never grantable.** Revocation: `grant.sh revoke`, Pitstop Autonomy off, or expiry.
 
 ## 9. Operator decisions
 
-1. ~~Approve the concept~~: **APPROVED 2026-10-10**, on the two facts in §1.1 (always-free
-   etk-cloud; a reserve car). The amendment lands in TRACK_MANUAL §1.1 **together with P1**,
-   so the law never names a mechanism that doesn't exist yet.
-2. Budgets: hours, mints, node-hours (cost ceiling on etk-cloud).
-3. Is a root-owned grant via `sudo` acceptable as the human signature?
-4. A Pitstop **Autonomy** switch as the physical kill at the car?
-5. Is the `turnip` lane grantable, or core-only for now?
-6. The notification channel for a stop: a phone push.
+All settled by the operator, 2026-10-10:
+
+1. **Concept: approved**, on the two facts in §1.1 (always-free etk-cloud; a reserve car). The
+   amendment lands in TRACK_MANUAL §1.1 **together with P1**, so the law never names a
+   mechanism that doesn't exist yet.
+2. **Budget: hours only.** Compute is free, so there's no mint-count or node-hour budget; the
+   node fingerprint still guards the "free" condition.
+3. **Signature: `sudo`.** The root-owned grant is the human signature.
+4. **Kill switch: yes.** Pitstop **TOOLS → Autonomy** at the car.
+5. **Lanes: core-oriented, Turnip-capable.** `rpcs3` by default; `turnip` when a grant names it.
+6. **Notification: none.** A stopped hunt writes its report and state and waits.
 
 ## 10. Build plan
 
 | Phase | What | Needs |
 |---|---|---|
-| P1 | `grant.sh` (incl. node fingerprint + reserve check), `hunt.py` skeleton (status / audit / validation), the PreToolUse guard; host tests; TRACK_MANUAL §1.1 amendment | nothing (no atoms) |
+| P1 | `grant.sh` (sudo; node fingerprint + reserve check; `--lanes`), `hunt.py` skeleton (status / audit / validation), the PreToolUse guard; host tests; TRACK_MANUAL §1.1 amendment | nothing (no atoms) |
 | P2 | `forge.sh --hunt`, building from the fork branch into `emulators/hunt/` | a review; the first hunt mint runs under a grant |
-| P3 | daemon `put`/`pin`/`unpin`, launch-wrapper override, Pitstop Autonomy switch | one ordinary install |
+| P3 | daemon `put`/`pin`/`unpin`, launch-wrapper override (core + Turnip ICD), Pitstop **Autonomy** kill switch | one ordinary install |
 | P4 | first **supervised** hunt with the operator awake: the GT6 commit bisect (`GT6Deadlock_0.10.0_20261010.md`) | a grant |
 | P5 | first overnight hunt | a grant |
