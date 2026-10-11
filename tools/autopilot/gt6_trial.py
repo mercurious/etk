@@ -2,15 +2,19 @@
 """gt6_trial -- one unattended GT6 (BCUS98296) boot trial for the 0.9.1-base deadlock.
 
 Launches GT6 through the Pitlink garage (USB), then decides:
-  PASS      a non-black frame arrived (GT6 never draws one when the deadlock forms), or the
-            precursor came and L1 was still FREE (owner 0xffffffff) at both looks, 30 s
-            and ~2 min after it (hunt m02, 2026-10-10: no frame reached the trial, but L1's
-            owner word decided it)
+  PASS      the precursor came and, at both looks (30 s and ~2 min after it), L1 was FREE
+            (owner 0xffffffff) AND the emulator was running with flips advancing. A lit frame
+            alone is not a pass: the legal screen draws BEFORE the precursor (hunt m04,
+            2026-10-11: lit at +96 s, then a guest fault at 1:40). It is kept as first_lit.png.
   DEADLOCK  the known precursor appeared (thread 9qstY: cellUserInfoGetList, then
             sys_rsx_context_iomap io=0x2700000) and 30 s later the signature holds: the main
             thread sleeps in _sys_lwcond_queue_wait while lwmutex L1 (0x16a8d08) is owned by
             the main thread (0x01000000) with a waiter
-  TIMEOUT   neither within --secs
+  CRASH     the log shows the guest faulting or RPCS3 freezing the emulation ("VM: Access
+            violation" / "Emulation has been frozen"): broken, but NOT the deadlock signature.
+            past_deadlock_point says whether 9qstY got beyond the iomap that blocks on the bad
+            core; true = GOOD for the deadlock bisect (a different bug)
+  TIMEOUT   none of these within --secs
 Evidence (thread dump, the log slice since launch, last frame, verdict.json) goes to --out.
 It does not recover the car; run `gtpilot.py recover` after (the kit's R3 path).
 Set the run's diagnostics first: `pitlink.py garage debug_env action=set ARMSX3_...=...`.
@@ -18,7 +22,7 @@ Set the run's diagnostics first: `pitlink.py garage debug_env action=set ARMSX3_
   gt6_trial.py --out DIR [--secs 2400] [--label TEXT]
 --secs covers a fresh core's PPU compile: a core from another ARMSX3 base recompiles GT6's
 modules first (hunt m02: ~15 min before the real boot began).
-Exit: 0 PASS, 1 DEADLOCK, 2 TIMEOUT / no game.
+Exit: 0 PASS, 1 DEADLOCK, 2 TIMEOUT / no game, 3 CRASH.
 """
 import argparse
 import json
@@ -34,6 +38,7 @@ from client import PitlinkClient, PitlinkError, garage  # noqa: E402
 L1 = 0x16a8d08
 MAIN = 0x01000000
 PRECURSOR = re.compile(r"cellUserInfo: cellUserInfoGetList\(|sys_rsx_context_iomap\(context_id=0x55555555, io=0x2700000")
+FAULT = re.compile(r"VM: Access violation|SYS: Emulation has been frozen|Unhandled exception|PPU: Trap")
 
 
 def thread_table(text):
@@ -50,6 +55,18 @@ def thread_table(text):
                 if mm and k not in t[cur]:
                     t[cur][k] = mm.group(1)
     return t
+
+
+def past_deadlock_point():
+    """True when thread 9qstY got PAST the iomap that blocks on the bad core (cellUserInfoGetList,
+    then sys_rsx_context_iomap, then more work). A CRASH past it is GOOD for the deadlock bisect
+    (hunt m04: through sceNp2Init and the garage save, then a guest null read 4 s later)."""
+    lines = garage({"op": "log", "from": 0, "grep": r"Thread \(9qstY\)"}).get("text", "").splitlines()
+    i = next((n for n, ln in enumerate(lines) if "cellUserInfoGetList(" in ln), None)
+    if i is None:
+        return None
+    j = next((n for n in range(i, len(lines)) if "sys_rsx_context_iomap(" in lines[n]), None)
+    return j is not None and len(lines) - j > 3
 
 
 def main():
@@ -80,7 +97,7 @@ def main():
     # within seconds of a launch, and a new log can already be bigger than a short previous one
     # (hunt m02: it was, so the trial never grepped the new log).
     c, precursor_t, last_log_check, rotated = None, None, 0.0, log0 == 0
-    free_looks = 0
+    free_looks, last_flip, lit = 0, None, False
     while time.time() - t0 < a.secs:
         if c is None:
             try:
@@ -96,9 +113,11 @@ def main():
             f = None
             if c.closed:
                 c = None
-        if f is not None and f.rgb().mean() > 3:
+        if f is not None and not lit and f.rgb().mean() > 3:
             f.png(os.path.join(a.out, "first_lit.png"))
-            finish("PASS", 0, flip=f.flip, note="non-black frame")
+            lit = True
+            verdict["first_lit"] = {"flip": f.flip, "secs": round(time.time() - t0)}
+            print(f"gt6_trial: first lit frame at +{time.time() - t0:.0f}s (flip {f.flip})", flush=True)
         now = time.time()
         if now - last_log_check > 10:
             last_log_check = now
@@ -108,6 +127,12 @@ def main():
             if rep["lines"] and precursor_t is None:
                 precursor_t = now
                 print(f"gt6_trial: precursor at +{now - t0:.0f}s:\n{rep['text'][-400:]}", flush=True)
+            bad = garage({"op": "log", "from": 0, "grep": FAULT.pattern}) if rotated else {"lines": 0}
+            if bad["lines"]:
+                tail = garage({"op": "log", "tail": 400}).get("text", "")
+                with open(os.path.join(a.out, "log_tail.txt"), "w") as fh:
+                    fh.write(tail)
+                finish("CRASH", 3, fault=bad["text"][-1200:], past_deadlock_point=past_deadlock_point())
         if precursor_t and now - precursor_t > 30:
             dump = garage({"op": "dump_threads", "timeout": 8}, timeout=60)
             text = dump.get("text", "")
@@ -125,14 +150,24 @@ def main():
             waiters = int.from_bytes(l1[4:8], "big") if l1 else None
             if f is not None:
                 f.png(os.path.join(a.out, "last.png"))
+            st, flip = None, None
+            if c is not None:
+                try:
+                    flip, _ = c.ping()
+                    st = c.status()["state"]
+                except PitlinkError:
+                    pass
+            alive = st == 0 and flip is not None and (last_flip is None or flip > last_flip)
+            last_flip = flip
             sig = mainf == "_sys_lwcond_queue_wait" and owner == MAIN and (waiters or 0) > 0
             info = dict(main_func=mainf, l1_owner=owner and hex(owner), l1_waiters=waiters,
-                        lwmutex_blocked=[k for k, v in tt.items() if v.get("func") == "_sys_lwmutex_lock"])
+                        lwmutex_blocked=[k for k, v in tt.items() if v.get("func") == "_sys_lwmutex_lock"],
+                        state=st, flip=flip)
             if sig:
                 finish("DEADLOCK", 1, **info)
-            free_looks = free_looks + 1 if owner == 0xffffffff else 0
+            free_looks = free_looks + 1 if owner == 0xffffffff and alive else 0
             if free_looks >= 2:
-                finish("PASS", 0, note="L1 still free ~2 min after the precursor: no deadlock", **info)
+                finish("PASS", 0, note="L1 free and the emulator running ~2 min after the precursor", **info)
             print(f"gt6_trial: precursor seen but no deadlock signature yet: {info}", flush=True)
             precursor_t = now + 60  # look again in 90 s
         time.sleep(0.5)
