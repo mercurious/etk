@@ -138,6 +138,51 @@
       ]
     },
     {
+      "id": "cpu_deep_idle",
+      "label": "CPU deep idle",
+      "tag": "idleoff",
+      "paths": [
+        "/sys/devices/system/cpu/cpu0/cpuidle/state1/disable",
+        "/sys/devices/system/cpu/cpu1/cpuidle/state1/disable",
+        "/sys/devices/system/cpu/cpu2/cpuidle/state1/disable",
+        "/sys/devices/system/cpu/cpu3/cpuidle/state1/disable",
+        "/sys/devices/system/cpu/cpu4/cpuidle/state1/disable",
+        "/sys/devices/system/cpu/cpu5/cpuidle/state1/disable",
+        "/sys/devices/system/cpu/cpu6/cpuidle/state1/disable",
+        "/sys/devices/system/cpu/cpu7/cpuidle/state1/disable"
+      ],
+      "note": "psci power collapse; off = WFI only (GT5 hunt arm A)",
+      "options": [
+        {
+          "v": "0",
+          "l": "on (stock)"
+        },
+        {
+          "v": "1",
+          "l": "off (WFI only)"
+        }
+      ]
+    },
+    {
+      "id": "ufs_clock",
+      "label": "UFS clock scaling",
+      "tag": "ufspin",
+      "paths": [
+        "/sys/class/devfreq/1d84000.ufshc/governor"
+      ],
+      "note": "pinned = performance, no 37.5<->300 MHz switches (GT5 hunt arm B)",
+      "options": [
+        {
+          "v": "simple_ondemand",
+          "l": "scaling (stock)"
+        },
+        {
+          "v": "performance",
+          "l": "pinned 300 MHz"
+        }
+      ]
+    },
+    {
       "id": "grid",
       "label": "GRID affinity",
       "paths": [],

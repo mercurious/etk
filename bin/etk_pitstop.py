@@ -7903,6 +7903,12 @@ def _power_tag(model):
     c = model["values"].get("gpu_ceiling")
     if k and k.get("options") and c and c != k["options"][0]["v"]:
         tag += "+c" + str(int(c) // 1000000)
+    # Any other preset-omitted knob carrying a "tag" rides the same way when it leaves its first
+    # (stock) option: race+idleoff, race+ufspin (GT5 hunt arms, 2026-10-11).
+    for kn in model["schema"].get("knobs", []):
+        v = model["values"].get(kn["id"])
+        if kn.get("tag") and kn.get("options") and v and v != kn["options"][0]["v"]:
+            tag += "+" + kn["tag"]
     return tag
 
 

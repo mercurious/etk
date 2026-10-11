@@ -100,6 +100,23 @@ m2 = load()
 check("the knob record round-trips", m2["values"].get("gpu_ceiling"), "587000000")
 check("reloaded tag", pit._power_tag(m2), "race+c587")
 
+print("[ARMS] GT5 hunt arms: CPU deep idle, UFS clock scaling")
+m3 = load()
+check("both arms load at their stock option", (m3["values"].get("cpu_deep_idle"), m3["values"].get("ufs_clock")),
+      ("0", "simple_ondemand"))
+check("stock arms leave the tag alone", pit._power_tag(m3), "race+c587")
+m3["values"]["cpu_deep_idle"] = "1"
+check("deep idle off tags +idleoff", pit._power_tag(m3), "race+c587+idleoff")
+m3["values"]["gpu_ceiling"] = "925000000"
+m3["values"]["ufs_clock"] = "performance"
+check("both arms: race+idleoff+ufspin", pit._power_tag(m3), "race+idleoff+ufspin")
+check("presets still match (arms are preset-omitted)", pit._power_cur_preset(m3), "RACE")
+pit._power_apply(m3)
+body = open(pit.POWER_PROFILE_FILE).read()
+check("all 8 CPUs' state1 disable lines written",
+      sum(1 for ln in body.splitlines() if ln.endswith("/cpuidle/state1/disable\t1")), 8)
+check("UFS governor line written", "/sys/class/devfreq/1d84000.ufshc/governor\tperformance" in body, True)
+
 print()
 if FAILS:
     print(f"FAILED: {len(FAILS)} -> {FAILS}")
