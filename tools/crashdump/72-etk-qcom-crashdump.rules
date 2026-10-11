@@ -1,0 +1,7 @@
+# ETK firmware crash dumps (tools/crashdump/collect.py -> `qdl ramdump`): when an SM8250 car's
+# firmware takes a fatal error with qcom_scm download_mode armed, the boot ROM parks the SoC in
+# Sahara crash-dump mode and re-enumerates as Qualcomm 05c6:900e. Fedora's qdl package rule
+# (51-qcom-usb.rules) covers only EDL 9008; this one lets the seat user (and wheel, for ssh
+# sessions) collect the dump without root. Install once on the M1:
+#   sudo install -m 0644 tools/crashdump/72-etk-qcom-crashdump.rules /etc/udev/rules.d/ && sudo udevadm control --reload
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="05c6", ATTR{idProduct}=="900e", MODE="0660", GROUP="wheel", TAG+="uaccess"
