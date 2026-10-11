@@ -159,6 +159,31 @@ def decode_pon_read(text):
     return (bb.pon_verdict(lines) if lines else None), lines
 
 
+def host_usb_gone(after_epoch, journal=None, window=120):
+    """Epoch of the first `USB disconnect, device number N` in the host's kernel log after
+    `after_epoch` (journalctl -k -o short-unix). The car's gadget stays on the bus until the SoC
+    resets (a SysRq panic held it for the whole panic=30), so this marks the reset moment; with
+    the dead boot's last flightrec sample it measures how long the car hung first (GT5 2026-10-11:
+    6.2 / 6.8 / 6.6 / 7.7 s). None when the log is unreadable or shows no disconnect."""
+    if journal is None:
+        try:
+            journal = subprocess.run(
+                ["journalctl", "-k", "-o", "short-unix", "--no-pager",
+                 "--since", f"@{int(after_epoch)}", "--until", f"@{int(after_epoch) + window}"],
+                capture_output=True, text=True, timeout=30).stdout
+        except (OSError, subprocess.SubprocessError):
+            return None
+    for ln in journal.splitlines():
+        if re.search(r"USB disconnect, device number [2-9]\d*", ln):
+            try:
+                t = float(ln.split()[0])
+            except (ValueError, IndexError):
+                continue
+            if t >= after_epoch:
+                return t
+    return None
+
+
 def pon_verdict_of(text):
     """`verdict=` from a blackbox pon-*.txt header line, or None."""
     m = re.search(r"verdict=(\w+)", text or "")
@@ -404,9 +429,12 @@ def main():
                     kit = gsafe({"op": "status"}, timeout=10)
                     if kit is None:
                         time.sleep(10)
+                last = last_game_sample(ev.get("flightrec", ""))
+                gone = host_usb_gone(int(last["epoch"])) if last else None
                 common = dict(died_secs=round(t_down - t0), back_secs=back, new_boot_id=bid, first_lit=lit,
+                              hung_secs=round(gone - int(last["epoch"]), 1) if gone else None,
                               pon=pon, pon_direct=ev.get("pon_direct_verdict"),
-                              last_sample=last_game_sample(ev.get("flightrec", "")),
+                              last_sample=last,
                               ledger_row=(ev.get("ledger_tail", "").strip().splitlines() or [""])[-1][:200])
                 if pon in ("BROWNOUT", "OVERTEMP", "PMIC_WD"):
                     finish("POWER_CUT", 7, note="the PMIC cut power: a hardware question, STOP for a human", **common)

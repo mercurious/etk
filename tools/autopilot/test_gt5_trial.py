@@ -60,6 +60,11 @@ s = gt.last_game_sample(TSV)
 check("last full GT5 sample (a torn last line is ignored)", (s["epoch"], s["tmax_c"]), ("3", "77"))
 check("min MemAvailable over GT5 samples", s["min_mem_avail_kb"], 2109000)
 check("game never ran -> None", gt.last_game_sample(TSV, "NPEA00050"), None)
+J = ("1791752000.100000 airM1alx kernel: usb 1-1: USB disconnect, device number 1\n"
+     "1791753164.243750 airM1alx kernel: usb 1-1: USB disconnect, device number 5\n")
+check("host USB disconnect after the last sample (t4: hung 6.2 s)",
+      round(gt.host_usb_gone(1791753158, journal=J) - 1791753158, 1), 6.2)
+check("no disconnect -> None", gt.host_usb_gone(1791753158, journal=""), None)
 check("pon verdict read from header", gt.pon_verdict_of("# epoch=1 boot_id=x uptime_s=9.0 verdict=WARM\n"), "WARM")
 
 
@@ -196,6 +201,7 @@ def run_scenario(die_at=None, back_at=None, freeze_at=None, secs=600, lit_frames
     gt.garage = fake_garage
     gt.ssh = fake_ssh
     gt.subprocess.run = fake_run
+    gt.host_usb_gone = lambda after, journal=None, window=120: after + 6.5
     run_scenario.calls = calls
     gt.threading.Event.wait = lambda self, t=None: sleep(t or 0)
     out = tempfile.mkdtemp(prefix="gt5trial-")
@@ -219,6 +225,7 @@ code, v, out = run_scenario(die_at=164, back_at=240)
 check("verdict PANIC, exit 1", (v.get("verdict"), code), ("PANIC", 1))
 check("time to death ~164 s (link-silence threshold subtracted)", abs(v.get("died_secs", 0) - 164) <= 4, True)
 check("new boot recorded", v.get("new_boot_id"), "boot-B")
+check("hang before reset measured", v.get("hung_secs"), 6.5)
 check("PMIC reset class harvested", v.get("pon"), "WARM")
 check("direct PON read decoded by the blackbox's own decoder", v.get("pon_direct"), "WARM")
 check("dead boot's last GT5 sample", (v.get("last_sample") or {}).get("min_mem_avail_kb"), 2109000)
