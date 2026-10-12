@@ -102,20 +102,20 @@ check("reloaded tag", pit._power_tag(m2), "race+c587")
 
 print("[ARMS] GT5 hunt arms: CPU deep idle, UFS clock scaling")
 m3 = load()
-check("both arms load at their stock option", (m3["values"].get("cpu_deep_idle"), m3["values"].get("ufs_clock")),
-      ("0", "simple_ondemand"))
+check("both load at their first option (deep idle stock; UFS pinned = the kit default)",
+      (m3["values"].get("cpu_deep_idle"), m3["values"].get("ufs_clock")), ("0", "0"))
 check("stock arms leave the tag alone", pit._power_tag(m3), "race+c587")
 m3["values"]["cpu_deep_idle"] = "1"
 check("deep idle off tags +idleoff", pit._power_tag(m3), "race+c587+idleoff")
 m3["values"]["gpu_ceiling"] = "925000000"
-m3["values"]["ufs_clock"] = "performance"
-check("both arms: race+idleoff+ufspin", pit._power_tag(m3), "race+idleoff+ufspin")
+m3["values"]["ufs_clock"] = "1"
+check("deep idle off + stock UFS scaling: race+idleoff+ufsscale", pit._power_tag(m3), "race+idleoff+ufsscale")
 check("presets still match (arms are preset-omitted)", pit._power_cur_preset(m3), "RACE")
 pit._power_apply(m3)
 body = open(pit.POWER_PROFILE_FILE).read()
 check("all 8 CPUs' state1 disable lines written",
       sum(1 for ln in body.splitlines() if ln.endswith("/cpuidle/state1/disable\t1")), 8)
-check("UFS governor line written", "/sys/class/devfreq/1d84000.ufshc/governor\tperformance" in body, True)
+check("UFS clkscale_enable line written", "/sys/bus/platform/devices/1d84000.ufshc/clkscale_enable\t1" in body, True)
 
 print()
 if FAILS:

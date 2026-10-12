@@ -3639,6 +3639,75 @@ else
 fi
 
 # ==========================================================
+# STEP 6.74: UFS CLOCK PIN (the GT5 SoC-freeze fix, 2026-10-11)
+# ==========================================================
+# GT5 (BCUS98114) froze the whole SoC at track loads -- every core stopped at once, the
+# kernel printed nothing (full kmsg in ramoops that survives the reset), and a firmware
+# watchdog warm-reset it ~7 s later (N=8, Hunt_GT5_20261011.md). ufshcd's clock SCALING
+# (devfreq 37.5 <-> 300 MHz, a frequency + gear switch on a bus master) was the trigger:
+# with deep idle off it still died at the load; with the UFS clock pinned it got through and
+# raced (hunt-20261011-gt5arms B1). This oneshot writes ufshcd's own switch,
+# clkscale_enable=0 (clocks held at max, no scaling; clock GATING stays on), on every
+# *.ufshc at boot. A no-op without a UFS host (card-only boards). Costs some idle power.
+# Pitstop POWER "UFS clock scaling" writes the same attribute (its default = pinned).
+# Kill-switch ETK_UFS_PIN=0 removes it (scaling back at the next boot). Harness:
+# tools/test_ufs_pin.py.
+# ==========================================================
+if [ "${ETK_UFS_PIN:-1}" = "1" ]; then
+    UFS_OUT=$(ssh $RIG_SSH "sh -s" 2>&1 <<'UFSPINREMOTE'
+mkdir -p /storage/.config/custom_scripts /storage/.config/system.d
+cat << 'UFSPIN' > /storage/.config/custom_scripts/etk-ufs-pin.sh
+#!/bin/sh
+# etk-ufs-pin (ETK install.sh STEP 6.74): hold the UFS host's clocks at max (no clock
+# scaling) -- GT5's SoC freeze at track loads (Hunt_GT5_20261011.md). Gating stays on.
+ROOT="${ETK_SYSFS_ROOT:-}"
+LOG="${ETK_UFS_PIN_LOG:-/storage/etk_ufs_pin.log}"
+log() { echo "$(date "+%F %T") [$(cut -d" " -f1 /proc/uptime 2>/dev/null)s] $*" >> "$LOG"; echo "[etk-ufs-pin] $*"; }
+n=0
+for d in "$ROOT"/sys/bus/platform/devices/*.ufshc; do
+    [ -e "$d/clkscale_enable" ] || continue
+    n=$((n + 1))
+    before=$(cat "$d/clkscale_enable" 2>/dev/null)
+    echo 0 > "$d/clkscale_enable" 2>/dev/null
+    after=$(cat "$d/clkscale_enable" 2>/dev/null)
+    f=$(cat "$ROOT/sys/class/devfreq/${d##*/}/cur_freq" 2>/dev/null)
+    if [ "$after" = 0 ]; then log "${d##*/}: clkscale_enable $before -> 0 (PINNED, cur_freq ${f:-?})"
+    else log "${d##*/}: clkscale_enable $before -> ${after:-?} (PIN FAILED)"; fi
+done
+[ "$n" -gt 0 ] || log "no ufshc with clkscale_enable: nothing to pin"
+exit 0
+UFSPIN
+chmod +x /storage/.config/custom_scripts/etk-ufs-pin.sh
+cat << 'UFSPINUNIT' > /storage/.config/system.d/etk-ufs-pin.service
+[Unit]
+Description=ETK UFS clock pin (no ufshcd clock scaling: the GT5 SoC-freeze fix)
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh /storage/.config/custom_scripts/etk-ufs-pin.sh
+
+[Install]
+WantedBy=rocknix.target
+UFSPINUNIT
+systemctl daemon-reload
+systemctl enable /storage/.config/system.d/etk-ufs-pin.service >/dev/null 2>&1
+/bin/sh /storage/.config/custom_scripts/etk-ufs-pin.sh >/dev/null 2>&1
+sh -n /storage/.config/custom_scripts/etk-ufs-pin.sh && [ "$(systemctl is-enabled etk-ufs-pin.service 2>/dev/null)" = enabled ] \
+    && echo "UFSPIN_OK last=$(tail -n1 /storage/etk_ufs_pin.log 2>/dev/null | cut -c1-110)" || echo "UFSPIN_FAIL"
+UFSPINREMOTE
+)
+    if printf '%s' "$UFS_OUT" | grep -q UFSPIN_OK; then
+        say "${G}[ETK]${N} UFS clock pinned (etk-ufs-pin.service — no ufshcd clock scaling, the GT5 freeze fix; $(printf '%s' "$UFS_OUT" | grep UFSPIN_OK | sed 's/.*last=//'))"
+    else
+        say "${Y}[WARN] UFS clock pin did not verify ($(printf '%s' "$UFS_OUT" | tail -n1)) — GT5 may freeze the SoC at track loads.${N}"
+    fi
+else
+    ssh $RIG_SSH "systemctl disable etk-ufs-pin.service >/dev/null 2>&1; rm -f /storage/.config/system.d/etk-ufs-pin.service /storage/.config/custom_scripts/etk-ufs-pin.sh; systemctl daemon-reload" 2>/dev/null
+    say "${G}[ETK]${N} UFS clock pin removed (kill-switch ETK_UFS_PIN=0; stock clock scaling from the next boot)"
+fi
+
+# ==========================================================
 # STEP 6.73: PITLINK USB (the Engineer's raw-USB channel into RPCS3)
 # ==========================================================
 # bin/etk_pitlink_usbd.py adds a vendor FunctionFS function ("ETK Pitlink", 2 bulk eps) to

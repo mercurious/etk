@@ -321,6 +321,13 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
     rm -f /storage/.config/system.d/etk-usbnet-heal.service /storage/.config/system.d/etk-udevtrace.service /storage/.config/custom_scripts/etk-usbnet-heal.sh
     echo "    Removed: etk-usbnet-heal.service (USB-net heal)"
 
+    # UFS clock pin (install.sh STEP 6.74): drop it and hand the clocks back to ufshcd's
+    # scaling now (stock behaviour). The pin log is kept.
+    systemctl disable etk-ufs-pin.service 2>/dev/null
+    rm -f /storage/.config/system.d/etk-ufs-pin.service /storage/.config/custom_scripts/etk-ufs-pin.sh
+    for d in /sys/bus/platform/devices/*.ufshc; do [ -e "$d/clkscale_enable" ] && echo 1 > "$d/clkscale_enable" 2>/dev/null; done
+    echo "    Removed: etk-ufs-pin.service (UFS clock scaling restored)"
+
     systemctl disable --now etk-blackbox.service 2>/dev/null
     rm -f /storage/.config/system.d/etk-blackbox.service
     rm -f /storage/.config/modules-load.d/etk-ramoops.conf /storage/.config/modprobe.d/etk-ramoops.conf

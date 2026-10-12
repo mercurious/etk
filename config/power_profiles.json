@@ -166,19 +166,19 @@
     {
       "id": "ufs_clock",
       "label": "UFS clock scaling",
-      "tag": "ufspin",
+      "tag": "ufsscale",
       "paths": [
-        "/sys/class/devfreq/1d84000.ufshc/governor"
+        "/sys/bus/platform/devices/1d84000.ufshc/clkscale_enable"
       ],
-      "note": "pinned = performance, no 37.5<->300 MHz switches (GT5 hunt arm B)",
+      "note": "pinned = the GT5 SoC-freeze fix (install STEP 6.74 sets it at boot); scaling = stock",
       "options": [
         {
-          "v": "simple_ondemand",
-          "l": "scaling (stock)"
+          "v": "0",
+          "l": "pinned (ETK default)"
         },
         {
-          "v": "performance",
-          "l": "pinned 300 MHz"
+          "v": "1",
+          "l": "scaling (stock)"
         }
       ]
     },
