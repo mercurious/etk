@@ -34,7 +34,7 @@ export VAULT_SYNC="${VAULT_SYNC:-full}"
 export ETK_DP_MIRROR="${ETK_DP_MIRROR:-1}"
 # HUD instrument set (mango_bridge.sh body): GINSTR (default since 0.7.x) =
 # TEMP|JTTR|SLIP|shaders live frame-pacing gauges; BASIC = the simple set,
-# TEMP|LOAD|RAM%|shaders.
+# TEMP|LOAD|RAM%|shaders; LEAN = TEMP|shaders (BASIC minus LOAD+RAM).
 export ETK_HUD_MODE="${ETK_HUD_MODE:-GINSTR}"
 # Hostless self-update (Pitstop TOOLS > Check for ETK Updates): updates the
 # middleware layer in place from GitHub releases. Default-ON; =0 disables.

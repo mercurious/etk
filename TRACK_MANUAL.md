@@ -415,7 +415,7 @@ by that interval (bog metas carry `session_start=`), never by treating `epoch` a
   writer `mango_bridge.sh`, atomic tmp+mv, raw string (no config keys inside
   `live_stat.txt`). **Format strict-lock:** dense, space-trimmed, punctuation-as-gauge —
   no decorative bloat. Mode-switched bodies (`ETK_HUD_MODE`): BASIC =
-  `TEMP|LOAD|RAM%|shaders`; GINSTR = `TEMP|JITTER|SLIP|shaders` with animated fixed-width
+  `TEMP|LOAD|RAM%|shaders`; LEAN = `TEMP|shaders` (BASIC minus LOAD+RAM); GINSTR = `TEMP|JITTER|SLIP|shaders` with animated fixed-width
   5-slot gauges (0.5 s refresh) + the persistent ANTI-LOCK gauge (idle `·×NN·` per-session
   rescue count; alert `·«!»·` ~8 s). **GLYPH LAW: Latin-1 ONLY** (`·`=B7 `×`=D7 `«`=AB
   `»`=BB) — anything beyond renders as tofu on the rig font (proven on-rig 2026-07-06).

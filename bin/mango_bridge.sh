@@ -2,10 +2,11 @@
 # ==========================================================
 # ETK PHASE 13.5: HUD BRIDGE (v14.0.0 - MODE-SWITCHED INSTRUMENTS)
 # ==========================================================
-# AI RULE (HUD spec — strict-lock, two-mode as of the 2026-06-28 moratorium):
+# AI RULE (HUD spec — strict-lock, three-mode as of 2026-10-11):
 # 1. THREE-STAGE TIME-GATED HEADER is locked; the BODY is MODE-SWITCHED via
-#    $ETK_HUD_MODE (etk.conf). Stage 1 launch header is identical in both modes.
+#    $ETK_HUD_MODE (etk.conf). Stage 1 launch header is identical in all modes.
 #    BASIC body : TEMP|LOAD(loadavg)STAT|RAM%STAT|SHADERS    (original)
+#    LEAN body  : TEMP|SHADERS — BASIC minus LOAD+RAM (ANTI-LOCK rides in all modes)
 #    GINSTR body: TEMP|JITTER|SLIP|SHADERS — LOAD+RAM replaced by two live,
 #      fixed-width (5-slot) frame-pacing gauges, animated by a per-loop phase,
 #      read from the MangoHud autolog ($SHM_DIR/mangolog):
@@ -17,7 +18,7 @@
 #    Stages: 1 (0..HOLD) launch header; 2 (HOLD..2HOLD) labelled body; 3 (>=2HOLD) bare body.
 # 2. ATOMIC SWAP ONLY: MUST use `echo > tmp && mv tmp $LIVE_STAT`
 # 3. RAW TEXT ONLY: No MangoHud configuration keys (e.g., custom_text=) in the output.
-# 4. The strict-lock (no decorative bloat, dense punctuation DDU) applies to BOTH bodies.
+# 4. The strict-lock (no decorative bloat, dense punctuation DDU) applies to ALL bodies.
 # ==========================================================
 source /storage/games-internal/roms/etk/scripts/env.sh
 
@@ -54,12 +55,14 @@ while true; do
     # 1. IDENTIFICATION
     source /storage/games-internal/roms/etk/scripts/env.sh
     V_DIR="$VAULT_DIR"
+    HUD_MODE="${ETK_HUD_MODE:-BASIC}"   # BASIC | LEAN | GINSTR (unknown -> BASIC body)
     TICK=$(( (TICK + 1) % 100000 ))    # GINSTR animation phase (marquee + pulse)
     
     # 2. CONSUME THERMAL STATE (Produced by thermal_d.sh)
     T_STAT=$(cat "$SHM_DIR/thermal_stat" 2>/dev/null || echo "WAIT")
 
-    # 3. PERFORMANCE METRICS (BusyBox Safe)
+    # 3. PERFORMANCE METRICS (BusyBox Safe) — BASIC body only; LEAN/GINSTR omit them
+    case "$HUD_MODE" in GINSTR|LEAN) ;; *)
     LOAD_RAW=$(cat /proc/loadavg | awk '{print $1}')
     LOAD_INT=$(echo "$LOAD_RAW" | awk '{print int($1 * 100)}')
     
@@ -78,6 +81,7 @@ while true; do
     elif [ "$RAM_VAL" -ge 75 ]; then
         R_STAT="»»-"
     fi
+    ;; esac
 
     # 4. ADVANCED SHADER TELEMETRY
     BANK=$(cat "$VAULT_COUNT" 2>/dev/null || echo "0")
@@ -177,7 +181,6 @@ while true; do
     #   SLIP   = pacing-slip severity bar 0..5 from mean |Δframetime|, filled with +
     #            (·····/+····/++···/+++··/++++·/+++++); at MAX the bar pulses +++++ <-> =====.
     # All BEGIN thresholds + the gauge width are FEEL-TUNED ON THE RIG.
-    HUD_MODE="${ETK_HUD_MODE:-BASIC}"
     if [ "$HUD_MODE" = "GINSTR" ]; then
         G_CSV=$(ls -1t "$SHM_DIR/mangolog"/*.csv 2>/dev/null | head -1)
         if [ -n "$G_CSV" ] && [ -f "$G_CSV" ]; then
@@ -260,16 +263,16 @@ while true; do
     # 5. ATOMIC HUD INJECTION [MANIFEST RULE: HUD FORMAT]
     case "$STAGE" in
         1) FINAL_STRING="${ETK_BUILD_TYPE}|${TARGET_ID}|SHDRS ${VAULT_STR}" ;;
-        2) if [ "$HUD_MODE" = "GINSTR" ]; then
-               FINAL_STRING="${T_STAT}|JTTR${JIT}|SLIP${SLIP}|ANTI-LOCK${ALOCK_SEG}|"
-           else
-               FINAL_STRING="TEMP ${T_STAT}|LOAD ${LOAD_RAW}${L_STAT}|RAM ${RAM_VAL}%${R_STAT}|ANTI-LOCK ${ALOCK_SEG}|"
-           fi ;;
-        *) if [ "$HUD_MODE" = "GINSTR" ]; then
-               FINAL_STRING="${T_STAT}|${JIT}|${SLIP}|${ALOCK_SEG}|${VAULT_STR}"
-           else
-               FINAL_STRING="${T_STAT}|${LOAD_RAW}${L_STAT}|${RAM_VAL}%${R_STAT}|${ALOCK_SEG}|${VAULT_STR}"
-           fi ;;
+        2) case "$HUD_MODE" in
+               GINSTR) FINAL_STRING="${T_STAT}|JTTR${JIT}|SLIP${SLIP}|ANTI-LOCK${ALOCK_SEG}|" ;;
+               LEAN)   FINAL_STRING="TEMP ${T_STAT}|ANTI-LOCK ${ALOCK_SEG}|" ;;
+               *)      FINAL_STRING="TEMP ${T_STAT}|LOAD ${LOAD_RAW}${L_STAT}|RAM ${RAM_VAL}%${R_STAT}|ANTI-LOCK ${ALOCK_SEG}|" ;;
+           esac ;;
+        *) case "$HUD_MODE" in
+               GINSTR) FINAL_STRING="${T_STAT}|${JIT}|${SLIP}|${ALOCK_SEG}|${VAULT_STR}" ;;
+               LEAN)   FINAL_STRING="${T_STAT}|${ALOCK_SEG}|${VAULT_STR}" ;;
+               *)      FINAL_STRING="${T_STAT}|${LOAD_RAW}${L_STAT}|${RAM_VAL}%${R_STAT}|${ALOCK_SEG}|${VAULT_STR}" ;;
+           esac ;;
     esac
     
     # Write to temp file then move to prevent MangoHud from reading an incomplete file
@@ -277,7 +280,7 @@ while true; do
     mv "${LIVE_STAT}.tmp" "$LIVE_STAT"
 
     # GINSTR animates at 0.5s for a live sweep/pulse (only if BusyBox sleep takes
-    # fractional secs — FRAC_SLEEP_OK, tested at startup); BASIC + fallback = 1s.
+    # fractional secs — FRAC_SLEEP_OK, tested at startup); BASIC/LEAN + fallback = 1s.
     if [ "$HUD_MODE" = "GINSTR" ] && [ "$FRAC_SLEEP_OK" = "1" ]; then
         sleep 0.5
     else

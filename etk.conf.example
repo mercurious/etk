@@ -175,6 +175,7 @@ HUD_HEADER_HOLD_S=15
 #          » settling forward, « degrading back) and SLIP (3-stage
 #          pacing-slip severity, top rung blinks). Feel-tuned on-rig.
 # BASIC  = the simple set: LOAD + RAM gauges (harvest / early-stage).
+# LEAN   = the bare set: TEMP | ANTI-LOCK | VAULT (BASIC minus LOAD + RAM).
 ETK_HUD_MODE="GINSTR"
 
 # --- Hostless self-update (Pitstop TOOLS > Check for ETK Updates) ---
