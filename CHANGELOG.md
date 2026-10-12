@@ -30,6 +30,15 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
   leaves its report.
 
 ### Fixed
+- **Sleep holds with a USB-C cable plugged in.** Closing the lid or tapping
+  the power key with a cable in (charging, or connected to a computer) put
+  the handheld to sleep for a second or two, then woke it right back up, over
+  and over. Nothing running on the handheld was keeping it awake: the USB
+  port itself was waking it the moment it went to sleep. The kit now stops
+  the USB port from waking the handheld, at boot and again just before every
+  sleep, because reconnecting the USB link turns that wake back on. The power
+  key and the lid still wake it as before. Turn it off with
+  `ETK_USB_NOWAKE=0`.
 - **USB-C video out works again on the custom kernel.** Since the 20260901
   OS, plugging in a USB-C to HDMI/DisplayPort adapter gave no picture: the
   newer kernel looks for the port's 5 V power switch in a different place in
