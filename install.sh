@@ -3408,7 +3408,7 @@ cat << 'APPLY' > /storage/.config/etk-power-apply.sh
 #!/bin/sh
 # ETK POWER applier — re-applies the saved gov/clock profile at boot (sysfs power
 # knobs reset on reboot). Reads path<TAB>value lines; '#' lines are records/ignored.
-PROFILE=/storage/etk-power/profile
+PROFILE="${ETK_POWER_PROFILE:-/storage/etk-power/profile}"
 [ -f "$PROFILE" ] || exit 0
 TAB=$(printf '\t')
 while IFS="$TAB" read -r path val; do
@@ -3417,6 +3417,17 @@ while IFS="$TAB" read -r path val; do
 done < "$PROFILE"
 EOFLINE=$(grep -c . "$PROFILE" 2>/dev/null)
 echo "etk-power applied $(grep -c "$TAB" "$PROFILE" 2>/dev/null) knob writes from $PROFILE"
+# THE GOVERNOR HAS TO REACH THE GAME (2026-10-11, GT5 hunt): ROCKNIX's runemu.sh applies
+# `cpugovernor` for the platform at EVERY launch (falling back to system.cpugovernor=ondemand),
+# after this boot write -- so POWER race's `performance` never reached a running game. Hand the
+# profile's CPU governor to ROCKNIX's own per-platform setting, through ROCKNIX's own set_setting
+# (bash-only: it uses [[ =~ ]] and silently no-ops under BusyBox sh).
+GOV=$(awk '$1=="#" && $2=="knob" && $3=="cpu_gov" {print $4; exit}' "$PROFILE")
+FUNCS="${ETK_ROCKNIX_FUNCS:-/etc/profile.d/001-functions}"
+if [ -n "$GOV" ] && [ -r "$FUNCS" ] && command -v bash >/dev/null 2>&1; then
+    bash -c '. "$1" && set_setting ps3.cpugovernor "$2"' _ "$FUNCS" "$GOV" >/dev/null 2>&1 \
+        && echo "etk-power: ROCKNIX ps3.cpugovernor=$GOV (applied by runemu at each PS3 launch)"
+fi
 APPLY
     chmod +x /storage/.config/etk-power-apply.sh
 cat << 'SVC' > /storage/.config/system.d/etk-power.service

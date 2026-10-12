@@ -214,6 +214,10 @@ except Exception as _e:  # pragma: no cover — import must never kill Pitstop
 POWER_PROFILES_JSON = os.environ.get('POWER_PROFILES_JSON', f"{ETK_ROOT}/config/power_profiles.json")
 POWER_DIR = os.environ.get('ETK_POWER_DIR', "/storage/etk-power")
 POWER_PROFILE_FILE = os.path.join(POWER_DIR, "profile")  # path<TAB>value + '# pwr=' header
+# ROCKNIX's own settings functions: runemu.sh applies `cpugovernor` for the platform at EVERY game
+# launch, so the POWER governor reaches a game only through ROCKNIX's ps3.cpugovernor (GT5 hunt
+# 2026-10-11). set_setting is bash-only.
+ROCKNIX_FUNCS = os.environ.get('ETK_ROCKNIX_FUNCS', "/etc/profile.d/001-functions")
 
 # Sessions shorter than this are aborts, not real attempts. Sourced from
 # env.sh; the TELEMETRY tab dims sub-threshold rows so a force-quit or a
@@ -7980,9 +7984,24 @@ def _power_apply(model):
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:
             pass
+    gov_note = _power_rocknix_gov(vals.get("cpu_gov"))
     model["saved_values"] = dict(vals)
     model["applied_tag"] = tag
-    return True, f"{tag} — {live}/{len(writes)} knobs live + reboot-safe"
+    return True, f"{tag} — {live}/{len(writes)} knobs live + reboot-safe{gov_note}"
+
+
+def _power_rocknix_gov(gov):
+    """Hand the POWER CPU governor to ROCKNIX's ps3.cpugovernor so runemu applies it at the
+    next launch (a sysfs write alone is undone by runemu's per-launch governor). Fail-silent:
+    returns a footer suffix, '' when there is nothing to do or ROCKNIX's functions are absent."""
+    if not gov or not os.path.exists(ROCKNIX_FUNCS):
+        return ""
+    try:
+        r = subprocess.run(["bash", "-c", '. "$1" && set_setting ps3.cpugovernor "$2"', "_", ROCKNIX_FUNCS, gov],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+        return f" + games: {gov}" if r.returncode == 0 else " (games: governor NOT set)"
+    except Exception:
+        return " (games: governor NOT set)"
 
 
 def draw_power(stdscr, state):

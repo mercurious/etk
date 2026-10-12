@@ -301,7 +301,12 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
     # governor handling returns to stock. Leaves /storage/etk-power/ profile.
     systemctl disable --now etk-power.service 2>/dev/null
     rm -f /storage/.config/system.d/etk-power.service /storage/.config/etk-power-apply.sh
-    echo "    Removed: etk-power.service + applier (stock power management restored)"
+    # POWER handed its CPU governor to ROCKNIX's ps3.cpugovernor (runemu applies it per launch);
+    # give the PS3 platform back to ROCKNIX's default (system.cpugovernor). set_setting/del_setting
+    # are bash-only.
+    [ -r /etc/profile.d/001-functions ] && command -v bash >/dev/null 2>&1 \
+        && bash -c '. /etc/profile.d/001-functions && del_setting ps3.cpugovernor' >/dev/null 2>&1
+    echo "    Removed: etk-power.service + applier (stock power management restored; PS3 governor back to ROCKNIX's default)"
 
     # Panic Black Box: stop the recorder + drop the ramoops module confs.
     # Harvested dumps live under etk_telemetry/blackbox (survives default
