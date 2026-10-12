@@ -3719,6 +3719,84 @@ else
 fi
 
 # ==========================================================
+# STEP 6.77: USB WAKE OFF (lid-close / power-key sleep that holds, 2026-10-11)
+# ==========================================================
+# With a USB-C cable in, every s2idle suspend bounced back within 0-3 s (car12, lid shut:
+# 5 of 6 plus 2 of 2 with only the glue's flag off). Nothing in userspace held it (the only
+# inhibitor was NetworkManager's delay lock): the dwc3 controller woke the SoC, its PHY never
+# reaching L2 ("port-1 HS-PHY not in L2" at every suspend). Unplugged it held; plugged back
+# in with wakeup off on BOTH the qcom glue (a6f8800.usb) and the dwc3 core (a600000.usb) it
+# held too, charging. This oneshot writes power/wakeup=disabled on every *.usb platform
+# device that has it enabled, at boot AND right before every suspend (sleep.target): every
+# UDC bind -- ROCKNIX's usbgadget start, the USB-net heal, Pitlink's attach or a Pitstop
+# toggle -- re-arms the dwc3 core's wake (convicted live 2026-10-11: disabled -> pitlink
+# restart -> enabled; usbgadget start cdc -> enabled), and Pitlink binds right after this
+# unit at boot, so a boot-only run left the cold-booted rig wake-armed. Costs: a USB device
+# can no longer wake the rig -- the power key and the lid still do. Kill-switch
+# ETK_USB_NOWAKE=0 removes it (stock wake from the next boot). Harness:
+# tools/test_usb_nowake.py.
+# ==========================================================
+if [ "${ETK_USB_NOWAKE:-1}" = "1" ]; then
+    NOWAKE_OUT=$(ssh $RIG_SSH "sh -s" 2>&1 <<'USBNOWAKEREMOTE'
+mkdir -p /storage/.config/custom_scripts /storage/.config/system.d
+cat << 'USBNOWAKE' > /storage/.config/custom_scripts/etk-usb-nowake.sh
+#!/bin/sh
+# etk-usb-nowake (ETK install.sh STEP 6.77): the USB controllers may not wake the SoC --
+# with a cable in, dwc3 bounced every s2idle suspend back within seconds. Power key + lid
+# still wake it.
+ROOT="${ETK_SYSFS_ROOT:-}"
+LOG="${ETK_USB_NOWAKE_LOG:-/storage/etk_usb_nowake.log}"
+log() { echo "$(date "+%F %T") [$(cut -d" " -f1 /proc/uptime 2>/dev/null)s] $*" >> "$LOG"; echo "[etk-usb-nowake] $*"; }
+n=0
+for d in "$ROOT"/sys/bus/platform/devices/*.usb; do
+    [ -e "$d/power/wakeup" ] || continue
+    before=$(cat "$d/power/wakeup" 2>/dev/null)
+    [ "$before" = enabled ] || continue
+    n=$((n + 1))
+    echo disabled > "$d/power/wakeup" 2>/dev/null
+    after=$(cat "$d/power/wakeup" 2>/dev/null)
+    if [ "$after" = disabled ]; then log "${d##*/}: wakeup enabled -> disabled (OFF)"
+    else log "${d##*/}: wakeup enabled -> ${after:-?} (OFF FAILED)"; fi
+done
+[ "$n" -gt 0 ] || log "no wake-enabled USB controller: nothing to do"
+exit 0
+USBNOWAKE
+chmod +x /storage/.config/custom_scripts/etk-usb-nowake.sh
+cat << 'USBNOWAKEUNIT' > /storage/.config/system.d/etk-usb-nowake.service
+[Unit]
+Description=ETK USB wake off (a cabled dwc3 no longer bounces s2idle suspends)
+# Every gadget bind re-arms dwc3's wake, so this runs again right before EVERY suspend (no
+# RemainAfterExit: it goes inactive, and the next sleep.target pulls it in again).
+After=etk-usbnet-heal.service etk-pitlink-usb.service
+Before=sleep.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh /storage/.config/custom_scripts/etk-usb-nowake.sh
+
+[Install]
+WantedBy=rocknix.target sleep.target
+USBNOWAKEUNIT
+systemctl daemon-reload
+systemctl enable /storage/.config/system.d/etk-usb-nowake.service >/dev/null 2>&1
+/bin/sh /storage/.config/custom_scripts/etk-usb-nowake.sh >/dev/null 2>&1
+on=$(for d in /sys/bus/platform/devices/*.usb; do [ "$(cat "$d/power/wakeup" 2>/dev/null)" = enabled ] && echo "${d##*/}"; done)
+sh -n /storage/.config/custom_scripts/etk-usb-nowake.sh && [ "$(systemctl is-enabled etk-usb-nowake.service 2>/dev/null)" = enabled ] && [ -z "$on" ] \
+    && systemctl list-dependencies sleep.target 2>/dev/null | grep -q etk-usb-nowake \
+    && echo "USBNOWAKE_OK last=$(tail -n1 /storage/etk_usb_nowake.log 2>/dev/null | cut -c1-110)" || echo "USBNOWAKE_FAIL still-enabled=${on:-none}"
+USBNOWAKEREMOTE
+)
+    if printf '%s' "$NOWAKE_OUT" | grep -q USBNOWAKE_OK; then
+        say "${G}[ETK]${N} USB wake off (etk-usb-nowake.service, at boot + before every suspend — a cabled rig now stays asleep; power key + lid wake it; $(printf '%s' "$NOWAKE_OUT" | grep USBNOWAKE_OK | sed 's/.*last=//'))"
+    else
+        say "${Y}[WARN] USB wake off did not verify ($(printf '%s' "$NOWAKE_OUT" | tail -n1)) — with a USB-C cable in, lid-close sleep may bounce straight back.${N}"
+    fi
+else
+    ssh $RIG_SSH "systemctl disable etk-usb-nowake.service >/dev/null 2>&1; rm -f /storage/.config/system.d/etk-usb-nowake.service /storage/.config/custom_scripts/etk-usb-nowake.sh; systemctl daemon-reload" 2>/dev/null
+    say "${G}[ETK]${N} USB wake off removed (kill-switch ETK_USB_NOWAKE=0; stock USB wake from the next boot)"
+fi
+
+# ==========================================================
 # STEP 6.73: PITLINK USB (the Engineer's raw-USB channel into RPCS3)
 # ==========================================================
 # bin/etk_pitlink_usbd.py adds a vendor FunctionFS function ("ETK Pitlink", 2 bulk eps) to

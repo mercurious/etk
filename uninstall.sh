@@ -333,6 +333,12 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
     for d in /sys/bus/platform/devices/*.ufshc; do [ -e "$d/clkscale_enable" ] && echo 1 > "$d/clkscale_enable" 2>/dev/null; done
     echo "    Removed: etk-ufs-pin.service (UFS clock scaling restored)"
 
+    # USB wake off (install.sh STEP 6.77): drop it; the kernel's own wake flags return at the
+    # next boot (sysfs resets). The log is kept.
+    systemctl disable etk-usb-nowake.service 2>/dev/null
+    rm -f /storage/.config/system.d/etk-usb-nowake.service /storage/.config/custom_scripts/etk-usb-nowake.sh
+    echo "    Removed: etk-usb-nowake.service (stock USB wake from the next boot)"
+
     systemctl disable --now etk-blackbox.service 2>/dev/null
     rm -f /storage/.config/system.d/etk-blackbox.service
     rm -f /storage/.config/modules-load.d/etk-ramoops.conf /storage/.config/modprobe.d/etk-ramoops.conf
