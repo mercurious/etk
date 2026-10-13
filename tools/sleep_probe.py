@@ -160,7 +160,8 @@ def report():
         if "start" in e:
             print("--- recorder started %s (pid %s, lid %s)" % (e["start"], e["pid"], e["lid_dev"]))
             continue
-        verdict = ("FREEZE-FAIL" if e["fail"] else "HELD" if e["slept_s"] >= 20 else "BOUNCE")
+        # a bounce comes back in ~0 s; anything longer slept until its waker (see ws: the lid = you)
+        verdict = ("FREEZE-FAIL" if e["fail"] else "HELD" if e["slept_s"] >= 3 else "BOUNCE")
         lid = "/".join({True: "shut", False: "open", None: "?"}[x] for x in e["lid"])
         print("%s  %-11s slept %8.1fs  lid %-9s cable %s udc %s  usbwake %s" % (
             e["pre_wall"], verdict, e["slept_s"], lid, "/".join(e["cable"]), "/".join(e["udc"]),
