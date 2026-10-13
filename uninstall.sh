@@ -339,6 +339,12 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
     rm -f /storage/.config/system.d/etk-usb-nowake.service /storage/.config/custom_scripts/etk-usb-nowake.sh
     echo "    Removed: etk-usb-nowake.service (stock USB wake from the next boot)"
 
+    # mDNS name heal (install.sh STEP 6.78): stop the timer and drop it; avahi's own name
+    # handling (a -N rename sticks until a reboot) returns at once. The log is kept.
+    systemctl disable --now etk-mdns-heal.timer 2>/dev/null
+    rm -f /storage/.config/system.d/etk-mdns-heal.timer /storage/.config/system.d/etk-mdns-heal.service /storage/.config/custom_scripts/etk-mdns-heal.sh
+    echo "    Removed: etk-mdns-heal.timer (mDNS name heal)"
+
     systemctl disable --now etk-blackbox.service 2>/dev/null
     rm -f /storage/.config/system.d/etk-blackbox.service
     rm -f /storage/.config/modules-load.d/etk-ramoops.conf /storage/.config/modprobe.d/etk-ramoops.conf

@@ -3797,6 +3797,100 @@ else
 fi
 
 # ==========================================================
+# STEP 6.78: mDNS NAME HEAL (the rig answers to <host>.local again, 2026-10-13)
+# ==========================================================
+# avahi renames itself <host>-2 on a name conflict and never takes the name back, so
+# `ssh etk-rig` (SM8250.local) stops resolving until a reboot -- and install.sh's own RIG_SSH
+# with it. car8 2026-10-13 11:59:04: the conflict landed in the second wlan0 took its DHCP
+# lease and swapped its IPv6 addresses, after an iwd reason-15 re-join (WiFiHandshakeFix spec);
+# nothing else on either link answered SM8250.local before or after, and avahi-set-host-name
+# took it back at once with no new conflict: avahi had heard its own just-withdrawn record. A
+# timer runs this oneshot every 30 s: avahi on <host>-N -> resolve <host>.local; an answer from
+# an address that is NOT this rig's is a real second device (two cars, one name) and the rig
+# stays renamed with a REAL CONFLICT line; no answer, or only our own address, -> reclaim.
+# Kill-switch ETK_MDNS_HEAL=0 removes it. Harness: tools/test_mdns_heal.py.
+# ==========================================================
+if [ "${ETK_MDNS_HEAL:-1}" = "1" ]; then
+    MDNS_OUT=$(ssh $RIG_SSH "sh -s" 2>&1 <<'MDNSHEALREMOTE'
+mkdir -p /storage/.config/custom_scripts /storage/.config/system.d
+cat << 'MDNSHEAL' > /storage/.config/custom_scripts/etk-mdns-heal.sh
+#!/bin/sh
+# etk-mdns-heal (ETK install.sh STEP 6.78): take <host>.local back after avahi renamed itself
+# <host>-N on a conflict with its own echo (a WiFi re-join mid-probe). Never fights a real
+# second device for the name.
+BUSCTL="${ETK_BUSCTL:-busctl}"
+SETNAME="${ETK_AVAHI_SET_HOST_NAME:-avahi-set-host-name}"
+want="${ETK_HOSTNAME:-$(hostname)}"
+LOG="${ETK_MDNS_HEAL_LOG:-/storage/etk_mdns_heal.log}"
+log() { echo "$(date "+%F %T") [$(cut -d" " -f1 /proc/uptime 2>/dev/null)s] $*" >> "$LOG"; echo "[etk-mdns-heal] $*"; }
+AV="org.freedesktop.Avahi / org.freedesktop.Avahi.Server"
+cur=$($BUSCTL call --timeout=3 $AV GetHostName 2>/dev/null | sed -n 's/^s "\(.*\)"$/\1/p')
+[ -n "$cur" ] || exit 0
+[ "$cur" = "$want" ] && exit 0
+case "$cur" in
+    "$want"-[0-9]*) ;;
+    *) log "avahi host name '$cur' is not '$want' or its -N rename: left alone"; exit 0 ;;
+esac
+addr=$($BUSCTL call --timeout=5 $AV ResolveHostName iisiu -- -1 0 "$want.local" 0 0 2>/dev/null | awk -F'"' 'NF >= 4 { print $4; exit }')
+if [ -n "$addr" ]; then
+    mine=$(ip addr 2>/dev/null | awk '$1 == "inet" || $1 == "inet6" { sub(/\/.*/, "", $2); print $2 }')
+    if ! printf '%s\n' $mine | grep -qixF "$addr"; then
+        msg="REAL CONFLICT: $want.local is answered by $addr (not this rig): staying $cur.local"
+        tail -n1 "$LOG" 2>/dev/null | grep -qF "$msg" || log "$msg"
+        exit 0
+    fi
+fi
+if $SETNAME "$want" >/dev/null 2>&1; then
+    log "RECLAIMED $want.local (avahi had renamed itself $cur.local; the name was ${addr:+answered only by this rig, $addr}${addr:-unanswered})"
+else
+    log "RECLAIM FAILED: $SETNAME $want (still $cur.local)"
+fi
+exit 0
+MDNSHEAL
+chmod +x /storage/.config/custom_scripts/etk-mdns-heal.sh
+cat << 'MDNSHEALUNIT' > /storage/.config/system.d/etk-mdns-heal.service
+[Unit]
+Description=ETK mDNS name heal (take <host>.local back after avahi's self-conflict rename)
+After=avahi-daemon.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh /storage/.config/custom_scripts/etk-mdns-heal.sh
+MDNSHEALUNIT
+cat << 'MDNSHEALTIMER' > /storage/.config/system.d/etk-mdns-heal.timer
+[Unit]
+Description=ETK mDNS name heal, every 30 s
+
+[Timer]
+OnBootSec=45s
+OnUnitActiveSec=30s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target
+MDNSHEALTIMER
+systemctl daemon-reload
+systemctl enable /storage/.config/system.d/etk-mdns-heal.timer >/dev/null 2>&1
+systemctl restart etk-mdns-heal.timer >/dev/null 2>&1
+/bin/sh /storage/.config/custom_scripts/etk-mdns-heal.sh >/dev/null 2>&1
+name=$(busctl call --timeout=3 org.freedesktop.Avahi / org.freedesktop.Avahi.Server GetHostName 2>/dev/null | sed -n 's/^s "\(.*\)"$/\1/p')
+sh -n /storage/.config/custom_scripts/etk-mdns-heal.sh && [ "$(systemctl is-enabled etk-mdns-heal.timer 2>/dev/null)" = enabled ] \
+    && [ "$(systemctl is-active etk-mdns-heal.timer 2>/dev/null)" = active ] \
+    && { [ "$name" = "$(hostname)" ] || tail -n1 /storage/etk_mdns_heal.log 2>/dev/null | grep -q "REAL CONFLICT"; } \
+    && echo "MDNSHEAL_OK name=${name:-?}.local" || echo "MDNSHEAL_FAIL avahi=${name:-down}.local host=$(hostname)"
+MDNSHEALREMOTE
+)
+    if printf '%s' "$MDNS_OUT" | grep -q MDNSHEAL_OK; then
+        say "${G}[ETK]${N} mDNS name heal (etk-mdns-heal.timer, every 30 s — the rig takes its .local name back after avahi's self-conflict rename; $(printf '%s' "$MDNS_OUT" | grep MDNSHEAL_OK | sed 's/MDNSHEAL_OK //'))"
+    else
+        say "${Y}[WARN] mDNS name heal did not verify ($(printf '%s' "$MDNS_OUT" | tail -n1)) — after a WiFi re-join the rig may answer only to <host>-2.local.${N}"
+    fi
+else
+    ssh $RIG_SSH "systemctl disable --now etk-mdns-heal.timer >/dev/null 2>&1; rm -f /storage/.config/system.d/etk-mdns-heal.timer /storage/.config/system.d/etk-mdns-heal.service /storage/.config/custom_scripts/etk-mdns-heal.sh; systemctl daemon-reload" 2>/dev/null
+    say "${G}[ETK]${N} mDNS name heal removed (kill-switch ETK_MDNS_HEAL=0; avahi keeps any -N rename until a reboot)"
+fi
+
+# ==========================================================
 # STEP 6.73: PITLINK USB (the Engineer's raw-USB channel into RPCS3)
 # ==========================================================
 # bin/etk_pitlink_usbd.py adds a vendor FunctionFS function ("ETK Pitlink", 2 bulk eps) to

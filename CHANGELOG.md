@@ -30,6 +30,15 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
   leaves its report.
 
 ### Fixed
+- **The handheld answers to its network name again.** After a Wi-Fi
+  reconnect, the handheld sometimes renamed itself on the network (from
+  `SM8250.local` to `SM8250-2.local`) and kept the new name until the next
+  reboot, so connecting by name (`ssh` to `SM8250.local`, and the installer
+  itself) stopped working. It had mistaken its own announcement for a
+  second device. The kit now checks every 30 seconds and takes the name
+  back, unless another device on the network really does hold it, in which
+  case it leaves the new name alone and logs which address has the name.
+  Turn it off with `ETK_MDNS_HEAL=0`.
 - **Sleep holds with a USB-C cable plugged in.** Closing the lid or tapping
   the power key with a cable in (charging, or connected to a computer) put
   the handheld to sleep for a second or two, then woke it right back up, over

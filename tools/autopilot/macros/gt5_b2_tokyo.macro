@@ -1,0 +1,13 @@
+# GT5 (BCUS98114): License B-2 "Steering", Tokyo R246 -- the one-press track-load death (2026-10-13 r1:
+# X at the B-2 card -> load bar full at ~+25 s -> flips collapse -> silent SoC stall -> WARM PS_HOLD).
+# Start: the operator parks GT5 on the LICENSE TESTS B-2 card (cursor on the Tokyo R246 tile), then
+#   gt5_trial.py --attach --macro tools/autopilot/macros/gt5_b2_tokyo.macro --out ... --secs 300
+snap b2_card
+press cross
+sleep 10
+snap load_10
+sleep 10
+snap load_20
+sleep 6
+snap load_26
+observe 240
