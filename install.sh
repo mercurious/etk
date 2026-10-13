@@ -4018,6 +4018,9 @@ fi
 # effect on the next boot, with the mic DTB. Validated 2026-09-29: overlay parsed by
 # alsaucm, Mic sequence captured live audio on hw:0,2, Headset/Mic conflict enforced.
 # Kill-switch ETK_INTERNAL_MIC=0 (also drops the mic DTB in STEP 6.4).
+# Verify: while the overlay is bound, hashing the stock path reads the OVERLAY, never the base
+# (a false "STALE" on every reinstall, car8 + car12 2026-10-13, mic working on both). The
+# bind script binds only after the base sha matched at this boot, so bound = base matched.
 ETK_INTERNAL_MIC="${ETK_INTERNAL_MIC:-1}"
 if [ "$ETK_INTERNAL_MIC" = "1" ] && [ -f ./config/ucm/sm8250-HiFi-RP.flip2.conf ] \
         && [ -f ./config/etk-ucm-bind.sh ] && [ -f ./config/etk-ucm.service ]; then
@@ -4029,6 +4032,7 @@ if [ "$ETK_INTERNAL_MIC" = "1" ] && [ -f ./config/ucm/sm8250-HiFi-RP.flip2.conf 
             B=\$(sed -n 's/^ETK_UCM_BASE_SHA=\"\(.*\)\"/\1/p' /storage/.config/etk-ucm-bind.sh); \
             S=\$(sha256sum /usr/share/alsa/ucm2/Qualcomm/sm8250/HiFi-RP.conf 2>/dev/null | cut -d' ' -f1); \
             grep -q ' /usr/share/alsa/ucm2/Qualcomm/sm8250/HiFi-RP.conf ' /proc/mounts && M=bound || M=unbound; \
+            [ \"\$M\" = bound ] && S=\$B; \
             [ \"\$B\" = \"\$S\" ] && echo UCM_OK base=match now=\$M || echo UCM_OK base=STALE now=\$M" 2>/dev/null)
         case "$UCM_OUT" in
             *base=match*now=bound*) say "${G}[ETK]${N} Flip 2 internal mic: UCM overlay active (Internal Microphone; the headset jack wins when plugged)" ;;
