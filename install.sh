@@ -3735,20 +3735,30 @@ fi
 # can no longer wake the rig -- the power key and the lid still do. Kill-switch
 # ETK_USB_NOWAKE=0 removes it (stock wake from the next boot). Harness:
 # tools/test_usb_nowake.py.
+# 2026-10-13 (car12, uncabled): the bounce came back with USB wake off -- the tsens thermal
+# sensors woke it. The fan's first step (cluster1 active trip 45 C, hysteresis 5 C) leaves the
+# tsens low threshold at 40 C, right at the idle temperature; the SoC cools through it inside
+# s2idle, and with the thermal core suspended nothing re-programs the threshold, so the level
+# IRQ storms (c263000.thermal-sensor +4k..+47k per suspend, tools/sleep_probe.py) and the
+# rig is back in 0.0 s: 4 of 4 power-key/RTC suspends at fan step 1. Same rig, same fan step,
+# c263000 + c265000 power/wakeup=disabled: held 57.8 s to the RTC alarm. So *.thermal-sensor
+# joins *.usb here. Costs: a temperature crossing no longer wakes a sleeping rig (an idle SoC
+# only cools; the tsens hardware critical reset does not need the IRQ).
 # ==========================================================
 if [ "${ETK_USB_NOWAKE:-1}" = "1" ]; then
     NOWAKE_OUT=$(ssh $RIG_SSH "sh -s" 2>&1 <<'USBNOWAKEREMOTE'
 mkdir -p /storage/.config/custom_scripts /storage/.config/system.d
 cat << 'USBNOWAKE' > /storage/.config/custom_scripts/etk-usb-nowake.sh
 #!/bin/sh
-# etk-usb-nowake (ETK install.sh STEP 6.77): the USB controllers may not wake the SoC --
-# with a cable in, dwc3 bounced every s2idle suspend back within seconds. Power key + lid
-# still wake it.
+# etk-usb-nowake (ETK install.sh STEP 6.77): the USB controllers and the tsens thermal
+# sensors may not wake the SoC -- with a cable in, dwc3 bounced every s2idle suspend back
+# within seconds; with the fan on, a SoC cooling through its 40 C threshold storms tsens and
+# does the same. Power key + lid still wake it.
 ROOT="${ETK_SYSFS_ROOT:-}"
 LOG="${ETK_USB_NOWAKE_LOG:-/storage/etk_usb_nowake.log}"
 log() { echo "$(date "+%F %T") [$(cut -d" " -f1 /proc/uptime 2>/dev/null)s] $*" >> "$LOG"; echo "[etk-usb-nowake] $*"; }
 n=0
-for d in "$ROOT"/sys/bus/platform/devices/*.usb; do
+for d in "$ROOT"/sys/bus/platform/devices/*.usb "$ROOT"/sys/bus/platform/devices/*.thermal-sensor; do
     [ -e "$d/power/wakeup" ] || continue
     before=$(cat "$d/power/wakeup" 2>/dev/null)
     [ "$before" = enabled ] || continue
@@ -3758,13 +3768,13 @@ for d in "$ROOT"/sys/bus/platform/devices/*.usb; do
     if [ "$after" = disabled ]; then log "${d##*/}: wakeup enabled -> disabled (OFF)"
     else log "${d##*/}: wakeup enabled -> ${after:-?} (OFF FAILED)"; fi
 done
-[ "$n" -gt 0 ] || log "no wake-enabled USB controller: nothing to do"
+[ "$n" -gt 0 ] || log "no wake-enabled USB controller or thermal sensor: nothing to do"
 exit 0
 USBNOWAKE
 chmod +x /storage/.config/custom_scripts/etk-usb-nowake.sh
 cat << 'USBNOWAKEUNIT' > /storage/.config/system.d/etk-usb-nowake.service
 [Unit]
-Description=ETK USB wake off (a cabled dwc3 no longer bounces s2idle suspends)
+Description=ETK USB + thermal wake off (dwc3 and tsens no longer bounce s2idle suspends)
 # Every gadget bind re-arms dwc3's wake, so this runs again right before EVERY suspend (no
 # RemainAfterExit: it goes inactive, and the next sleep.target pulls it in again).
 After=etk-usbnet-heal.service etk-pitlink-usb.service
@@ -3780,16 +3790,16 @@ USBNOWAKEUNIT
 systemctl daemon-reload
 systemctl enable /storage/.config/system.d/etk-usb-nowake.service >/dev/null 2>&1
 /bin/sh /storage/.config/custom_scripts/etk-usb-nowake.sh >/dev/null 2>&1
-on=$(for d in /sys/bus/platform/devices/*.usb; do [ "$(cat "$d/power/wakeup" 2>/dev/null)" = enabled ] && echo "${d##*/}"; done)
+on=$(for d in /sys/bus/platform/devices/*.usb /sys/bus/platform/devices/*.thermal-sensor; do [ "$(cat "$d/power/wakeup" 2>/dev/null)" = enabled ] && echo "${d##*/}"; done)
 sh -n /storage/.config/custom_scripts/etk-usb-nowake.sh && [ "$(systemctl is-enabled etk-usb-nowake.service 2>/dev/null)" = enabled ] && [ -z "$on" ] \
     && systemctl list-dependencies sleep.target 2>/dev/null | grep -q etk-usb-nowake \
     && echo "USBNOWAKE_OK last=$(tail -n1 /storage/etk_usb_nowake.log 2>/dev/null | cut -c1-110)" || echo "USBNOWAKE_FAIL still-enabled=${on:-none}"
 USBNOWAKEREMOTE
 )
     if printf '%s' "$NOWAKE_OUT" | grep -q USBNOWAKE_OK; then
-        say "${G}[ETK]${N} USB wake off (etk-usb-nowake.service, at boot + before every suspend — a cabled rig now stays asleep; power key + lid wake it; $(printf '%s' "$NOWAKE_OUT" | grep USBNOWAKE_OK | sed 's/.*last=//'))"
+        say "${G}[ETK]${N} USB + thermal wake off (etk-usb-nowake.service, at boot + before every suspend — a cabled or fan-warm rig now stays asleep; power key + lid wake it; $(printf '%s' "$NOWAKE_OUT" | grep USBNOWAKE_OK | sed 's/.*last=//'))"
     else
-        say "${Y}[WARN] USB wake off did not verify ($(printf '%s' "$NOWAKE_OUT" | tail -n1)) — with a USB-C cable in, lid-close sleep may bounce straight back.${N}"
+        say "${Y}[WARN] USB + thermal wake off did not verify ($(printf '%s' "$NOWAKE_OUT" | tail -n1)) — with a USB-C cable in or the fan on, lid-close sleep may bounce straight back.${N}"
     fi
 else
     ssh $RIG_SSH "systemctl disable etk-usb-nowake.service >/dev/null 2>&1; rm -f /storage/.config/system.d/etk-usb-nowake.service /storage/.config/custom_scripts/etk-usb-nowake.sh; systemctl daemon-reload" 2>/dev/null

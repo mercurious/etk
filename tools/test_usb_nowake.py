@@ -7,6 +7,8 @@ fake sysfs (ETK_SYSFS_ROOT), under /bin/sh.
   python3 tools/test_usb_nowake.py
 
   [OFF]    the qcom glue + dwc3 core with wakeup=enabled are both written disabled and logged OFF
+  [THERM]  both tsens blocks (c263000/c265000.thermal-sensor) are written disabled too -- a fan-warm
+           SoC cooling through its 40 C threshold in s2idle storms tsens and bounced car12 (2026-10-13)
   [SKIP]   a *.usb already disabled, or with no power/wakeup (not wake-capable), and a non-USB
            device with wakeup=enabled (the lid, the power key), are left alone
   [NONE]   nothing wake-enabled: logs "nothing to do", exits 0
@@ -15,7 +17,8 @@ fake sysfs (ETK_SYSFS_ROOT), under /bin/sh.
            back (any *.usb still enabled = FAIL); the unit re-runs before EVERY suspend (a gadget
            bind re-arms dwc3's wake); uninstall.sh removes the unit + script
 
-DISCRIMINATION: against install.sh before STEP 6.77 every check fails (no body to extract).
+DISCRIMINATION: against install.sh before STEP 6.77 every check fails (no body to extract); against
+the USB-only 6.77 (2cfc8d1) [THERM] fails.
 """
 import os
 import re
@@ -85,6 +88,21 @@ check("exit 0", rc, 0)
 check("glue + core written disabled", w, {"a6f8800.usb": "disabled", "a600000.usb": "disabled"})
 check("each logged OFF", ("a6f8800.usb: wakeup enabled -> disabled (OFF)" in log,
                           "a600000.usb: wakeup enabled -> disabled (OFF)" in log), (True, True))
+
+print("[THERM]")
+
+
+def tsens(tmp):
+    sm8250(tmp)
+    dev(tmp, "c263000.thermal-sensor", "enabled")
+    dev(tmp, "c265000.thermal-sensor", "enabled")
+
+
+rc, log, w = run(tsens, ["c263000.thermal-sensor", "c265000.thermal-sensor", "gpio-keys-lid"]) if body else (1, "", {})
+check("both tsens blocks written disabled, the lid untouched", w,
+      {"c263000.thermal-sensor": "disabled", "c265000.thermal-sensor": "disabled", "gpio-keys-lid": "enabled"})
+check("USB + thermal: four logged OFF", log.count("(OFF)"), 4)
+check("verdict counts a wake-armed thermal sensor as a failure", "*.thermal-sensor; do" in src, True)
 
 print("[SKIP]")
 
