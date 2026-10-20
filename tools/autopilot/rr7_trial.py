@@ -49,6 +49,7 @@ RSX_UP = re.compile(r"sys_rsx_context_allocate\(\): Mapped address")
 DESYNC = re.compile(r"FIFO desync unrecoverable|Dead FIFO commands queue state")
 FAULT = re.compile(r"VM: Access violation|SYS: Emulation has been frozen|Unhandled exception|PPU: Trap")
 STARVE = re.compile(r"anti-lock stage2: FIFO still starved")
+WATCH = "|".join(rx.pattern for rx in (DESYNC, STARVE, FAULT, RSX_UP))
 DESYNC_EVENT = r"FIFO error: possible desync"
 SPIN = re.compile(r"sys_event_queue_(create|destroy)|_event_all_threads")
 RIG_LOG = "/storage/.cache/rpcs3/RPCS3.log"
@@ -73,6 +74,15 @@ def flips():
         return c.ping()[0]
     except (OSError, PitlinkError):
         return None
+
+
+def gsafe(req, timeout=30.0):
+    """A garage call whose failure must not cost the verdict (evidence, re-checks): {} on a miss."""
+    try:
+        return garage(req, timeout=timeout)
+    except (OSError, PitlinkError) as e:
+        print(f"rr7_trial: garage {req.get('op')} failed ({e})", file=sys.stderr, flush=True)
+        return {}
 
 
 def extract_dump(log_gz, out):
@@ -104,8 +114,8 @@ def main():
 
     def evidence():
         with open(os.path.join(a.out, "log_tail.txt"), "w") as fh:
-            fh.write(garage({"op": "log", "tail": 400}).get("text", ""))
-        ev = garage({"op": "log", "from": 0, "grep": DESYNC_EVENT})
+            fh.write(gsafe({"op": "log", "tail": 400}).get("text", ""))
+        ev = gsafe({"op": "log", "from": 0, "grep": DESYNC_EVENT}, timeout=120)
         with open(os.path.join(a.out, "desync_lines.txt"), "w") as fh:
             fh.write("\n".join(ev.get("text", "").splitlines()[:40]))
         # the whole boot's log: the next launch rewrites it, and a 400-line tail misses the lead-up
@@ -143,29 +153,50 @@ def main():
     # RPCS3 rewrites RPCS3.log at boot; until then the file is the PREVIOUS boot's (gt6_trial's
     # rule: a smaller file proves the rewrite, and so does 45 s).
     rotated, rsx_t = log0 == 0, None
+    # One incremental scan per tick, not four whole-log greps: the garage regex-scans on the car, and
+    # by 15 min a 25 MB log made that a CPU load on the rig under test and a timeout that killed the
+    # trial with no verdict (m08 long r1). The 4 KiB overlap catches a line split across two reads.
+    off, seen, hits, misses = 0, set(), [], 0
+
+    def matching(rx):
+        return [h for h in hits if rx.search(h)]
+
     while time.time() - t0 < a.secs:
         time.sleep(5)
         now = time.time()
-        if not rotated:
-            rotated = garage({"op": "log", "tail": 1})["size"] < log0 or now - t0 > 45
+        try:
             if not rotated:
-                continue
-        bad = garage({"op": "log", "from": 0, "grep": DESYNC.pattern})
-        if bad["lines"]:
-            finish("DESYNC", 1, signature=bad["text"][-600:], rsx_secs=rsx_t and round(rsx_t - t0),
+                rotated = garage({"op": "log", "tail": 1})["size"] < log0 or now - t0 > 45
+                if not rotated:
+                    continue
+            r = garage({"op": "log", "from": max(0, off - 4096), "grep": WATCH}, timeout=60)
+            alive = garage({"op": "running"})["running"]
+            misses = 0
+        except (OSError, PitlinkError) as e:
+            misses += 1
+            print(f"rr7_trial: garage miss {misses} ({e})", file=sys.stderr, flush=True)
+            if misses >= 12:
+                finish("INCONCLUSIVE", 5, note=f"the garage stopped answering for a minute ({e})",
+                       rsx_secs=rsx_t and round(rsx_t - t0))
+            continue
+        off = r["size"]
+        for ln in r.get("text", "").splitlines():
+            if ln not in seen:
+                seen.add(ln)
+                hits.append(ln)
+        if matching(DESYNC):
+            finish("DESYNC", 1, signature="\n".join(matching(DESYNC))[-600:], rsx_secs=rsx_t and round(rsx_t - t0),
                    desync_events=evidence())
-        bad = garage({"op": "log", "from": 0, "grep": STARVE.pattern})
-        if bad["lines"]:
-            finish("STARVE", 6, fault=bad["text"][-600:], rsx_secs=rsx_t and round(rsx_t - t0),
+        if matching(STARVE):
+            finish("STARVE", 6, fault="\n".join(matching(STARVE))[-600:], rsx_secs=rsx_t and round(rsx_t - t0),
                    desync_events=evidence())
-        bad = garage({"op": "log", "from": 0, "grep": FAULT.pattern})
-        if bad["lines"]:
-            finish("CRASH", 3, fault=bad["text"][-1200:], rsx_secs=rsx_t and round(rsx_t - t0),
+        if matching(FAULT):
+            finish("CRASH", 3, fault="\n".join(matching(FAULT))[-1200:], rsx_secs=rsx_t and round(rsx_t - t0),
                    desync_events=evidence())
-        if rsx_t is None and garage({"op": "log", "from": 0, "grep": RSX_UP.pattern})["lines"]:
+        if rsx_t is None and matching(RSX_UP):
             rsx_t = now
             print(f"rr7_trial: RSX up at +{now - t0:.0f}s; holding {a.hold:.0f}s", flush=True)
-        if not garage({"op": "running"})["running"] and now - t0 > 45:
+        if not alive and now - t0 > 45:
             finish("CRASH", 3, fault="emulator gone with no fault line", rsx_secs=rsx_t and round(rsx_t - t0),
                    desync_events=evidence())
         if rsx_t and now - rsx_t >= a.hold:
@@ -186,8 +217,8 @@ def main():
             if moving is False or flipping is False:
                 # the watchdog may have stopped it while the witnesses sampled (m11 r4: stage2 gave up
                 # at 4:27, mid-liveness-check, and the "stall" had no guest left to dump)
-                bad = garage({"op": "log", "from": 0, "grep": STARVE.pattern})
-                if bad["lines"]:
+                bad = gsafe({"op": "log", "from": max(0, off - 4096), "grep": STARVE.pattern})
+                if bad.get("lines"):
                     finish("STARVE", 6, fault=bad["text"][-600:], rsx_secs=round(rsx_t - t0),
                            desync_events=evidence())
                 # a stall is the one verdict where the guest is still there to inspect (m04 r8: the
