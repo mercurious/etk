@@ -10,6 +10,8 @@ the emulation; stock RPCS3 throws "Dead FIFO commands queue state" at the same p
   PASS      the RSX came up (sys_rsx_context_allocate) and --hold seconds later the game is
             still running with no FIFO give-up and no fault
   DESYNC    stage3b's give-up or stock RPCS3's dead-FIFO throw: the regression's signature
+  STALL     the hold passed with no log verdict but the screen is frozen (two frames 6 s apart are
+            identical): a starved game on a core with no anti-lock watchdog (a raw build)
   CRASH     a guest fault, a frozen emulation or a stop that is NOT the FIFO signature, or
             the emulator gone before the hold
   TIMEOUT   the RSX never came up within --secs (covers a fresh core's PPU compile)
@@ -18,13 +20,17 @@ desync_events counts `FIFO error: possible desync` lines either way: a good core
 Evidence (log tail, the first desync lines, verdict.json) goes to --out. It does not recover
 the car; run `gtpilot.py recover` after (the kit's R3 path).
 
-  rr7_trial.py --out DIR [--secs 2400] [--hold 150] [--label TEXT]
-Exit: 0 PASS, 1 DESYNC, 2 TIMEOUT / no game, 3 CRASH.
+  rr7_trial.py --out DIR [--secs 2400] [--hold 150] [--label TEXT] [--attach]
+--attach judges an RR7 run the driver already launched (no launch; the log is already this boot's).
+Frames come from grim on the car over ssh (read-only); --rig names the car.
+Exit: 0 PASS, 1 DESYNC, 2 TIMEOUT / no game, 3 CRASH, 4 STALL.
 """
 import argparse
+import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 
@@ -37,6 +43,16 @@ RSX_UP = re.compile(r"sys_rsx_context_allocate\(\): Mapped address")
 DESYNC = re.compile(r"FIFO desync unrecoverable|Dead FIFO commands queue state")
 FAULT = re.compile(r"VM: Access violation|SYS: Emulation has been frozen|Unhandled exception|PPU: Trap")
 DESYNC_EVENT = r"FIFO error: possible desync"
+GRIM = "WAYLAND_DISPLAY=wayland-1 XDG_RUNTIME_DIR=/var/run/0-runtime-dir timeout 5 grim -t ppm -"
+
+
+def frame(rig):
+    """One screen grab from the car (PPM bytes), or None."""
+    try:
+        r = subprocess.run(["ssh", "-o", "ConnectTimeout=5", rig, GRIM], capture_output=True, timeout=20)
+    except subprocess.TimeoutExpired:
+        return None
+    return r.stdout if r.returncode == 0 and r.stdout.startswith(b"P6") else None
 
 
 def main():
@@ -45,6 +61,8 @@ def main():
     ap.add_argument("--secs", type=float, default=2400)
     ap.add_argument("--hold", type=float, default=150)
     ap.add_argument("--label", default="")
+    ap.add_argument("--attach", action="store_true")
+    ap.add_argument("--rig", default="root@169.254.170.2")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     verdict = {"label": a.label, "game": GAME, "hold": a.hold}
@@ -64,12 +82,18 @@ def main():
         print(json.dumps(verdict), flush=True)
         sys.exit(code)
 
-    if garage({"op": "running"})["running"]:
-        sys.exit("rr7_trial: a game is already running -- recover first (gtpilot.py recover)")
-    log0 = garage({"op": "log", "tail": 1})["size"]
-    garage({"op": "launch", "game": GAME})
+    running = garage({"op": "running"})["running"]
+    if a.attach:
+        if not running or GAME not in str(running) and "Ridge Racer 7" not in str(running):
+            sys.exit(f"rr7_trial: --attach needs RR7 running (running: {running})")
+        log0 = 0
+    else:
+        if running:
+            sys.exit("rr7_trial: a game is already running -- recover first (gtpilot.py recover)")
+        log0 = garage({"op": "log", "tail": 1})["size"]
+        garage({"op": "launch", "game": GAME})
     t0 = time.time()
-    print(f"rr7_trial: launched ({a.label or 'no label'})", flush=True)
+    print(f"rr7_trial: {'attached' if a.attach else 'launched'} ({a.label or 'no label'})", flush=True)
 
     # RPCS3 rewrites RPCS3.log at boot; until then the file is the PREVIOUS boot's (gt6_trial's
     # rule: a smaller file proves the rewrite, and so does 45 s).
@@ -96,7 +120,17 @@ def main():
             finish("CRASH", 3, fault="emulator gone with no fault line", rsx_secs=rsx_t and round(rsx_t - t0),
                    desync_events=evidence())
         if rsx_t and now - rsx_t >= a.hold:
-            finish("PASS", 0, note=f"running {a.hold:.0f}s past the RSX init, no FIFO give-up",
+            f1 = frame(a.rig)
+            time.sleep(6)
+            f2 = frame(a.rig)
+            if f2:
+                with open(os.path.join(a.out, "last.ppm"), "wb") as fh:
+                    fh.write(f2)
+            moving = None if not (f1 and f2) else hashlib.sha256(f1).digest() != hashlib.sha256(f2).digest()
+            if moving is False:
+                finish("STALL", 4, note="no log verdict, but two frames 6 s apart are identical",
+                       rsx_secs=round(rsx_t - t0), desync_events=evidence())
+            finish("PASS", 0, screen_moving=moving, note=f"running {a.hold:.0f}s past the RSX init, no FIFO give-up",
                    rsx_secs=round(rsx_t - t0), desync_events=evidence())
     finish("TIMEOUT", 2)
 
