@@ -13,6 +13,7 @@ Run: python3 tools/pitlink/test_plusb.py
 import itertools
 import os
 import queue
+import re
 import socket
 import struct
 import sys
@@ -282,6 +283,54 @@ class TestGarage(unittest.TestCase):
         self.assertEqual(rep["text"].splitlines(), ["boot line 47", "boot line 48", "boot line 49"])
         rep = self.D.read_log({"grep": r"line 1[0-2]$", "from": 0})
         self.assertEqual(rep["lines"], 3)
+
+    @staticmethod
+    def slurped(D, req):
+        """The pre-2026-10-20 read_log, kept as the oracle for the streamed one."""
+        size = D.log_size()
+        start = req.get("from")
+        tail = int(req.get("tail", 200))
+        with open(D.RPCS3_LOG, "rb") as f:
+            f.seek(max(0, size - 4 * 1024 * 1024) if start is None else min(int(start), size))
+            lines = f.read(size - f.tell()).decode(errors="replace").splitlines()
+        if req.get("grep"):
+            lines = [ln for ln in lines if re.search(req["grep"], ln)]
+        if start is None:
+            lines = lines[-tail:]
+        text = "\n".join(lines)
+        return {"size": size, "lines": len(lines), "text": text[-D.LOG_REPLY_MAX:]}
+
+    def test_log_matches_the_slurped_reply(self):
+        body = ("·W 0:00:01.5 boot\r\n\n\nsys_event_queue_create spup=17\n" + "x" * 90 + "\n"
+                + "".join(f"line {i} {'é' * (i % 5)}\n" for i in range(40))).encode() + b"\xff\xfe bad\nno newline"
+        with open(self.logf, "wb") as f:
+            f.write(body)
+        saved = self.D.LOG_REPLY_MAX, getattr(self.D, "LOG_CHUNK", None)
+        try:
+            for reply_max, chunk in ((10 ** 6, 7), (100, 7), (101, 64), (5, 3)):
+                self.D.LOG_REPLY_MAX, self.D.LOG_CHUNK = reply_max, chunk
+                for req in ({}, {"tail": 3}, {"from": 0}, {"from": 0, "grep": r"line [0-9]$|spup"},
+                            {"from": 17}, {"from": 10 ** 9}, {"tail": 1, "grep": "boot"}):
+                    self.assertEqual(self.D.read_log(dict(req)), self.slurped(self.D, req), (reply_max, chunk, req))
+        finally:
+            self.D.LOG_REPLY_MAX = saved[0]
+            if saved[1] is not None:
+                self.D.LOG_CHUNK = saved[1]
+
+    def test_log_from_an_old_offset_never_holds_the_log(self):
+        # RR7 2026-10-20: a 426 MB flood read from offset 0 drove the daemon to 4 GB (OOM kill)
+        import tracemalloc
+        spin = "·W 0:09:45.635942 {PPU[0x1000007] Thread (Draw Thread)} sys_spu: disconnect_event_all_threads(spup=17)\n"
+        with open(self.logf, "w") as f:
+            f.write(spin * (24 * 1024 * 1024 // len(spin)) + "anti-lock stage2: FIFO still starved\n")
+        tracemalloc.start()
+        try:
+            rep = self.D.read_log({"from": 0, "grep": "stage2"})
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+        self.assertEqual(rep["lines"], 1)
+        self.assertLess(peak, 8 * 1024 * 1024, f"read_log peaked at {peak >> 20} MB on a 24 MB log")
 
     def sourced(self, key):
         import subprocess

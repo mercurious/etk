@@ -21,6 +21,7 @@ so a dead daemon cannot unbind the gadget under NCM; the attach rebinds the UDC 
 NCM kept its address, else rolls back to NCM-only. Log: journal (stderr).
 """
 import base64
+import collections
 import errno
 import hashlib
 import json
@@ -52,6 +53,7 @@ ES_API = os.environ.get("ETK_ES_API", "http://127.0.0.1:1234")
 RPCS3_CONFIG = os.environ.get("ETK_RPCS3_CONFIG", "/storage/.config/rpcs3/")
 RPCS3_LOG = os.environ.get("ETK_RPCS3_LOG", "/storage/.cache/rpcs3/RPCS3.log")
 LOG_REPLY_MAX = 512 * 1024
+LOG_CHUNK = 1024 * 1024
 # Diagnostic env for the NEXT game launch (start_rpcs3.sh sources /etc/profile -> profile.d).
 # 099 sorts after the install-time 096 flags, so a debug run overrides them. Allow-listed and
 # character-checked: this file is sourced by a shell at every launch.
@@ -360,22 +362,44 @@ def read_log(req):
     size = log_size()
     start = req.get("from")
     tail = int(req.get("tail", 200))
+    rx = re.compile(req["grep"]) if req.get("grep") else None
+    # Streamed, never slurped: a flooding title (RR7's spup spin, ~1 MB/s) grows the log past
+    # 400 MB, and one read from an old offset held it all three times over (bytes, str, lines)
+    # -- the daemon was OOM-killed at 4 GB on 2026-10-20. Only the reply's tail is kept.
+    kept, kept_len, count = collections.deque(), 0, 0
     with open(RPCS3_LOG, "rb") as f:
         if start is None:
             f.seek(max(0, size - 4 * 1024 * 1024))
         else:
             f.seek(min(int(start), size))
-        data = f.read(size - f.tell())
-    lines = data.decode(errors="replace").splitlines()
-    if req.get("grep"):
-        rx = re.compile(req["grep"])
-        lines = [ln for ln in lines if rx.search(ln)]
-    if start is None:
-        lines = lines[-tail:]
-    text = "\n".join(lines)
+        for ln in _log_lines(f, size - f.tell()):
+            if rx and not rx.search(ln):
+                continue
+            count += 1
+            kept.append(ln)
+            kept_len += len(ln) + 1
+            while kept and (kept_len - len(kept[0]) - 1 > LOG_REPLY_MAX
+                            or (start is None and len(kept) > tail)):
+                kept_len -= len(kept.popleft()) + 1
+    text = "\n".join(kept)
     if len(text) > LOG_REPLY_MAX:
         text = text[-LOG_REPLY_MAX:]
-    return {"size": size, "lines": len(lines), "text": text}
+    return {"size": size, "lines": min(count, tail) if start is None else count, "text": text}
+
+
+def _log_lines(f, limit):
+    """The decoded lines of the next `limit` bytes of `f`, a chunk at a time."""
+    carry = b""
+    while limit > 0:
+        chunk = f.read(min(LOG_CHUNK, limit))
+        if not chunk:
+            break
+        limit -= len(chunk)
+        *whole, carry = (carry + chunk).split(b"\n")
+        for b in whole:
+            yield from b.decode(errors="replace").splitlines() or [""]
+    if carry:
+        yield from carry.decode(errors="replace").splitlines()
 
 
 def read_debug_env():
