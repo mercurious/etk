@@ -23,7 +23,8 @@ the car; run `gtpilot.py recover` after (the kit's R3 path).
   rr7_trial.py --out DIR [--secs 2400] [--hold 150] [--label TEXT] [--attach]
 --attach judges an RR7 run the driver already launched (no launch; the log is already this boot's).
 Frames come from grim on the car over ssh (read-only); --rig names the car.
-Exit: 0 PASS, 1 DESYNC, 2 TIMEOUT / no game, 3 CRASH, 4 STALL.
+Liveness = grim frames and, on a Pitlink core, the flip counter; neither answering is INCONCLUSIVE, never PASS.
+Exit: 0 PASS, 1 DESYNC, 2 TIMEOUT / no game, 3 CRASH, 4 STALL, 5 INCONCLUSIVE.
 """
 import argparse
 import hashlib
@@ -36,23 +37,34 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "pitlink"))
-from client import garage  # noqa: E402
+from client import PitlinkClient, PitlinkError, garage  # noqa: E402
 
 GAME = "NPUB30457"
 RSX_UP = re.compile(r"sys_rsx_context_allocate\(\): Mapped address")
 DESYNC = re.compile(r"FIFO desync unrecoverable|Dead FIFO commands queue state")
 FAULT = re.compile(r"VM: Access violation|SYS: Emulation has been frozen|Unhandled exception|PPU: Trap")
 DESYNC_EVENT = r"FIFO error: possible desync"
-GRIM = "WAYLAND_DISPLAY=wayland-1 XDG_RUNTIME_DIR=/var/run/0-runtime-dir timeout 5 grim -t ppm -"
+# downscaled: a full 1080p PPM over ssh missed a 5 s timeout under load (m05 r3: screen_moving null)
+GRIM = "WAYLAND_DISPLAY=wayland-1 XDG_RUNTIME_DIR=/var/run/0-runtime-dir timeout 10 grim -s 0.25 -t ppm -"
 
 
 def frame(rig):
     """One screen grab from the car (PPM bytes), or None."""
     try:
-        r = subprocess.run(["ssh", "-o", "ConnectTimeout=5", rig, GRIM], capture_output=True, timeout=20)
+        r = subprocess.run(["ssh", "-o", "ConnectTimeout=5", rig, GRIM], capture_output=True, timeout=30)
     except subprocess.TimeoutExpired:
         return None
     return r.stdout if r.returncode == 0 and r.stdout.startswith(b"P6") else None
+
+
+def flips():
+    """The core's flip counter over Pitlink (0.10.0-based cores), or None."""
+    try:
+        c = PitlinkClient("usb", timeout=4)
+        c.hello()
+        return c.ping()[0]
+    except (OSError, PitlinkError):
+        return None
 
 
 def main():
@@ -120,17 +132,28 @@ def main():
             finish("CRASH", 3, fault="emulator gone with no fault line", rsx_secs=rsx_t and round(rsx_t - t0),
                    desync_events=evidence())
         if rsx_t and now - rsx_t >= a.hold:
-            f1 = frame(a.rig)
-            time.sleep(6)
-            f2 = frame(a.rig)
-            if f2:
-                with open(os.path.join(a.out, "last.ppm"), "wb") as fh:
-                    fh.write(f2)
-            moving = None if not (f1 and f2) else hashlib.sha256(f1).digest() != hashlib.sha256(f2).digest()
-            if moving is False:
-                finish("STALL", 4, note="no log verdict, but two frames 6 s apart are identical",
+            moving = flipping = None
+            for _ in range(3):
+                p1, f1 = flips(), frame(a.rig)
+                time.sleep(6)
+                p2, f2 = flips(), frame(a.rig)
+                if f2:
+                    with open(os.path.join(a.out, "last.ppm"), "wb") as fh:
+                        fh.write(f2)
+                if f1 and f2:
+                    moving = hashlib.sha256(f1).digest() != hashlib.sha256(f2).digest()
+                if p1 is not None and p2 is not None:
+                    flipping = p2 > p1
+                if moving is not None or flipping is not None:
+                    break
+            if moving is False or flipping is False:
+                finish("STALL", 4, note="no log verdict, but the screen or the flip counter is frozen",
+                       screen_moving=moving, flips_advancing=flipping, rsx_secs=round(rsx_t - t0),
+                       desync_events=evidence())
+            if moving is None and flipping is None:
+                finish("INCONCLUSIVE", 5, note="no log verdict and no liveness witness answered",
                        rsx_secs=round(rsx_t - t0), desync_events=evidence())
-            finish("PASS", 0, screen_moving=moving, note=f"running {a.hold:.0f}s past the RSX init, no FIFO give-up",
+            finish("PASS", 0, screen_moving=moving, flips_advancing=flipping, note=f"running {a.hold:.0f}s past the RSX init, no FIFO give-up",
                    rsx_secs=round(rsx_t - t0), desync_events=evidence())
     finish("TIMEOUT", 2)
 
