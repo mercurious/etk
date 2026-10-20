@@ -842,15 +842,21 @@ class FrontDoorTests(unittest.TestCase):
         from importlib.machinery import SourceFileLoader
         self.H = SourceFileLoader("hunt_front_door", os.path.join(ETK, "hunt")).load_module()
 
-    def started(self, *args):
+    def started(self, *args, tty=True):
         calls = []
-        real = self.H.os.execv
+        real, real_tty = self.H.os.execv, self.H.sys.stdin.isatty
         self.H.os.execv = lambda path, argv: calls.append(argv)
+        self.H.sys.stdin.isatty = lambda: tty
         try:
             self.H.start(list(args))
         finally:
-            self.H.os.execv = real
+            self.H.os.execv, self.H.sys.stdin.isatty = real, real_tty
         return calls[0]
+
+    def test_start_without_a_terminal_says_so(self):
+        with self.assertRaises(SystemExit) as cm:
+            self.started("rr7", tty=False)
+        self.assertIn("real terminal", str(cm.exception))
 
     def test_start_defaults(self):
         argv = self.started("rr7")
