@@ -12,6 +12,8 @@ the emulation; stock RPCS3 throws "Dead FIFO commands queue state" at the same p
   DESYNC    stage3b's give-up or stock RPCS3's dead-FIFO throw: the regression's signature
   STALL     the hold passed with no log verdict but the screen is frozen (two frames 6 s apart are
             identical): a starved game on a core with no anti-lock watchdog (a raw build)
+  STARVE    ETK anti-lock stage2 gave up: the guest stopped submitting for 30 s (GET == PUT) and the
+            watchdog stopped the emulation -- a hang, not a desync (m08 r1 / m09 r3: at title.pam)
   CRASH     a guest fault, a frozen emulation or a stop that is NOT the FIFO signature, or
             the emulator gone before the hold
   TIMEOUT   the RSX never came up within --secs (covers a fresh core's PPU compile)
@@ -24,7 +26,8 @@ the car; run `gtpilot.py recover` after (the kit's R3 path).
 --attach judges an RR7 run the driver already launched (no launch; the log is already this boot's).
 Frames come from grim on the car over ssh (read-only); --rig names the car.
 Liveness = grim frames and, on a Pitlink core, the flip counter; neither answering is INCONCLUSIVE, never PASS.
-Exit: 0 PASS, 1 DESYNC, 2 TIMEOUT / no game, 3 CRASH, 4 STALL, 5 INCONCLUSIVE.
+Exit: 0 PASS, 1 DESYNC, 2 TIMEOUT / no game, 3 CRASH, 4 STALL, 5 INCONCLUSIVE, 6 STARVE.
+Evidence also keeps the whole boot's RPCS3.log.gz.
 """
 import argparse
 import hashlib
@@ -43,7 +46,9 @@ GAME = "NPUB30457"
 RSX_UP = re.compile(r"sys_rsx_context_allocate\(\): Mapped address")
 DESYNC = re.compile(r"FIFO desync unrecoverable|Dead FIFO commands queue state")
 FAULT = re.compile(r"VM: Access violation|SYS: Emulation has been frozen|Unhandled exception|PPU: Trap")
+STARVE = re.compile(r"anti-lock stage2: FIFO still starved")
 DESYNC_EVENT = r"FIFO error: possible desync"
+RIG_LOG = "/storage/.cache/rpcs3/RPCS3.log"
 # downscaled: a full 1080p PPM over ssh missed a 5 s timeout under load (m05 r3: screen_moving null)
 GRIM = "WAYLAND_DISPLAY=wayland-1 XDG_RUNTIME_DIR=/var/run/0-runtime-dir timeout 10 grim -s 0.25 -t ppm -"
 
@@ -85,6 +90,14 @@ def main():
         ev = garage({"op": "log", "from": 0, "grep": DESYNC_EVENT})
         with open(os.path.join(a.out, "desync_lines.txt"), "w") as fh:
             fh.write("\n".join(ev.get("text", "").splitlines()[:40]))
+        # the whole boot's log: the next launch rewrites it, and a 400-line tail misses the lead-up
+        # (m08 r1: the starve began 30 s before the tail's first line)
+        try:
+            with open(os.path.join(a.out, "RPCS3.log.gz"), "wb") as fh:
+                subprocess.run(["ssh", "-o", "ConnectTimeout=5", a.rig, f"gzip -c {RIG_LOG}"],
+                               stdout=fh, timeout=60)
+        except subprocess.TimeoutExpired:
+            pass
         return ev.get("lines", 0)
 
     def finish(v, code, **kw):
@@ -120,6 +133,10 @@ def main():
         bad = garage({"op": "log", "from": 0, "grep": DESYNC.pattern})
         if bad["lines"]:
             finish("DESYNC", 1, signature=bad["text"][-600:], rsx_secs=rsx_t and round(rsx_t - t0),
+                   desync_events=evidence())
+        bad = garage({"op": "log", "from": 0, "grep": STARVE.pattern})
+        if bad["lines"]:
+            finish("STARVE", 6, fault=bad["text"][-600:], rsx_secs=rsx_t and round(rsx_t - t0),
                    desync_events=evidence())
         bad = garage({"op": "log", "from": 0, "grep": FAULT.pattern})
         if bad["lines"]:
