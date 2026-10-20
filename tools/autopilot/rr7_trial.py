@@ -27,9 +27,11 @@ the car; run `gtpilot.py recover` after (the kit's R3 path).
 Frames come from grim on the car over ssh (read-only); --rig names the car.
 Liveness = grim frames and, on a Pitlink core, the flip counter; neither answering is INCONCLUSIVE, never PASS.
 Exit: 0 PASS, 1 DESYNC, 2 TIMEOUT / no game, 3 CRASH, 4 STALL, 5 INCONCLUSIVE, 6 STARVE.
-Evidence also keeps the whole boot's RPCS3.log.gz.
+Evidence also keeps the whole boot's RPCS3.log.gz, and a STALL banks the Pitlink thread dump
+(dump.txt, cut from that log).
 """
 import argparse
+import gzip
 import hashlib
 import json
 import os
@@ -48,6 +50,7 @@ DESYNC = re.compile(r"FIFO desync unrecoverable|Dead FIFO commands queue state")
 FAULT = re.compile(r"VM: Access violation|SYS: Emulation has been frozen|Unhandled exception|PPU: Trap")
 STARVE = re.compile(r"anti-lock stage2: FIFO still starved")
 DESYNC_EVENT = r"FIFO error: possible desync"
+SPIN = re.compile(r"sys_event_queue_(create|destroy)|_event_all_threads")
 RIG_LOG = "/storage/.cache/rpcs3/RPCS3.log"
 # downscaled: a full 1080p PPM over ssh missed a 5 s timeout under load (m05 r3: screen_moving null)
 GRIM = "WAYLAND_DISPLAY=wayland-1 XDG_RUNTIME_DIR=/var/run/0-runtime-dir timeout 10 grim -s 0.25 -t ppm -"
@@ -70,6 +73,21 @@ def flips():
         return c.ping()[0]
     except (OSError, PitlinkError):
         return None
+
+
+def extract_dump(log_gz, out):
+    """The thread dump out of the banked log, minus the guest's SPURS port-17 retry spin. The garage
+    returns only the log written while it waited, and a stalled RR7 floods that with the spin (m-r2: 3204
+    lines, no dump in them)."""
+    try:
+        with gzip.open(log_gz, "rt", errors="replace") as fh:
+            lines = fh.read().splitlines()
+    except (OSError, EOFError):
+        return
+    starts = [i for i, ln in enumerate(lines) if "Thread dump requested" in ln]
+    if starts:
+        with open(out, "w") as fh:
+            fh.write("\n".join(ln for ln in lines[starts[-1]:] if not SPIN.search(ln)) + "\n")
 
 
 def main():
@@ -98,6 +116,8 @@ def main():
                                stdout=fh, timeout=60)
         except subprocess.TimeoutExpired:
             pass
+        if os.path.exists(os.path.join(a.out, "dump.txt")):
+            extract_dump(os.path.join(a.out, "RPCS3.log.gz"), os.path.join(a.out, "dump.txt"))
         return ev.get("lines", 0)
 
     def finish(v, code, **kw):
@@ -164,6 +184,14 @@ def main():
                 if moving is not None or flipping is not None:
                     break
             if moving is False or flipping is False:
+                # a stall is the one verdict where the guest is still there to inspect (m04 r8: the
+                # title-movie hang on a core with no watchdog)
+                try:
+                    dump = garage({"op": "dump_threads", "timeout": 8}, timeout=60).get("text", "")
+                except (OSError, PitlinkError) as e:
+                    dump = f"dump_threads failed: {e}"
+                with open(os.path.join(a.out, "dump.txt"), "w") as fh:
+                    fh.write(dump)
                 finish("STALL", 4, note="no log verdict, but the screen or the flip counter is frozen",
                        screen_moving=moving, flips_advancing=flipping, rsx_secs=round(rsx_t - t0),
                        desync_events=evidence())
