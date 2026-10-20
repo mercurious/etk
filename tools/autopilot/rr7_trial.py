@@ -184,6 +184,12 @@ def main():
                 if moving is not None or flipping is not None:
                     break
             if moving is False or flipping is False:
+                # the watchdog may have stopped it while the witnesses sampled (m11 r4: stage2 gave up
+                # at 4:27, mid-liveness-check, and the "stall" had no guest left to dump)
+                bad = garage({"op": "log", "from": 0, "grep": STARVE.pattern})
+                if bad["lines"]:
+                    finish("STARVE", 6, fault=bad["text"][-600:], rsx_secs=round(rsx_t - t0),
+                           desync_events=evidence())
                 # a stall is the one verdict where the guest is still there to inspect (m04 r8: the
                 # title-movie hang on a core with no watchdog)
                 try:
