@@ -5,11 +5,13 @@ The park was crowned on the 0.7.3 base (2026-07-12, one title, one session) agai
 The 0.9/0.10 base replaced that spin with its own tiered WFE wait, so the old numbers are
 folklore until re-measured; and the park multiplies RR7's base desync ~8x (hunt-20261019-rr7).
 
-  park_ab.py run --game SERIAL --out DIR [--settle 120] [--secs 300] [--label TEXT] [--attach]
+  park_ab.py run GAME [--attach] [--secs 300] [--settle 120] [--label TEXT] [--out DIR]
       one sample: launch (unless --attach: the driver or a macro is already running it), wait for
       the core's perfstat line, skip --settle s, measure --secs s, exit gracefully. run.json holds
-      the core identity, its GTK_SEMA_* env, the arm, and the window's numbers.
-  park_ab.py report DIR...
+      the core identity, its GTK_SEMA_* env, the arm, and the window's numbers. GAME is anything
+      ./hunt takes (gt5p, gt6, a serial, "ridge racer"); --out defaults to
+      state/park_ab/<date>/<SERIAL>-rN (the next free N).
+  park_ab.py report [DIR...]   (default: every run under state/park_ab)
       every run.json under DIR, grouped by game + arm: N, fps / frametime / system busy, and the
       park's own activity.
 
@@ -41,6 +43,8 @@ import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+ETK = os.path.abspath(os.path.join(HERE, "..", ".."))
+STATE = os.path.join(ETK, "state", "park_ab")
 sys.path.insert(0, os.path.join(HERE, "..", "pitlink"))
 from client import PitlinkClient, PitlinkError  # noqa: E402
 
@@ -185,8 +189,25 @@ def close_game(rig):
     return f"recover: {r.stdout.strip()[-40:]}"
 
 
+def resolve(game):
+    """The operator's game names, via ./hunt's resolver (one list of names for the whole kit)."""
+    from importlib.machinery import SourceFileLoader
+    return SourceFileLoader("hunt_front_door", os.path.join(ETK, "hunt")).load_module().resolve(game)[0]
+
+
+def next_out(serial):
+    day = os.path.join(STATE, time.strftime("%Y%m%d"))
+    n = 1
+    while os.path.exists(os.path.join(day, f"{serial}-r{n}")):
+        n += 1
+    return os.path.join(day, f"{serial}-r{n}")
+
+
 def run(a):
+    a.game = resolve(a.game)
+    a.out = a.out or next_out(a.game)
     os.makedirs(a.out, exist_ok=True)
+    print(f"park_ab: {a.game} -> {a.out}", flush=True)
     rec = {"game": a.game, "label": a.label, "settle": a.settle, "secs": a.secs, "started": int(time.time())}
 
     def done(verdict, code, **more):
@@ -269,8 +290,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run")
-    r.add_argument("--game", required=True)
-    r.add_argument("--out", required=True)
+    r.add_argument("game")
+    r.add_argument("--out")
     r.add_argument("--settle", type=int, default=120)
     r.add_argument("--secs", type=int, default=300)
     r.add_argument("--boot", type=int, default=900, help="seconds to wait for the first perfstat line")
@@ -278,7 +299,7 @@ def main():
     r.add_argument("--attach", action="store_true")
     r.add_argument("--rig", default="root@SM8250.local")
     p = sub.add_parser("report")
-    p.add_argument("dirs", nargs="+")
+    p.add_argument("dirs", nargs="*", default=[STATE])
     a = ap.parse_args()
     return run(a) if a.cmd == "run" else report(a.dirs)
 

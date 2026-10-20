@@ -720,6 +720,12 @@ BASH_TABLE = [
     ("git commit -F - <<'EOF'\nreboot gate notes\n./install.sh is the operator's\nEOF", False, ALLOW),
     ("tools/hunt/grant.sh issue --game BCUS98296 --hours 10", False, DENY),
     ("tools/hunt/grant.sh show", False, ALLOW),
+    ("./hunt start rr7", False, DENY),
+    ("/home/dave/etk/hunt start gt6 8 --panics 0", False, DENY),
+    ("python3 hunt start gt5p", False, DENY),
+    ("./hunt status", False, ALLOW),
+    ("./hunt stop", False, ALLOW),
+    ("./hunt games prologue", False, ALLOW),
     ("python3 /home/dave/etk/tools/hunt/hunt.py status", False, ALLOW),
     ("python3 -I tools/hunt/hunt.py check --game BCUS98296", False, ALLOW),
     ("python3 /home/dave/etk/tools/hunt/hunt.py mint --commit abc", False, DENY),
@@ -799,6 +805,66 @@ class GuardTests(unittest.TestCase):
         r = subprocess.run([sys.executable, os.path.join(HERE, "guard.py")], capture_output=True, text=True,
                            input="not json")
         self.assertNotIn(r.returncode, (0, 2), "a crash must be a non-blocking hook error, never exit 2")
+
+
+class FrontDoorTests(unittest.TestCase):
+    """./hunt: the operator's verbs compose exactly the grant.sh / hunt.py lines the spec documents."""
+
+    def setUp(self):
+        from importlib.machinery import SourceFileLoader
+        self.H = SourceFileLoader("hunt_front_door", os.path.join(ETK, "hunt")).load_module()
+
+    def started(self, *args):
+        calls = []
+        real = self.H.os.execv
+        self.H.os.execv = lambda path, argv: calls.append(argv)
+        try:
+            self.H.start(list(args))
+        finally:
+            self.H.os.execv = real
+        return calls[0]
+
+    def test_start_defaults(self):
+        argv = self.started("rr7")
+        self.assertEqual(argv[:8], [self.H.GRANT, "issue", "--game", "NPUB30457", "--hours", "12", "--name", "rr7"])
+        self.assertEqual(argv[8:], ["--lanes", "rpcs3", "--rig", "car8", "--reserve", "car12", "--panics", "2"])
+
+    def test_start_hours_and_overrides_win(self):
+        argv = self.started("ridge racer", "8h", "--panics", "0", "--supervised")
+        self.assertEqual(argv[5], "8")
+        self.assertEqual(argv[-3:], ["--panics", "0", "--supervised"])   # after the defaults: argparse keeps the last
+        ns = grantctl_parse(argv[1:])
+        self.assertEqual((ns.game, ns.hours, ns.panics, ns.supervised, ns.rig), ("NPUB30457", 8.0, 0, True, "car8"))
+
+    def test_resolve(self):
+        self.assertEqual(self.H.resolve("NPEA00050"), ("NPEA00050", "gt5p"))
+        self.assertEqual(self.H.resolve("hd concept"), ("NPEA90002", "gthd"))
+        with self.assertRaises(SystemExit):
+            self.H.resolve("prologue")   # three serials: never guess
+        with self.assertRaises(SystemExit):
+            self.H.resolve("no such racer")
+
+
+def grantctl_parse(argv):
+    """grant.sh's own argparse over a composed line (no issue runs)."""
+    seen = {}
+
+    class Stop(Exception):
+        pass
+
+    real = argparse.ArgumentParser.parse_args
+
+    def grab(self, args=None, namespace=None):
+        seen["ns"] = real(self, args, namespace)
+        raise Stop
+    argparse.ArgumentParser.parse_args = grab
+    try:
+        grantctl.main(argv)
+    except Stop:
+        pass
+    finally:
+        argparse.ArgumentParser.parse_args = real
+    return seen["ns"]
 
 
 class MutantTests(unittest.TestCase):

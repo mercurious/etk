@@ -49,6 +49,16 @@ confined to user-space payloads under `hunt/` paths, R3-only recovery, and no re
 themself (not under `sudo`; the script refuses root):
 
 ```bash
+./hunt start gt6 10
+```
+
+`./hunt` (repo root) is the operator's front door: `start GAME [HOURS]` composes and prints the
+full `grant.sh issue` line (defaults: 12 h, car8 hunts, car12 reserve, rpcs3 lane, 2 panics; any
+grant.sh flag after the hours wins), `status`, `stop` (= `hunt.py end` + `grant.sh revoke`),
+`games`. GAME is a short name, a serial or a unique piece of a title in `config/game_status.tsv`.
+The underlying line still works by hand:
+
+```bash
 /home/dave/etk/tools/hunt/grant.sh issue --game BCUS98296 --hours 10 [--lanes rpcs3,turnip] [--supervised]
 ```
 

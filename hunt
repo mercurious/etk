@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+"""hunt -- the operator's front door to a crash hunt (docs/AUTONOMY_SPEC.md). Plain words, defaults.
+
+  ./hunt start rr7 [12]      sign a grant: that game, that many hours (default 12); sudo asks
+                             your password -- that is the signature
+  ./hunt status              the grant, time left, the car, the audit chain
+  ./hunt stop                the car back to certified (hunt.py end), then revoke the grant
+  ./hunt games [text]        the names start takes
+
+A game is a short name (rr7 gt5p gthd gt5 gt6), a serial (NPUB30457), or any unique piece of a title
+in config/game_status.tsv ("ridge racer"). start's defaults: car8 hunts, car12 is the reserve, the
+rpcs3 lane, 2 panics, the short name as the grant's name. Any grant.sh flag after the hours
+overrides them (--panics 0, --lanes rpcs3,turnip, --supervised, --rig car12). start prints the whole
+grant.sh line before it runs it: nothing hidden, and the line still works by hand.
+A hunt needs the car on the USB cable (the Pitlink garage); WiFi is not enough.
+"""
+import os
+import re
+import subprocess
+import sys
+
+ETK = os.path.dirname(os.path.realpath(__file__))
+GRANT = os.path.join(ETK, "tools", "hunt", "grant.sh")
+HUNT = os.path.join(ETK, "tools", "hunt", "hunt.py")
+STATUS = os.path.join(ETK, "config", "game_status.tsv")
+SHORT = {"rr7": "NPUB30457", "gt5p": "NPEA00050", "gthd": "NPEA90002", "gt5": "BCUS98114", "gt6": "BCUS98296"}
+SERIAL = re.compile(r"^[A-Z]{4}\d{5}$")
+DEFAULTS = ["--lanes", "rpcs3", "--rig", "car8", "--reserve", "car12", "--panics", "2"]
+
+
+def titles():
+    """[(serial, title)] from game_status.tsv."""
+    out = []
+    with open(STATUS) as f:
+        for ln in f:
+            p = ln.rstrip("\n").split("\t")
+            if len(p) >= 3 and SERIAL.match(p[0]):
+                out.append((p[0], p[2]))
+    return out
+
+
+def resolve(text):
+    """-> (serial, grant name), or exit with what matched."""
+    t = text.strip()
+    if t.lower() in SHORT:
+        return SHORT[t.lower()], t.lower()
+    if SERIAL.match(t.upper()):
+        s = t.upper()
+        return s, next((k for k, v in SHORT.items() if v == s), s.lower())
+    hits = sorted({s for s, name in titles() if t.lower() in name.lower()})
+    if len(hits) == 1:
+        return hits[0], next((k for k, v in SHORT.items() if v == hits[0]), hits[0].lower())
+    sys.exit(f"hunt: {'no game matches' if not hits else 'several games match'} {text!r}"
+             + "".join(f"\n  {s}  {n}" for s, n in titles() if s in hits) + "\n(./hunt games lists them)")
+
+
+def start(args):
+    if not args:
+        sys.exit("usage: ./hunt start GAME [HOURS] [grant.sh flags]")
+    serial, name = resolve(args[0])
+    hours, rest = "12", args[1:]
+    if rest and re.match(r"^\d+(\.\d+)?h?$", rest[0]):
+        hours, rest = rest[0].rstrip("h"), rest[1:]
+    cmd = [GRANT, "issue", "--game", serial, "--hours", hours, "--name", name] + DEFAULTS + rest
+    print("hunt: " + " ".join(cmd), flush=True)   # later flags win: the operator's override the defaults
+    os.execv(GRANT, cmd)
+
+
+def stop(args):
+    rc = subprocess.call([sys.executable, HUNT, "end"] + args)
+    if rc:
+        print("hunt: the car was not cleaned (is it on the USB cable?) -- run ./hunt stop again once it is",
+              flush=True)
+    return subprocess.call([GRANT, "revoke"]) or rc
+
+
+def games(args):
+    q = " ".join(args).lower()
+    short = {v: k for k, v in SHORT.items()}
+    for s, n in titles():
+        if not q or q in n.lower() or q in s.lower() or q in short.get(s, ""):
+            print(f"{short.get(s, ''):5} {s}  {n}")
+    return 0
+
+
+def main(argv):
+    verb, args = (argv[0], argv[1:]) if argv else ("help", [])
+    if verb == "start":
+        return start(args)
+    if verb == "status":
+        return subprocess.call([sys.executable, HUNT, "status"] + args)
+    if verb == "stop":
+        return stop(args)
+    if verb == "games":
+        return games(args)
+    print(__doc__.strip())
+    return 0 if verb in ("help", "-h", "--help") else 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

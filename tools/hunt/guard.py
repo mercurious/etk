@@ -9,7 +9,7 @@ Always denied (TRACK_MANUAL §1.1, §1.5), grant or not:
   running forge.sh, tools/forge/lane_*.sh, tools/rocknix-bin/build_*.sh, install.sh,
   uninstall.sh, etk-install.ps1 (a `bash -n` syntax check is fine; reading them is fine)
   gh release create|upload|edit|delete|delete-asset · creating/deleting a git tag ·
-  pushing tags · reboot/poweroff/halt (locally or over ssh) · grant.sh issue ·
+  pushing tags · reboot/poweroff/halt (locally or over ssh) · grant.sh issue / ./hunt start ·
   ssh/scp/rsync naming the car's hunt state (etk-autonomy, etk-hunt.grant, hunt/ dirs)
 hunt.py: status/audit/check and the undo commands (unpin/rollback/end) always; anything else
 only under a valid grant. `pitlink.py garage put|pin` always: those go through hunt.py.
@@ -218,6 +218,8 @@ def judge_argv(argv, cwd, grant_ok, depth):
         script = next((k for k, x in enumerate(argv[1:], 1) if not x.startswith("-")), None)
         if script is not None and "-c" not in argv[1:script] and "-m" not in argv[1:script]:
             argv, b = argv[script:], os.path.basename(argv[script])
+    if b == "hunt" and next((x for x in argv[1:] if not x.startswith("-")), None) == "start":
+        return "only the operator signs a hunt grant (./hunt start runs grant.sh issue, at their terminal)"
     if b == "hunt.py":
         sub = next((x for x in argv[1:] if not x.startswith("-")), None)
         if sub not in HUNT_NO_GRANT and not grant_ok() and not {"-h", "--help"} & set(argv[1:]):
