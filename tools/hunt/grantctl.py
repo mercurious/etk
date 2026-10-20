@@ -326,16 +326,18 @@ def show(out=print, grant_path=gl.GRANT_PATH, owner_uid=0):
     return 0 if not p else 1
 
 
-def revoke(conf, signer, out=print, grant_path=gl.GRANT_PATH, owner_uid=0):
+def revoke(conf, signer, out=print, grant_path=gl.GRANT_PATH, owner_uid=0, tty=None):
+    """No sudo needed: the grant is marked revoked beside its audit (load_grant refuses it from
+    then on) and the car's copy goes over ssh. The root-owned file itself is removed only when
+    a terminal can take the sudo password; left behind, it is dead and the next issue replaces it."""
     g, raw, _ = gl.load_grant(grant_path, owner_uid)
-    rc = 0
-    if g is None and not os.path.lexists(grant_path):
-        out("no host grant to revoke")
-    elif signer["remove"]():
-        out(f"host grant {g['id'] if g else ''} removed")
+    if g is None:
+        out("no host grant to revoke" if not os.path.lexists(grant_path) else "host grant unreadable: nothing to mark")
     else:
-        out("sudo did not remove the host grant")
-        rc = 1
+        out(f"host grant {g['id']} revoked ({gl.revoke_mark(g, raw, grant_path)})")
+        if sys.stdin.isatty() if tty is None else tty:
+            out("tidy-up: sudo removes the root-owned file" if signer["remove"]() else
+                "sudo did not remove the root-owned file: it stays, revoked, until the next issue replaces it")
     rig = (g or {}).get("rig", {}).get("ssh") or conf.get("CAR8_SSH")
     if rig:
         out(f"rig grant on {rig}: " + ("removed" if signer["rig_remove"](rig) else
@@ -344,7 +346,7 @@ def revoke(conf, signer, out=print, grant_path=gl.GRANT_PATH, owner_uid=0):
         ap = os.path.join(gl.hunt_dir(g["id"], grant_path), "audit.jsonl")
         if os.path.exists(ap):
             gl.audit_append(ap, gl.sha256(raw), "revoked", [], {"by": getpass.getuser()})
-    return rc
+    return 0
 
 
 def main(argv=None):

@@ -192,8 +192,13 @@ debug env and removes the rig grant. The morning state is the certified rig plus
 
 ## 5. Revocation — any one, immediate
 
-- `tools/hunt/grant.sh revoke` (it asks for sudo): deletes the host grant and the rig grant,
-  and audits the revocation.
+- `./hunt stop` (= `hunt.py end` + `tools/hunt/grant.sh revoke`): needs no sudo -- revoking only
+  takes authority away. It writes `state/hunt/<id>/revoked` naming the grant's sha (`load_grant`
+  refuses that grant from then on, so the guard, `hunt.py` and `issue`'s one-at-a-time check all
+  see it dead), deletes the rig grant over ssh, and audits the revocation. With a terminal it also
+  has sudo delete the root-owned file; without one (the Run button, `!`) the file stays, dead,
+  until the next `issue` replaces it. A re-issued grant under the same id has a new sha: an old
+  mark never touches it.
 - **Pitstop TOOLS → Autonomy: off**, at the car: the daemon refuses every hunt op and the
   wrapper drops the overrides. (P3: the row `Autonomy (Engineer hunts): on|off` follows
   Pitlink; `/storage/.config/etk-autonomy` holding exactly `on` = on, absent = off, the

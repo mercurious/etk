@@ -185,7 +185,31 @@ def load_grant(path=GRANT_PATH, owner_uid=0, now=None):
         g = json.loads(raw)
     except (OSError, ValueError) as e:
         return None, None, p + [f"unreadable grant: {e}"]
-    return g, raw, p + check_fields(g, now)
+    return g, raw, p + check_fields(g, now) + revoked(g, raw, path)
+
+
+def revocation_path(g, grant_path=GRANT_PATH):
+    return os.path.join(hunt_dir(str(g.get("id", "")), grant_path), "revoked")
+
+
+def revoked(g, raw, grant_path=GRANT_PATH):
+    """Revocation needs no signature: it only takes authority away, so it is a mark the operator
+    (or anyone) writes beside the audit, naming THIS grant's sha. A grant re-issued under the same
+    id has another sha and is not touched by an old mark."""
+    try:
+        with open(revocation_path(g, grant_path)) as f:
+            return ["revoked"] if f.read().split()[:1] == [sha256(raw)] else []
+    except (OSError, ValueError):
+        return []
+
+
+def revoke_mark(g, raw, grant_path=GRANT_PATH, now=None):
+    t = now if now is not None else dt.datetime.now(dt.timezone.utc).timestamp()
+    path = revocation_path(g, grant_path)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(f"{sha256(raw)} {iso(t)}\n")
+    return path
 
 
 def in_scope(g, game=None, lane=None):

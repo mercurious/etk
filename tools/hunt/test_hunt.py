@@ -305,6 +305,34 @@ class IssueTests(Tmp):
             self.issue()
         self.assertIn("revoke it first", str(cm.exception))
 
+    def revoke(self, tty):
+        removed, rigs, out = [], [], []
+        signer = dict(self.signer(), remove=lambda: removed.append(1) or True,
+                      rig_remove=lambda t: rigs.append(t) or True)
+        grantctl.revoke(self.probes()["conf"], signer, out.append, self.gp, UID, tty=tty)
+        return removed, rigs, "\n".join(out)
+
+    def test_revoke_needs_no_sudo(self):
+        # the Run button / `!` prompt has no terminal: sudo cannot ask, so revoke must not need it
+        self.issue()
+        removed, rigs, text = self.revoke(tty=False)
+        self.assertEqual(removed, [])
+        self.assertEqual(len(rigs), 1)
+        self.assertIn("revoked", text)
+        self.assertEqual(gl.load_grant(self.gp, UID, NOW)[2], ["revoked"])
+
+    def test_revoke_tidies_with_a_terminal(self):
+        self.issue()
+        removed, _, _ = self.revoke(tty=True)
+        self.assertEqual(removed, [1])
+
+    def test_reissue_after_revoke(self):
+        self.issue()
+        self.revoke(tty=False)
+        sign = lambda p: re.search(r"\((hunt-[^)]+)\)", p).group(1)  # noqa: E731
+        g = grantctl.issue(args(), self.probes(), sign, self.signer(), lambda *_: None, NOW + 60, self.gp, UID)
+        self.assertEqual(gl.load_grant(self.gp, UID, NOW + 60)[2], [], g["id"])  # same id, new sha: not revoked
+
     def test_wrong_id(self):
         self.refused("not signed", typed="yes")
 

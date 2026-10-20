@@ -354,8 +354,8 @@ def cmd_car(a, g, raw, out, audit, entries):
         record(a.cmd, [], rep)
         out(f"hunt {a.cmd}: done -- {json.dumps(rep)[:300]}")
         if a.cmd == "end":
-            out("hunt end: the car is back to certified; the host grant stays until it expires or the "
-                "operator runs tools/hunt/grant.sh revoke")
+            out("hunt end: the car is back to certified; the host grant stays until it expires or is "
+                "revoked (./hunt stop does both)")
         return 0
     except Exception as e:
         record(a.cmd, [getattr(a, "what", "")], {"error": str(e)[:300]})
