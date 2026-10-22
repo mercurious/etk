@@ -59,6 +59,13 @@ $EtkDpAudioS16 = "1"       # 1 = deploy the DP capture-audio S16 pin (ETK_DP_AUD
 $EtkCaptureS16 = "1"       # 1 = deploy the capture S16 pin - fixes the Flip 2 jack mic (ETK_CAPTURE_S16)
 $HudHeaderHold = "15"      # seconds              (HUD_HEADER_HOLD_S)
 
+# --- BATTERY GUARD (install Step 6.79) ---------------------------------
+# Powers the rig off cleanly before the battery drains flat (asleep, the
+# RTC wakes it to check). Mirrors etk.conf ETK_BATTERY_*.
+$EtkBatteryGuard    = "1"   # 0 = remove the guard           (ETK_BATTERY_GUARD)
+$EtkBatteryFloor    = "10"  # % to power off at, 3-50        (ETK_BATTERY_FLOOR)
+$EtkBatteryCheckMin = "30"  # minutes between asleep checks, 5-240 (ETK_BATTERY_CHECK_MIN)
+
 # --- CUSTOM TURNIP DRIVER (Stage IV, install Step 6.5) -----------------
 # Certified GTK fork builds are fetched from the latest ETK GitHub release
 # and sha256-verified automatically - no value needed here. To ALSO stage a

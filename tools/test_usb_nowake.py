@@ -149,6 +149,8 @@ check("re-runs before EVERY suspend (WantedBy + Before sleep.target, no RemainAf
       (bool(re.search(r"^WantedBy=.*\bsleep\.target\b", unit, re.M)), "Before=sleep.target" in unit,
        bool(re.search(r"^RemainAfterExit=", unit, re.M))), (True, True, False))
 check("verdict requires the sleep.target hook", "list-dependencies sleep.target" in step, True)
+check("the Windows port runs USBNOWAKEREMOTE by marker",
+      'Marker "USBNOWAKEREMOTE"' in open(os.path.join(ROOT, "windows_installer/etk-install.ps1")).read(), True)
 un = open(UNINSTALL).read()
 check("uninstall removes unit + script", ("etk-usb-nowake.service" in un, "etk-usb-nowake.sh" in un), (True, True))
 

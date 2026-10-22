@@ -274,6 +274,9 @@ check("the awake poll restarts if it dies", ("Restart=always" in watch, "WantedB
       (True, True))
 check("verdict read back: the poll active, both hooks wired", ("BATTGUARD_OK" in step, "BATTGUARD_FAIL" in step,
       "list-dependencies sleep.target" in step, "list-dependencies suspend.target" in step), (True,) * 4)
+ps1 = open(os.path.join(ROOT, "windows_installer/etk-install.ps1")).read()
+check("the Windows port runs BATTGUARDREMOTE by marker, with the floor + check knobs",
+      ('Marker "BATTGUARDREMOTE"' in ps1, "BG_FLOOR = $bgFloor" in ps1 and "BG_CHECK = $bgCheck" in ps1), (True, True))
 un = open(UNINSTALL).read()
 check("uninstall removes the units, script, conf and any armed alarm",
       all(x in un for x in ("etk-battery-guard.service", "etk-battery-guard-arm.service",

@@ -101,6 +101,8 @@ if ("$liveCheck" -match "ETK_LIVE") {
 # so those bands never appear. Monotonic non-decreasing to 100 is the
 # contract, not a dense sequence. Also not ported: STEP 6.76 (Flip 2
 # internal-mic UCM overlay) - it only binds on STEP 6.4's mic DTB.
+# Nor STEP 6.73 (Pitlink USB) - the Engineer's raw-USB link is driven from a
+# Linux/macOS host and needs tools/pitlink on the rig, which this port never pushes.
 # ==========================================================
 $script:ToastId    = ""      # live notification id; replaces the card in place
 $script:ToastSh    = ""      # resolved rig-side sender path ("-" once given up)
@@ -744,6 +746,45 @@ Write-Ok "DP-mirror daemon deployed (idle until an external DisplayPort links)."
 $healOut = Invoke-RigBash -Script (Get-Heredoc -Path $InstallSh -Marker "USBNETHEALREMOTE")
 if ("$healOut" -match "USBNETHEAL_OK") { Write-Ok "USB-net heal armed (repairs a half-configured USB gadget at boot)." }
 else { Write-Warn "USB-net heal did not verify - the USB link may come up carrier-less on 20261001; WiFi still works." }
+
+# --- STEP 6.74: UFS CLOCK PIN  (install.sh Step 6.74) --------------------
+# ufshcd clock scaling froze the SoC at GT5 track loads; a boot oneshot pins
+# the UFS clocks. UFSPINREMOTE verbatim.
+$ufsOut = Invoke-RigBash -Script (Get-Heredoc -Path $InstallSh -Marker "UFSPINREMOTE")
+if ("$ufsOut" -match "UFSPIN_OK") { Write-Ok "UFS clock pinned (no ufshcd clock scaling - the GT5 freeze fix)." }
+else { Write-Warn "UFS clock pin did not verify - GT5 may freeze the SoC at track loads." }
+
+# --- STEP 6.77: USB + THERMAL WAKE OFF  (install.sh Step 6.77) -----------
+# With a USB-C cable in (dwc3) or the fan on (tsens), every lid-close suspend
+# bounced straight back; the unit disables their wake at boot AND before every
+# suspend. USBNOWAKEREMOTE verbatim.
+$nowakeOut = Invoke-RigBash -Script (Get-Heredoc -Path $InstallSh -Marker "USBNOWAKEREMOTE")
+if ("$nowakeOut" -match "USBNOWAKE_OK") { Write-Ok "USB + thermal wake off - a cabled or fan-warm rig now stays asleep; power key + lid wake it." }
+else { Write-Warn "USB + thermal wake off did not verify - with a cable in or the fan on, lid-close sleep may bounce straight back." }
+
+# --- STEP 6.78: mDNS NAME HEAL  (install.sh Step 6.78) -------------------
+# avahi renames itself <host>-2 after a conflict with its own echo and never
+# takes the name back; a 30 s timer reclaims it. MDNSHEALREMOTE verbatim.
+$mdnsOut = Invoke-RigBash -Script (Get-Heredoc -Path $InstallSh -Marker "MDNSHEALREMOTE")
+if ("$mdnsOut" -match "MDNSHEAL_OK") { Write-Ok "mDNS name heal armed (the rig takes its .local name back after a self-conflict rename)." }
+else { Write-Warn "mDNS name heal did not verify - after a WiFi re-join the rig may answer only to <host>-2.local." }
+
+# --- STEP 6.79: BATTERY GUARD  (install.sh Step 6.79) --------------------
+# Powers the rig off cleanly at the battery floor, awake (a minute poll) or
+# asleep (an RTC wake every ETK_BATTERY_CHECK_MIN), instead of draining into
+# the PMIC's battery-recovery mode. BATTGUARDREMOTE verbatim; knobs from
+# etk-env.ps1, clamped exactly as install.sh clamps them.
+$bgFloor = 10; $bgCheck = 30
+if ("$EtkBatteryFloor" -match '^\d+$' -and [int]$EtkBatteryFloor -ge 3 -and [int]$EtkBatteryFloor -le 50) { $bgFloor = [int]$EtkBatteryFloor }
+if ("$EtkBatteryCheckMin" -match '^\d+$' -and [int]$EtkBatteryCheckMin -ge 5 -and [int]$EtkBatteryCheckMin -le 240) { $bgCheck = [int]$EtkBatteryCheckMin }
+if ($EtkBatteryGuard -ne "0") {
+    $bgOut = Invoke-RigBash -Script (Get-Heredoc -Path $InstallSh -Marker "BATTGUARDREMOTE") -EnvVars @{ BG_FLOOR = $bgFloor; BG_CHECK = $bgCheck }
+    if ("$bgOut" -match "BATTGUARD_OK") { Write-Ok "Battery guard armed (powers off cleanly at $bgFloor%, awake or asleep; asleep checks every $bgCheck min)." }
+    else { Write-Warn "Battery guard did not verify - a rig left asleep or idle can still drain flat." }
+} else {
+    Invoke-Rig "systemctl disable --now etk-battery-guard.service >/dev/null 2>&1; systemctl disable etk-battery-guard-arm.service etk-battery-guard-resume.service >/dev/null 2>&1; echo 0 > /sys/class/rtc/rtc0/wakealarm 2>/dev/null; rm -f /storage/.config/system.d/etk-battery-guard.service /storage/.config/system.d/etk-battery-guard-arm.service /storage/.config/system.d/etk-battery-guard-resume.service /storage/.config/custom_scripts/etk-battery-guard.sh /storage/.config/etk_battery_guard.conf; systemctl daemon-reload" | Out-Null
+    Write-Ok "Battery guard removed (EtkBatteryGuard = 0; a rig left asleep drains until it dies)."
+}
 
 # --- STEP 6.75: DP CAPTURE-AUDIO FORMAT PIN  (install.sh Step 6.75) -----
 # WirePlumber rule pinning the HDMI/DP capture sink to S16LE — the DP port's
