@@ -19,6 +19,8 @@ Disposable: dies at reboot, writes only its own log.
   python3 tools/sleep_probe.py --rig flip2-12g stop
   python3 tools/sleep_probe.py --rig flip2-12g isolate qce,slpi   # take suspects out for the next sleeps
   python3 tools/sleep_probe.py --rig flip2-12g restore            # put them back (a reboot does too)
+  python3 tools/sleep_probe.py --rig flip2-12g isolate wifi --until-wake   # restores itself 8 s after the
+                                                                  # next resume (wifi out = no ssh)
   (on the rig: python3 /storage/sleep_probe.py record | report)
 """
 import fcntl
@@ -317,8 +319,47 @@ def _sync_in(_):
     return "cannot be undone -- a reboot restores the pending state"
 
 
+def _wifi_out():
+    # ath11k on PCIe: Android's downstream PCIe driver hands the link to the ADSP at suspend
+    # (the pcie_drv glink channel); mainline has no handoff, so a bound endpoint keeps the
+    # controller's GDSC, refclk (XO) and link up through s2idle. ROCKNIX only rfkills wifi.
+    devs = [d for d in os.listdir("/sys/bus/pci/devices")
+            if os.path.basename(os.path.realpath("/sys/bus/pci/devices/%s/driver" % d)) == "ath11k_pci"]
+    if not devs:
+        return "not bound"
+    _write("/sys/bus/pci/devices/%s/remove" % devs[0], "1")
+    return "removed " + devs[0]
+
+
+def _wifi_in(_):
+    _write("/sys/bus/pci/rescan", "1")
+    return "rescanned (ath11k probes again; WiFi rejoins in ~15 s)"
+
+
+def _gadget_out():
+    # ROCKNIX's USB-net gadget stays bound to the dwc3 UDC with no cable: device mode can keep
+    # the controller, its PHYs (XO refclk) and its DDR vote up.
+    r = subprocess.run(["usbgadget", "stop"], capture_output=True, text=True)
+    return "stopped" if r.returncode == 0 else "FAILED: usbgadget stop rc=%d" % r.returncode
+
+
+def _gadget_in(_):
+    r = subprocess.run(["usbgadget", "start", "cdc"], capture_output=True, text=True)
+    return "started (cdc)" if r.returncode == 0 else "RESTORE FAILED: usbgadget start rc=%d" % r.returncode
+
+
 SUSPECTS = {"qce": (_qce_out, _qce_in), "slpi": (_slpi_out, _slpi_in), "cpufreq": (_cpufreq_out, _cpufreq_in),
-            "camcc": (_camcc_out, _camcc_in), "sync": (_sync_out, _sync_in)}
+            "camcc": (_camcc_out, _camcc_in), "sync": (_sync_out, _sync_in), "wifi": (_wifi_out, _wifi_in),
+            "gadget": (_gadget_out, _gadget_in)}
+
+
+def autorestore():
+    """Detached: wait for the next completed suspend, give the resume 8 s, restore everything."""
+    base = read("/sys/power/suspend_stats/success", "0")
+    while read("/sys/power/suspend_stats/success", "0") == base:
+        time.sleep(1)
+    time.sleep(8)
+    restore()
 
 
 def standing():
@@ -351,7 +392,7 @@ def isolate(names):
         except OSError as e:
             how = "FAILED: %s" % e
         print("%s: %s" % (n, how))
-        if how.startswith(("unbound", "stopped", "blacklisted", "synced")):
+        if how.startswith(("unbound", "stopped", "blacklisted", "synced", "removed")):
             done[n] = how
     _write(ISOLATED, json.dumps(done))
     v, st = ddr_voters(), standing()
@@ -440,7 +481,14 @@ def host(rig, cmd):
                         % (alive, PIDFILE, PIDFILE)])
     elif cmd[0] in ("isolate", "restore"):
         host(rig, "start")             # the recorder must be running to see the next sleep
-        subprocess.run(["ssh", rig, "python3 %s %s" % (RIG_PATH, " ".join(cmd))])
+        if "--until-wake" in cmd:      # detached: the isolate may take this ssh link down with it
+            # keepalives: once wifi is out the link is dead, and ssh would otherwise wait forever
+            subprocess.run(["ssh", "-o", "ServerAliveInterval=2", "-o", "ServerAliveCountMax=3", rig,
+                            "setsid python3 %s %s >/run/sleep_probe.isolate.out 2>&1 </dev/null & "
+                            "sleep 4; cat /run/sleep_probe.isolate.out" % (RIG_PATH, " ".join(cmd))])
+            print("(a dropped link here is wifi leaving: the isolate holds; close the lid)")
+        else:
+            subprocess.run(["ssh", rig, "python3 %s %s" % (RIG_PATH, " ".join(cmd))])
     else:
         subprocess.run(["ssh", rig, "python3 %s report" % RIG_PATH])
 
@@ -449,14 +497,20 @@ if __name__ == "__main__":
     a = sys.argv[1:]
     if a[:1] == ["--rig"] and len(a) == 3:
         host(a[1], a[2:])
-    elif a[:1] == ["--rig"] and len(a) == 4 and a[2] == "isolate":
-        host(a[1], ["isolate", a[3]])
+    elif a[:1] == ["--rig"] and len(a) in (4, 5) and a[2] == "isolate" and a[4:] in ([], ["--until-wake"]):
+        host(a[1], ["isolate"] + a[3:])
     elif a == ["record"]:
         record()
     elif a == ["report"]:
         report()
-    elif len(a) == 2 and a[0] == "isolate":
+    elif len(a) in (2, 3) and a[0] == "isolate" and a[2:] in ([], ["--until-wake"]):
+        if a[2:]:      # armed FIRST: taking wifi out can cut this very ssh session
+            subprocess.Popen([sys.executable, os.path.abspath(__file__), "autorestore"], start_new_session=True,
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            print("armed: restores itself 8 s after the next resume")
         isolate(a[1].split(","))
+    elif a == ["autorestore"]:
+        autorestore()
     elif a == ["restore"]:
         restore()
     else:
