@@ -3901,6 +3901,254 @@ else
 fi
 
 # ==========================================================
+# STEP 6.79: BATTERY GUARD (power off at the floor, awake or asleep, 2026-10-21)
+# ==========================================================
+# car12 drained flat twice into the PMIC's battery-recovery mode, where nothing on USB can
+# reach it and only a good wall charger brings it back (2026-10-21: the second time). The
+# trigger was a lid closed without a shutdown: ROCKNIX on this SoC has only s2idle (no deep
+# sleep like Android's), and since STEP 6.77 made lid sleep HOLD, nothing woke it until the
+# cell was empty. ROCKNIX itself only flashes an LED / speaks at 25 % (powerstate).
+# Awake, etk-battery-guard.service polls every minute and, two polls in a row at the floor,
+# warns on the glass and runs `systemctl poweroff`. Asleep, no userspace runs, so before
+# every suspend (sleep.target) the guard arms the RTC (rtc-pm8xxx wakealarm) to wake the rig
+# every ETK_BATTERY_CHECK_MIN minutes (10 near the floor); after an RTC wake
+# (suspend.target) it powers off at the floor, else suspends again 5 s later. A wake before
+# the alarm (lid, power key) clears the alarm and changes nothing. Judged on capacity and
+# voltage_now, never status/current_now: on a 500 mA port the rig reads "Charging" while the
+# cell drains, and current_now under-reads ~5x. At the floor on a charger, only a FALLING
+# cell trips (plugging in stands the warning down). The next boot's first toast says why the
+# rig was off. Knobs: ETK_BATTERY_FLOOR (%, default 10), ETK_BATTERY_CHECK_MIN (default 30);
+# kill-switch ETK_BATTERY_GUARD=0. Harness: tools/test_battery_guard.py; disposable trial:
+# tools/battery_guard.py.
+# ==========================================================
+if [ "${ETK_BATTERY_GUARD:-1}" = "1" ]; then
+    case "${ETK_BATTERY_FLOOR:-10}" in ''|*[!0-9]*) BG_FLOOR=10 ;; *) BG_FLOOR="${ETK_BATTERY_FLOOR:-10}" ;; esac
+    case "${ETK_BATTERY_CHECK_MIN:-30}" in ''|*[!0-9]*) BG_CHECK=30 ;; *) BG_CHECK="${ETK_BATTERY_CHECK_MIN:-30}" ;; esac
+    { [ "$BG_FLOOR" -ge 3 ] && [ "$BG_FLOOR" -le 50 ]; } || BG_FLOOR=10
+    { [ "$BG_CHECK" -ge 5 ] && [ "$BG_CHECK" -le 240 ]; } || BG_CHECK=30
+    BATTGUARD_OUT=$(ssh $RIG_SSH "BG_FLOOR=$BG_FLOOR BG_CHECK=$BG_CHECK sh -s" 2>&1 <<'BATTGUARDREMOTE'
+mkdir -p /storage/.config/custom_scripts /storage/.config/system.d
+printf 'ETK_BATTERY_FLOOR=%s\nETK_BATTERY_CHECK_MIN=%s\n' "$BG_FLOOR" "$BG_CHECK" > /storage/.config/etk_battery_guard.conf
+cat << 'BATTGUARD' > /storage/.config/custom_scripts/etk-battery-guard.sh
+#!/bin/sh
+# etk-battery-guard (ETK install.sh STEP 6.79): power the rig off, cleanly, before the cell
+# drains into the PMIC's battery-recovery mode. s2idle runs no userspace, so asleep the RTC
+# wakes the rig to look.
+#   watch    the awake poll loop (etk-battery-guard.service)
+#   check    one awake poll: two in a row at the floor = power off
+#   arm      before every suspend: program the RTC alarm (etk-battery-guard-arm.service)
+#   resume   after every resume: an RTC wake -> off at the floor, else sleep again in 5 s
+#   resleep  (5 s after an RTC wake) suspend again, unless the lid was opened meanwhile
+#   status   the guard's view: battery, alarm, the last log lines
+CONF="${ETK_BATTERY_GUARD_CONF:-/storage/.config/etk_battery_guard.conf}"
+[ -f "$CONF" ] && . "$CONF"
+ROOT="${ETK_SYSFS_ROOT:-}"
+LOG="${ETK_BATTERY_GUARD_LOG:-/storage/etk_battery_guard.log}"
+RUN="${ETK_BATTERY_GUARD_RUN:-/run/etk_battery_guard}"
+MARK="${ETK_BATTERY_GUARD_MARK:-/storage/etk_battery_guard.last}"
+ETK_ROOT="${ETK_ROOT:-/storage/games-internal/roms/etk}"
+FLOOR="${ETK_BATTERY_FLOOR:-10}"
+FLOOR_MV="${ETK_BATTERY_FLOOR_MV:-3400}"
+CHECK_MIN="${ETK_BATTERY_CHECK_MIN:-30}"
+POLL="${ETK_BATTERY_POLL_S:-60}"
+BAT="$ROOT/sys/class/power_supply/battery"
+CHG="$ROOT/sys/class/power_supply/pm8150b-charger"
+RTC="$ROOT/sys/class/rtc/rtc0"
+mkdir -p "$RUN"
+log() { echo "$(date "+%F %T") [$(cut -d" " -f1 /proc/uptime 2>/dev/null)s] $*" >> "$LOG"; echo "[etk-battery-guard] $*"; }
+num() { case "$1" in ''|*[!0-9]*) echo "" ;; *) echo "$1" ;; esac; }
+lid() { busctl --timeout=2 get-property org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager LidClosed 2>/dev/null | sed -n 's/^b //p'; }
+notify() {
+    [ -x "$ETK_ROOT/bin/etk_notify.sh" ] || return 1
+    XDG_RUNTIME_DIR=/var/run/0-runtime-dir "$ETK_ROOT/bin/etk_notify.sh" "ETK BATTERY GUARD" "$1" 15000 >/dev/null 2>&1
+}
+read_batt() {
+    cap=$(num "$(cat "$BAT/capacity" 2>/dev/null)")
+    uv=$(num "$(cat "$BAT/voltage_now" 2>/dev/null)")
+    mv=""; [ -n "$uv" ] && mv=$((uv / 1000))
+    online=$(cat "$CHG/online" 2>/dev/null)
+    case "$online" in ''|0) online=0 ;; *) online=1 ;; esac
+}
+# low [PREV]: true (with $why) when the rig must power off. PREV = the capacity at the last
+# look; at the floor ON a charger only a falling cell trips -- a real charger refills it.
+low() {
+    if [ -n "$cap" ] && [ "$cap" -le "$FLOOR" ]; then
+        if [ "$online" = 0 ]; then why="battery ${cap}% at the ${FLOOR}% floor, no charger"; return 0; fi
+        if [ -n "$1" ] && [ "$cap" -lt "$1" ]; then
+            why="battery ${cap}% at the ${FLOOR}% floor, falling on the charger (was $1%)"; return 0
+        fi
+    fi
+    if [ -n "$mv" ] && [ "$online" = 0 ] && [ "$mv" -le "$FLOOR_MV" ]; then
+        why="battery ${mv} mV at the ${FLOOR_MV} mV floor (gauge reads ${cap:-?}%)"; return 0
+    fi
+    return 1
+}
+power_off() {
+    log "POWER OFF ($1): $why"
+    printf '%s\t%s\t%s\n' "$(date "+%F %T")" "$why" "$1" > "$MARK"
+    sync
+    # never from inside a unit's own start job: systemd refuses a poweroff whose transaction
+    # would stop it ("Transaction for poweroff.target/start is destructive", car12 2026-10-21,
+    # 3 of 3 from the resume hook) -- a transient timer runs it a second later, outside it
+    systemd-run --no-block --collect --on-active=1 --timer-property=AccuracySec=100ms \
+        /usr/bin/systemctl poweroff >/dev/null 2>&1 || systemctl poweroff --no-block
+}
+check() {
+    read_batt
+    # a charger plugged in since the last look starts the trend afresh (plug in = stand down)
+    [ "$online" = 1 ] && [ "$(cat "$RUN/online" 2>/dev/null)" = 0 ] && rm -f "$RUN/low_cap"
+    echo "$online" > "$RUN/online"
+    prev=$(cat "$RUN/low_cap" 2>/dev/null)
+    if low "$prev"; then
+        if [ -f "$RUN/pending" ]; then power_off awake; return 0; fi
+        : > "$RUN/pending"
+        log "WARNING: $why -- powering off in ${POLL} s unless a charger refills it"
+        notify "Battery ${cap:-?}% - powering off in ${POLL} s. Plug in a charger to stop it."
+    elif [ -f "$RUN/pending" ]; then
+        rm -f "$RUN/pending"
+        log "stood down: battery ${cap:-?}% ${mv:-?} mV charger=$online"
+    fi
+    if [ -n "$cap" ] && [ "$cap" -le "$FLOOR" ]; then
+        [ -n "$prev" ] || echo "$cap" > "$RUN/low_cap"
+    else
+        rm -f "$RUN/low_cap"
+    fi
+}
+watch() {
+    # the previous power-off's verdict, on the glass: why the rig was off
+    if [ -f "$MARK" ]; then
+        last=$(cut -f1,2 "$MARK" | tr '\t' ' ')
+        i=0
+        while [ $i -lt 12 ]; do notify "Powered off by the battery guard: $last" && break; i=$((i + 1)); sleep 5; done
+        mv -f "$MARK" "$MARK.shown"
+    fi
+    while :; do check; sleep "$POLL"; done
+}
+arm() {
+    read_batt
+    secs=$((CHECK_MIN * 60))
+    [ -n "$cap" ] && [ "$cap" -le $((FLOOR + 5)) ] && [ "$secs" -gt 600 ] && secs=600
+    # on the RTC's own clock (since_epoch), the one resume judges by; an alarm left set
+    # refuses a new one, so clear first, then read the alarm back
+    now=$(num "$(cat "$RTC/since_epoch" 2>/dev/null)")
+    at=""
+    if [ -n "$now" ]; then
+        echo 0 > "$RTC/wakealarm" 2>/dev/null
+        echo $((now + secs)) > "$RTC/wakealarm" 2>/dev/null
+        [ "$(cat "$RTC/wakealarm" 2>/dev/null)" = $((now + secs)) ] && at=$((now + secs))
+    fi
+    l=$(lid)
+    if [ -n "$at" ]; then
+        echo "$at ${cap:--} ${l:--}" > "$RUN/armed"
+        log "armed: RTC wake in ${secs} s; battery ${cap:-?}% ${mv:-?} mV charger=$online lid=${l:-?}"
+    else
+        rm -f "$RUN/armed"
+        log "ARM FAILED: the RTC took no alarm -- this sleep is unguarded; battery ${cap:-?}%"
+    fi
+}
+resume() {
+    [ -f "$RUN/armed" ] || { log "resume: no alarm was armed"; return 0; }
+    read at cap0 lid0 < "$RUN/armed"
+    rm -f "$RUN/armed"
+    [ "$cap0" = - ] && cap0=""
+    now=$(num "$(cat "$RTC/since_epoch" 2>/dev/null)")
+    left=$(cat "$RTC/wakealarm" 2>/dev/null)
+    echo 0 > "$RTC/wakealarm" 2>/dev/null
+    read_batt
+    # a fired alarm reads back empty; one still set means something else woke the rig
+    if [ -n "$left" ] || [ -z "$now" ] || [ "$now" -lt $((at - 3)) ]; then
+        log "resume: woken $(( at - ${now:-0} )) s before the alarm (lid, power key or charger) -- alarm cleared; battery ${cap:-?}%"
+        return 0
+    fi
+    if low "$cap0"; then power_off asleep; return 0; fi
+    log "resume: RTC check -- battery ${cap:-?}% (was ${cap0:-?}%) ${mv:-?} mV charger=$online; asleep again in 5 s"
+    systemd-run --no-block --collect --on-active=5 --timer-property=AccuracySec=100ms /bin/sh "$0" resleep "$lid0" >/dev/null 2>&1 \
+        || log "RESLEEP FAILED: systemd-run refused -- the rig stays awake"
+}
+resleep() {
+    if [ "$1" = true ] && [ "$(lid)" = false ]; then log "resleep: the lid was opened -- staying awake"; return 0; fi
+    log "resleep: suspending again"
+    systemctl suspend
+}
+status() {
+    read_batt
+    echo "battery ${cap:-?}% ${mv:-?} mV charger=$online floor=${FLOOR}% (${FLOOR_MV} mV) check=${CHECK_MIN} min"
+    echo "rtc alarm: $(cat "$RTC/wakealarm" 2>/dev/null) (now $(cat "$RTC/since_epoch" 2>/dev/null))  armed: $(cat "$RUN/armed" 2>/dev/null)"
+    [ -f "$RUN/pending" ] && echo "WARNING PENDING: powers off at the next poll"
+    tail -n 8 "$LOG" 2>/dev/null
+}
+case "$1" in
+    watch|check|arm|resume|status) "$1" ;;
+    resleep) resleep "$2" ;;
+    *) echo "usage: $0 watch|check|arm|resume|resleep|status" >&2; exit 2 ;;
+esac
+exit 0
+BATTGUARD
+chmod +x /storage/.config/custom_scripts/etk-battery-guard.sh
+cat << 'BATTGUARDUNIT' > /storage/.config/system.d/etk-battery-guard.service
+[Unit]
+Description=ETK battery guard (powers the rig off at the battery floor; the boot toast says why)
+
+[Service]
+Type=simple
+ExecStart=/bin/sh /storage/.config/custom_scripts/etk-battery-guard.sh watch
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=rocknix.target
+BATTGUARDUNIT
+cat << 'BATTGUARDARM' > /storage/.config/system.d/etk-battery-guard-arm.service
+[Unit]
+Description=ETK battery guard: arm the RTC to check the battery while asleep
+# runs before EVERY suspend (no RemainAfterExit: the next sleep.target pulls it in again)
+Before=sleep.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh /storage/.config/custom_scripts/etk-battery-guard.sh arm
+
+[Install]
+WantedBy=sleep.target
+BATTGUARDARM
+cat << 'BATTGUARDRESUME' > /storage/.config/system.d/etk-battery-guard-resume.service
+[Unit]
+Description=ETK battery guard: after an RTC wake, power off at the floor or sleep again
+After=suspend.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh /storage/.config/custom_scripts/etk-battery-guard.sh resume
+
+[Install]
+WantedBy=suspend.target
+BATTGUARDRESUME
+systemctl daemon-reload
+for u in etk-battery-guard etk-battery-guard-arm etk-battery-guard-resume; do
+    systemctl enable /storage/.config/system.d/$u.service >/dev/null 2>&1
+done
+systemctl restart etk-battery-guard.service >/dev/null 2>&1
+sleep 1
+cap=$(cat /sys/class/power_supply/battery/capacity 2>/dev/null)
+sh -n /storage/.config/custom_scripts/etk-battery-guard.sh && [ -n "$cap" ] && [ -w /sys/class/rtc/rtc0/wakealarm ] \
+    && [ "$(systemctl is-active etk-battery-guard.service 2>/dev/null)" = active ] \
+    && systemctl list-dependencies sleep.target 2>/dev/null | grep -q etk-battery-guard-arm \
+    && systemctl list-dependencies suspend.target 2>/dev/null | grep -q etk-battery-guard-resume \
+    && echo "BATTGUARD_OK battery ${cap}%, floor ${BG_FLOOR}%, asleep checks every ${BG_CHECK} min" \
+    || echo "BATTGUARD_FAIL battery=${cap:-unreadable} rtc=$([ -w /sys/class/rtc/rtc0/wakealarm ] && echo ok || echo missing) watch=$(systemctl is-active etk-battery-guard.service 2>/dev/null)"
+BATTGUARDREMOTE
+)
+    if printf '%s' "$BATTGUARD_OUT" | grep -q BATTGUARD_OK; then
+        say "${G}[ETK]${N} Battery guard (etk-battery-guard.service + RTC checks while asleep — powers off cleanly at the floor instead of draining into battery recovery; $(printf '%s' "$BATTGUARD_OUT" | grep BATTGUARD_OK | sed 's/BATTGUARD_OK //'))"
+    else
+        say "${Y}[WARN] Battery guard did not verify ($(printf '%s' "$BATTGUARD_OUT" | tail -n1)) — a rig left asleep or idle can still drain flat.${N}"
+    fi
+else
+    ssh $RIG_SSH "systemctl disable --now etk-battery-guard.service >/dev/null 2>&1; systemctl disable etk-battery-guard-arm.service etk-battery-guard-resume.service >/dev/null 2>&1; echo 0 > /sys/class/rtc/rtc0/wakealarm 2>/dev/null; rm -f /storage/.config/system.d/etk-battery-guard.service /storage/.config/system.d/etk-battery-guard-arm.service /storage/.config/system.d/etk-battery-guard-resume.service /storage/.config/custom_scripts/etk-battery-guard.sh /storage/.config/etk_battery_guard.conf; systemctl daemon-reload" 2>/dev/null
+    say "${G}[ETK]${N} Battery guard removed (kill-switch ETK_BATTERY_GUARD=0; a rig left asleep drains until it dies)"
+fi
+
+# ==========================================================
 # STEP 6.73: PITLINK USB (the Engineer's raw-USB channel into RPCS3)
 # ==========================================================
 # bin/etk_pitlink_usbd.py adds a vendor FunctionFS function ("ETK Pitlink", 2 bulk eps) to

@@ -8,6 +8,10 @@ journal nor the counters say who ended a sleep. This recorder runs ON the rig, s
 (suspend_stats success/fail moved) writes one JSONL event: how long the SoC really slept
 (delta of BOOTTIME - MONOTONIC), lid + cable before/after, and the IRQ / wakeup-source deltas
 across it. A bounce shows as slept_s ~ 0 with an IRQ the clean RTC-woken baseline lacks.
+It also records the battery (capacity + voltage_now, never current_now: it under-reads ~5x)
+either side of each sleep, so `report` gives s2idle's drain in %/h, and the SoC's own low-power
+counters (debugfs qcom_stats: aosd = AOSS sleep, cxsd = CX rail collapse, ddr): a "held" sleep
+whose aosd/cxsd never move kept the SoC out of its deep states -- why s2idle drains.
 Disposable: dies at reboot, writes only its own log.
 
   python3 tools/sleep_probe.py --rig flip2-12g start     # push + start the recorder
@@ -97,6 +101,26 @@ def thermal():
     return None
 
 
+def battery():
+    """capacity %, voltage mV, charger online -- what s2idle's drain is judged by."""
+    b = "/sys/class/power_supply/battery/"
+    cap, uv = read(b + "capacity"), read(b + "voltage_now")
+    return [int(cap) if cap.isdigit() else None, int(uv) // 1000 if uv.isdigit() else None,
+            read("/sys/class/power_supply/pm8150b-charger/online") not in ("", "0")]
+
+
+def soc_sleep():
+    """qcom_stats {state: [count, seconds]}; durations tick at 19.2 MHz."""
+    out = {}
+    for k in ("aosd", "cxsd", "ddr"):
+        t = read("/sys/kernel/debug/qcom_stats/" + k)
+        c = re.search(r"Count:\s*(\d+)", t)
+        d = re.search(r"Accumulated Duration:\s*(\d+)", t)
+        if c and d:
+            out[k] = [int(c.group(1)), int(d.group(1)) / 19.2e6]
+    return out
+
+
 def snap(dev):
     return {
         "wall": time.time(),
@@ -111,6 +135,8 @@ def snap(dev):
         "irq": irqs(),
         "ws": wakeup_sources(),
         "therm": thermal(),
+        "batt": battery(),
+        "soc": soc_sleep(),
     }
 
 
@@ -127,6 +153,9 @@ def event(pre, post):
         "lid": [pre["lid"], post["lid"]], "cable": [pre["cable"], post["cable"]],
         "udc": [pre["udc"], post["udc"]], "usbwake_pre": pre["usbwake"],
         "therm": [pre.get("therm"), post.get("therm")],
+        "batt": [pre.get("batt"), post.get("batt")],
+        "soc": {k: [v[0] - pre["soc"][k][0], round(v[1] - pre["soc"][k][1], 1)]
+                for k, v in post.get("soc", {}).items() if k in pre.get("soc", {})},
         "irq": [[d, k, n] for d, k, n in di], "ws": dw,
     }
 
@@ -151,6 +180,7 @@ def record():
 
 
 def report():
+    held_s, held_drop = 0.0, 0         # uncabled holds only: what a lid-shut rig in a bag loses
     for line in read(LOG).splitlines():
         try:
             e = json.loads(line)
@@ -169,10 +199,26 @@ def report():
         if e.get("therm") and e["therm"][0]:
             print("      cluster1 %s -> %s C, fan step %s -> %s" % (e["therm"][0][0], e["therm"][1][0],
                                                                   e["therm"][0][1], e["therm"][1][1]))
+        b = e.get("batt")
+        if b and b[0] and b[1] and b[0][0] is not None and b[1][0] is not None:
+            drop = b[0][0] - b[1][0]
+            rate = " %+.1f %%/h" % (-drop * 3600 / e["slept_s"]) if e["slept_s"] >= 600 else ""
+            print("      battery %s%% -> %s%% (%s -> %s mV)%s%s" % (b[0][0], b[1][0], b[0][1], b[1][1], rate,
+                                                              "  [charger]" if b[0][2] or b[1][2] else ""))
+            if verdict == "HELD" and not (b[0][2] or b[1][2]):
+                held_s, held_drop = held_s + e["slept_s"], held_drop + drop
+        if e.get("soc"):
+            print("      soc  " + "  ".join("%s +%d (%.1fs)" % (k, *v) for k, v in e["soc"].items())
+                  + ("" if any(v[0] for v in e["soc"].values()) or e["slept_s"] < 3 else
+                     "   <- never reached a deep state"))
         cand = [x for x in e["irq"] if not RESUME_NOISE.search(x[1]) and not RESUME_NOISE.search(x[2])]
         print("      irq  " + "  ".join("%s:%s(+%d)" % (k, n.split()[-1] if n else "", d) for d, k, n in cand[:10]))
         if e["ws"]:
             print("      ws   " + "  ".join("%s act+%d ev+%d wk+%d" % (k, *v) for k, v in e["ws"].items()))
+    if held_s:
+        # capacity moves in whole percent: trust the rate only over hours of sleep
+        print("=== s2idle drain, uncabled holds: %d%% over %.2f h = %.2f %%/h" % (held_drop, held_s / 3600,
+                                                                              held_drop * 3600 / held_s))
 
 
 def host(rig, cmd):

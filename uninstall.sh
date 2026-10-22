@@ -339,6 +339,14 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
     rm -f /storage/.config/system.d/etk-usb-nowake.service /storage/.config/custom_scripts/etk-usb-nowake.sh
     echo "    Removed: etk-usb-nowake.service (stock USB wake from the next boot)"
 
+    # Battery guard (install.sh STEP 6.79): stop the poll, drop the sleep hooks and any armed
+    # RTC alarm. The log is kept.
+    systemctl disable --now etk-battery-guard.service 2>/dev/null
+    systemctl disable etk-battery-guard-arm.service etk-battery-guard-resume.service 2>/dev/null
+    echo 0 > /sys/class/rtc/rtc0/wakealarm 2>/dev/null
+    rm -f /storage/.config/system.d/etk-battery-guard.service /storage/.config/system.d/etk-battery-guard-arm.service /storage/.config/system.d/etk-battery-guard-resume.service /storage/.config/custom_scripts/etk-battery-guard.sh /storage/.config/etk_battery_guard.conf
+    echo "    Removed: etk-battery-guard (no power-off at the battery floor)"
+
     # mDNS name heal (install.sh STEP 6.78): stop the timer and drop it; avahi's own name
     # handling (a -N rename sticks until a reboot) returns at once. The log is kept.
     systemctl disable --now etk-mdns-heal.timer 2>/dev/null

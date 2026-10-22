@@ -5,6 +5,15 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 ## [Unreleased]
 
 ### Added
+- **The rig powers itself off before the battery runs flat.** On ROCKNIX
+  the Flip 2 only has a light sleep, so a rig left asleep with the lid shut
+  drained until the battery went into the charger chip's recovery mode, and
+  only a good wall charger could bring it back. Now, at 10 %, the rig shuts
+  down cleanly. If it's awake, you get a warning first and plugging in a
+  charger cancels it. If it's asleep, it wakes briefly every 30 minutes to
+  check the battery, then goes back to sleep. The next boot tells you why it
+  was off. Set `ETK_BATTERY_FLOOR` and `ETK_BATTERY_CHECK_MIN` to change the
+  threshold and the check interval; turn it off with `ETK_BATTERY_GUARD=0`.
 - **The Retroid Pocket Flip 2's built-in microphone works.** It worked on
   Android but was dead on ROCKNIX: the device tree never powered it. With a
   custom kernel installed, the kit now builds a corrected device tree from
