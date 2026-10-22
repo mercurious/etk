@@ -243,6 +243,17 @@ MOUNT_FAIL=1 expect "uninstall: remount failure -> FAILED, slot left as is" 1 "F
 unset MOUNT_FAIL
 [ "$(slot_sha)" = "$GTK_SHA" ] && ok "failed restore left the GTK slot intact" || bad "failed restore corrupted the slot"
 
+# ===== install.sh — the GRUB deploy branch is chain-gated (0.10.0, RC audit) ==========
+# Static read: the raw-Image deploy (KERNEL.gtktest + grub entries) must only run
+# on a unit whose chain read 'grub'; an 'unknown' chain is refused by name. Before
+# 0.10.0 the elif had no chain test, so a probe failure wrote a kernel nothing boots.
+if grep -qE '^elif \[ -n "\$\{KERNEL_IMAGE:-\}" \] && \[ -f "\$\{KERNEL_IMAGE:-\}" \] && \[ "\$K_CHAIN" != "grub" \]; then' "$TD/src/install.sh" \
+   && grep -q 'Custom kernel deploy SKIPPED: boot chain read as' "$TD/src/install.sh"; then
+    ok "install.sh: raw-Image deploy refuses an unread boot chain by name"
+else
+    bad "install.sh: raw-Image deploy is not chain-gated (an 'unknown' chain would get KERNEL.gtktest + grub entries)"
+fi
+
 echo
 echo "test_kernel_abl: $PASS passed, $FAIL failed${REV:+ (against $REV)}"
 [ "$FAIL" = 0 ]

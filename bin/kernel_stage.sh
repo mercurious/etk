@@ -53,7 +53,20 @@ CHAIN=grub
 if [ "$(head -c 8 "$ART" 2>/dev/null)" = "ANDROID!" ]; then
     CHAIN=abl
     REL="${KS_RELEASE:-}"
-    [ -n "$REL" ] || die "boot.img artifact needs KS_RELEASE (the manifest's kernel_release) — nothing staged"
+    if [ -z "$REL" ]; then
+        # 0.10.0: a 0.9.0 Pitstop's couch update calls this script WITHOUT
+        # KS_RELEASE (the knob arrived with the ABL era), so every v0.9.0 rig
+        # updating from the couch would have failed its kernel stage. The
+        # manifest that named the asset sits beside this script in the update
+        # tree (config/gtk_stack.json), and the installed kit keeps a copy —
+        # read kernel_release from the first one found. Still never guess.
+        for _mf in "$(dirname "$0")/../config/gtk_stack.json" "$ETK_ROOT/config/gtk_stack.json"; do
+            [ -f "$_mf" ] || continue
+            REL=$(sed -n 's/.*"kernel_release": *"\([^"]*\)".*/\1/p' "$_mf" | head -1)
+            [ -n "$REL" ] && { log "KS_RELEASE unset; kernel_release $REL read from $_mf"; break; }
+        done
+    fi
+    [ -n "$REL" ] || die "boot.img artifact needs KS_RELEASE (the manifest's kernel_release) and no gtk_stack.json was found beside the script — nothing staged"
 else
     REL=$(strings "$ART" 2>/dev/null | grep -m1 "Linux version " \
           | sed 's/.*Linux version \([^ ]*\).*/\1/')

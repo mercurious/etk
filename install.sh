@@ -1077,6 +1077,15 @@ tui_step_done 1
 rig_toast 14 "Deploying daemons" || true
 tui_step_start 2
 tui_rsync 2 0 25 "Pushing /bin daemons" --delete --exclude='*.pyc' --exclude='__pycache__' --exclude='.DS_Store' ./bin/ $RIG_SSH:$ETK_ROOT/bin/
+# 0.10.0: stamp the kit's own commit on the rig ($ETK_ROOT/.kit_commit). Until the
+# 2026-10-22 RC audit the deployed kit could only be inferred by md5-matching bin/
+# files against local history. "unknown" on a zip checkout; "-dirty" when the
+# working tree carries uncommitted changes (a parked experiment on the rig is a fact
+# worth reading back, not hiding).
+KIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
+[ "$KIT_COMMIT" != "unknown" ] && [ -n "$(git status --porcelain 2>/dev/null)" ] && KIT_COMMIT="${KIT_COMMIT}-dirty"
+ssh $RIG_SSH "printf '%s\n' '$KIT_COMMIT' > '$ETK_ROOT/.kit_commit'" 2>/dev/null
+tui_log "Kit commit stamped on the rig: $KIT_COMMIT"
 tui_rsync 2 25 45 "Pushing /scripts (env, profiles, probes)" --delete --exclude='.DS_Store' ./scripts/ $RIG_SSH:$ETK_ROOT/scripts/
 # Two tools/ entries run ON the rig, so they are explicit single-file pushes
 # (the rest of tools/ is host-side — tui.sh is sourced by install.sh, the probes
@@ -1215,6 +1224,7 @@ tui_rsync 4 0 12 "Deploying Pitstop engine (etk_pitstop.py)" --exclude='.DS_Stor
 tui_rsync 4 12 24 "Deploying field schema (pitstop_fields.json)" --exclude='.DS_Store' ./config/pitstop_fields.json    $RIG_SSH:$ETK_ROOT/config/
 tui_rsync 4 24 30 "Deploying POWER schema (power_profiles.json)" --exclude='.DS_Store' ./config/power_profiles.json   $RIG_SSH:$ETK_ROOT/config/
 tui_rsync 4 30 36 "Deploying crash signatures" --exclude='.DS_Store' ./config/crash_signatures.json  $RIG_SSH:$ETK_ROOT/config/
+tui_rsync 4 36 37 "Deploying per-title patch files (config/patches)" --exclude='.DS_Store' ./config/patches/ $RIG_SSH:$ETK_ROOT/config/patches/
 # Save-folder aliases (paddock_sync.sh). Never clobber the operator's edits —
 # this file is theirs to extend when a game stores saves under a foreign name.
 ssh $RIG_SSH "[ -f '$ETK_ROOT/config/save_aliases.tsv' ]" 2>/dev/null \
@@ -2212,13 +2222,26 @@ KERNELABLREMOTE
             #     live cmdline's keepalive, which only a GTK boot.img carries) ---
             GTK_KDATE=$(basename "$KERNEL_IMAGE" | grep -oE '[0-9]{8}' | head -1)
             GTK_VER=$(grep -m1 '^APP_VERSION' ./bin/etk_pitstop.py | cut -d'"' -f2)
-            tui_log "Deploying GTK boot-identity line (${GTK_VER:-dev}-${GTK_KDATE:-dev})"
+            # Edition name + kernel generation (0.10.0): the boot line names the whole
+            # certified stack, not just the kit version -- APP_EDITION is the single
+            # source (beside APP_VERSION); the kernel generation is read off the Image
+            # name after its date (KERNEL.rocknix-gtk-20261001-0.6.3 -> 0.6.3).
+            GTK_EDITION=$(grep -m1 '^APP_EDITION' ./bin/etk_pitstop.py | cut -d'"' -f2)
+            GTK_KVER=$(basename "$KERNEL_IMAGE" | sed -n 's/.*-[0-9]\{8\}-\([0-9.]*\)$/\1/p')
+            tui_log "Deploying GTK boot-identity line (${GTK_VER:-dev}-${GTK_KDATE:-dev}${GTK_EDITION:+ $GTK_EDITION Edition} kernel ${GTK_KVER:-dev})"
             scp -q ./config/etk-gtk-version.service "$RIG_SSH:/storage/.config/system.d/etk-gtk-version.service" 2>/dev/null
-            ssh $RIG_SSH "sed -i 's/@KDATE@/${GTK_KDATE:-dev}/; s/@GTKVER@/${GTK_VER:-dev}/' /storage/.config/system.d/etk-gtk-version.service 2>/dev/null; mkdir -p /storage/.config/system.d/basic.target.wants; ln -sf /storage/.config/system.d/etk-gtk-version.service /storage/.config/system.d/basic.target.wants/etk-gtk-version.service" 2>/dev/null
+            ssh $RIG_SSH "sed -i 's/@KDATE@/${GTK_KDATE:-dev}/; s/@GTKVER@/${GTK_VER:-dev}/; s/@EDITION@/${GTK_EDITION:+ -- $GTK_EDITION Edition}/; s/@KVER@/${GTK_KVER:-dev}/' /storage/.config/system.d/etk-gtk-version.service 2>/dev/null; mkdir -p /storage/.config/system.d/basic.target.wants; ln -sf /storage/.config/system.d/etk-gtk-version.service /storage/.config/system.d/basic.target.wants/etk-gtk-version.service" 2>/dev/null
         else
             say "${Y}[ETK]${N} Custom kernel deploy FAILED (ABL): $(echo "$K_OUT" | grep -m1 KERNEL_FAIL || echo "$K_OUT" | tail -1)"
         fi
     fi
+elif [ -n "${KERNEL_IMAGE:-}" ] && [ -f "${KERNEL_IMAGE:-}" ] && [ "$K_CHAIN" != "grub" ]; then
+    # 0.10.0 (RC audit 2026-10-22): the GRUB deploy below writes /flash/KERNEL.gtktest
+    # and grub entries. On a unit whose chain could not be read ('unknown': the probe
+    # failed, or /flash holds neither a GRUB menu nor an ABL boot.img) that is a kernel
+    # nothing boots and a grub.cfg loop over files that do not exist -- reported as
+    # "deployed". Refuse with the reason instead; the ABL case is the branch above.
+    say "${Y}[ETK]${N} Custom kernel deploy SKIPPED: boot chain read as '${K_CHAIN}' (no GRUB menu and no ABL boot.img at /flash/KERNEL) -- nothing written. Check the ssh link and /flash, then re-run."
 elif [ -n "${KERNEL_IMAGE:-}" ] && [ -f "${KERNEL_IMAGE:-}" ]; then
     # portable host sha256 (Linux sha256sum | macOS shasum)
     if command -v sha256sum >/dev/null 2>&1; then
@@ -2572,9 +2595,15 @@ KERNELREMOTE
         # edition. Both fields are placeholders now; never hand-write either.
         GTK_KDATE=$(basename "$KERNEL_IMAGE" | grep -oE '[0-9]{8}' | head -1)
         GTK_VER=$(grep -m1 '^APP_VERSION' ./bin/etk_pitstop.py | cut -d'"' -f2)
-        tui_log "Deploying GTK boot-identity line (${GTK_VER:-dev}-${GTK_KDATE:-dev})"
+        # Edition name + kernel generation (0.10.0): the boot line names the whole
+        # certified stack, not just the kit version -- APP_EDITION is the single
+        # source (beside APP_VERSION); the kernel generation is read off the Image
+        # name after its date (KERNEL.rocknix-gtk-20261001-0.6.3 -> 0.6.3).
+        GTK_EDITION=$(grep -m1 '^APP_EDITION' ./bin/etk_pitstop.py | cut -d'"' -f2)
+        GTK_KVER=$(basename "$KERNEL_IMAGE" | sed -n 's/.*-[0-9]\{8\}-\([0-9.]*\)$/\1/p')
+        tui_log "Deploying GTK boot-identity line (${GTK_VER:-dev}-${GTK_KDATE:-dev}${GTK_EDITION:+ $GTK_EDITION Edition} kernel ${GTK_KVER:-dev})"
         scp -q ./config/etk-gtk-version.service "$RIG_SSH:/storage/.config/system.d/etk-gtk-version.service" 2>/dev/null
-        ssh $RIG_SSH "sed -i 's/@KDATE@/${GTK_KDATE:-dev}/; s/@GTKVER@/${GTK_VER:-dev}/' /storage/.config/system.d/etk-gtk-version.service 2>/dev/null; mkdir -p /storage/.config/system.d/basic.target.wants; ln -sf /storage/.config/system.d/etk-gtk-version.service /storage/.config/system.d/basic.target.wants/etk-gtk-version.service" 2>/dev/null
+        ssh $RIG_SSH "sed -i 's/@KDATE@/${GTK_KDATE:-dev}/; s/@GTKVER@/${GTK_VER:-dev}/; s/@EDITION@/${GTK_EDITION:+ -- $GTK_EDITION Edition}/; s/@KVER@/${GTK_KVER:-dev}/' /storage/.config/system.d/etk-gtk-version.service 2>/dev/null; mkdir -p /storage/.config/system.d/basic.target.wants; ln -sf /storage/.config/system.d/etk-gtk-version.service /storage/.config/system.d/basic.target.wants/etk-gtk-version.service" 2>/dev/null
     else
         say "${Y}[ETK]${N} Custom kernel deploy FAILED: $(echo "$K_OUT" | grep -m1 KERNEL_FAIL || echo "$K_OUT" | tail -1)"
     fi
@@ -2924,8 +2953,8 @@ rm -f "$TURNIP_OUT_FILE"
 # artifact it names is fetchable or staged — release_sanity now enforces
 # exactly that. 0.9.0.1 stays catalog-only (A/B) until the September gates.
 rig_toast 60 "RPCS3 core staging" || true
-CERT_RPCS3="rpcs3-etk_gtk-edition-0.9.0.3_armsx3-a74a0f3e0_linux_aarch64.AppImage"
-CERT_RPCS3_SHA="8bf606d3740503c580b7fe81b569a7b37513223f6547fc99fff96ba09c0a6437"
+CERT_RPCS3="rpcs3-etk_gtk-edition-0.10.0_armsx3-8290349e5_linux_aarch64.AppImage"
+CERT_RPCS3_SHA="b70d7695ceed3e9bdb209e0964261855523b8abb76bc52ed5a2ff83eca0000de"
 RPCS3_RELEASE_BASE="https://github.com/mercurious/etk/releases/latest/download"
 ssh $RIG_SSH "mkdir -p /storage/rpcs3 /storage/.config/system.d/" 2>/dev/null
 # Pre-flight: the staging target lives on /storage — the small UFS SYSTEM
@@ -3328,6 +3357,34 @@ PYEOF
     else
         say "${Y}[ETK]${N} RPCS3 config dir not seeded yet (no game launched) — patch fetch deferred to next install."
     fi
+fi
+
+# --- STEP 6.5545: GT6 BUNDLED PATCHES (0.10.0, 120Hz Edition) ---
+# ARMSX3 1.0.8 ships illusion's "Disable MLAA" + "Disable Motion Blur" for every
+# Gran Turismo 6 v01.22 executable: with MLAA on, GT6 falls to 1 fps minutes in
+# and wedges the RSX on a label nothing clears; without the blur patch replays and
+# track intros render black. Our core (1.0.4 base) loads <TITLE_ID>_patch.yml from
+# the patches dir, so the kit ships the file (config/patches/BCUS98296_patch.yml,
+# pushed at STEP 4) and enables both ONCE -- bin/etk_patch_seed.py keeps a marker,
+# so a later TUNING > PATCH choice stands. Same gate as the fetch above: only once
+# /storage/.config/rpcs3 exists (the STEP 1b stock-config seed trap). Kill-switch
+# ETK_GT6_PATCHES=0 removes the file and the rows the seed wrote. The kit's GT6
+# tune already runs Write/Read Color Buffers off, which Disable MLAA requires.
+# Harness: tools/test_patch_seed.py. PS port: not yet carried (TODO by marker).
+if [ "${ETK_GT6_PATCHES:-1}" = "1" ]; then
+    if ssh $RIG_SSH "[ -d /storage/.config/rpcs3 ]" 2>/dev/null; then
+        SEED_OUT=$(ssh $RIG_SSH ". '$ETK_ROOT/scripts/env.sh' >/dev/null 2>&1; python3 '$ETK_ROOT/bin/etk_patch_seed.py' --serial BCUS98296 --file '$ETK_ROOT/config/patches/BCUS98296_patch.yml'" 2>&1 | tail -1)
+        case "$SEED_OUT" in
+            *"deployed + enabled"*) say "${G}[ETK]${N} GT6 bundled patches: ${SEED_OUT#PATCH_SEED BCUS98296: }" ;;
+            *"already seeded"*)     say "${G}[ETK]${N} GT6 bundled patches: file refreshed; your TUNING > PATCH choices stand." ;;
+            *)                      say "${Y}[ETK]${N} GT6 bundled patches: ${SEED_OUT:-no verdict from the rig} (TUNING > PATCH still works)." ;;
+        esac
+    else
+        say "${Y}[ETK]${N} GT6 bundled patches deferred: RPCS3 config dir not seeded yet (no game launched)."
+    fi
+else
+    ssh $RIG_SSH ". '$ETK_ROOT/scripts/env.sh' >/dev/null 2>&1; python3 '$ETK_ROOT/bin/etk_patch_seed.py' --serial BCUS98296 --file /dev/null --remove" >/dev/null 2>&1
+    say "${G}[ETK]${N} GT6 bundled patches removed (kill-switch ETK_GT6_PATCHES=0)."
 fi
 
 # --- STEP 6.56: RPCS3 runtime env flags (profile.d vector) ---

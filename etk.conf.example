@@ -298,6 +298,48 @@ ETK_DP_MIRROR_DAEMON=1
 # · 0 = removed at the next install. Log: /storage/etk_usbnet_heal.log
 ETK_USBNET_HEAL=1
 
+# --- USB + thermal wake off (install.sh STEP 6.77, ships ON) ---
+# Lid-close / power-key sleep used to bounce straight back awake with a USB-C
+# cable in (the USB controller woke the SoC) and on a fan-warm handheld (the
+# temperature sensor's 40 C fan-off edge woke it). A unit runs at boot AND
+# before every sleep (every USB re-bind re-arms the wake) and disarms both.
+# Power key and lid still wake it. 1 = on (default) · 0 = stock wake sources.
+# Log: /storage/etk_usb_nowake.log
+ETK_USB_NOWAKE=1
+
+# --- Network name heal (install.sh STEP 6.78, ships ON) ---
+# After a Wi-Fi reconnect the handheld could rename itself SM8250-2.local (it
+# mistook its own announcement for another device) until the next reboot. A
+# 30 s timer takes the name back -- unless another address really holds it,
+# which is logged once and left alone. 1 = on (default) · 0 = removed.
+# Log: /storage/etk_mdns_heal.log
+ETK_MDNS_HEAL=1
+
+# --- Battery guard (install.sh STEP 6.79, ships ON) ---
+# This SoC only has a light sleep, so a lid shut in a bag drained the cell into
+# the charger chip's recovery mode. At the floor the rig powers itself off:
+# awake = a warning toast, then one more poll (a charger plugged in stands it
+# down); asleep = it wakes every CHECK_MIN minutes to look, then re-sleeps or
+# powers off. The next boot says why. 1 = on (default) · 0 = removed.
+# Log: /storage/etk_battery_guard.log
+ETK_BATTERY_GUARD=1
+ETK_BATTERY_FLOOR=10        # percent; the power-off threshold
+ETK_BATTERY_CHECK_MIN=30    # minutes between RTC checks while asleep
+
+# --- UFS clock pin (install.sh STEP 6.74, ships ON) ---
+# Pins the internal storage controller's clock (clkscale_enable off) -- one of
+# the GT5 hunt's load-stall suspects, kept because it costs nothing at idle.
+# POWER tab exposes the same knob live. 1 = on (default) · 0 = stock scaling.
+ETK_UFS_PIN=1
+
+# --- GT6 bundled patches (install.sh STEP 6.5545, ships ON) ---
+# Gran Turismo 6's "Disable MLAA" and "Disable Motion Blur" (illusion, via
+# ARMSX3): with MLAA on GT6 falls to 1 fps and wedges minutes in; without the
+# blur patch replays render black. Deployed as a per-title patch file and
+# enabled ONCE; a choice you make in TUNING > PATCH afterwards stands.
+# 1 = on (default) · 0 = remove the file and the rows the seed wrote
+ETK_GT6_PATCHES=1
+
 # --- DP capture audio (mirror mode; read live by dpmirror_d) ---
 # EXPERIMENTAL — LEAVE OFF. The direct audio-tap approach breaks game launch
 # on this kernel (the ADSP cannot feed speaker and DP from one stream); a

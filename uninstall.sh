@@ -248,6 +248,11 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
     # dot-tmp is the toggle's atomic-write scratch (never sourced; swept too).
     rm -f /storage/.config/profile.d/095-etk-pitlink /storage/.config/profile.d/.095-etk-pitlink.tmp
     echo "    Removed: 095-etk-pitlink (Pitlink engineer link off)"
+    # GT6 bundled patches (install STEP 6.5545): the kit's per-title patch file and
+    # its one-time seed marker. Enablement rows for a file that no longer exists
+    # are inert to RPCS3; a reinstall re-seeds (marker gone).
+    rm -f /storage/.config/rpcs3/patches/BCUS98296_patch.yml /storage/.config/etk_patch_seed.BCUS98296
+    echo "    Removed: GT6 bundled patch file + seed marker"
 
     # Pitlink USB (install.sh STEP 6.73): disable + remove the unit, never stop it here --
     # stopping rebinds the UDC and would cut this uninstall's own USB-net ssh. Its function

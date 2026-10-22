@@ -119,7 +119,11 @@ CONFIG_CHANGES_HEADER = "epoch\tgame_id\tfield_label\told_value\tnew_value\n"
 # ALIGNED TO THE RELEASE TAG at every cut (load-bearing since 0.8.0: the
 # TOOLS self-update compares this against the latest GitHub release tag).
 # The DRIVER tab names the actually-bound stack builds.
-APP_VERSION = "0.9.0"
+APP_VERSION = "0.10.0"
+# The release's edition name (CHANGELOG heading, boot-identity line). Set at
+# the cut beside APP_VERSION; empty between releases = the boot line drops the
+# clause. Never hand-write it anywhere else (install.sh templates the unit).
+APP_EDITION = "120Hz"
 
 # DRIVER tab (Turnip env-var dials). These are NOT RPCS3 config keys — they
 # inject through the proven profile.d path (same mechanism as 098-etk-stage3),
@@ -1066,12 +1070,18 @@ def load_menu_matrix():
     # to no-section on any parse trouble (logged) — the classic list must
     # never be hostage to a community file.
     if _patchlib is not None:
-        try:
-            found = _patchlib.parse_patch_yml(PATCHES_YML, TARGET_ID)
-        except Exception as e:
-            _log(f"PATCH: parse of {PATCHES_YML} failed: "
-                 f"{e.__class__.__name__}: {e}")
-            found = []
+        found = []
+        # 0.10.0: the core (ARMSX3 base) also loads <TITLE_ID>_patch.yml from
+        # the patches dir — the kit ships GT6's there (etk_patch_seed.py).
+        # Both files feed the same rows; a title file is optional.
+        for _pf in (PATCHES_YML,
+                    os.path.join(os.path.dirname(PATCHES_YML),
+                                 f"{TARGET_ID}_patch.yml")):
+            try:
+                found += _patchlib.parse_patch_yml(_pf, TARGET_ID)
+            except Exception as e:
+                _log(f"PATCH: parse of {_pf} failed: "
+                     f"{e.__class__.__name__}: {e}")
         if found:
             try:
                 tree, dropped = _patchlib.read_patch_config(PATCH_CONFIG_YML)
@@ -1295,7 +1305,7 @@ def _draw_title_bar(stdscr, w):
     # Single visible version: the ETK release. The bound driver/emulator
     # builds live on the DRIVER tab (driver_string()); the stack version
     # was dropped from the header for 0.7.1 (consolidate, simplify).
-    title = f" // ETK PITSTOP v{APP_VERSION} // "
+    title = f" // ETK PITSTOP v{APP_VERSION}{(' ' + APP_EDITION) if APP_EDITION else ''} // "
     stdscr.attron(curses.color_pair(1))
     stdscr.addstr(0, 2, title[:max(0, w - 3)], curses.A_BOLD)
     stdscr.attroff(curses.color_pair(1))

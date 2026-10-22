@@ -4,24 +4,139 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-22 — 120Hz Edition
+
+Certified stack: RPCS3 **GTK Edition 0.10.0** (ARMSX3 1.0.4, `8290349e5`) ·
+Mesa Turnip **26.2.2 gtk_0.7** · kernel **rocknix-gtk-20261001-0.6.4** (7.2.0,
+`boot.img`) · base **ROCKNIX official 20261001**.
+
+The 120Hz Edition is named for the second handheld in the garage: the Retroid
+Pocket Flip 2 **12 GB**, whose Visionox panel runs Gran Turismo at a measured
+120 Hz. Supporting it meant rebuilding the kit's deepest layer on ROCKNIX
+20261001, which replaced the boot menu on this chip with a bootloader that
+loads exactly one kernel file; the kit now owns that file carefully (park the
+stock kernel, prove it, put it back when asked), and the GTK kernel carries
+both Flip 2 device trees with the kit's fixes applied to each. On the new
+chassis: **Pitlink**, the Engineer's eyes and hands inside the emulator (off
+unless you switch it on); **hunt grants**, so an overnight crash hunt can build
+and try a fix without a human at every step (off unless you switch it on, and
+never allowed to publish); the CPU governor finally reaching the game; a rig
+that minds its own sleep, battery and USB-C charging; and the core on ARMSX3
+1.0.4, where Gran Turismo 6 boots to My Home for the first time.
+
+This release is built for **ROCKNIX 20261001**. Read *Known behaviour* before
+you update: the OS update is a one-way move and the order of steps matters.
+
 ### Added
-- **The rig powers itself off before the battery runs flat.** On ROCKNIX
-  the Flip 2 only has a light sleep, so a rig left asleep with the lid shut
-  drained until the battery went into the charger chip's recovery mode, and
-  only a good wall charger could bring it back. Now, at 10 %, the rig shuts
-  down cleanly. If it's awake, you get a warning first and plugging in a
-  charger cancels it. If it's asleep, it wakes briefly every 30 minutes to
-  check the battery, then goes back to sleep. The next boot tells you why it
-  was off. Set `ETK_BATTERY_FLOOR` and `ETK_BATTERY_CHECK_MIN` to change the
-  threshold and the check interval; turn it off with `ETK_BATTERY_GUARD=0`.
+- **Retroid Pocket Flip 2 12 GB (Visionox panel) — the 120 Hz unit.** The
+  kernel carries both Flip 2 device trees, the kit's device-tree fixes (built-in microphone,
+  USB-C power switch) are applied to both at build time, and the 120 Hz panel
+  is measured and verified as such. The garage now runs two handhelds (the
+  founding 8 GB and a 12 GB), and every boot-chain change in this release was
+  cold-booted on both. Pick the right model at the first ABL boot — see *Known
+  behaviour*; the Visionox entry is for the 12 GB unit only.
+- **ROCKNIX 20261001 and the ABL boot chain.** The October ROCKNIX moved SM8250
+  handhelds from the GRUB boot menu to the ROCKNIX ABL bootloader, which loads
+  exactly one file (`/flash/KERNEL`, a `boot.img` with its command line baked
+  in) and offers no menu to fall back to. The kit now owns that file, carefully:
+  the first install parks the OS's own kernel beside it as `KERNEL.etk-stock`
+  and proves it is really stock (against the OS's own checksum, or against the
+  official release's pinned hash when the in-place updater left the checksum
+  stale); a kernel it cannot prove a fallback for is refused; every write is
+  read back and hash-checked; and `uninstall.sh` puts the parked stock kernel
+  back the same way. ETK OS Guard understands the new chain: when a ROCKNIX
+  update silently writes stock over the slot, the guard restores the GTK kernel
+  from its bundle and asks for one reboot — but only when the GTK kernel it has
+  matches the new OS; a mismatch is named and left on stock, because a kernel
+  the bootloader boots into the wrong OS is a dark handheld. Kill-switch
+  `ETK_OSGUARD_ABL_RESTAGE=0` (the guard then only reports). The flashable card
+  image is built on 20261001 with the GTK kernel already in the slot and stock
+  parked beside it.
+- **The boot logo is back.** Kernel 0.6.3 builds the USB-C mux driver into the
+  kernel instead of loading it as a module, so the panel comes up before the
+  splash tries to draw (the fix ROCKNIX queued upstream); stock 20261001 boots
+  to a dark screen until the menu. Cold-boot certified on both garage units.
+- **USB-C charging at full rate.** Tethered to a computer or a USB-C PD
+  charger, the handheld drew 500 mA and lost charge while playing: the charger
+  driver never finished its cable detection against a PD source and ignored
+  its own current limit. Kernel 0.6.4 sets the limit the cable negotiates
+  (3 A on a direct USB-C to USB-C cable), and the battery charges at ~1.9 A
+  with a session running. A USB-A to C cable, or an adapter's USB-A port, still
+  means 500 mA: that is the cable, not the kit.
+- **USB networking repaired at boot on 20261001.** On the new OS the handheld's
+  USB network link to your computer came up half-configured (the OS's gadget
+  start script dies waiting for the device manager, which is stuck behind an
+  HDMI sensing hook with a 30 s timeout). The kit now checks the link a few
+  seconds into boot and re-runs the OS's own start when it finds it half-done;
+  `ssh` and the installer over USB work again. Kill-switch `ETK_USBNET_HEAL=0`.
+- **Pitlink — the Engineer's link into the car.** A new fork feature in the
+  core (`GTK_PITLINK`, off by default) gives an agent on your computer eyes and
+  hands *inside* RPCS3, at the PS3 boundary: a frame tap at every flip, pad
+  input at the point the game reads it (buttons and pressure, merged with your
+  own pad or exclusive), frame-aligned reads of guest memory, and pause / step /
+  exit. It rides a dedicated raw-USB channel ("ETK Pitlink", next to the USB
+  network link) with a sub-millisecond round trip, so a closed loop is
+  possible. Switch it on in Pitstop **TOOLS → Pitlink (Engineer link)**: the
+  USB channel starts at once, the core picks it up at the next game launch.
+  Off, the core behaves exactly like a core without the feature. Install-side
+  kill-switch `ETK_PITLINK_USB=0`; `uninstall.sh` removes all of it. Host
+  tooling in `tools/pitlink/` (macOS/Linux); design and wire protocol in
+  `docs/PITLINK_SPEC.md`.
+- **Hunt grants — bounded autonomy for the Engineer.** Until now every new
+  core build and every deployment to the handheld needed a human at the
+  keyboard. A grant lets the operator sign once, at a terminal with `sudo`,
+  for a bounded envelope — one game, one handheld, so many hours, an optional
+  budget of kernel panics to ride through — and the Engineer may then build
+  trial cores on the build node and try them on that handheld, with every
+  attempt audited. Grants are root-owned files the Engineer cannot create or
+  widen; publishing, OS/kernel/image builds, certified pins, install and
+  uninstall are never grantable; a second handheld must be verified bootable
+  before an unattended grant is issued. At the car, Pitstop **TOOLS →
+  Autonomy (Engineer hunts)** is the kill switch (default off; nothing is
+  accepted while it is off). Operator front door: `./hunt start GAME [HOURS]`,
+  `./hunt status`, `./hunt stop` (revoking needs no password). Spec:
+  `docs/AUTONOMY_SPEC.md`.
+- **The boot console names the whole stack.** The GTK line under the ROCKNIX
+  version now reads `ROCKNIX-GTK 0.10.0-20261001 -- 120Hz Edition -- kernel
+  0.6.4`: kit version, kernel date, edition and kernel generation, templated
+  at install from the one version source (a hand-written edition name had
+  announced the wrong release for three cuts).
+- **POWER: three new knobs, and the governor finally reaches the game.** See
+  *Fixed* for the governor. **GPU clock ceiling** — ROCKNIX 20261001's device
+  tree overclocks the Adreno 650 to 925 MHz (Qualcomm's spec is 587) and the
+  RACE profile rode to the top; every GT5 freeze the flight recorder has caught
+  ran at 925. The ceiling (925 = no cap, the default / 800 / 670 / 587) rides the
+  ledger's `pwr=` tag so sessions attribute. **UFS clock scaling** — the storage
+  controller's clocks stepped between 37.5 and 300 MHz during track loads; the
+  kit now pins them at full speed from boot (`ETK_UFS_PIN=0` to undo), and the
+  POWER knob's first option matches, so applying a profile never undoes the
+  boot setting. With the pin, GT5 got through the track load that had killed
+  every run before it; it is a mitigation of that trigger, not the whole fix.
+  **CPU deep idle** — off = the CPUs stay in a light idle instead of a
+  firmware power collapse; stock by default. Presets omit all three, so no
+  saved profile changes.
+- **HUD LEAN mode.** `ETK_HUD_MODE=LEAN` shows temperature, anti-lock and vault
+  only (BASIC without load and RAM) at the same one-second tick.
+- **The installer checks it is talking to the right handheld.** With two units
+  in a garage, one came up at the other's USB address and accepted its key.
+  Set `CAR=car8` or `CAR=car12` in `etk.conf` and `install.sh` refuses a unit
+  whose RAM and recorded name don't match; with no `CAR` set it only reports.
+- **The rig powers itself off before the battery runs flat.** On ROCKNIX the
+  Flip 2 only has a light sleep, so a rig left asleep with the lid shut drained
+  until the battery went into the charger chip's recovery mode, and only a
+  good wall charger could bring it back. Now, at 10 %, the rig shuts down
+  cleanly. If it's awake, you get a warning first and plugging in a charger
+  cancels it. If it's asleep, it wakes briefly every 30 minutes to check the
+  battery, then goes back to sleep. The next boot tells you why it was off.
+  `ETK_BATTERY_FLOOR` and `ETK_BATTERY_CHECK_MIN` change the threshold and the
+  interval; turn it off with `ETK_BATTERY_GUARD=0`.
 - **The Retroid Pocket Flip 2's built-in microphone works.** It worked on
-  Android but was dead on ROCKNIX: the device tree never powered it. With a
-  custom kernel installed, the kit now builds a corrected device tree from
-  the one your OS ships (two added audio routes, checked byte for byte) and
-  adds an "Internal Microphone" input; a plugged-in headset still takes
-  priority. If anything doesn't match what the fix expects (a different
-  device, an OS update that changed the audio files), it quietly falls back
-  to stock. Turn it off with `ETK_INTERNAL_MIC=0`.
+  Android but was dead on ROCKNIX: the device tree never powered it. The kit's
+  corrected device tree (two added audio routes, checked byte for byte, now
+  baked into the GTK kernel at build time) adds an "Internal Microphone" input;
+  a plugged-in headset still takes priority. If anything doesn't match what
+  the fix expects, it quietly falls back to stock. Turn it off with
+  `ETK_INTERNAL_MIC=0`.
 - **Treadwear** (`tools/card_doctor.py`) — SD cards are the tyres of a racing
   emulation rig: the one consumable. This is the objective wear check, run from
   your computer with the card in a USB reader. Tiers: a quick identity/history
@@ -30,66 +145,264 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
   and re-reads the suspects to catch silent corruption; a three-minute
   random-read + filesystem check; and a free-space write sample that measures
   write speed and small-write behaviour (uses `f3` and `fio` when installed).
-  Every run ends in a plain HEALTHY / DEGRADED / FAIL verdict with the
-  evidence behind it and a report you can keep; `treadwear` prints one row per
-  run per card so wear reads as a trend, and `--baseline` / `--vs` set a
-  known-good card in the same reader beside it so a flaky reader is never
-  blamed on the card. It never writes to the raw device; the write tier only
-  touches free space and cleans up after itself, and a stopped run still
-  leaves its report.
+  Every run ends in a plain HEALTHY / DEGRADED / FAIL verdict with the evidence
+  behind it and a report you can keep; `treadwear` prints one row per run per
+  card so wear reads as a trend, and `--baseline` / `--vs` set a known-good
+  card in the same reader beside it so a flaky reader is never blamed on the
+  card. It never writes to the raw device; the write tier only touches free
+  space and cleans up after itself; a stopped run still leaves its report; and
+  statistics below a fair sample size say so instead of convicting.
+
+### Changed
+- **The core moves to ARMSX3 1.0.4 (`8290349e5`).** GTK Edition 0.10.0 carries
+  the whole 0.9.0.3 feature set on the new base, plus: Pitlink (above, off by
+  default); an audio drop counter (`drop=` on the audio line — whole blocks the
+  game fell behind on, the click GT5P recorded with nothing in the log; the
+  dyno reports DROP/min, and old sessions read "unknown", never zero); a fix
+  for the base's hang at exit (a 32-bit texture pass torn down after the
+  device); the two Gran Turismo 6 boot fixes (*Fixed*); and a fix for RPCS3's
+  own IPC socket disappearing at a headless boot. Self-identifies as
+  `GTK Edition v0.10.0 (armsx3-8290349e5)`.
+- **DP-mirror knobs are what the example config always said.** `ETK_DP_MIRROR`
+  is the live mode again (1 = mirror the game to the TV, 0 = record-only, game
+  native on the external output) and `ETK_DP_MIRROR_DAEMON=0` is the
+  kill-switch. Since 0.8.x, choosing record-only removed the daemon itself at
+  the next install (and its pad self-heal with it). No garage config moves.
+- **Trigger Calibration refuses to save a dragging trigger.** The screen now
+  seeds its model from where the trigger really rests (read from the kernel at
+  open, not from the first movement), folds a creeping rest into the floor,
+  shows the rest value and tags DRAG in red, and SAVE refuses any threshold at
+  or below its floor. Three saves on the 12 GB unit had written a threshold of
+  0 while L2 rested at 13–20, so every launch braked. Calibration is per
+  stick: never copy one handheld's numbers to another.
+- **Pairing routes the USB link too.** A handheld paired over Wi-Fi used to ask
+  for a password forever on the USB address; `etk_pair` now writes both routes.
+- **The Windows installer carries this release's rig steps** — the UFS clock
+  pin, USB and thermal wake off, the mDNS name heal, the battery guard
+  (`EtkBatteryGuard` / `EtkBatteryFloor` / `EtkBatteryCheckMin` in
+  `etk-env.ps1`), the USB-net heal, the crash-card preflight and the boot-menu
+  restore — each run from `install.sh`'s own body by marker, so both installers
+  do the same thing on the same rig. It still has no kernel step and no Pitlink
+  USB step (see *Known behaviour*).
+- **The black box records the reset reason at every boot** (a read-only look
+  at the power-management chip's reset register), so a silent death can be
+  told from a power cut, an overheat cutoff or a plain reboot in the ledger.
+- **Release checks no longer download the core to prove it exists** — every
+  build had bumped the public download counter, the release's one usage
+  signal.
 
 ### Fixed
-- **The handheld answers to its network name again.** After a Wi-Fi
-  reconnect, the handheld sometimes renamed itself on the network (from
-  `SM8250.local` to `SM8250-2.local`) and kept the new name until the next
-  reboot, so connecting by name (`ssh` to `SM8250.local`, and the installer
-  itself) stopped working. It had mistaken its own announcement for a
-  second device. The kit now checks every 30 seconds and takes the name
-  back, unless another device on the network really does hold it, in which
-  case it leaves the new name alone and logs which address has the name.
-  Turn it off with `ETK_MDNS_HEAL=0`.
-- **Sleep holds with a USB-C cable plugged in.** Closing the lid or tapping
-  the power key with a cable in (charging, or connected to a computer) put
-  the handheld to sleep for a second or two, then woke it right back up, over
-  and over. Nothing running on the handheld was keeping it awake: the USB
-  port itself was waking it the moment it went to sleep. The kit now stops
-  the USB port from waking the handheld, at boot and again just before every
-  sleep, because reconnecting the USB link turns that wake back on. The power
-  key and the lid still wake it as before. Turn it off with
-  `ETK_USB_NOWAKE=0`.
-- **Sleep holds on a warm handheld, and closing the lid sleeps again.**
-  Right after playing, with the fan still on, the power key or the lid put
-  the handheld to sleep for a second, then woke it straight back up, and the
-  lid seemed to do nothing at all (the system ignores the lid for 30 seconds
-  after every wake, so each bounce swallowed the next close). The chip's
-  temperature sensor was waking it: the fan's off-switch sits at 40 C, right
-  at the idle temperature, so a handheld cooling down in its sleep crossed it
-  within seconds. The kit now stops the temperature sensors from waking the
-  handheld, in the same place it stops the USB port. A sleeping handheld only
-  cools, and the chip's own overheat cutoff does not depend on that wake.
-- **USB-C video out works again on the custom kernel.** Since the 20260901
-  OS, plugging in a USB-C to HDMI/DisplayPort adapter gave no picture: the
-  newer kernel looks for the port's 5 V power switch in a different place in
-  the device tree, the OS's device tree didn't have it there, so the handheld
-  never powered the adapter (the same went for any USB device that draws power
-  from the port, like a flash drive or a wired pad). The kit's corrected device
-  tree now carries that one missing line, matching the fix ROCKNIX has queued
-  upstream, and stands aside once the OS ships it. Charging was never affected.
+- **`uninstall.sh` restores the boot menu for real.** On 0.9.0 the GRUB
+  restore ran with its variables expanded on your computer instead of the
+  handheld, edited nothing, left the menu's default pointing at the GTK kernel
+  — and then deleted that kernel. Every macOS/Linux uninstall before 2026-10-09
+  left a handheld that would not boot unattended. The restore now rebuilds the
+  menu from the OS's own template, never deletes a kernel the menu still
+  boots, and the Windows uninstaller runs the same block. If you ran the old
+  one: pick **Retroid Pocket Flip2** in the boot menu (it shows for two
+  seconds, or after the error), then run the fixed `uninstall.sh` once more.
+- **The CPU governor reaches the game.** The POWER tab wrote `performance` to
+  every CPU at boot and on APPLY, but ROCKNIX re-applies its own per-platform
+  governor at every launch — after the kit, and defaulting to `ondemand`. Every
+  RACE session on every release so far ran `ondemand`. On this chip the small
+  cluster, which carries every device interrupt, then changed speed with a
+  bus-bandwidth vote at each step; GT5's mid-race freeze died on exactly that
+  path and vanished once the governor really pinned. Pitstop POWER APPLY now
+  hands the profile's governor to ROCKNIX's own setting (the footer shows
+  "+ games: <gov>"), the boot applier does the same from the saved profile so
+  existing RACE profiles are fixed at the next boot, and `uninstall.sh` puts
+  ROCKNIX's default back.
+- **Gran Turismo 6 boots.** GT6 never booted on the new base: two upstream
+  changes, each made for another game, broke it. ARMSX3 reverted an RPCS3
+  change wholesale (for Mortal Kombat Komplete Edition's logo hang), which also
+  moved a startup memory mapping and deadlocked GT6 at boot; the core restores
+  only that mapping and keeps the audio half reverted. Then a guard added for
+  Killzone 3 dropped a write to a page GT6 maps on demand, and GT6 read a null
+  pointer three seconds later; pages the game has asked to be told about now
+  take the proper fault path. Both were found by bisecting with the new hunt
+  tooling, and GT6 reaches My Home. The kit also ships the two GT6 patches
+  ARMSX3 bundles for every v01.22 executable, **Disable MLAA** and **Disable
+  Motion Blur** (by illusion): with MLAA on, GT6 fell to 1 fps a few minutes
+  in and wedged the RSX; without the blur patch replays and track intros
+  render black. They are enabled once at install and listed in TUNING >
+  PATCH, where a choice you make stands; `ETK_GT6_PATCHES=0` removes them.
+  **The garage owns neither Killzone 3 nor Mortal Kombat KE** — if you do,
+  please tell us whether they still boot on 0.10.0.
+- **A reinstall on a crash-card rig no longer hides the kit.** After the OS
+  update ran without the kit's SD rebind, `install.sh` pushed everything into
+  internal storage and the next boot stacked the card's game tree over it: no
+  HUD, no L1+R3, no ledger, no black box. The installer now binds the card's
+  tree before its first write and refuses (with a verdict on the handheld's
+  screen) if it cannot.
+- **Updating from the couch stages the new kernel.** A 0.9.0 Pitstop updating
+  to this release downloads the new kernel but calls the staging script the
+  old way, without the field the new kernel format needs; the script now reads
+  it from the manifest that came with the update, so the OS Guard can put the
+  GTK kernel in the slot after one reboot instead of asking you for a computer.
+- **The installer refuses a boot chain it could not read.** When the probe of
+  the handheld's boot chain failed, the GRUB-era deploy ran anyway and reported
+  a kernel "deployed" that nothing would boot; it now stops and says why.
+- **The shader vault no longer nests itself.** `shaders/shaders → itself` came
+  back twice under the 0.4-era fix and once wrote the vault out 40 levels deep
+  on a host pull (22 GB). The real cause: the driver creates a real cache
+  folder in the moment the link is missing, and the link was then written
+  inside it. The link is now swapped in atomically, squatters are set aside
+  and folded, and `install.sh` heals any loop before it pulls. Installs are
+  faster for it.
+- **The handheld answers to its network name again.** After a Wi-Fi reconnect
+  the handheld sometimes renamed itself (`SM8250.local` → `SM8250-2.local`)
+  until the next reboot, so connecting by name — and the installer itself —
+  stopped working. It had mistaken its own announcement for a second device.
+  The kit now checks every 30 seconds and takes the name back, unless another
+  device really holds it, in which case it leaves the new name alone and logs
+  which address has it. Turn it off with `ETK_MDNS_HEAL=0`.
+- **Sleep holds with a USB-C cable plugged in.** Closing the lid or tapping the
+  power key with a cable in put the handheld to sleep for a second or two,
+  then woke it right back up, over and over. Nothing running on the handheld
+  was keeping it awake: the USB port itself was. The kit now stops the USB port
+  from waking the handheld, at boot and again just before every sleep (because
+  reconnecting the USB link turns that wake back on). The power key and the
+  lid still wake it. Turn it off with `ETK_USB_NOWAKE=0`.
+- **Sleep holds on a warm handheld, and closing the lid sleeps again.** Right
+  after playing, with the fan still on, sleep bounced within a second and the
+  lid seemed to do nothing (the system ignores the lid for 30 seconds after
+  every wake, so each bounce swallowed the next close). The chip's temperature
+  sensor was the waker: the fan's off-switch sits at 40 C, right at the idle
+  temperature, and a handheld cooling in its sleep crossed it within seconds.
+  The kit now stops the temperature sensors from waking the handheld, in the
+  same place it stops the USB port; the chip's own overheat cutoff does not
+  depend on that wake.
+- **USB-C video out works again on the custom kernel.** Since the 20260901 OS,
+  a USB-C to HDMI/DisplayPort adapter gave no picture: the newer kernel looks
+  for the port's 5 V power switch in a different place in the device tree, so
+  the handheld never powered the adapter (the same went for any bus-powered
+  USB device). The kit's corrected device tree carries that one missing line,
+  matching the fix ROCKNIX has queued upstream, and stands aside once the OS
+  ships it. Charging was never affected.
 - **The controller no longer goes dead on the TV after plugging in the
-  adapter.** When the menu restarted with the adapter connected (the kit's
-  gamepad self-heal does this, and so does booting with the adapter attached),
-  it could come up on the TV without input focus and ignore every button. The
-  kit now gives it focus back, only when nothing else is on screen and never
-  during a game. `ETK_DP_ESFOCUS=0` turns this off.
-- **The 3.5 mm headset mic records speech instead of white noise.** The
-  hardware was fine: this sound card only records correctly at 16-bit, and
-  the audio server was opening it at 24-bit. The kit now pins every
-  microphone input to 16-bit (`ETK_CAPTURE_S16=0` to undo). USB-C and
-  Bluetooth headsets were never affected.
-- **A game installed from the TOOLS tab now records its config seed in the
+  adapter.** When the menu restarted with the adapter connected it could come
+  up on the TV without input focus and ignore every button. The kit gives it
+  focus back, only when nothing else is on screen and never during a game.
+  `ETK_DP_ESFOCUS=0` turns this off.
+- **The 3.5 mm headset mic records speech instead of white noise.** This sound
+  card only records correctly at 16-bit and the audio server was opening it at
+  24-bit. The kit now pins every microphone input to 16-bit
+  (`ETK_CAPTURE_S16=0` to undo). USB-C and Bluetooth headsets were never
+  affected.
+- **Reinstalls no longer warn that the built-in mic is "STALE".** The check
+  hashed the file the kit had already bound its overlay over, so every
+  reinstall after the first warned while the mic worked.
+- **`uninstall.sh` removes the DP-mirror service** it had been leaving enabled
+  since 0.8.x, and a leftover USB diagnostic unit.
+- **A game installed from the TOOLS tab records its config seed in the
   ledger** like the startup sweep always did, so the first title on a fresh
-  card shows where its starting config came from (shipped tune or generic
-  starter).
+  card shows where its starting config came from.
+
+### Known behaviour
+- **Who should update, and in what order.** This release needs ROCKNIX
+  **20261001**. A 0.9.0 handheld on 20260901 (macOS/Linux host): first fetch
+  the **fixed** `uninstall.sh` (`curl -fsSL
+  https://raw.githubusercontent.com/mercurious/etk/main/uninstall.sh -o
+  ~/etk/uninstall.sh`) and run it — it puts the stock kernel and boot menu
+  back; then take the ROCKNIX in-place update from the menu (the updater needs
+  2 GB free on `/storage` and a battery above 50 % on the charger, and flashes
+  the new bootloader — do not interrupt it); then install 0.10.0. A fresh
+  start is the card image, built on 20261001 (boot 1 resizes and reboots,
+  boot 2 is live). The OS update is one-way: there is no path back to the GRUB
+  menu short of a reflash. **Do not take the OS update with the kit still
+  installed**: the updater writes its kernel into the file the old boot menu
+  points at and the handheld goes dark (card users: put the card in a
+  computer, delete `KERNEL`, rename `KERNEL.gtktest` to `KERNEL`;
+  internal-storage users: open an issue). And always fetch the **current**
+  `uninstall.sh` first — one older than 2026-10-09 run on the new bootloader
+  leaves the GTK kernel in the slot and can delete the parked stock kernel.
+- **The first boot on the new bootloader stops at `DEVICE MODEL NOT SET`.**
+  Hold **Vol−** at boot → *Set device model* → **Retroid Pocket Flip2**; pick
+  the **Visionox** entry only on a 12 GB unit (the wrong pick is a black
+  panel until you pick again).
+- **Windows hosts get the GTK kernel only from the card image.** The
+  PowerShell installer carries every rig step of this release except the
+  kernel deploy and the Pitlink USB channel; on a handheld that already runs
+  20261001 it installs the core, the driver catalog and the kit on the stock
+  kernel. Flash the card image for the full stack.
+- **ROCKNIX updates on the new chain.** The updater writes its own kernel over
+  the slot every time. ETK OS Guard puts the GTK kernel back and asks for one
+  reboot when the two match; when they don't (a new OS before a new GTK
+  kernel) it says so and leaves stock in place, which still boots. The
+  updater also leaves its own checksum files stale, so the guard's and the
+  uninstaller's "pristine stock" labels can read UNPROVEN on an updated
+  handheld — labels only; the slot is judged by the official release's pinned
+  hash and the behaviour is correct.
+- **Pitlink and Autonomy ship off.** Nothing listens on the USB channel and no
+  grant is honoured until you turn the switch on in TOOLS; a handheld that
+  never touches them runs as before.
+- **Gran Turismo 6** reaches My Home and races; a rare interrupt-handler race
+  (a null read in the game's own handler) is still open. **Killzone 3 and
+  Mortal Kombat KE** are untested on this core (not owned) — reports welcome.
+- **Gran Turismo 5** (the full game) still freezes the whole chip mid-race with
+  nothing in the log: a firmware reset, not an emulator crash. The governor fix
+  and the UFS pin made the hunt's runs noticeably longer; it stays *pending*.
+- **Ridge Racer 7** still dies within minutes on this base (an upstream RSX
+  command-stream race the fork's semaphore park makes more frequent;
+  `GTK_SEMA_PARK=0` lengthens runs but does not cure it). Upstream RPCS3
+  #19820 (merged 2026-10-17: stop the command fetch at a jump) matches its
+  signature and is the first thing 0.11.0 tries.
+- **Sleep is still a light sleep.** The chip never reaches its deep-sleep
+  states on this OS, which is why the battery guard exists; lid sleep now
+  holds, but a sleeping handheld still drains over a day or two.
+- **Wi-Fi can take 25–70 s to join after boot on 20261001** on some access
+  points (an OS-side handshake setting); the menu reads "Not Connected" until
+  it does. Not fixed in this cut.
+- **A stray third-party `GPcal.sh` in `/storage/.config/autostart/`** (an RP5
+  calibration script) freezes the pad at the menu for a few seconds on a
+  Flip 2; move it aside. The kit will park it for you in a later cut.
+- A handheld that already has a tune, a dial or a profile keeps it; nothing
+  in this release overwrites a setting you made.
+
+### For the garage
+Developer tooling that rode in with the release, one line each; none of it
+changes a handheld unless you run it.
+- `tools/sleep_probe.py` — names each suspend's waker; `isolate`/`restore`
+  take a suspect out of a sleep and put it back; records drain and sleep
+  states.
+- `tools/autopilot/gt5_trial.py`, `gt6_trial.py`, `rr7_trial.py` — unattended
+  launch-to-verdict trials over Pitlink (PASS / DEADLOCK / CRASH / STARVE /
+  STALL / PANIC / GUEST_OOM / INCONCLUSIVE …), with evidence banked per run.
+- `tools/autopilot/gtdrive.py` — a closed-loop driver (driving line, brake
+  zones, stuck detection, timed restarts) that keeps a hunt on the live race.
+- `tools/autopilot/park_ab.py` — measures what the semaphore park actually
+  does, per title and arm, on the current core.
+- `tools/crashdump/` — the host end of a firmware crash dump (Sahara via
+  `qdl ramdump`) for deaths Linux never sees; `tools/netcon_listen.py` — the
+  host end for a future netconsole kernel.
+- `tools/abl_slot.sh` — `status` / `verify` (read-only, judges the slot, the
+  boot logo and an etched card) and `restore --card` for a unit that did not
+  boot; `os-install/build/relabel_bootimg.py` — the card's boot.img labels.
+- `tools/usbnet_heal.sh status` — names what holds the device-manager queue at
+  boot; `tools/refresh_probe.sh` — a panel's real refresh rate, read-only.
+- `scripts/etk_car.sh` — names a unit (`car8` / `car12`) and verifies it.
+- `tools/forge/provision_node.sh` — rebuilds a destroyed build node from the
+  repos alone; forge gains `FORGE_KERNEL_BASEDATE` (20261001+ mints a
+  `boot.img`), `ETK_GPIO_SBU_BUILTIN`, `ETK_KIT_DTB` / `ETK_INTERNAL_MIC` at
+  mint, `ETK_FORENSICS`, and `--hunt` (grant-gated trial builds in their own
+  tree).
+- `tools/hunt/` — `grant.sh`, `hunt.py`, the guard hook, and `./hunt` at the
+  repo root.
+- `tools/pitlink/` — client, CLI, MCP server, fake car, raw-USB broker; the
+  car daemon's `log` read streams instead of slurping (a flooded log had grown
+  it past 4 GB).
+- Spotter: EXIT-HANG / EXIT-CRASH verdicts (a process that outlives its own
+  shutdown log is not a freeze); drift compares the driver version, not the
+  raw log line.
+- `tools/kexec_spike.sh` — the kexec boot path, proven and parked (not a boot
+  path; the ABL slot is).
+- `install.sh` stamps the kit's commit on the rig (`.kit_commit`);
+  `tools/release_sanity.sh` refuses a cut whose `APP_VERSION`, manifest and
+  CHANGELOG disagree, a four-component (hunt) kernel pin, or a Windows driver
+  catalog whose shas drifted; `tools/test_boot_identity.sh`,
+  `tools/test_patch_seed.py` join the harness set.
+- Every new rig step ships with a harness that runs the shipped body under the
+  handheld's own BusyBox and fails against the previous commit.
 
 ## [0.9.0] - 2026-09-03 — Official Chassis Edition
 

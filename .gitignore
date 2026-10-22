@@ -120,3 +120,4 @@ drivers/*.prev
 # kept out of the public tree. Without this line it shows as untracked and a
 # stray `git add -A` would pull it in as a gitlink.
 etk-dossiers/
+armsx3-upstream/

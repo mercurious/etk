@@ -565,4 +565,61 @@ if [ "$FAIL" = 0 ]; then
 else
     printf "${c_bad}== release sanity: FAIL — fix artifact names before cutting ==${c_off}\n"
 fi
+# --------------------------------------------------------------------------
+# VERSION COHERENCE (added 2026-10-22, the 0.10.0 RC audit)
+# --------------------------------------------------------------------------
+# Every pin read 0.9.0 in 20 places while a 0.10.0 core sat in emulators/, and
+# nothing here said so: this gate compared assets to assets, never the kit's
+# own version to itself. APP_VERSION (what self-update compares to the tag and
+# what the card bakes), gtk_stack (the manifest's edition) and the newest
+# CHANGELOG heading (what the release body embeds) must be ONE string; the
+# edition name must be set beside APP_VERSION at a cut (the boot line prints
+# it). A kernel pin with four components is a hunt/forensics mint, never a
+# release (0.6.4.4 passed the law-#8 regex on 2026-10-22). The PS port's
+# driver catalog is compared by sha PAIR, not by name: a hand-edited name with
+# a stale sha fails every Windows fetch.
+echo
+echo "-- version coherence --"
+_AV=$(sed -n 's/^APP_VERSION = "\([^"]*\)".*/\1/p' "$REPO_ROOT/bin/etk_pitstop.py" | head -1)
+_AE=$(sed -n 's/^APP_EDITION = "\([^"]*\)".*/\1/p' "$REPO_ROOT/bin/etk_pitstop.py" | head -1)
+_GS=$(sed -n 's/.*"gtk_stack": *"\([^"]*\)".*/\1/p' "$REPO_ROOT/config/gtk_stack.json" | head -1)
+_CL=$(grep -m1 -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?\]' "$REPO_ROOT/CHANGELOG.md" | tr -d '#[] ')
+if [ -n "$_AV" ] && [ "$_AV" = "$_GS" ] && [ "$_AV" = "$_CL" ]; then
+    ok "APP_VERSION == gtk_stack == newest CHANGELOG section ($_AV)"
+else
+    bad "version pins DISAGREE: APP_VERSION=${_AV:-none} gtk_stack=${_GS:-none} CHANGELOG=${_CL:-none} — bump all three in the cut commit"
+fi
+if [ -n "$_AE" ]; then ok "APP_EDITION set ($_AE Edition — the boot line and the CHANGELOG heading)"
+else bad "APP_EDITION is empty — set the edition name beside APP_VERSION at the cut"; fi
+if [ -n "$_AE" ] && [ -n "$_CL" ] && ! grep -m1 -E "^## \[$_CL\]" "$REPO_ROOT/CHANGELOG.md" | grep -q -- "$_AE Edition"; then
+    bad "CHANGELOG [$_CL] heading does not name the '$_AE Edition'"
+fi
+_TAG=$(git -C "$REPO_ROOT" describe --tags --exact-match 2>/dev/null | sed 's/^v//')
+if [ -n "$_TAG" ]; then
+    [ "$_TAG" = "$_AV" ] && ok "HEAD tag v$_TAG == APP_VERSION" || bad "HEAD is tagged v$_TAG but APP_VERSION is $_AV (self-update compares them)"
+else
+    skip "HEAD carries no release tag (fine before the cut)"
+fi
+_KA=$(sed -n 's/.*"asset": "\(KERNEL\.[^"]*\)".*/\1/p' "$REPO_ROOT/config/gtk_stack.json" | head -1)
+_KV=$(printf '%s' "$_KA" | sed -E 's/^KERNEL\.rocknix-gtk-[0-9]{8}-//')
+_KN=$(printf '%s' "$_KV" | awk -F. '{print NF}')
+if [ -n "$_KV" ] && [ "$_KN" -le 3 ]; then ok "manifest kernel generation has $_KN components ($_KV)"
+else bad "manifest kernel '$_KA' has $_KN version components — four-component names are hunt/forensics mints, never a certified pin"; fi
+if [ -f "$PS1_FILE" ]; then
+    _PS_PAIRS=$(awk '/^\$certified = @\(/ {inb=1; next} inb && /^\)/ {inb=0} inb && /Name[[:space:]]*=[[:space:]]*"etk_turnip/ {n=$0; gsub(/.*Name[[:space:]]*=[[:space:]]*"/,"",n); gsub(/".*/,"",n)} inb && n != "" && /Sha[[:space:]]*=[[:space:]]*"/ {s=$0; gsub(/.*Sha[[:space:]]*=[[:space:]]*"/,"",s); gsub(/".*/,"",s); print n, s; n=""}' "$PS1_FILE" | sort)
+    _I_PAIRS=""
+    for _n in $(sed -n 's/^CERTIFIED_BUILDS="\(.*\)"$/\1/p' "$REPO_ROOT/install.sh" | head -1); do
+        _sha=$(sed -n "s/^    $_n) echo \"\([0-9a-f]*\)\" ;;.*/\1/p" "$REPO_ROOT/install.sh" | head -1)
+        _I_PAIRS="$_I_PAIRS$_n $_sha
+"
+    done
+    _I_PAIRS=$(printf '%s' "$_I_PAIRS" | sort)
+    if [ -n "$_PS_PAIRS" ] && [ "$_PS_PAIRS" = "$_I_PAIRS" ]; then
+        ok "PS port driver catalog matches install.sh by name AND sha"
+    else
+        bad "PS port driver catalog sha pairs DRIFTED from install.sh driver_sha() — regenerate the \$certified block"
+        diff <(printf '%s\n' "$_I_PAIRS") <(printf '%s\n' "$_PS_PAIRS") | sed 's/^/      /' | head -6
+    fi
+fi
+
 exit "$FAIL"
