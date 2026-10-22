@@ -18,12 +18,26 @@ Verdict discipline baked in (feedback_* memories):
     never zero (see aud_drop_per_min) — its own N is printed beside it
 
 Usage:
-  tools/etk_dyno.py [--game NPEA00050] [--ledger PATH] [--res 100] [--all]
+  tools/etk_dyno.py [--game NPEA00050[,BCUS98158]] [--ledger PATH] [--res 100] [--by stack|core]
   tools/etk_dyno.py --audio            # rank titles by audio skip-per-second
 Default ledger: dossiers/etk_telemetry/sessions.tsv (host mirror; pass the
 rig-synced path for freshest data). --res filters to one resolution (KPI is
 only honest at 100). --all includes crash rows in scoring (default: they count
 toward N and duration but their fps/lock stats are still real — kept).
+
+2026-10-22 (0.10.0 RC validation, release plan §3.2):
+  --game A,B     a comma list: NPEA00050 + BCUS98158 are the same engine (GT5P Spec III
+                 PSN / ISO) and one RC arm.
+  --by core      group arms on the ledger's core= token ONLY (the RC core vs the 0.9.0.3
+                 control), with kernel build / Turnip / pwr / titles as CONTEXT columns and a
+                 `stack differs` flag on an arm whose rows straddle more than one
+                 (build, stack, pwr) — instead of the default's refusal to compare. The
+                 default (--by stack: tune_tag in full x res x clk x pwr) is unchanged.
+  PERFECT% caveat printed whenever an arm's fps_med < 45: PERFECT% is a 60 fps KPI (5 s
+  windows locked at 16.7 ms) and reads 0-4 % on a 30 fps title on BOTH arms — it cannot
+  discriminate there. Judge DUR p50/max, CRASH n/N, fps_med / fps_1low (printed beside
+  it), JIT ms, RESC/h. (A real 30 fps lock KPI is deferred to 0.11.0; lock_pct is the
+  better of the two today.)
 """
 import argparse
 import statistics
@@ -36,7 +50,7 @@ MIN_DUR = 60
 AUD_SLACK_S = 30      # mirrors session_postmortem.sh's up_s cross-check slack
 
 COLS = {"epoch": 0, "dur": 1, "game": 3, "status": 4, "sig": 9, "shd": 11,
-        "tune": 14, "fps_med": 16, "ft_jit": 22, "res": 19, "clk": 20,
+        "tune": 14, "fps_med": 16, "fps_1low": 17, "ft_jit": 22, "res": 19, "clk": 20,
         "pwr": 21, "aud": 25, "lock": 27, "perfect": 28, "rescues": 29,
         "perf": 30}
 
@@ -105,13 +119,39 @@ def aud_drop_per_min(aud):
     return aud["drop"] / up * 60 if up > 0 else None
 
 
+LOW_FPS_KPI = 45.0    # below this fps_med the 60 fps PERFECT% KPI cannot discriminate (30 fps titles)
+
+
+def games_of(arg):
+    """--game value -> set of serials ('' / None -> empty = every title); a comma list is one arm."""
+    return {g.strip().upper() for g in (arg or "").split(",") if g.strip()}
+
+
+def core_of(tune):
+    """The ledger's core= token from a tune_tag, or 'unattributed' (pre-core-tag rows)."""
+    for part in tune.split(";"):
+        if part.startswith("core="):
+            return part[5:]
+    return "unattributed"
+
+
+def kernel_of(tune):
+    """`k7.2.0#9` from stack=rk…/k…/r…, or '?'."""
+    for part in tune.split(";"):
+        if part.startswith("stack="):
+            segs = part[6:].split("/")
+            return segs[1] if len(segs) > 1 else "?"
+    return "?"
+
+
 def eligible(path, args):
     """Warm, non-ABORTED, long-enough rows — the shared intake discipline."""
+    games = games_of(getattr(args, "game", None))
     for line in path.read_text().splitlines()[1:]:
         row = line.split("\t")
         if len(row) < 15:
             continue
-        if args.game and s(row, "game") != args.game:
+        if games and s(row, "game") not in games:
             continue
         if s(row, "status") == "ABORTED" or f(row, "dur") < MIN_DUR:
             continue
@@ -173,7 +213,9 @@ def audio_report(path, args):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--game")
+    ap.add_argument("--game", help="serial, or a comma list (NPEA00050,BCUS98158 = one GT5P arm)")
+    ap.add_argument("--by", choices=("stack", "core"), default="stack",
+                    help="arm key: stack (default: full tune_tag x res x clk x pwr) or core (the core= token only)")
     ap.add_argument("--ledger", default="dossiers/etk_telemetry/sessions.tsv")
     ap.add_argument("--res", type=int, help="filter to one Resolution Scale (KPI res=100)")
     ap.add_argument("--min-n", type=int, default=1, help="hide arms below this N")
@@ -193,8 +235,11 @@ def main():
         res = int(f(row, "res"))
         if args.res and res != args.res:
             continue
-        arm = (s(row, "tune", "default"), res or "?",
-               int(f(row, "clk")) or "?", s(row, "pwr", "none"))
+        if args.by == "core":
+            arm = (core_of(s(row, "tune", "default")),)
+        else:
+            arm = (s(row, "tune", "default"), res or "?",
+                   int(f(row, "clk")) or "?", s(row, "pwr", "none"))
         arms[arm].append(row)
 
     if not arms:
@@ -218,20 +263,24 @@ def main():
         return ";".join(attr), (";".join(dials) or "default")
 
     stacks, order = {}, []
-    for arm in arms:
-        attr, _ = split_attr(arm[0])
-        if attr not in stacks:
-            stacks[attr] = f"S{len(order) + 1}"
-            order.append(attr)
-    if len(order) > 1 or (order and order[0]):
-        print("STACKS")
-        for attr in order:
-            print(f"  {stacks[attr]:<3} {attr or '(unattributed — pre-stack-tag rows)'}")
-        if len(order) > 1:
-            print("  !! more than one stack present — arms below are NOT comparable across S-ids")
-        print()
+    if args.by == "stack":
+        for arm in arms:
+            attr, _ = split_attr(arm[0])
+            if attr not in stacks:
+                stacks[attr] = f"S{len(order) + 1}"
+                order.append(attr)
+        if len(order) > 1 or (order and order[0]):
+            print("STACKS")
+            for attr in order:
+                print(f"  {stacks[attr]:<3} {attr or '(unattributed — pre-stack-tag rows)'}")
+            if len(order) > 1:
+                print("  !! more than one stack present — arms below are NOT comparable across S-ids")
+            print()
+        head = "ARM (stack | tune | res | clk | pwr)"
+    else:
+        head = "ARM (core | kernel | turnip | pwr | titles)"
 
-    print(f"{'ARM (stack | tune | res | clk | pwr)':<46} {'N':>3} {'PERFECT%':>8} "
+    print(f"{head:<46} {'N':>3} {'PERFECT%':>8} {'FPS med':>7} {'1%low':>6} "
           f"{'LOCK%':>6} {'JIT ms':>6} {'RESC/h':>6} {'DUR p50':>8} {'DUR max':>8}  CRASH")
     scored = []
     for arm, rows in arms.items():
@@ -239,23 +288,43 @@ def main():
         crashes = sum(1 for r in rows if s(r, "status") != "CLEAN")
         scored.append((med(rows, "perfect"), med(rows, "lock"), arm, rows, n, crashes))
     # rank by THE KPI, then lock share
+    low_fps = []
     for perfect, lock, arm, rows, n, crashes in sorted(
             scored, key=lambda t: (t[0], t[1]), reverse=True):
         if n < args.min_n:
             continue
-        _attr, _dials = split_attr(arm[0])
-        label = f"{stacks[_attr]} | {_dials} | {arm[1]} | {arm[2]} | {arm[3]}"
-        durs = sorted(f(r, "dur") for r in rows)
         flag = "" if n >= 3 else "  LOW-N"
+        if args.by == "stack":
+            _attr, _dials = split_attr(arm[0])
+            label = f"{stacks[_attr]} | {_dials} | {arm[1]} | {arm[2]} | {arm[3]}"
+        else:
+            # context, never part of the key: a core arm whose rows straddle two stacks or two
+            # POWER settings is named so, and the reader decides whether it is one measurement
+            ctx = sorted({(split_attr(s(r, "tune", "default"))[0], s(r, "pwr", "none")) for r in rows})
+            kernels = sorted({kernel_of(s(r, "tune", "")) for r in rows})
+            builds = sorted({split_attr(s(r, "tune", ""))[0].split(";")[0].replace("build=", "") or "?" for r in rows})
+            pwrs = sorted({s(r, "pwr", "none") for r in rows})
+            games = sorted({s(r, "game") for r in rows})
+            label = f"{arm[0]} | {','.join(kernels)} | {','.join(builds)} | {','.join(pwrs)} | {','.join(games)}"
+            if len(ctx) > 1:
+                flag += f"  stack differs ({len(ctx)})"
+        durs = sorted(f(r, "dur") for r in rows)
         # rescue rate: keepalive survives per hour of play (the freeze-hitch
         # cost of a lighter LSD gear; 0.0 on pre-col-30 rows = honest unknown)
         total_dur = sum(durs)
         resc_hr = sum(f(r, "rescues") for r in rows) / total_dur * 3600 if total_dur else 0.0
-        print(f"{label:<46} {n:>3} {perfect:>8.1f} {lock:>6.1f} "
+        fps_med, fps_1low = med(rows, "fps_med"), med(rows, "fps_1low")
+        if 0 < fps_med < LOW_FPS_KPI:
+            low_fps.append(label.split(" | ")[0] if args.by == "core" else f"{label.split(' | ')[0]} {label.split(' | ')[1]}")
+        print(f"{label:<46} {n:>3} {perfect:>8.1f} {fps_med:>7.1f} {fps_1low:>6.1f} {lock:>6.1f} "
               f"{med(rows, 'ft_jit'):>6.1f} {resc_hr:>6.1f} {durs[len(durs)//2]:>7.0f}s {durs[-1]:>7.0f}s"
               f"  {crashes}/{n}{flag}")
     print("\nKPI = PERFECT% (5s windows >=95% locked-16.7ms, no hitch) at res 100."
           "\nNo verdicts below N=3; res<100 arms are context, not wins.")
+    if low_fps:
+        print(f"!! PERFECT% is a 60 fps KPI and cannot discriminate here: fps_med < {LOW_FPS_KPI:.0f} on "
+              f"{', '.join(low_fps)} (a 30 fps title reads 0-4 % on every arm)."
+              "\n   Judge DUR p50/max, CRASH n/N, FPS med / 1%low, JIT ms, RESC/h instead.")
 
 
 if __name__ == "__main__":

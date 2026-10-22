@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """gt5_trial -- one unattended GT5 (BCUS98114) run that SURVIVES the car's death.
 
+--game SERIAL (2026-10-22, RC validation) runs the same loop on another title: GT5P
+(NPEA00050 PSN, BCUS98158 ISO) is the 0.10.0 matrix's N>=3 title. Only BCUS98114 -- the title
+that kills the kernel -- is gated on a hunt grant and audited by `hunt.py panic`; every other
+serial launches ungated (a shipping core on an operator-installed title is not bytes-to-atoms).
+
 GT5 kills the car itself: 46 ledger PANIC rows (median 164 s in, tracks only), no kmsg
 text, no pstore, memory flat at death (flightrec 2026-08-30/09-03: >= 1.9 GB available,
 swap untouched, PSI 0). This trial treats the car going dark as an EVENT, not a stop:
@@ -32,7 +37,10 @@ Unattended GT5 runs need a valid hunt grant for BCUS98114 with panic budget left
 so it rides on the operator's signature, never on the Engineer's say-so. Each PANIC is
 audited (`hunt.py panic --trial DIR`), which is what spends the budget. All car reads are read-only ssh (cat/ls/tail).
 
-  gt5_trial.py --out DIR [--secs 1500] [--macro FILE] [--label TEXT] [--host etk-rig] [--attach]
+  gt5_trial.py --out DIR [--game BCUS98114] [--secs 1500] [--macro FILE] [--label TEXT] [--host H] [--attach]
+
+--host defaults to env ETK_RIG, else etk.conf's CAR<N>_SSH / RIG_SSH (tools/autopilot/etkconf.py),
+else the old `etk-rig` alias (car8). On car12 pass `--host flip2-12g-usb` (USB-net, read-only ssh).
 
 --attach watches a GT5 that is ALREADY running (driven by another Pitlink client that holds
 the wheel, e.g. while a menu route is being mapped): no launch, this trial is an observer.
@@ -43,7 +51,10 @@ Macro lines (one step each; # comments): `sleep S` · `press BTN[+BTN] [MS]` ·
 trial lets go of the controller seat, gtdrive takes it, the trial rejoins as an observer;
 gtdrive's output goes to OUT/drive.log) · `observe N` (the last step: let go of the wheel and
 stay off it for N s so another client -- a menu driver, then gtdrive -- can take it; the trial
-rejoins as an observer and keeps watching). The macro runs beside the watch; a death mid-macro
+rejoins as an observer and keeps watching) · `exit [savestate]` (the last step: waits for a
+`drive` to finish, takes the wheel back and asks RPCS3 to quit gracefully through Pitlink's EXIT --
+the postmortem then writes a CLEAN / SURVIVED:* row instead of the RECOVERY:* a kill would leave;
+the trial ends SURVIVED when the game is gone). The macro runs beside the watch; a death mid-macro
 is still a PANIC.
 """
 import argparse
@@ -59,8 +70,10 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "pitlink"))
 from client import PitlinkClient, PitlinkError, garage  # noqa: E402
+import etkconf  # noqa: E402
 
 GAME = "BCUS98114"
+GATED = ("BCUS98114",)   # the only title that kills the kernel: grant + panic budget, audited
 ETK = "/storage/games-internal/roms/etk"
 BB = ETK + "/etk_telemetry/blackbox"
 LEDGER = ETK + "/etk_telemetry/sessions.tsv"
@@ -107,6 +120,10 @@ def parse_macro(text):
                 steps.append(("drive", args))
             elif verb == "observe":
                 steps.append(("observe", float(args[0])))
+            elif verb == "exit":
+                if args and args[0] != "savestate":
+                    raise ValueError("exit takes nothing or `savestate`")
+                steps.append(("exit", bool(args)))
             else:
                 raise ValueError(f"unknown verb {verb!r}")
         except (IndexError, KeyError, ValueError) as e:
@@ -255,6 +272,26 @@ def run_macro(c_holder, steps, out, log, stop):
                 c_holder["driver"] = subprocess.Popen(
                     [sys.executable, os.path.join(HERE, "gtdrive.py"), "--out", d_out] + list(arg),
                     stdout=open(os.path.join(out, "drive.log"), "w"), stderr=subprocess.STDOUT)
+            elif verb == "exit":
+                drv = c_holder.get("driver")
+                while drv is not None and drv.poll() is None and not stop.is_set():
+                    stop.wait(2)              # gtdrive holds the wheel until its own --secs
+                if stop.is_set():
+                    return
+                # the first HELLO is the controller: close the watch's (observer) link and take the wheel
+                c_holder["pause_until"] = time.time() + 30
+                if c is not None and not c.closed:
+                    c.close()
+                c_holder["c"] = None
+                x = PitlinkClient("usb", timeout=4)
+                x.hello()
+                if not x.controller:
+                    x.close()
+                    log("macro: exit refused -- another client holds the wheel; run pitlink.py exit by hand")
+                    return
+                x.exit(arg)
+                x.close()
+                c_holder["exited"] = time.time()
             log(f"macro: {verb} {arg}")
         except (PitlinkError, OSError, AttributeError) as e:
             log(f"macro stopped at {verb} {arg}: {e}")
@@ -316,15 +353,20 @@ def harvest(host, out, base_pon, log):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--game", default=GAME, help=f"title serial (default {GAME}; GT5P = NPEA00050 / BCUS98158)")
     ap.add_argument("--secs", type=float, default=1500, help="alive this long = SURVIVED")
     ap.add_argument("--macro", help="menu-path macro file (see the docstring)")
     ap.add_argument("--label", default="")
-    ap.add_argument("--host", default=os.environ.get("ETK_RIG", "etk-rig"))
+    ap.add_argument("--host", default=None,
+                    help="ssh target for the read-only car probes (default: ETK_RIG, else etk.conf, else etk-rig)")
     ap.add_argument("--attach", action="store_true", help="watch the GT5 already running; do not launch")
     ap.add_argument("--lost-secs", type=float, default=20, help="link silent this long = check the car")
     ap.add_argument("--return-secs", type=float, default=600, help="dark longer than this = UNREACHABLE")
     ap.add_argument("--freeze-secs", type=float, default=90, help="flips stopped this long (after a lit frame) = FREEZE")
     a = ap.parse_args()
+    a.game = a.game.upper()
+    if a.host is None:
+        a.host = etkconf.rig_ssh(fallback=etkconf.FALLBACK_SSH)
     steps = parse_macro(open(a.macro).read()) if a.macro else []
     os.makedirs(a.out, exist_ok=True)
 
@@ -334,20 +376,24 @@ def main():
         with open(os.path.join(a.out, "trial.log"), "a") as fh:
             fh.write(line + "\n")
 
-    gate = subprocess.run([sys.executable, HUNT, "check", "--game", GAME, "--panic"],
-                          capture_output=True, text=True)
-    if gate.returncode != 0:
-        sys.exit("gt5_trial: no valid hunt grant for BCUS98114 with panic budget left "
-                 f"(hunt.py check --game BCUS98114 --panic: {(gate.stdout or '').strip()}); "
-                 "an unattended GT5 launch rides on the operator's signature")
-    verdict = {"label": a.label, "game": GAME, "macro": a.macro,
-               "debug_env": garage({"op": "debug_env", "action": "show"})["env"]}
+    gated = a.game in GATED
+    if gated:
+        gate = subprocess.run([sys.executable, HUNT, "check", "--game", a.game, "--panic"],
+                              capture_output=True, text=True)
+        if gate.returncode != 0:
+            sys.exit(f"gt5_trial: no valid hunt grant for {a.game} with panic budget left "
+                     f"(hunt.py check --game {a.game} --panic: {(gate.stdout or '').strip()}); "
+                     "an unattended GT5 launch rides on the operator's signature")
+    verdict = {"tool": "gt5_trial", "label": a.label, "game": a.game, "macro": a.macro, "host": a.host,
+               "gated": gated, "debug_env": garage({"op": "debug_env", "action": "show"})["env"]}
     stop = threading.Event()
     t0 = time.time()
 
     def finish(v, code, **kw):
         stop.set()
-        verdict.update(verdict=v, secs=round(time.time() - t0), **kw)
+        # t0_epoch/end_epoch: the window rc_report.py joins to the ledger row ([epoch - duration_s, epoch])
+        verdict.update(verdict=v, secs=round(time.time() - t0), t0_epoch=round(t0),
+                       end_epoch=round(time.time()), **kw)
         with open(os.path.join(a.out, "verdict.json"), "w") as f:
             json.dump(verdict, f, indent=1)
         print(json.dumps(verdict), flush=True)
@@ -355,8 +401,11 @@ def main():
 
     running = garage({"op": "running"})["running"]
     if a.attach:
-        if not running or "Turismo 5 (" not in (running.get("name") or "") + (running.get("path") or ""):
-            finish("NO_GAME", 2, note=f"--attach: GT5 is not the running game ({running})")
+        # the garage reports name+path only; GT5 proper is recognisable by its title, another serial
+        # is taken on trust and named in the verdict (a mapping run's aid, not a gate)
+        if not running or (a.game == GAME and "Turismo 5 (" not in (running.get("name") or "") + (running.get("path") or "")):
+            finish("NO_GAME", 2, note=f"--attach: {a.game} is not the running game ({running})")
+        verdict["attached_to"] = running.get("name")
     elif running:
         finish("NO_GAME", 2, note="a game is already running: recover first (gtpilot.py recover)")
     base_boot = boot_id(a.host)
@@ -368,7 +417,7 @@ def main():
     verdict.update(boot_id=base_boot, battery_pct_start=battery.strip())
     log0 = garage({"op": "log", "tail": 1})["size"]
     if not a.attach:
-        garage({"op": "launch", "game": GAME})
+        garage({"op": "launch", "game": a.game})
     t0 = time.time()
     log(f"{'attached' if a.attach else 'launched'} ({a.label or 'no label'}), boot {base_boot[:8]}, battery {battery.strip()}%, "
         f"{len(steps)} macro steps")
@@ -411,6 +460,10 @@ def main():
             bid = boot_id(a.host)
             if bid == base_boot:
                 if (gsafe({"op": "running"}) or {"running": True})["running"] is None:
+                    if holder.get("exited"):
+                        finish("SURVIVED", 0, last_flip=last_flip, first_lit=lit,
+                               note=f"exited by the macro at +{holder['exited'] - t0:.0f}s (Pitlink EXIT): "
+                                    "the postmortem closes the row CLEAN")
                     finish("EXITED", 6, note="game gone, car up on the same boot")
                 last_ok = now          # car up, game up, link flaky: keep watching
             else:
@@ -426,16 +479,19 @@ def main():
                 log(f"car BACK on boot {bid[:8]} after {back}s; harvesting")
                 ev = harvest(a.host, a.out, base_pon.strip(), log)
                 pon = pon_verdict_of(ev.get("pon")) or ev.get("pon_direct_verdict")
-                audit = subprocess.run([sys.executable, HUNT, "panic", "--trial", a.out, "--pon", str(pon)],
-                                       capture_output=True, text=True)
-                verdict["audit"] = (audit.stdout or audit.stderr or "").strip()[-300:]
+                if gated:
+                    audit = subprocess.run([sys.executable, HUNT, "panic", "--trial", a.out, "--pon", str(pon)],
+                                           capture_output=True, text=True)
+                    verdict["audit"] = (audit.stdout or audit.stderr or "").strip()[-300:]
+                else:
+                    verdict["audit"] = f"unaudited: {a.game} is not a grant-gated title (no panic budget to spend)"
                 kit = None
                 t_kit = time.time()
                 while kit is None and time.time() - t_kit < 180:
                     kit = gsafe({"op": "status"}, timeout=10)
                     if kit is None:
                         time.sleep(10)
-                last = last_game_sample(ev.get("flightrec", ""))
+                last = last_game_sample(ev.get("flightrec", ""), a.game)
                 gone = host_usb_gone(int(last["epoch"])) if last else None
                 common = dict(died_secs=round(t_down - t0), back_secs=back, new_boot_id=bid, first_lit=lit,
                               hung_secs=round(gone - int(last["epoch"]), 1) if gone else None,

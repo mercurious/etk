@@ -4,16 +4,41 @@ car (Pitlink, garage, ssh and the clock all faked): a car that flips, goes dark,
 back on a new boot must read PANIC with the dead boot's evidence harvested; a car that never
 comes back must read UNREACHABLE; a car that stays up but stops flipping must read FREEZE.
 
-  python3 tools/autopilot/test_gt5_trial.py
+2026-10-22 (RC validation, release plan §3.2): [8]-[11] pin `--game SERIAL` (the grant/panic gate
+and the PANIC audit apply to BCUS98114 only; GT5P runs ungated), the `exit` macro verb (waits for
+gtdrive, takes the wheel, Pitlink EXIT, the trial ends SURVIVED when the game is gone), and the
+etk.conf-derived --host default.
+
+  python3 tools/autopilot/test_gt5_trial.py                  # working tree -- must PASS
+  python3 tools/autopilot/test_gt5_trial.py --against HEAD   # pre-change gt5_trial.py: [8]-[11] FAIL
+
+DISCRIMINATION: --against REV runs this same file against `git show REV:tools/autopilot/gt5_trial.py`
+staged in a temp tree whose ../pitlink and ../../bin point at the working tree (the module's own
+relative imports). Against 456b078 the 2026-10-22 checks fail (unknown --game, no exit verb, no
+etkconf default); [1]-[7] still pass, so the old behaviour is proven kept.
 """
 import importlib.util
 import json
 import os
+import subprocess
 import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-_spec = importlib.util.spec_from_file_location("gt5_trial", os.path.join(HERE, "gt5_trial.py"))
+SRC = os.path.join(HERE, "gt5_trial.py")
+if len(sys.argv) >= 3 and sys.argv[1] == "--against":
+    _td = tempfile.mkdtemp(prefix="gt5trial-against-")
+    os.makedirs(os.path.join(_td, "tools", "autopilot"))
+    os.symlink(os.path.abspath(os.path.join(HERE, "..", "pitlink")), os.path.join(_td, "tools", "pitlink"))
+    os.symlink(os.path.abspath(os.path.join(HERE, "..", "..", "bin")), os.path.join(_td, "bin"))
+    SRC = os.path.join(_td, "tools", "autopilot", "gt5_trial.py")
+    with open(SRC, "w") as _f:
+        _f.write(subprocess.run(["git", "-C", HERE, "show", f"{sys.argv[2]}:tools/autopilot/gt5_trial.py"],
+                                capture_output=True, text=True, check=True).stdout)
+    print(f"against {sys.argv[2]}: {SRC}")
+    sys.argv = sys.argv[:1]
+sys.path.insert(0, HERE)   # etkconf for [11] (the working tree's; the check is that gt5_trial uses it)
+_spec = importlib.util.spec_from_file_location("gt5_trial", SRC)
 gt = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(gt)
 
@@ -80,15 +105,18 @@ class FakeFrame:
     def mean(self):
         return 90.0
 
-    def png(self, path):
+    def png(self, path, max_w=None):
         open(path, "wb").close()
 
 
-def run_scenario(die_at=None, back_at=None, freeze_at=None, secs=600, lit_frames=True, granted=True, uvlo=False, oom_at=None):
+def run_scenario(die_at=None, back_at=None, freeze_at=None, secs=600, lit_frames=True, granted=True, uvlo=False, oom_at=None,
+                 game=None, macro=None, wheel_taken=False):
     """Run gt5_trial.main() against a fake car. die_at/back_at/freeze_at are seconds after
-    launch. Returns (exit code, verdict dict, out dir)."""
+    launch. game/macro add `--game`/`--macro`; wheel_taken makes every HELLO an observer (the exit
+    verb must then refuse). Returns (exit code, verdict dict, out dir)."""
     Clock.t = 1000.0
     launched = {}
+    exited = {}
 
     def now():
         return Clock.t
@@ -107,13 +135,28 @@ def run_scenario(die_at=None, back_at=None, freeze_at=None, secs=600, lit_frames
 
     class FakeClient:
         closed = False
+        controller = not wheel_taken
 
         def __init__(self, *a, **k):
-            if dead():
+            if dead() or exited:
                 raise OSError("no USB")
 
         def hello(self):
             return {}
+
+        def close(self):
+            self.closed = True
+
+        def exit(self, savestate=False):
+            exited["t"] = Clock.t
+            exited["savestate"] = savestate
+
+        def snap(self, timeout=5.0):
+            return FakeFrame()
+
+        def press(self, buttons, ms=120):
+            pass
+
 
         def ping(self):
             if dead() or rebooted():
@@ -125,6 +168,15 @@ def run_scenario(die_at=None, back_at=None, freeze_at=None, secs=600, lit_frames
         def latest_frame(self):
             return FakeFrame() if lit_frames else None
 
+    class InlineThread:
+        """The macro thread, run to completion where it is started: the fake clock advances in
+        `sleep`, so a real thread would race the main loop's virtual time (and lose)."""
+        def __init__(self, target=None, args=(), daemon=None):
+            self.target, self.args = target, args
+
+        def start(self):
+            self.target(*self.args)
+
     def fake_garage(req, timeout=30.0):
         if dead():
             raise ConnectionRefusedError("USB link down")
@@ -132,7 +184,7 @@ def run_scenario(die_at=None, back_at=None, freeze_at=None, secs=600, lit_frames
         if op == "debug_env":
             return {"env": {}}
         if op == "running":
-            return {"running": {"name": "GT5"} if launched and not rebooted() else None}
+            return {"running": {"name": "GT5"} if launched and not rebooted() and not exited else None}
         if op == "launch":
             launched["t"] = Clock.t
             return {"launched": {}}
@@ -206,8 +258,17 @@ def run_scenario(die_at=None, back_at=None, freeze_at=None, secs=600, lit_frames
     gt.host_usb_gone = lambda after, journal=None, window=120: after + 6.5
     run_scenario.calls = calls
     gt.threading.Event.wait = lambda self, t=None: sleep(t or 0)
+    gt.threading.Thread = InlineThread
     out = tempfile.mkdtemp(prefix="gt5trial-")
-    sys.argv = ["gt5_trial.py", "--out", out, "--secs", str(secs), "--return-secs", "300"]
+    sys.argv = ["gt5_trial.py", "--out", out, "--secs", str(secs), "--return-secs", "300", "--host", "fake-car"]
+    if game:
+        sys.argv += ["--game", game]
+    if macro:
+        mp = os.path.join(out, "route.macro")
+        with open(mp, "w") as fh:
+            fh.write(macro)
+        sys.argv += ["--macro", mp]
+    run_scenario.exited = exited
     code = None
     try:
         gt.main()
@@ -270,6 +331,58 @@ check("refuses before launching anything, naming the budget",
 print("\n[6] survives the window")
 code, v, _ = run_scenario(secs=300)
 check("verdict SURVIVED, exit 0", (v.get("verdict"), code), ("SURVIVED", 0))
+
+print("\n[8] --game: the grant/panic gate is BCUS98114's alone")
+code, v, _ = run_scenario(secs=300, game="BCUS98158")
+check("GT5P (BCUS98158) launches ungated: no hunt.py check call, SURVIVED", (run_scenario.calls, v.get("verdict")), ([], "SURVIVED"))
+check("verdict names the serial, gated=False", (v.get("game"), v.get("gated")), ("BCUS98158", False))
+check("the window the report joins to the ledger (t0_epoch, end_epoch)",
+      isinstance(v.get("t0_epoch"), int) and v.get("end_epoch", 0) >= v.get("t0_epoch", 1), True)
+code, v, _ = run_scenario(die_at=164, back_at=240, game="NPEA00050")
+check("an ungated title's death is still a PANIC with evidence, but NOT audited (no budget to spend)",
+      (v.get("verdict"), code, v.get("pon"), "unaudited" in v.get("audit", ""),
+       [c[0] for c in run_scenario.calls]),
+      ("PANIC", 1, "WARM", True, []))
+code, launched, _ = run_scenario(granted=False, game="bcus98114")
+check("BCUS98114 (any case) still refuses without a grant", isinstance(code, str) and "panic budget" in code, True)
+code, v, _ = run_scenario(die_at=164, back_at=240)
+check("the default stays BCUS98114: gated, audited", (v.get("game"), v.get("gated"), [c[0] for c in run_scenario.calls]),
+      ("BCUS98114", True, ["check", "panic"]))
+
+print("\n[9] parse_macro: exit")
+try:
+    check("exit / exit savestate parse", gt.parse_macro("exit\nexit savestate\n"), [("exit", False), ("exit", True)])
+    gt.parse_macro("exit now")
+    check("exit with a stray word raises", False, True)
+except ValueError as e:
+    check("exit with a stray word raises", "exit" in str(e), True)
+
+print("\n[10] the exit verb ends a live run SURVIVED (the row closes CLEAN)")
+code, v, out = run_scenario(secs=600, game="BCUS98158", macro="sleep 30\nsnap menu\nexit\n")
+check("verdict SURVIVED, exit 0, before --secs", (v.get("verdict"), code, v.get("secs", 999) < 600), ("SURVIVED", 0, True))
+check("Pitlink EXIT was sent (no savestate)", run_scenario.exited.get("savestate"), False)
+check("the note says the macro exited it", "exited by the macro" in v.get("note", ""), True)
+code, v, out = run_scenario(secs=600, game="BCUS98158", macro="sleep 30\nexit\n", wheel_taken=True)
+check("another client holds the wheel: exit refused, the run plays out to --secs SURVIVED (no EXITED/kill)",
+      (run_scenario.exited, v.get("verdict"), v.get("secs", 0) >= 600), ({}, "SURVIVED", True))
+try:
+    _log = open(os.path.join(out, "trial.log")).read()
+except OSError:
+    _log = ""
+check("refusal logged for the human", "exit refused" in _log, True)
+
+print("\n[11] --host default from etk.conf (tools/autopilot/etkconf.py)")
+try:
+    import etkconf
+    C12 = etkconf.read_conf(text='RIG_SSH="root@SM8250.local"\nCAR="car12"\nCAR8_SSH="root@SM8250.local"\n'
+                                 'CAR12_SSH="root@sm8250-12gb.local"   # mDNS\n')
+    check("CAR=car12 -> CAR12_SSH", etkconf.rig_ssh(conf=C12, env={}), "root@sm8250-12gb.local")
+    check("no CAR -> RIG_SSH", etkconf.rig_ssh(conf=etkconf.read_conf(text='RIG_SSH="root@x.local"'), env={}), "root@x.local")
+    check("empty etk.conf -> the documented fallback", etkconf.rig_ssh(fallback="etk-rig", conf={}, env={}), "etk-rig")
+    check("env ETK_RIG wins", etkconf.rig_ssh(conf=C12, env={"ETK_RIG": "flip2-12g-usb"}), "flip2-12g-usb")
+    check("gt5_trial resolves --host through it", gt.etkconf is etkconf, True)
+except (ImportError, AttributeError) as e:
+    check(f"etkconf present and wired ({e})", False, True)
 
 print()
 if FAILS:

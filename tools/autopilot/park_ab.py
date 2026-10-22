@@ -47,11 +47,14 @@ ETK = os.path.abspath(os.path.join(HERE, "..", ".."))
 STATE = os.path.join(ETK, "state", "park_ab")
 sys.path.insert(0, os.path.join(HERE, "..", "pitlink"))
 from client import PitlinkClient, PitlinkError  # noqa: E402
+import etkconf  # noqa: E402
 
 PERF_LOG = "/dev/shm/rpcs3_perf_log"
 RIG_LOG = "/storage/.cache/rpcs3/RPCS3.log"
 ETK_BIN = "/storage/games-internal/roms/etk/bin"
-GADGET_PITLINK = "169.254.170.2:47500"  # GTK_PITLINK_TCP=gadget:47500 on the car
+# GTK_PITLINK_TCP=gadget:47500 on the car; the host side is etk.conf-derived (PITLINK_ADDR, else the
+# CAR<N>_SSH/RIG_SSH host), falling back to 169.254.170.2:47500 = car8's gadget (the pre-10-22 constant)
+GADGET_PITLINK = etkconf.pitlink_tcp(fallback=etkconf.FALLBACK_PITLINK_TCP)
 PARK_US, FLIP_US = 200, 100             # 0.10.0 defaults (GTK_SEMA_PARK_US / _FLIP_US)
 FIELDS = ("fps", "ft_ms", "cpu", "ppu", "spu", "rsx", "sq", "sw", "pk", "pf")
 LINE = re.compile(r"^ep=(\d+) (.*)$")
@@ -297,7 +300,8 @@ def main():
     r.add_argument("--boot", type=int, default=900, help="seconds to wait for the first perfstat line")
     r.add_argument("--label", default="")
     r.add_argument("--attach", action="store_true")
-    r.add_argument("--rig", default="root@SM8250.local")
+    r.add_argument("--rig", default=etkconf.rig_ssh(fallback=etkconf.FALLBACK_RIG),
+                   help="ssh target (default: ETK_RIG, else etk.conf CAR<N>_SSH/RIG_SSH, else root@SM8250.local = car8)")
     p = sub.add_parser("report")
     p.add_argument("dirs", nargs="*", default=[STATE])
     a = ap.parse_args()

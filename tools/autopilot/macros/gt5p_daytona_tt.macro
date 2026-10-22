@@ -1,0 +1,53 @@
+# GT5P Spec III (BCUS98158 ISO / NPEA00050 PSN): boot -> My Page -> Arcade -> Daytona Superspeedway
+# Time Trial, then gtdrive, then a graceful Pitlink EXIT so the ledger row closes CLEAN.
+#
+# Route transcribed from state/pitlink/evidence/20261014-daytona_tt_core0.10.0/README.md (car8,
+# cold boot, core 0.10.0, 2026-10-14 ~17:58):
+#   Start -> My Page -> Arcade -> Track Select (right x1) -> Superspeedway Daytona -> Time Trial
+#   -> Driving Options OK (MT / Professional / ASM off / TC 3 / Line on) -> intro: Start brings up
+#   the TT menu, Cross on "Start" begins the run. gtdrive attaches AFTER that Cross.
+# The 10-14 run was driven by hand over `pitlink.py press`; the README keeps the ROUTE, not the
+# per-press waits, so every `sleep` below is a TODO estimate and every step snaps so the first run
+# on car12 is a MAPPING run (compare rN_*.png in --out against the route; car12's save / cursor
+# memory may differ from car8's by one press -- GT5P remembers the last cursor in several menus).
+# Trap (Handoff_Autonomy_20261010 §traps): the pre-race menu auto-hides into the flyover after a
+# few idle seconds and X on the flyover only wakes the menu -- do X then X within 1.5 s.
+#
+#   gt5_trial.py --game BCUS98158 --host flip2-12g-usb --macro tools/autopilot/macros/gt5p_daytona_tt.macro \
+#                --secs 900 --out state/rc/0.10.0/gt5p-rc-r1
+# Starts after the first lit frame (the trial's own wait); --secs is the ceiling, `exit` ends it.
+sleep 45                      # TODO: boot splash -> title "Press Start" (shd=0 on a warm cache; a bake is longer)
+snap r1_title
+press start
+sleep 12                      # TODO: title -> My Page (the first load after boot)
+snap r2_my_page
+press cross                   # My Page cursor: TODO confirm it rests on Arcade on car12 (car8 did)
+sleep 6
+snap r3_arcade
+press cross                   # Arcade -> Track Select
+sleep 6
+snap r4_track_select
+press right                   # right x1 -> Superspeedway Daytona (README)
+sleep 1.5
+snap r5_daytona_tile
+press cross                   # Daytona -> mode list
+sleep 4
+snap r6_mode_list
+press cross                   # Time Trial  (TODO: confirm TT is the first/remembered mode on car12)
+sleep 4
+snap r7_driving_options
+press cross                   # Driving Options OK -> the track loads
+sleep 40                      # TODO: Daytona load time on car12 (10-14: ~30-40 s on car8)
+snap r8_intro_flyover
+press start                   # intro: Start brings up the TT menu
+sleep 1.0
+press cross                   # Cross on "Start" begins the run ...
+sleep 1.0
+press cross                   # ... X then X within 1.5 s (menu auto-hide trap); in the race X is harmless
+sleep 5
+snap r9_rolling_start
+# gtdrive: Daytona minimap box bottom row 155 (gtdrive --map-y1 help), MT per the 10-14 options
+# (TODO: drop --mt if car12's saved transmission is Automatic -- the 10-10 car8 save was AT).
+# --restart-every 60 keeps the race path live through the pit-road-as-asphalt bug (no lap needed).
+drive --wait-race 120 --mt --map-y1 155 --secs 600 --restart-every 60 --max-restarts 20 --snap-every 30
+exit                          # waits for gtdrive, takes the wheel, Pitlink EXIT -> CLEAN row

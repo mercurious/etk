@@ -24,7 +24,8 @@ the car; run `gtpilot.py recover` after (the kit's R3 path).
 
   rr7_trial.py --out DIR [--secs 2400] [--hold 150] [--label TEXT] [--attach]
 --attach judges an RR7 run the driver already launched (no launch; the log is already this boot's).
-Frames come from grim on the car over ssh (read-only); --rig names the car.
+Frames come from grim on the car over ssh (read-only); --rig names the car (default: ETK_RIG, else
+etk.conf's CAR<N>_SSH / RIG_SSH via tools/autopilot/etkconf.py, else root@169.254.170.2 -- car8).
 Liveness = grim frames and, on a Pitlink core, the flip counter; neither answering is INCONCLUSIVE, never PASS.
 Exit: 0 PASS, 1 DESYNC, 2 TIMEOUT / no game, 3 CRASH, 4 STALL, 5 INCONCLUSIVE, 6 STARVE.
 Evidence also keeps the whole boot's RPCS3.log.gz, and a STALL banks the Pitlink thread dump
@@ -43,6 +44,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "pitlink"))
 from client import PitlinkClient, PitlinkError, garage  # noqa: E402
+import etkconf  # noqa: E402
 
 GAME = "NPUB30457"
 RSX_UP = re.compile(r"sys_rsx_context_allocate\(\): Mapped address")
@@ -107,10 +109,14 @@ def main():
     ap.add_argument("--hold", type=float, default=150)
     ap.add_argument("--label", default="")
     ap.add_argument("--attach", action="store_true")
-    ap.add_argument("--rig", default="root@169.254.170.2")
+    ap.add_argument("--rig", default=None,
+                    help="ssh target for grim frames + the log pull (default: ETK_RIG, else etk.conf "
+                         "CAR<N>_SSH/RIG_SSH, else root@169.254.170.2 = car8's USB-net address)")
     a = ap.parse_args()
+    if a.rig is None:
+        a.rig = etkconf.rig_ssh(fallback=etkconf.FALLBACK_RIG_IP)
     os.makedirs(a.out, exist_ok=True)
-    verdict = {"label": a.label, "game": GAME, "hold": a.hold}
+    verdict = {"tool": "rr7_trial", "label": a.label, "game": GAME, "hold": a.hold, "rig": a.rig}
 
     def evidence():
         with open(os.path.join(a.out, "log_tail.txt"), "w") as fh:

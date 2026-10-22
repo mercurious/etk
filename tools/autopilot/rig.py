@@ -9,11 +9,13 @@ import json
 import os
 import shlex
 import subprocess
+import sys
 import threading
 import zlib
 import struct
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
 AGENT_SRC = os.path.join(HERE, "rig_agent.py")
 RIG_ENV = "XDG_RUNTIME_DIR=/var/run/0-runtime-dir WAYLAND_DISPLAY=wayland-1"
 # python3 -c bootstrap: read N, exec the next N bytes of stdin; stdin then
@@ -24,7 +26,9 @@ BOOT = ("import sys;n=int(sys.stdin.buffer.readline());"
 
 
 def default_host():
-    return os.environ.get("ETK_RIG", "etk-rig")
+    """ETK_RIG, else etk.conf's CAR<N>_SSH / RIG_SSH, else `etk-rig` (the pre-10-22 alias: car8)."""
+    import etkconf
+    return etkconf.rig_ssh(fallback=etkconf.FALLBACK_SSH)
 
 
 class RpcError(RuntimeError):
