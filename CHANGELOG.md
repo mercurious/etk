@@ -4,6 +4,13 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ## [Unreleased]
 
+### Added
+
+- **Card Transplant** (`tools/card_transplant.py`, host-side Garage Gear): turns one car's
+  game card into another car's boot card in place, keeping the newer data from both — saves
+  judged whole, the library's metadata kept, nothing deleted (the losing copies are parked on
+  the card). `plan` reads both cards; `apply` (sudo) does the move and relabels last.
+
 ## [0.10.0] - 2026-10-23 — 120Hz Edition
 
 Certified stack: RPCS3 **GTK Edition 0.10.0** (ARMSX3 1.0.4, `8290349e5`) ·
