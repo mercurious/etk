@@ -4,7 +4,7 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ## [Unreleased]
 
-## [0.10.0] - 2026-10-22 — 120Hz Edition
+## [0.10.0] - 2026-10-23 — 120Hz Edition
 
 Certified stack: RPCS3 **GTK Edition 0.10.0** (ARMSX3 1.0.4, `8290349e5`) ·
 Mesa Turnip **26.2.2 gtk_0.7** · kernel **rocknix-gtk-20261001-0.6.4** (7.2.0,
