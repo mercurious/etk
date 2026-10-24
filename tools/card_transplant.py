@@ -25,6 +25,12 @@ The transplant turns the donor card into the recipient car's boot card in place
   root   the donor's stale storage state is PARKED; its project dirs (car8's
          games-external content) are relocated to games-external/ where the
          car's tools look for them; the recipient's /storage root is copied in.
+  roms   the donor root's roms/ is LIBRARY, never storage state: each system
+         dir is moved into games-internal/roms/<system>/ (a differing
+         same-named game goes beside it under from-<donor>-roms/), and a
+         full-set archive (a zip of game zips/CHDs/RVZs) is unpacked game by
+         game, CRC32-verified. Paid for 2026-10-24: v1 parked car8's root roms/
+         (166 GB, ~1,980 games in 20 set archives) and every Sega system left ES.
   games-external   per entry: one side only → it lands; identical subset → the
          donor's copy stays (models: car12's were copies of car8's); otherwise
          the side with the newer newest-file wins WHOLE, the other is parked.
@@ -37,8 +43,15 @@ The transplant turns the donor card into the recipient car's boot card in place
          kept under the park dir.
   labels last: p1 → the KERNEL cmdline's boot label, p2 → its disk label.
 
-NOTHING IS DELETED. Losers go to /storage/parked-<donor>-<date>/ on the same
-card (renames: instant, zero bytes). The source card is mounted READ-ONLY
+NOTHING IS DELETED (one opt-in exception: --drop-verified-archives removes a
+full-set archive after every game in it verifies). Losers go to
+/storage/parked-<donor>-<date>/ on the same card (renames: instant, zero bytes
+copied — the plan still prints what each one MOVES). A park that holds game
+files is a NEEDS DECISION line: apply refuses until --allow-park names it.
+VERIFY includes a library census: every game name found in the donor's
+library, the donor's root roms/ (set archives counted by member) and the
+recipient's library must be in games-internal/roms afterwards, or the labels
+are not changed. The source card is mounted READ-ONLY
 (ext4 `ro,noload`) and refused if it was not shut down cleanly. The plan is
 persisted in the destination's marker (/.etk_transplant.json) at the first
 apply, so an interrupted apply resumes the SAME plan, skipping finished steps.
@@ -72,13 +85,33 @@ import re
 import shutil
 import subprocess
 import sys
+import zipfile
+import zlib
 from pathlib import Path
 
 KEEP_ROOT = {"games-internal", "games-external", "lost+found"}
 # A donor root entry that is ROCKNIX's / Android's own storage furniture is
 # storage STATE (parked); any other non-hidden dir is a games-external project.
 STORAGE_FURNITURE = {"assets", "backup", "cores", "database", "joypads", "overlays",
-                     "remappings", "shaders", "roms"}
+                     "remappings", "shaders"}
+# The donor root's roms/ is NEVER furniture: on a card that was once a boot card (or that
+# Android wrote to) it can hold games found nowhere else. It is merged INTO the library.
+# Paid for 2026-10-24: v1 parked car8's root roms/ (166 GB, ~1,980 games in 20 full-set
+# archives: Genesis, Saturn, Dreamcast, GameCube…) as "storage state" — nothing deleted,
+# every one of those systems gone from ES.
+ROOT_ROMS = "roms"
+ROM_FURNITURE_FILES = {"gamelist.xml", "systeminfo.txt", ".nomedia"}
+MEDIA_DIRS = {"images", "videos", "manuals", "media", "downloaded_images", "downloaded_videos",
+              "marquees", "thumbnails"}
+CENSUS_SKIP = {"bios", "etk"}           # not games: firmware/RPCS3 hdd, the kit tree
+# A zip whose members are ALL game containers is a full-set archive (a MAME rom zip's
+# members are chip dumps, never these), so it is unpacked rather than listed as one "game".
+CONTAINER_EXT = {".zip", ".7z", ".rar", ".chd", ".rvz", ".iso", ".cso", ".gcz", ".wbfs", ".wua"}
+GAME_EXT = CONTAINER_EXT | {".nsp", ".xci", ".pkg", ".cue", ".bin", ".img", ".ccd", ".mds", ".pbp",
+                            ".nds", ".3ds", ".cia", ".gba", ".gbc", ".gb", ".sfc", ".smc", ".nes",
+                            ".fds", ".md", ".gen", ".smd", ".sms", ".gg", ".32x", ".pce", ".n64",
+                            ".z64", ".v64", ".a26", ".lnx", ".ws", ".wsc", ".ngp", ".ngc", ".vb",
+                            ".m3u", ".psn"}
 ANDROID_DIRS = {"Alarms", "Android", "Audiobooks", "DCIM", "Documents", "Download",
                 "LOST.DIR", "Movies", "Music", "Notifications", "Pictures", "Podcasts",
                 "Recordings", "Ringtones"}
@@ -198,6 +231,62 @@ def hfmt(n):
         n /= 1024
 
 
+def set_archive_members(path):
+    """The members of a full-set archive (>=2 members, every one a game container), else None."""
+    if not str(path).lower().endswith(".zip"):
+        return None
+    try:
+        with zipfile.ZipFile(path) as z:
+            infos = [i for i in z.infolist() if not i.is_dir()]
+    except (zipfile.BadZipFile, OSError):
+        return None
+    if len(infos) >= 2 and all(os.path.splitext(i.filename)[1].lower() in CONTAINER_EXT for i in infos):
+        return infos
+    return None
+
+
+def library_names(roms, expand_sets=False):
+    """{system: {game basenames}} under a roms tree — media dirs and furniture files excluded;
+    with expand_sets a full-set archive counts as its members (it will be unpacked)."""
+    out = {}
+    roms = Path(roms)
+    if not roms.is_dir():
+        return out
+    for sysd in sorted(os.listdir(roms)):
+        top = roms / sysd
+        if sysd in CENSUS_SKIP or not top.is_dir() or top.is_symlink():
+            continue
+        names = out.setdefault(sysd, set())
+        for d, dirs, files in os.walk(top):
+            dirs[:] = [x for x in dirs if x not in MEDIA_DIRS]
+            for f in files:
+                if f in ROM_FURNITURE_FILES or f.endswith(".part"):
+                    continue
+                members = set_archive_members(os.path.join(d, f)) if expand_sets else None
+                if members:
+                    names.update(os.path.basename(i.filename) for i in members)
+                else:
+                    names.add(f)
+        if not names:
+            del out[sysd]
+    return out
+
+
+def has_games(top):
+    for d, _dirs, files in os.walk(top):
+        if any(os.path.splitext(f)[1].lower() in GAME_EXT for f in files):
+            return True
+    return Path(top).is_file() and Path(top).suffix.lower() in GAME_EXT
+
+
+def crc_of(path):
+    c = 0
+    with open(path, "rb") as f:
+        for b in iter(lambda: f.read(8 << 20), b""):
+            c = zlib.crc32(b, c)
+    return c & 0xFFFFFFFF
+
+
 # ---------------------------------------------------------------- the plan
 
 def A(kind, why, a=None, b=None, nbytes=0, **kw):
@@ -206,7 +295,7 @@ def A(kind, why, a=None, b=None, nbytes=0, **kw):
     return act
 
 
-def build_plan(roots, car, donor, park, verify):
+def build_plan(roots, car, donor, park, verify, drop_archives=False):
     """The ordered action list. Paths are [root-tag, relpath]; roots maps tag → mount dir."""
     sb, ss, db, ds = (Path(roots[t]) for t in ROOTS)
     acts, notes = [], []
@@ -238,7 +327,7 @@ def build_plan(roots, car, donor, park, verify):
     # --- storage root: park the donor's state, relocate its projects
     projects = []
     for e in sorted(os.listdir(ds)):
-        if e in KEEP_ROOT or e == P or e == MARKER:
+        if e in KEEP_ROOT or e == P or e == MARKER or e == ROOT_ROMS:
             continue
         p = ds / e
         if not e.startswith(".") and p.is_dir() and not p.is_symlink() \
@@ -251,7 +340,7 @@ def build_plan(roots, car, donor, park, verify):
             proj_files.add(e)
     relocated = set()
     for e in sorted(os.listdir(ds)):
-        if e in KEEP_ROOT or e == P or e == MARKER:
+        if e in KEEP_ROOT or e == P or e == MARKER or e == ROOT_ROMS:
             continue
         if e in projects or e in proj_files:
             if (ds / GE / e).exists():
@@ -264,6 +353,32 @@ def build_plan(roots, car, donor, park, verify):
         else:
             acts.append(A("park", f"{donor}'s stale storage state (the {car} copy takes over)",
                           ["ds", e], ["ds", f"{P}/root/{e}"]))
+    # --- the donor root's roms/: games INTO the library, system by system
+    if (ds / ROOT_ROMS).is_dir() and not (ds / ROOT_ROMS).is_symlink():
+        for sysd in sorted(os.listdir(ds / ROOT_ROMS)):
+            top = ds / ROOT_ROMS / sysd
+            if not top.is_dir() or top.is_symlink():
+                continue
+            moved, _ = tree_bytes(top)
+            unpack, peak, nsets = 0, 0, 0
+            for d, _dirs, files in os.walk(top):
+                for f in files:
+                    members = set_archive_members(os.path.join(d, f))
+                    if members:
+                        size = sum(i.file_size for i in members)
+                        unpack += size
+                        peak = max(peak, size)
+                        nsets += 1
+            why = f"{donor}'s root roms/{sysd} → the library"
+            if nsets:
+                why += (f" ({nsets} full-set archive(s) unpacked, CRC32-verified; archive "
+                        + ("REMOVED once every game verifies)" if drop_archives else "kept in the park)"))
+            acts.append(A("library", why, ["ds", f"{ROOT_ROMS}/{sysd}"], ["ds", f"{GI}/roms/{sysd}"],
+                          unpack, moved=moved, peak=peak, sets=nsets, drop=drop_archives,
+                          alt=f"from-{donor}-roms"))
+        acts.append(A("park", "what is left of the root roms/ (furniture files, duplicates"
+                      + ("" if drop_archives else ", unpacked set archives") + ")",
+                      ["ds", ROOT_ROMS], ["ds", f"{P}/root/{ROOT_ROMS}"]))
 
     # --- games-external: per top-level entry
     sge = ss / GE
@@ -338,7 +453,20 @@ def build_plan(roots, car, donor, park, verify):
     acts.append(A("merge", f"{car} games-internal by content; newer wins, replaced files kept",
                   ["ss", GI], ["ds", GI], est, excludes=excludes,
                   backup=f"{P}/replaced/{GI}", unreadable=bad))
-    return acts, notes
+    for act in acts:
+        if act["kind"] in ("park", "relocate") and act["a"][0] == "ds":
+            src = ds / act["a"][1]
+            if src.exists():
+                act["moved"], _ = tree_bytes(src)
+                exempt = act["a"][1] == ETK_REL or "/savedata/" in act["a"][1] or act["a"][1] == ROOT_ROMS
+                if act["kind"] == "park" and not exempt and has_games(src):
+                    act["decide"] = True
+    census = {}
+    for tree in (library_names(ds / GI / "roms"), library_names(ds / ROOT_ROMS, expand_sets=True),
+                 library_names(ss / GI / "roms")):
+        for sysd, names in tree.items():
+            census.setdefault(sysd, set()).update(names)
+    return acts, {k: sorted(v) for k, v in census.items()}
 
 
 def _ts(t):
@@ -431,6 +559,10 @@ def do_action(roots, act):
         else:
             run(RSYNC + [str(a), str(b)])
         return
+    if k == "library":
+        if a.is_dir():
+            _library_move(a, b, act)
+        return
     if k == "merge":
         backup = Path(roots["ds"]) / act["backup"]
         cmd = RSYNC + ["-c", "--update", "--backup", f"--backup-dir={backup}"]
@@ -438,6 +570,71 @@ def do_action(roots, act):
         run(cmd + [str(a) + "/", str(b) + "/"])
         return
     raise RuntimeError(f"unknown action {k}")
+
+
+def _same_file(p, q):
+    return p.stat().st_size == q.stat().st_size and sha256(p) == sha256(q)
+
+
+def _library_move(src, dst, act):
+    """Move one system dir of the donor's root roms/ into the library: renames (same fs), a
+    differing same-named game goes beside it under <alt>/, an identical one stays behind (it is
+    a duplicate), a full-set archive is unpacked member by member and CRC32-verified."""
+    for d, _dirs, files in os.walk(src):
+        rel_dir = os.path.relpath(d, src)
+        for f in sorted(files):
+            if f in ROM_FURNITURE_FILES:
+                continue
+            p = Path(d, f)
+            members = set_archive_members(p)
+            if members:
+                _unpack_set(p, dst / rel_dir, members, act)
+                continue
+            q = dst / rel_dir / f
+            if q.exists():
+                if _same_file(p, q):
+                    continue
+                q = dst / act["alt"] / rel_dir / f
+                if q.exists():
+                    if _same_file(p, q):
+                        continue
+                    raise RuntimeError(f"library: {q} exists and differs — refusing to overwrite")
+                say(f"    CLASH {f}: the library has a different file — this one goes to {q.parent}")
+            q.parent.mkdir(parents=True, exist_ok=True)
+            os.rename(p, q)
+
+
+def _unpack_set(zpath, dst, members, act):
+    alt = dst / zpath.stem
+    with zipfile.ZipFile(zpath) as z:
+        for i in members:
+            name = os.path.basename(i.filename)
+            q = dst / name
+            ok = lambda t: t.exists() and t.stat().st_size == i.file_size and crc_of(t) == i.CRC
+            if ok(q) or ok(alt / name):
+                continue
+            if q.exists():
+                say(f"    CLASH {name}: the library has a different file — this one goes to {alt}")
+                q = alt / name
+            q.parent.mkdir(parents=True, exist_ok=True)
+            tmp = q.with_name(q.name + ".part")
+            try:
+                with z.open(i) as r, open(tmp, "wb") as w:      # zipfile raises on a bad CRC
+                    for b in iter(lambda: r.read(8 << 20), b""):
+                        w.write(b)
+                    w.flush()
+                    os.fsync(w.fileno())
+                if tmp.stat().st_size != i.file_size or crc_of(tmp) != i.CRC:
+                    raise RuntimeError("written copy does not match the archive's CRC32")
+            except Exception as e:
+                if tmp.exists():
+                    tmp.unlink()
+                raise RuntimeError(f"unpack {zpath.name}/{name}: {e} — archive kept") from None
+            os.rename(tmp, q)
+    say(f"    unpacked {zpath.name}: {len(members)} games verified (CRC32)")
+    if act.get("drop"):
+        zpath.unlink()
+        say(f"    removed {zpath.name} (every game verified in the library)")
 
 
 def check_space(roots, acts):
@@ -450,6 +647,8 @@ def check_space(roots, acts):
             need["boot"] += act["bytes"]
         elif act["kind"] in ("copy", "merge", "xpark"):
             need["data"] += act["bytes"]
+        elif act["kind"] == "library":
+            need["data"] += act["peak"] if act.get("drop") else act["bytes"]
         if act["kind"] == "xpark":
             freed_boot += act["bytes"]
     fb = _free(roots["db"]) + freed_boot
@@ -463,12 +662,30 @@ def _free(p):
     return st.f_bavail * st.f_frsize
 
 
-def render(acts, car, donor, park, space, labels, labels_ok, out):
+def pending_decisions(acts, allowed):
+    return [a for a in acts if a.get("decide") and a["a"][1] not in allowed and not a.get("done")]
+
+
+def render(acts, car, donor, park, space, labels, labels_ok, out, census, allowed=()):
     ok, need, fb, fd = space
+    drop = any(a.get("drop") for a in acts if a["kind"] == "library")
+    lib = [a for a in acts if a["kind"] == "library"]
     lines = [f"# Card transplant plan — {donor}'s card becomes {car}'s boot card", "",
-             f"park dir: /storage/{park}/ (nothing is deleted)",
+             f"park dir: /storage/{park}/ ("
+             + ("set archives are REMOVED once every game in them verifies; nothing else is deleted)"
+                if drop else "nothing is deleted)"),
              f"labels after: p1 → {labels[0]}, p2 → {labels[1]} "
-             f"({'from the KERNEL baked cmdline' if labels_ok else 'DEFAULT — no LABEL= in KERNEL'})", ""]
+             f"({'from the KERNEL baked cmdline' if labels_ok else 'DEFAULT — no LABEL= in KERNEL'})",
+             f"library census: {sum(len(v) for v in census.values())} games in {len(census)} systems "
+             f"must ALL be in games-internal/roms afterwards (verify fails otherwise)"]
+    if lib:
+        lines.append(f"donor root roms/ → library: {len(lib)} systems, {hfmt(sum(a['moved'] for a in lib))}, "
+                     f"{sum(a['sets'] for a in lib)} full-set archive(s) to unpack ({hfmt(sum(a['bytes'] for a in lib))})")
+    pend = pending_decisions(acts, allowed)
+    for a in pend:
+        lines.append(f"⚠ NEEDS DECISION: park {a['a'][1]} ({hfmt(a['moved'])}) holds game files — "
+                     f"it would leave ES. apply refuses unless you pass --allow-park '{a['a'][1]}'")
+    lines.append("")
     cur = None
     for act in acts:
         sect = _section(act)
@@ -478,6 +695,10 @@ def render(acts, car, donor, park, space, labels, labels_ok, out):
         a = "/".join(x for x in act["a"] if x) if act["a"] else ""
         b = "/".join(x for x in act["b"] if x) if act["b"] else ""
         extra = f"  [{hfmt(act['bytes'])}]" if act["bytes"] else ""
+        if "moved" in act:
+            extra = f"  [moves {hfmt(act['moved'])}" + (f", writes {hfmt(act['bytes'])}" if act["bytes"] else "") + "]"
+        if act.get("decide"):
+            extra += "  ⚠ NEEDS DECISION" if act["a"][1] not in allowed else "  (allowed: --allow-park)"
         if act.get("unreadable"):
             extra += f"  ({act['unreadable']} unreadable without root)"
         done = "  ✓done" if act.get("done") else ""
@@ -489,8 +710,8 @@ def render(acts, car, donor, park, space, labels, labels_ok, out):
     text = "\n".join(lines) + "\n"
     out.mkdir(parents=True, exist_ok=True)
     (out / "plan.md").write_text(text)
-    (out / "plan.json").write_text(json.dumps({"car": car, "donor": donor, "park": park,
-                                                "labels": labels, "actions": acts}, indent=1))
+    (out / "plan.json").write_text(json.dumps({"car": car, "donor": donor, "park": park, "labels": labels,
+                                                "census": census, "actions": acts}, indent=1))
     return text
 
 
@@ -507,6 +728,8 @@ def _section(act):
             return "Boot partition (/flash)"
     rel = act["b"][1] if act["b"] else ""
     src = act["a"][1] if act["a"] else ""
+    if act["kind"] == "library" or src == ROOT_ROMS:
+        return "games-internal (library, saves, kit)"
     if src.startswith(GI) or rel.startswith(GI) or "/" + GI in rel:
         return "games-internal (library, saves, kit)"
     if src.startswith(GE) or rel.startswith(GE) or "/" + GE + "/" in rel:
@@ -608,8 +831,14 @@ def relabel(dp, labels):
 
 # ---------------------------------------------------------------- verify
 
-def verify(roots, acts, car):
+def verify(roots, acts, car, census):
     fails = []
+    have = library_names(Path(roots["ds"]) / GI / "roms")
+    for sysd, names in sorted(census.items()):
+        missing = sorted(set(names) - have.get(sysd, set()))
+        if missing:
+            fails.append(f"library census: {sysd} is missing {len(missing)} of {len(names)} games "
+                         f"(e.g. {', '.join(missing[:3])})")
     for act in acts:
         if act["kind"] == "bootcopy" and not subset_of(rp(roots, act["a"]), rp(roots, act["b"]), True):
             fails.append(f"boot payload {act['a'][1]} differs")
@@ -650,6 +879,11 @@ def main(argv=None):
         p.add_argument("--car", required=True, help="the recipient car (e.g. car12)")
         p.add_argument("--donor", required=True, help="the car whose card this was (e.g. car8)")
         p.add_argument("--out", default=str(repo_root() / "state" / "card_transplant"))
+        p.add_argument("--allow-park", action="append", default=[], metavar="RELPATH",
+                       help="consent to parking a donor entry that holds game files (repeat per entry)")
+        p.add_argument("--drop-verified-archives", action="store_true",
+                       help="remove each full-set archive once every game in it verifies (needed when "
+                            "the card cannot hold the archives AND the unpacked games)")
         p.add_argument("--dirs", nargs=4, metavar=("SRC_BOOT", "SRC_STORAGE", "DST_BOOT", "DST_STORAGE"),
                        help=argparse.SUPPRESS)      # harness: four plain directories, no devices
         p.add_argument("--date", help=argparse.SUPPRESS)
@@ -679,23 +913,32 @@ def main(argv=None):
         if not state and parts and parts[1][0]["label"] == labels[0] and parts[1][1]["label"] == labels[1]:
             raise SystemExit("REFUSED: the destination already carries the boot labels and no transplant marker — wrong card?")
         if state:
-            acts, park = state["actions"], state["park"]
+            acts, park, census = state["actions"], state["park"], state.get("census", {})
             say(f"RESUMING the plan from {state['started']} ({sum(1 for a in acts if a.get('done'))}/{len(acts)} done)")
         else:
             date = args.date or datetime.date.today().strftime("%Y%m%d")
             park = f"parked-{args.donor}-{date}"
-            acts, _ = build_plan(roots, args.car, args.donor, park, verify=apply)
+            acts, census = build_plan(roots, args.car, args.donor, park, verify=apply,
+                                      drop_archives=args.drop_verified_archives)
         space = check_space(roots, acts)
-        text = render(acts, args.car, args.donor, park, space, labels, labels_ok, out)
+        text = render(acts, args.car, args.donor, park, space, labels, labels_ok, out, census, args.allow_park)
         say(text)
+        pend = pending_decisions(acts, args.allow_park)
         if not apply:
             say(f"plan written: {out / 'plan.md'}")
-            return 0 if space[0] else 2
+            return 2 if not space[0] else 3 if pend else 0
+        if pend:
+            raise SystemExit("REFUSED: these parks would take game files out of the library: "
+                             + ", ".join(a["a"][1] for a in pend)
+                             + " — look at them; pass --allow-park <path> only for the ones you mean")
         if not space[0]:
-            raise SystemExit("REFUSED: not enough space (see the Space section)")
+            raise SystemExit("REFUSED: not enough space (see the Space section)"
+                             + ("" if args.drop_verified_archives or not any(a["kind"] == "library" and a["sets"] for a in acts)
+                                else " — unpacking the set archives while keeping them does not fit; "
+                                     "--drop-verified-archives removes each one after its games verify"))
         if not state:
             state = {"state": "in-progress", "car": args.car, "donor": args.donor, "park": park,
-                     "labels": labels, "started": runid, "actions": acts}
+                     "labels": labels, "started": runid, "census": census, "actions": acts}
             marker.write_text(json.dumps(state, indent=1))
         for i, act in enumerate(acts):
             if act.get("done"):
@@ -706,7 +949,7 @@ def main(argv=None):
             act["done"] = True
             marker.write_text(json.dumps(state, indent=1))
         say("verify …")
-        fails = verify(roots, acts, args.car)
+        fails = verify(roots, acts, args.car, census)
         state["state"] = "done" if not fails else "verify-failed"
         state["finished"] = datetime.datetime.now().isoformat(timespec="seconds")
         state["verify"] = fails

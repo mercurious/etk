@@ -9,7 +9,10 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 - **Card Transplant** (`tools/card_transplant.py`, host-side Garage Gear): turns one car's
   game card into another car's boot card in place, keeping the newer data from both — saves
   judged whole, the library's metadata kept, nothing deleted (the losing copies are parked on
-  the card). `plan` reads both cards; `apply` (sudo) does the move and relabels last.
+  the card). `plan` reads both cards; `apply` (sudo) does the move and relabels last. Every game
+  on either card must be in the library afterwards (a census verify); a ROM folder at the old
+  card's root joins the library, full-set archives are unpacked and checked, and nothing holding
+  games is moved aside without your say-so.
 
 ## [0.10.0] - 2026-10-23 — 120Hz Edition
 

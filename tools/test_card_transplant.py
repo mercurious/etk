@@ -13,6 +13,7 @@ import os
 import sys
 import tempfile
 import unittest
+import zipfile
 from contextlib import redirect_stdout
 from pathlib import Path
 
@@ -28,6 +29,17 @@ def put(root, rel, data, t=MID):
     p = Path(root, rel)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_bytes(data if isinstance(data, bytes) else data.encode())
+    os.utime(p, (t, t))
+    return p
+
+
+def put_set(root, rel, members, t=OLD):
+    """A full-set archive: a zip whose members are themselves game zips."""
+    p = Path(root, rel)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(p, "w") as z:
+        for name, data in members.items():
+            z.writestr(name, data)
     os.utime(p, (t, t))
     return p
 
@@ -81,7 +93,16 @@ class Transplant(unittest.TestCase):
         put(self.db, "Android/data/x", b"android")
         put(self.ds, ".config/system/configs/system.cfg", "june config", OLD)
         (self.ds / ".update").mkdir()
-        put(self.ds, "roms/gc/GameCube.zip", "bulk archive", OLD)
+        # the donor root's roms/: games found nowhere else (2026-10-24: v1 parked these out of ES)
+        put(self.ds, "roms/gc/GameCube.rvz", "gc-game", OLD)
+        put(self.ds, "roms/genesis/systeminfo.txt", "rocknix stub", OLD)
+        put_set(self.ds, "roms/genesis/Sega - Genesis.zip",
+                {"Sega - Genesis/Sonic.zip": "sonic-rom", "Sega - Genesis/Streets.zip": "sor-rom"})
+        put(self.ds, "roms/nes/Mario.zip", "root-roms mario", OLD)
+        put(self.ds, "games-internal/roms/nes/Mario.zip", "library mario", OLD)
+        put(self.ds, "roms/gba/x.gba", "same-game", OLD)
+        put(self.ds, "games-internal/roms/gba/x.gba", "same-game", OLD)
+        put(self.ds, "roms/systems.txt", "list", OLD)
         put(self.ds, "Alarms/.keep", "", OLD)
         put(self.ds, "etk_crash_report.log", "june", OLD)
         put(self.ds, "autogamer/old.py", "car8 autogamer", OLD)
@@ -108,10 +129,10 @@ class Transplant(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def run_ct(self, cmd):
+    def run_ct(self, cmd, *extra):
         buf = io.StringIO()
         with redirect_stdout(buf):
-            rc = ct.main([cmd, "--car", "car12", "--donor", "car8", "--date", "20261023",
+            rc = ct.main([cmd, "--car", "car12", "--donor", "car8", "--date", "20261023", *extra,
                           "--out", str(self.out), "--dirs", str(self.sb), str(self.ss), str(self.db), str(self.ds)])
         return rc, buf.getvalue()
 
@@ -134,7 +155,18 @@ class Transplant(unittest.TestCase):
         # root: car12 state live, car8's stale state parked, nothing lost
         self.assertEqual(self.txt(ds, ".config/system/configs/system.cfg"), "car12 config")
         self.assertEqual(self.txt(P, "root/.config/system/configs/system.cfg"), "june config")
-        self.assertEqual(self.txt(P, "root/roms/gc/GameCube.zip"), "bulk archive")
+        # the donor root's roms/ is LIBRARY: every game lands in games-internal/roms
+        LIB = ds / "games-internal/roms"
+        self.assertEqual(self.txt(LIB, "gc/GameCube.rvz"), "gc-game")
+        self.assertEqual(self.txt(LIB, "genesis/Sonic.zip"), "sonic-rom")
+        self.assertEqual(self.txt(LIB, "genesis/Streets.zip"), "sor-rom")
+        self.assertEqual(self.txt(LIB, "nes/Mario.zip"), "library mario", "a library game is never overwritten")
+        self.assertEqual(self.txt(LIB, "nes/from-car8-roms/Mario.zip"), "root-roms mario")
+        self.assertEqual(self.txt(LIB, "gba/x.gba"), "same-game")
+        self.assertTrue((P / "root/roms/genesis/Sega - Genesis.zip").exists(), "set archive kept by default")
+        self.assertEqual(self.txt(P, "root/roms/genesis/systeminfo.txt"), "rocknix stub")
+        self.assertEqual(self.txt(P, "root/roms/systems.txt"), "list")
+        self.assertFalse(list(LIB.rglob("*.part")))
         self.assertTrue((P / "root/Alarms").is_dir() and (P / "root/etk_crash_report.log").exists())
         self.assertEqual(self.txt(ds, "sketchgen/app"), "car12 project")
         self.assertTrue((ds / "roms").is_dir())
@@ -275,6 +307,62 @@ class Transplant(unittest.TestCase):
             ct.subprocess.run, ct.lsblk = real_run, real_lsblk
             ct.MOUNT_BASE = real_base
         self.assertLess(calls.index("umount"), calls.index("dumpe2fs"))
+
+    def test_plan_shows_what_every_move_moves(self):
+        rc, out = self.run_ct("plan")
+        self.assertEqual(rc, 0, out)
+        self.assertRegex(out, r"park +ds/\.config .*\[moves \d")
+        self.assertRegex(out, r"library +ds/roms/genesis +→ +ds/games-internal/roms/genesis")
+        self.assertIn("1 full-set archive(s) to unpack", out)
+        self.assertRegex(out, r"library census: \d+ games in \d+ systems")
+
+    def test_census_fails_when_root_roms_games_leave_the_library(self):
+        """The 2026-10-24 regression: the root roms/ parked whole → games gone from ES. Verify must catch it."""
+        real = ct.do_action
+
+        def v1(roots, act):                             # v1 behaviour: no library move
+            if act["kind"] == "library":
+                return
+            return real(roots, act)
+        ct.do_action = v1
+        try:
+            rc, out = self.run_ct("apply")
+        finally:
+            ct.do_action = real
+        self.assertEqual(rc, 1, out)
+        self.assertIn("library census: genesis is missing 2 of 2 games", out)
+        self.assertIn("VERIFY FAILED", out)
+        self.assertNotEqual(json.loads((self.ds / ct.MARKER).read_text())["state"], "done")
+
+    def test_drop_verified_archives(self):
+        rc, out = self.run_ct("apply", "--drop-verified-archives")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.txt(self.ds, "games-internal/roms/genesis/Sonic.zip"), "sonic-rom")
+        self.assertFalse(list(self.ds.rglob("Sega - Genesis.zip")), "a verified archive is removed with the flag")
+
+    def test_corrupt_set_archive_is_kept(self):
+        z = self.ds / "roms/genesis/Sega - Genesis.zip"
+        b = bytearray(z.read_bytes())
+        i = b.find(b"sonic-rom")
+        b[i] ^= 0xFF
+        z.write_bytes(bytes(b))
+        with self.assertRaises(RuntimeError) as cm:
+            self.run_ct("apply", "--drop-verified-archives")
+        self.assertIn("archive kept", str(cm.exception))
+        self.assertTrue(z.exists())
+        self.assertFalse(list(self.ds.rglob("*.part")))
+
+    def test_parking_games_needs_a_decision(self):
+        put(self.ds, "Download/Some Game.iso", "an iso Android downloaded", OLD)
+        rc, out = self.run_ct("plan")
+        self.assertEqual(rc, 3, out)
+        self.assertIn("NEEDS DECISION: park Download", out)
+        with self.assertRaises(SystemExit) as cm:
+            self.run_ct("apply")
+        self.assertIn("would take game files out of the library: Download", str(cm.exception))
+        self.assertFalse((self.ds / ct.MARKER).exists(), "a refused apply must not start")
+        rc, out = self.run_ct("apply", "--allow-park", "Download")
+        self.assertEqual(rc, 0, out)
 
     def test_labels_follow_the_kernel(self):
         put(self.sb, "KERNEL", b"ANDROID!" + b"boot=LABEL=GTKBOOT disk=LABEL=GTKDATA")
