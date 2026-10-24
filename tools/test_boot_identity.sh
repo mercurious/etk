@@ -99,9 +99,17 @@ lane_render() {  # $1 edition  $2 image basename  -> prints the line the card's 
     cp "$TD/bin/etk_pitstop.py" "$TD/lane/repo/bin/etk_pitstop.py"
     sed -i "s/^APP_EDITION = .*/APP_EDITION = \"$1\"/" "$TD/lane/repo/bin/etk_pitstop.py"
     grep -q '^APP_EDITION' "$TD/lane/repo/bin/etk_pitstop.py" || echo "APP_EDITION = \"$1\"" >> "$TD/lane/repo/bin/etk_pitstop.py"
-    : > "$TD/lane/.seed_config/system.d/etk-osguard.service"
-    ln -s ../etk-osguard.service   "$TD/lane/.seed_config/system.d/multi-user.target.wants/etk-osguard.service"
-    ln -s ../etk-sd-rebind.service "$TD/lane/.seed_config/system.d/multi-user.target.wants/etk-sd-rebind.service"   # dangling, as the 10-04 seed
+    # the REAL seed's link forms (ls -l seed_config/system.d/multi-user.target.wants): absolute
+    # /storage/.config/system.d/<unit> for kit units, absolute /usr/lib/systemd/system/<unit> for
+    # OS units, and the 10-04 dangling relative ../etk-sd-rebind.service. The first fixture used
+    # relative links only and let a prune that resolved absolute targets in the container pass.
+    local W="$TD/lane/.seed_config/system.d/multi-user.target.wants"
+    : > "$TD/lane/.seed_config/system.d/etk-osguard.service"; : > "$TD/lane/.seed_config/system.d/etk.service"
+    ln -s /storage/.config/system.d/etk-osguard.service "$W/etk-osguard.service"   # live kit unit
+    ln -s /storage/.config/system.d/etk.service         "$W/etk.service"           # live kit unit (the invariant)
+    ln -s /usr/lib/systemd/system/sshd.service          "$W/sshd.service"          # OS unit: unseen here, must be kept
+    ln -s ../etk-sd-rebind.service                      "$W/etk-sd-rebind.service" # dangling relative (10-04 seed)
+    ln -s /storage/.config/system.d/etk-gone.service    "$W/etk-gone.service"      # dangling absolute
     local block; block=$(sed -n '/# --- seed boot-identity render (begin) ---/,/# --- seed boot-identity render (end) ---/p' "$TD/lane.sh")
     [ -n "$block" ] || block=$(sed -n '/^ *_GV=\$(grep -m1/,/^ *done$/p' "$TD/lane.sh")   # pre-marker lane: its own two-term render
     [ -n "$block" ] || { echo "NO-LANE-RENDER-BLOCK"; return; }
@@ -118,10 +126,12 @@ check "image lane: empty edition drops the clause" "$(lane_render '' KERNEL.rock
 lane_render 'Pitlink' KERNEL.rocknix-gtk-20261001-0.6.3 >/dev/null
 LEFT=$(grep -o '@[A-Z]*@' "$TD/lane/.seed_config/system.d/etk-gtk-version.service" 2>/dev/null | sort -u | tr '\n' ' ')
 [ -z "$LEFT" ] && ok "no placeholder survives the image lane" || bad "no placeholder survives the image lane (card would print: $LEFT)"
-if [ ! -L "$TD/lane/.seed_config/system.d/multi-user.target.wants/etk-sd-rebind.service" ] \
-   && [ -L "$TD/lane/.seed_config/system.d/multi-user.target.wants/etk-osguard.service" ]; then
-    ok "image lane prunes a dangling seed wants-link and keeps a live one"
-else bad "image lane prunes a dangling seed wants-link and keeps a live one"; fi
+W="$TD/lane/.seed_config/system.d/multi-user.target.wants"
+if [ ! -L "$W/etk-sd-rebind.service" ] && [ ! -L "$W/etk-gone.service" ]; then ok "image lane prunes dangling seed wants-links (relative and absolute)"
+else bad "image lane prunes dangling seed wants-links (relative and absolute) — left: $(ls "$W" | grep -E 'rebind|gone' | tr '\n' ' ')"; fi
+if [ -L "$W/etk-osguard.service" ] && [ -L "$W/etk.service" ] && [ -L "$W/sshd.service" ]; then ok "image lane keeps live kit links (absolute /storage/.config) and OS links (/usr/lib/systemd)"
+else bad "image lane keeps live kit links (absolute /storage/.config) and OS links (/usr/lib/systemd) — kept: $(ls "$W" | tr '\n' ' ')"; fi
+grep -q 'LANE-DIE' "$TD/lane.out" && bad "image lane render block completes ($(grep LANE-DIE "$TD/lane.out" | head -1))" || ok "image lane render block completes"
 
 echo "boot identity: $PASS passed, $FAIL failed${REV:+ (against $REV)}"
 [ "$FAIL" -eq 0 ]

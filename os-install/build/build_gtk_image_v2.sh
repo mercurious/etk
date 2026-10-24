@@ -141,14 +141,29 @@ if [ -n "$SEED_CONFIG" ]; then
   # The seed is a snapshot: a unit later dropped from it can leave its *.wants link
   # behind (etk-sd-rebind.service -> "not-found" on every card boot, 2026-10-23).
   # Prune links whose target is gone, loudly; the seed source is never edited here.
+  # Targets are resolved as the RIG sees them: the seed lands at /storage/.config, so an
+  # absolute /storage/.config/... target maps INTO the copied seed, a relative one
+  # resolves against the link's directory, and /usr/lib/systemd/system/... is the OS's
+  # own unit, kept unseen (the container has no ROCKNIX squashfs). The first cut of
+  # this prune resolved absolute targets in the CONTAINER and pruned all 13 links
+  # (run 20261023-210514, image quarantined): the invariant below is what catches that.
   for _w in "$ER"/.seed_config/system.d/*.wants/*; do
     [ -L "$_w" ] || continue
-    _tgt=$(readlink "$_w"); case "$_tgt" in /*) ;; *) _tgt="$(dirname "$_w")/$_tgt" ;; esac
-    if [ ! -e "$_tgt" ] && [ ! -e "/usr/lib/systemd/system/$(basename "$_w")" ]; then
-      echo "   pruned dangling seed wants-link: $(basename "$(dirname "$_w")")/$(basename "$_w") -> $(readlink "$_w")"
+    _tgt=$(readlink "$_w")
+    case "$_tgt" in
+      /storage/.config/*)  _res="$ER/.seed_config/${_tgt#/storage/.config/}" ;;
+      /usr/lib/systemd/*)  continue ;;
+      /*)                  _res="$_tgt" ;;
+      *)                   _res="$(dirname "$_w")/$_tgt" ;;
+    esac
+    if [ ! -e "$_res" ]; then
+      echo "   pruned dangling seed wants-link: $(basename "$(dirname "$_w")")/$(basename "$_w") -> $_tgt"
       rm -f "$_w"
     fi
   done
+  [ -L "$ER/.seed_config/system.d/multi-user.target.wants/etk.service" ] \
+    || die "seed prune removed multi-user.target.wants/etk.service -- this card would activate nothing"
+  echo "   seed wants-links kept: $(find "$ER"/.seed_config/system.d/*.wants -type l | wc -l | tr -d ' ')"
   # --- seed boot-identity render (end) ---
   # THE STOCK MAKO STYLE + ETK BLOCKS (0.9.0). A hostless card never runs
   # install.sh STEP 1, and a virgin ROCKNIX has no mako config until its own
