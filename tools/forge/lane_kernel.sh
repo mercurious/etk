@@ -59,6 +59,11 @@ ETK_SD_POLL="${ETK_SD_POLL:-0}"
 if [ "$ETK_SD_POLL" = 1 ] && [ "$ETK_KIT_DTB" != 1 ]; then
     log "FATAL: ETK_SD_POLL=1 is a kit DTB delta -- it needs ETK_KIT_DTB=1"; exit 1
 fi
+# this lane ships from the host every run, the recipe does not: a stale node recipe would
+# drop the knob SILENTLY and mint a kernel without the delta
+if [ "$ETK_SD_POLL" = 1 ] && ! grep -q 'ETK_SD_POLL' "$HOME/rocknix-gtk/scripts/build_${KLANE}.sh" 2>/dev/null; then
+    log "FATAL: ETK_SD_POLL=1 but the node's rocknix-gtk build_${KLANE}.sh does not know it (pull ~/rocknix-gtk)"; exit 1
+fi
 if [ "$KLANE" = 72 ] && [ "$BASEDATE" -ge 20261001 ] && [ "$ETK_KIT_DTB" = 1 ]; then
     SPL="$HOME/etk/bin/etk_dtb_mic.py"
     [ -f "$SPL" ] || { log "FATAL: $SPL missing on the node (pull ~/etk) -- or ETK_KIT_DTB=0 for a pure-parity mint"; exit 1; }
