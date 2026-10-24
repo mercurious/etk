@@ -85,5 +85,43 @@ render 'Pitlink' KERNEL.rocknix-gtk-20261001-0.6.3 "$ABL" >/dev/null
 if grep -q '@[A-Z]*@' "$TD/unit"; then bad "no placeholder survives templating ($(grep -o '@[A-Z]*@' "$TD/unit" | tr '\n' ' '))"; else ok "no placeholder survives templating"; fi
 if LC_ALL=C grep -q '[^ -~]' <(grep '^ExecStart' "$TD/unit.tmpl"); then bad "ExecStart is ASCII (fbcon console)"; else ok "ExecStart is ASCII (fbcon console)"; fi
 
+
+# --- the image lane: a CARD's seed unit is rendered by build_gtk_image_v2.sh, never by install.sh ----
+# The v0.10.0 card walk (2026-10-23, car12) booted "ROCKNIX-GTK 0.10.0-20261001@EDITION@ -- kernel @KVER@"
+# because the lane rendered only the two old placeholders. The lane's render block is extracted by its
+# markers and run against the same fakes, so lane and install.sh must agree or this FAILS.
+LANE=os-install/build/build_gtk_image_v2.sh
+if [ -n "$REV" ]; then git show "$REV:$LANE" > "$TD/lane.sh" 2>/dev/null || : > "$TD/lane.sh"; else cp "$LANE" "$TD/lane.sh"; fi
+lane_render() {  # $1 edition  $2 image basename  -> prints the line the card's console would show
+    rm -rf "$TD/lane"; mkdir -p "$TD/lane/.seed_config/system.d/multi-user.target.wants" "$TD/lane/repo/bin" "$TD/lane/repo/config"
+    cp "$TD/unit.tmpl" "$TD/lane/repo/config/etk-gtk-version.service"
+    printf 'ExecStart=/bin/sh -c "echo STALE-SNAPSHOT"\n' > "$TD/lane/.seed_config/system.d/etk-gtk-version.service"
+    cp "$TD/bin/etk_pitstop.py" "$TD/lane/repo/bin/etk_pitstop.py"
+    sed -i "s/^APP_EDITION = .*/APP_EDITION = \"$1\"/" "$TD/lane/repo/bin/etk_pitstop.py"
+    grep -q '^APP_EDITION' "$TD/lane/repo/bin/etk_pitstop.py" || echo "APP_EDITION = \"$1\"" >> "$TD/lane/repo/bin/etk_pitstop.py"
+    : > "$TD/lane/.seed_config/system.d/etk-osguard.service"
+    ln -s ../etk-osguard.service   "$TD/lane/.seed_config/system.d/multi-user.target.wants/etk-osguard.service"
+    ln -s ../etk-sd-rebind.service "$TD/lane/.seed_config/system.d/multi-user.target.wants/etk-sd-rebind.service"   # dangling, as the 10-04 seed
+    local block; block=$(sed -n '/# --- seed boot-identity render (begin) ---/,/# --- seed boot-identity render (end) ---/p' "$TD/lane.sh")
+    [ -n "$block" ] || block=$(sed -n '/^ *_GV=\$(grep -m1/,/^ *done$/p' "$TD/lane.sh")   # pre-marker lane: its own two-term render
+    [ -n "$block" ] || { echo "NO-LANE-RENDER-BLOCK"; return; }
+    ( ER="$TD/lane"; REPO="$TD/lane/repo"; KERNEL="/x/$2"; die(){ echo "LANE-DIE: $*" >&2; exit 1; }; eval "$block" ) > "$TD/lane.out" 2>&1
+    echo "$ABL" > "$TD/cmdline"
+    local cmd; cmd=$(grep '^ExecStart=' "$TD/lane/.seed_config/system.d/etk-gtk-version.service" | sed "s#^ExecStart=##; s#/proc/cmdline#$TD/cmdline#")
+    eval "$cmd"
+}
+EXPECT="ROCKNIX-GTK $(grep -m1 '^APP_VERSION' "$TD/bin/etk_pitstop.py" | cut -d'"' -f2)-20261001 -- Pitlink Edition -- kernel 0.6.3"
+check "image lane renders kit, date, edition, kernel into the card's seed unit" "$(lane_render 'Pitlink' KERNEL.rocknix-gtk-20261001-0.6.3)" "$EXPECT"
+check "image lane and install.sh print the same boot line" "$(lane_render 'Pitlink' KERNEL.rocknix-gtk-20261001-0.6.3)" "$(render 'Pitlink' KERNEL.rocknix-gtk-20261001-0.6.3 "$ABL")"
+check "image lane: empty edition drops the clause" "$(lane_render '' KERNEL.rocknix-gtk-20261001-0.6.4)" \
+      "ROCKNIX-GTK $(grep -m1 '^APP_VERSION' "$TD/bin/etk_pitstop.py" | cut -d'"' -f2)-20261001 -- kernel 0.6.4"
+lane_render 'Pitlink' KERNEL.rocknix-gtk-20261001-0.6.3 >/dev/null
+LEFT=$(grep -o '@[A-Z]*@' "$TD/lane/.seed_config/system.d/etk-gtk-version.service" 2>/dev/null | sort -u | tr '\n' ' ')
+[ -z "$LEFT" ] && ok "no placeholder survives the image lane" || bad "no placeholder survives the image lane (card would print: $LEFT)"
+if [ ! -L "$TD/lane/.seed_config/system.d/multi-user.target.wants/etk-sd-rebind.service" ] \
+   && [ -L "$TD/lane/.seed_config/system.d/multi-user.target.wants/etk-osguard.service" ]; then
+    ok "image lane prunes a dangling seed wants-link and keeps a live one"
+else bad "image lane prunes a dangling seed wants-link and keeps a live one"; fi
+
 echo "boot identity: $PASS passed, $FAIL failed${REV:+ (against $REV)}"
 [ "$FAIL" -eq 0 ]

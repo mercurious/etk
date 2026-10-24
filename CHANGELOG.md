@@ -299,6 +299,13 @@ you update: the OS update is a one-way move and the order of steps matters.
   card shows where its starting config came from.
 
 ### Known behaviour
+- **The card image is the kernel, the core and the driver catalog — not yet the
+  whole kit.** A card boot never runs `install.sh`, so the kit's boot-time
+  services — the Internal Microphone UCM bind, the USB-net heal, the battery
+  guard, the USB-wake and mDNS fixes, Pitlink — are absent until the one-liner
+  runs once from a computer (turn on SSH in ROCKNIX's settings first; a fresh
+  card also ships with USB gadget networking off). Found on the v0.10.0 card
+  walk (car12, 2026-10-23); the card's seed grows in 0.11.0.
 - **Who should update, and in what order.** This release needs ROCKNIX
   **20261001**. A 0.9.0 handheld on 20260901 (macOS/Linux host): first fetch
   the **fixed** `uninstall.sh` (`curl -fsSL

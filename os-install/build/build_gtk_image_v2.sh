@@ -117,14 +117,39 @@ if [ -n "$SEED_CONFIG" ]; then
   # releases stale, because the /flash hook installs the seed directly and never
   # runs install.sh's sed. Re-render it here from the repo template using this
   # image's OWN inputs, so the flashed card and the host install agree.
+  # 0.10.0 added two more placeholders (@EDITION@ = the whole " -- X Edition" clause,
+  # @KVER@ = the kernel generation off the Image name) and this lane kept rendering
+  # only the first two: the v0.10.0 card walk (2026-10-23, car12) booted a console line
+  # reading "ROCKNIX-GTK 0.10.0-20261001@EDITION@ -- kernel @KVER@". The derivations
+  # below are install.sh's own (L2223-2230); tools/test_boot_identity.sh extracts this
+  # block by its markers and renders it against the same fakes as install.sh's sed,
+  # so the two can no longer drift apart silently. A surviving '@TOKEN@' is FATAL.
+  # --- seed boot-identity render (begin) ---
   _GV=$(grep -m1 '^APP_VERSION' "$REPO/bin/etk_pitstop.py" | cut -d'"' -f2)
+  _GE=$(grep -m1 '^APP_EDITION' "$REPO/bin/etk_pitstop.py" | cut -d'"' -f2)
   _GD=$(basename "$KERNEL" | grep -oE '[0-9]{8}' | head -1)
+  _GK=$(basename "$KERNEL" | sed -n 's/.*-[0-9]\{8\}-\([0-9.]*\)$/\1/p')
   for _t in "$ER/.seed_config/system.d/etk-gtk-version.service"; do
     [ -f "$_t" ] || continue
     sed -e "s/@GTKVER@/${_GV:-dev}/" -e "s/@KDATE@/${_GD:-dev}/" \
+        -e "s/@EDITION@/${_GE:+ -- $_GE Edition}/" -e "s/@KVER@/${_GK:-dev}/" \
         "$REPO/config/etk-gtk-version.service" > "$_t"
-    echo "   re-rendered seed boot-identity: ROCKNIX-GTK ${_GV:-dev}-${_GD:-dev}"
+    _left=$(grep -o '@[A-Z]*@' "$_t" | sort -u | tr '\n' ' ')
+    [ -z "$_left" ] || die "seed boot-identity still carries placeholder(s): $_left"
+    echo "   re-rendered seed boot-identity: ROCKNIX-GTK ${_GV:-dev}-${_GD:-dev}${_GE:+ -- $_GE Edition} -- kernel ${_GK:-dev}"
   done
+  # The seed is a snapshot: a unit later dropped from it can leave its *.wants link
+  # behind (etk-sd-rebind.service -> "not-found" on every card boot, 2026-10-23).
+  # Prune links whose target is gone, loudly; the seed source is never edited here.
+  for _w in "$ER"/.seed_config/system.d/*.wants/*; do
+    [ -L "$_w" ] || continue
+    _tgt=$(readlink "$_w"); case "$_tgt" in /*) ;; *) _tgt="$(dirname "$_w")/$_tgt" ;; esac
+    if [ ! -e "$_tgt" ] && [ ! -e "/usr/lib/systemd/system/$(basename "$_w")" ]; then
+      echo "   pruned dangling seed wants-link: $(basename "$(dirname "$_w")")/$(basename "$_w") -> $(readlink "$_w")"
+      rm -f "$_w"
+    fi
+  done
+  # --- seed boot-identity render (end) ---
   # THE STOCK MAKO STYLE + ETK BLOCKS (0.9.0). A hostless card never runs
   # install.sh STEP 1, and a virgin ROCKNIX has no mako config until its own
   # mako-notify first runs — mako's default layer is UNDER fullscreen ES, so
