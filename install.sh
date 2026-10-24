@@ -2128,6 +2128,23 @@ set -e
 STAGING="${STAGING:-/storage/rocknix-gtk.KERNEL.staging}"
 ro() { mount -o remount,ro "$FLASH" 2>/dev/null || true; }
 fail() { echo "KERNEL_FAIL $*"; rm -f "$FLASH/KERNEL.new"; ro; exit 1; }
+# CARD GUARD (v0.10.0 card walk, car12, 2026-10-23). A unit booted from the GTK card
+# image already runs THIS kernel, RELABELLED by the image lane to the card's own
+# partitions (boot=LABEL=ROCKNIX-GTK disk=LABEL=GTKSTOR); the host's artifact is the
+# un-relabelled one and names ROCKNIX/STORAGE. Its sha never matches the slot, so
+# without this the body below would park, rewrite the lane-seeded heal bundle and put
+# the ROCKNIX/STORAGE kernel into the card's slot -- and the next card boot would mount
+# an internal ROCKNIX's partitions (split-brain) or find no root at all. The live
+# cmdline is the card's signature (the ABL appends nothing: it IS the slot's cmdline).
+# Leave slot and heal bundle as the lane seeded them; the rest of the kit installs on
+# top (mic UCM, heals, battery guard, Pitlink). Harness: tools/test_kernel_abl.sh.
+PROC="${PROC:-/proc}"
+LIVE_DISK=$(tr ' ' '\n' < "$PROC/cmdline" 2>/dev/null | sed -n 's/^disk=LABEL=//p' | head -n1)
+if [ -n "$LIVE_DISK" ] && [ "$LIVE_DISK" != "STORAGE" ]; then
+    rm -f "$STAGING"
+    echo "KERNEL_OK chain=abl slot=untouched reason=card-labels live_disk=$LIVE_DISK slot_sha=$(sha256sum "$FLASH/KERNEL" 2>/dev/null | cut -d' ' -f1) stock=$([ -f "$FLASH/KERNEL.etk-stock" ] && echo kept || echo none) heal=$([ -f "$HEAL/KERNEL.staged.sha256" ] && echo seeded || echo absent)"
+    exit 0
+fi
 S=$(sha256sum "$STAGING" 2>/dev/null | cut -d' ' -f1)
 [ "$S" = "$HOST_SHA" ] || { rm -f "$STAGING"; echo "KERNEL_FAIL staging sha mismatch ($S)"; exit 1; }
 [ "$(head -c 8 "$STAGING")" = "ANDROID!" ] || { rm -f "$STAGING"; echo "KERNEL_FAIL staged file is not a boot.img"; exit 1; }
@@ -2200,9 +2217,12 @@ KERNELABLREMOTE
             K_PRI=$(echo "$K_OUT" | sed -n 's/.* pristine=\([^ ]*\).*/\1/p')
             K_PROOF=$(echo "$K_OUT" | sed -n 's/.* proof=\([^ ]*\).*/\1/p')
             K_KA=$(echo "$K_OUT" | sed -n 's/.* keepalive=\([^ ]*\).*/\1/p')
-            case "$K_SLOT" in
-                untouched) say "${Y}[ETK]${N} Custom kernel $(basename "$KERNEL_IMAGE") STAGED only (mode=test or a [GUARD] above): the ABL slot /flash/KERNEL still holds its current boot.img. Set KERNEL_DEPLOY_MODE=default (and clear the guard) to deploy." ;;
-                already)   say "${G}[ETK]${N} Custom kernel $(basename "$KERNEL_IMAGE") already in the ABL slot /flash/KERNEL (keepalive=${K_KA:-?}); stock parked as KERNEL.etk-stock (${K_STK}, pristine=${K_PRI}, proof=${K_PROOF:-?})." ;;
+            K_WHY=$(echo "$K_OUT" | sed -n 's/.* reason=\([^ ]*\).*/\1/p')
+            K_LDISK=$(echo "$K_OUT" | sed -n 's/.* live_disk=\([^ ]*\).*/\1/p')
+            case "$K_SLOT:$K_WHY" in
+                untouched:card-labels) say "${G}[ETK]${N} Custom kernel: this unit booted from the GTK CARD IMAGE (live disk label ${K_LDISK}) -- the ABL slot already carries $(basename "$KERNEL_IMAGE") relabelled for the card, stock parked beside it. Slot and heal bundle left as the card lane seeded them; the kit installs on top." ;;
+                untouched:*) say "${Y}[ETK]${N} Custom kernel $(basename "$KERNEL_IMAGE") STAGED only (mode=test or a [GUARD] above): the ABL slot /flash/KERNEL still holds its current boot.img. Set KERNEL_DEPLOY_MODE=default (and clear the guard) to deploy." ;;
+                already:*) say "${G}[ETK]${N} Custom kernel $(basename "$KERNEL_IMAGE") already in the ABL slot /flash/KERNEL (keepalive=${K_KA:-?}); stock parked as KERNEL.etk-stock (${K_STK}, pristine=${K_PRI}, proof=${K_PROOF:-?})." ;;
                 *)         say "${G}[ETK]${N} Custom kernel $(basename "$KERNEL_IMAGE") -> ABL slot /flash/KERNEL (sha-verified read-back, keepalive=${K_KA:-?}); stock parked as KERNEL.etk-stock (${K_STK}, pristine=${K_PRI}, proof=${K_PROOF:-?}). COLD boot on-device." ;;
             esac
             case "$K_SLOT" in untouched) ;; *)

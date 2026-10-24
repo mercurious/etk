@@ -17,7 +17,8 @@
 # overridden; `mount` is a stub that logs. Boot images are real mkbootimg v0
 # images (fake Image + 9 tiny DTBs). Needs mkbootimg + dtc. No rig, no network.
 #
-# DISCRIMINATION: `--against <rev>` takes all three files from that revision.
+# DISCRIMINATION: `--against <rev>` takes all three files from that revision;
+# against 68b91ea (pre card guard) the CARD GUARD cases FAIL (slot and heal bundle rewritten).
 # Against 6615699 (before the ABL path existed) every run case FAILS.
 #
 #   tools/test_kernel_abl.sh                     # working tree — must PASS
@@ -135,6 +136,35 @@ expect "stage: mode=test stages the bundle, slot untouched" 0 "KERNEL_OK chain=a
 [ "$(cat "$U/storage/heal/mode" 2>/dev/null)" = "test" ] && ok "test mode banked mode=test" || bad "mode not banked"
 [ -s "$U/mount.log" ] && bad "test mode remounted flash" || ok "test mode never remounted"
 
+# --- CARD GUARD (2026-10-23): a unit booted from the GTK card image -------------------
+# The card's slot holds the GTK image RELABELLED (boot=LABEL=ROCKNIX-GTK disk=LABEL=GTKSTOR),
+# its stock parked beside it relabelled too, and the heal bundle seeded by the image lane
+# with the RELABELLED sha. The host's artifact is the un-relabelled gtk.img: its sha never
+# matches, so the pre-guard body parked, REWROTE the heal bundle and put a ROCKNIX/STORAGE
+# kernel into a card whose partitions are not called that. The live cmdline (== the slot's
+# baked cmdline under ABL) is the signature. Nothing on the unit may change.
+mkimage "$TD/card.img"      "boot=LABEL=ROCKNIX-GTK disk=LABEL=GTKSTOR quiet rootwait console=tty0 video=efifb:off gpt msm.context_keepalive=1 panic=30" 9 "(root@rocknix-gtk) (gcc-15 (Debian 15.3.0-4) 15.3.0)"
+mkimage "$TD/cardstock.img" "boot=LABEL=ROCKNIX-GTK disk=LABEL=GTKSTOR quiet rootwait console=tty0 video=efifb:off gpt" 9 "(@0b091aade48d) (aarch64-rocknix-linux-gnu-gcc-15.2.0 (GCC) 15.2.0)"
+CARD_SHA=$(sha256sum "$TD/card.img" | cut -d' ' -f1)
+card_unit() {
+    reset_unit; cp "$TD/card.img" "$U/flash/KERNEL"; cp "$TD/cardstock.img" "$U/flash/KERNEL.etk-stock"
+    printf '%s  target/KERNEL\n' "$(md5sum "$TD/cardstock.img" | cut -d' ' -f1)" > "$U/flash/KERNEL.md5"
+    mkdir -p "$U/storage/heal" "$U/proc"; cp "$TD/card.img" "$U/storage/heal/KERNEL.staged"
+    printf '%s\n' "$CARD_SHA" > "$U/storage/heal/KERNEL.staged.sha256"; printf 'abl\n' > "$U/storage/heal/chain"
+    printf 'default\n' > "$U/storage/heal/mode"; printf '7.2.0\n' > "$U/storage/heal/KERNEL.staged.release"
+    printf 'boot=LABEL=ROCKNIX-GTK disk=LABEL=GTKSTOR quiet rootwait console=tty0 video=efifb:off gpt msm.context_keepalive=1 panic=30\n' > "$U/proc/cmdline"
+}
+card_stage() { PROC="$U/proc" stage "$@"; }
+card_unit
+expect "card guard: a GTK-card boot leaves the slot untouched with a named reason" 0 "KERNEL_OK chain=abl slot=untouched reason=card-labels live_disk=GTKSTOR slot_sha=$CARD_SHA stock=kept heal=seeded" card_stage "$TD/gtk.img"
+[ "$(slot_sha)" = "$CARD_SHA" ] && ok "card guard: slot still the relabelled card kernel" || bad "card guard: slot REWRITTEN to $(slot_sha)"
+[ "$(cat "$U/storage/heal/KERNEL.staged.sha256")" = "$CARD_SHA" ] && ok "card guard: lane-seeded heal bundle untouched" || bad "card guard: heal bundle rewritten to the un-relabelled sha (osguard would re-stage it into the card)"
+[ "$(md5sum "$U/flash/KERNEL.etk-stock" | cut -d' ' -f1)" = "$(md5sum "$TD/cardstock.img" | cut -d' ' -f1)" ] && ok "card guard: parked relabelled stock untouched" || bad "card guard: parked stock changed"
+[ -f "$U/storage/KERNEL.staging" ] && bad "card guard: staging file left behind" || ok "card guard: staging file removed"
+[ -s "$U/mount.log" ] && bad "card guard: flash was remounted" || ok "card guard: flash never remounted"
+# the guard keys on the DISK label only: a stock-labelled unit (disk=LABEL=STORAGE) still deploys
+reset_unit; mkdir -p "$U/proc"; printf 'boot=LABEL=ROCKNIX disk=LABEL=STORAGE quiet rootwait console=tty0 video=efifb:off gpt\n' > "$U/proc/cmdline"
+expect "card guard: a stock-labelled unit still takes the deploy" 0 "slot=written" card_stage "$TD/gtk.img"
 reset_unit; cp "$TD/other.img" "$U/flash/KERNEL"
 expect "stage: non-stock slot with no parked copy REFUSED" 1 "put stock back by hand" stage "$TD/gtk.img"
 [ "$(slot_sha)" = "$(sha256sum "$TD/other.img" | cut -d' ' -f1)" ] && ok "refused slot left as found" || bad "refusal rewrote the slot"

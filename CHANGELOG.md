@@ -192,6 +192,16 @@ you update: the OS update is a one-way move and the order of steps matters.
   signal.
 
 ### Fixed
+- **`install.sh` on a rig booted from the GTK card image no longer rewrites the
+  card's boot slot.** The card's slot holds this kernel relabelled to the card's own
+  partitions (`ROCKNIX-GTK`/`GTKSTOR`); the installer's artifact names the stock
+  `ROCKNIX`/`STORAGE` labels, so its sha never matched and STEP 6.4 would park,
+  rewrite the OS Guard's heal bundle and put the stock-labelled kernel into the
+  card -- whose next boot would mount an internal ROCKNIX's partitions (or no
+  root). The installer now reads the live cmdline's `disk=LABEL=`: on a card it
+  leaves slot and heal bundle as the image lane seeded them (`slot=untouched
+  reason=card-labels`) and installs the rest of the kit on top. Found on the
+  v0.10.0 card walk (car12, 2026-10-23); `tools/test_kernel_abl.sh` pins it.
 - **`uninstall.sh` restores the boot menu for real.** On 0.9.0 the GRUB
   restore ran with its variables expanded on your computer instead of the
   handheld, edited nothing, left the menu's default pointing at the GTK kernel
@@ -305,7 +315,10 @@ you update: the OS update is a one-way move and the order of steps matters.
   guard, the USB-wake and mDNS fixes, Pitlink — are absent until the one-liner
   runs once from a computer (turn on SSH in ROCKNIX's settings first; a fresh
   card also ships with USB gadget networking off). Found on the v0.10.0 card
-  walk (car12, 2026-10-23); the card's seed grows in 0.11.0.
+  walk (car12, 2026-10-23); the card's seed grows in 0.11.0. **On a card, do
+  not take a future kit update's KERNEL from Pitstop's couch update** until
+  0.11.0: that path (`kernel_stage.sh` + the OS Guard re-stage) is still blind
+  to the card's labels; reflash the next card image instead.
 - **Who should update, and in what order.** This release needs ROCKNIX
   **20261001**. A 0.9.0 handheld on 20260901 (macOS/Linux host): first fetch
   the **fixed** `uninstall.sh` (`curl -fsSL
