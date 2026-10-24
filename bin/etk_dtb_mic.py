@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """ETK Flip 2 kit DTB derivation (install.sh STEP 6.4, bin/osguard.sh Phase B).
 
-Two independent deltas, each of which applies or stands down on its own:
-  mic   the built-in microphone (below; kill-switch ETK_INTERNAL_MIC=0 -> --no-mic)
-  vbus  the USB-C connector's VBUS supply (below the mic section)
+Independent deltas, each of which applies or stands down on its own:
+  mic     the built-in microphone (below; kill-switch ETK_INTERNAL_MIC=0 -> --no-mic)
+  vbus    the USB-C connector's VBUS supply (below the mic section)
+  sdpoll  OPT-IN (--sd-poll, ETK_SD_POLL=1 at mint): poll the SD slot, ignore its detect pin
 
 The Flip 2's built-in microphone is a WCD938x digital mic: data slot 3 on the codec's
 DMIC3/DMIC4 clock pair, powered from MIC BIAS3 (the AYN Thor's wiring for the same
@@ -33,20 +34,38 @@ Validated on the rig 2026-09-30: cold boot on the spliced DTB -> usb_vbus enable
 PD partner with the ff01 alt-mode, DP-1 connected, picture on the TV. It stands down
 when the stock DT already wires VBUS either way (upstream took over).
 
+SD-slot polling (2026-10-24, car8): car8's card-detect switch is dead — GPIO 77
+(`cd-gpios = <&tlmm 77 GPIO_ACTIVE_LOW>` on mmc@8804000) reads high (no card) with a
+card latched, across two cards, a driver rebind and a slot repair, so the slot is
+never powered. `broken-cd` ALONE does not help: mmc_of_parse() still claims cd-gpios
+after setting MMC_CAP_NEEDS_POLL, and sdhci_get_cd() trusts that GPIO before anything
+else, so every poll reads "no card" and mmc_rescan() skips the slot. Dropping cd-gpios
+is what lets the poll through: with no slot GPIO, sdhci_get_cd() returns 1 under the
+SDHCI_QUIRK_BROKEN_CARD_DETECTION quirk that sdhci-msm sets on every host, and the 1 s
+poll inits a card when one is there (removal is caught by the card's own status poll).
+One property swapped in place:
+
+    <sdhci-msm SD host>  cd-gpios = <...>  ->  broken-cd     (same position)
+
+Off unless asked for: a car with a working switch keeps its instant hot-plug, and with
+no card in the slot the poll retries an init every second. It stands down when the
+host already polls, is non-removable, or has no detect GPIO to drop.
+
 This tool derives the ETK DTB from whatever stock DTB the OS ships, by splicing the
 binary FDT directly (no dtc: decompiling the stock Flip 2 DTB turns vreg_l11c's
 <0x324b00> into "\\02K", which recompiles wrong). It refuses anything it is not sure of:
   * the input must re-serialize BYTE-IDENTICAL with no edits (proves the splicer), and
   * after each delta, the output must equal its input node-for-node except that
-    delta's properties (two /sound props; one connector prop).
+    delta's properties (two /sound props; one connector prop; one SD-host prop swap).
 
-    etk_dtb_mic.py derive [--no-mic] [--no-vbus] <stock.dtb> <out.dtb>
-        DTB_MIC_OK sha=<out> base=<in> mic=<st> vbus=<st>          exit 0  (out written)
-        DTB_MIC_SKIP <reason> base=<in> [mic=<st> vbus=<st>]       exit 3  (nothing applies:
-                                                                     use the stock DTB)
+    etk_dtb_mic.py derive [--no-mic] [--no-vbus] [--sd-poll] <stock.dtb> <out.dtb>
+        DTB_MIC_OK sha=<out> base=<in> mic=<st> vbus=<st> [sdpoll=<st>]    exit 0  (out written)
+        DTB_MIC_SKIP <reason> base=<in> [mic=<st> vbus=<st> [sdpoll=<st>]] exit 3  (nothing
+                                                                     applies: use the stock DTB)
         DTB_MIC_FAIL <reason>                                      exit 1
       <st> = applied | off | the delta's stand-down reason. A SKIP's <reason> is the DTB-
-      level refusal, else the first requested delta's stand-down reason.
+      level refusal, else the first requested delta's stand-down reason. sdpoll is
+      reported only when --sd-poll asks for it, so a default derive reads as before.
     etk_dtb_mic.py check <dtb>
         DTB_MIC_PATCHED | DTB_MIC_STOCK     exit 0 / 3   (the mic delta only)
 """
@@ -66,6 +85,7 @@ ROUTES = [("DMIC4", MIC), ("DMIC4", "MIC BIAS3")]
 TYPEC_COMPAT = b"qcom,pm8150b-typec"
 CONN_COMPAT = b"usb-c-connector"
 VBUS_COMPAT = b"qcom,pm8150b-vbus-reg"
+SDHCI_COMPAT = b"qcom,sdhci-msm-v5"
 
 
 class Skip(Exception):
@@ -328,11 +348,51 @@ def _vbus_delta(data):
     return out
 
 
-DELTAS = (("mic", _mic_delta), ("vbus", _vbus_delta))
+def _sdpoll_delta(data):
+    """-> data with the SD host's cd-gpios swapped for broken-cd (post-verified), or raise Stand(reason)."""
+    h, sb, strings, toks = parse(data)
+    head_gap = data[HDR.size:h[2]]
+    nodes = index(toks)
+
+    def okay(path):
+        st = nodes[path]["props"].get("status")
+        return st is None or st[2] in (b"okay\0", b"ok\0")
+
+    # The SD-card host = the sdhci-msm node that refuses eMMC (no-mmc): never the eMMC/SDIO ones.
+    hosts = [p for p in nodes if SDHCI_COMPAT in nodes[p]["props"].get("compatible", (0, 0, b""))[2].split(b"\0")
+             and "no-mmc" in nodes[p]["props"]]
+    if len(hosts) != 1:
+        raise Stand("no-sd-host" if not hosts else "multiple-sd-hosts")
+    host = hosts[0]
+    props = nodes[host]["props"]
+    if not okay(host):
+        raise Stand("sd-host-disabled")
+    if "non-removable" in props:
+        raise Stand("sd-host-non-removable")
+    if "broken-cd" in props:
+        raise Stand("sd-host-already-polls")                 # upstream took over (or already spliced)
+    if "cd-gpios" not in props:
+        raise Stand("sd-host-no-cd-gpios")
+
+    idx, strings2 = _string_off(strings, "broken-cd")
+    start, end, cd = props["cd-gpios"]
+    sb2 = sb[:start] + _prop(idx, b"") + sb[end:]
+    out = build(h, head_gap, sb2, strings2)
+
+    # post-verify: identical tree except cd-gpios -> broken-cd, in the same slot
+    _h2, _sb, _st, toks2 = parse(out)
+    exp = [(host, "broken-cd", b"") if x == (host, "cd-gpios", cd) else x for x in flatten(toks)]
+    if flatten(toks2) != exp:
+        raise RuntimeError("post-verify: output tree differs beyond the sdpoll delta")
+    return out
 
 
-def derive(data, mic=True, vbus=True):
-    """-> (out, {delta: applied|off|reason}). Skip = the DTB is not ours, or nothing applies."""
+DELTAS = (("mic", _mic_delta), ("vbus", _vbus_delta), ("sdpoll", _sdpoll_delta))
+
+
+def derive(data, mic=True, vbus=True, sdpoll=None):
+    """-> (out, {delta: applied|off|reason}). Skip = the DTB is not ours, or nothing applies.
+    sdpoll=None (the default) leaves the SD delta out of the run AND out of the status."""
     h, sb, strings, toks = parse(data)
     off_rsv, off_struct = h[4], h[2]
     head_gap = data[HDR.size:off_struct]
@@ -342,8 +402,10 @@ def derive(data, mic=True, vbus=True):
         raise Skip("roundtrip-not-identical")
     if DEVICE_COMPAT not in root_compat(toks):
         raise Skip("not-a-flip2-dtb")
-    want, status, out = {"mic": mic, "vbus": vbus}, {}, data
+    want, status, out = {"mic": mic, "vbus": vbus, "sdpoll": sdpoll}, {}, data
     for name, fn in DELTAS:
+        if want[name] is None:
+            continue
         if not want[name]:
             status[name] = "off"
             continue
@@ -369,10 +431,11 @@ def _status_str(status):
 def main(argv):
     flags = [a for a in argv[2:] if a.startswith("--")]
     args = argv[:2] + [a for a in argv[2:] if not a.startswith("--")]
-    if len(args) == 4 and args[1] == "derive" and set(flags) <= {"--no-mic", "--no-vbus"}:
+    if len(args) == 4 and args[1] == "derive" and set(flags) <= {"--no-mic", "--no-vbus", "--sd-poll"}:
         data = open(args[2], "rb").read()
         try:
-            out, status = derive(data, mic="--no-mic" not in flags, vbus="--no-vbus" not in flags)
+            out, status = derive(data, mic="--no-mic" not in flags, vbus="--no-vbus" not in flags,
+                                 sdpoll=True if "--sd-poll" in flags else None)
         except Skip as e:
             print(f"DTB_MIC_SKIP {e} base={sha(data)} {_status_str(e.status)}".rstrip())
             return 3

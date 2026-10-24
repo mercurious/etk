@@ -110,9 +110,32 @@ def pm8150b(typec_status="okay", reg_status="okay", vdd_vbus=False, conn_vbus=Fa
                                   reg_nodes + typec_nodes + extra)])
 
 
+SD = "/soc@0/mmc@8804000"
+CD_GPIOS = U32(0x3C) + U32(77) + U32(1)      # <&tlmm 77 GPIO_ACTIVE_LOW>, as on the 20261001 Flip 2
+
+
+def sdhc(addr=0x8804000, status="okay", cd=True, broken=False, nonremovable=False, no_mmc=True):
+    """An sdhci-msm host shaped like the Flip 2's SD slot (the sdpoll delta's input)."""
+    p = [("compatible", sl("qcom,sm8250-sdhci", "qcom,sdhci-msm-v5")), ("reg", U32(addr))]
+    if status is not None:
+        p.append(("status", sl(status)))
+    p.append(("vmmc-supply", U32(0xCB)))
+    if cd:
+        p.append(("cd-gpios", CD_GPIOS))
+    if broken:
+        p.append(("broken-cd", b""))
+    if nonremovable:
+        p.append(("non-removable", b""))
+    p.append(("bus-width", U32(4)))
+    p.append(("no-sdio", b""))
+    if no_mmc:
+        p.append(("no-mmc", b""))
+    return (f"mmc@{addr:x}", p, [("opp-table", [("compatible", sl("operating-points-v2"))], [])])
+
+
 def flip2(root_compat=("retroidpocket,rpflip2", "qcom,sm8250"), sound=True, widgets=None,
           routing=("SpkrLeft IN", "WSA_SPK1 OUT", "AMIC2", "MIC BIAS2"), card="qcom,sm8250-sndcard",
-          pmic=None):
+          pmic=None, sd=()):
     sprops = [("compatible", sl(card)), ("model", sl("RetroidPocket"))]
     if widgets is not None:
         sprops.append(("widgets", sl(*widgets)))
@@ -121,7 +144,7 @@ def flip2(root_compat=("retroidpocket,rpflip2", "qcom,sm8250"), sound=True, widg
     sprops.append(("phandle", struct.pack(">I", 0x266)))
     kids = [("soc@0", [("#address-cells", struct.pack(">I", 2))],
              [("codec@3370000", [("compatible", sl("qcom,sm8250-lpass-va-macro"))], [])]
-             + ([pmic] if pmic else []))]
+             + ([pmic] if pmic else []) + list(sd))]
     if sound:
         kids.append(("sound", sprops, [("mm1-dai-link", [("link-name", sl("MultiMedia1"))], [])]))
     kids.append(("audio-codec", [("compatible", sl("qcom,wcd9385-codec"))], []))
@@ -194,7 +217,7 @@ def main():
         check(f"{desc} -> SKIP {reason}", rc == 3 and f"DTB_MIC_SKIP {reason}" in txt and not os.path.exists(out))
 
     def flat(blob):
-        return m.flatten(m.parse(blob)[3])
+        return m.flatten(m.parse(blob)[3]) if blob else []     # b"" = the derive wrote nothing
 
     def read(p):
         return open(p, "rb").read() if os.path.exists(p) else b""
@@ -270,6 +293,59 @@ def main():
           rc == 3 and "DTB_MIC_SKIP connector-has-vbus-supply" in txt and "mic=off" in txt)
     rc, txt = run(["derive", "--bogus", wired, os.path.join(tmp, "bogus.dtb")])
     check("unknown flag -> usage (2), nothing written", rc == 2 and not os.path.exists(os.path.join(tmp, "bogus.dtb")))
+
+    print("== SD-slot polling delta (opt-in --sd-poll: car8's dead card-detect switch, 2026-10-24)")
+    base = flip2(pmic=pm8150b(), sd=[sdhc()])
+    rc, txt, src, out = derive_file(base, tmp, "sd_default")
+    check("default derive: sdpoll neither run nor reported, cd-gpios untouched",
+          rc == 0 and "sdpoll" not in txt and (SD, "cd-gpios", CD_GPIOS) in flat(read(out)))
+    sdo = os.path.join(tmp, "sd_poll.dtb")
+    rc, txt = run(["derive", "--sd-poll", src, sdo])
+    got = read(sdo)
+    check("--sd-poll: mic=applied vbus=applied sdpoll=applied", rc == 0 and "mic=applied vbus=applied sdpoll=applied" in txt)
+    check("--sd-poll: vs the default derive, ONLY cd-gpios -> broken-cd differs",
+          [x for x in flat(got) if x not in flat(read(out))] == [(SD, "broken-cd", b"")]
+          and [x for x in flat(read(out)) if x not in flat(got)] == [(SD, "cd-gpios", CD_GPIOS)])
+    check("broken-cd takes cd-gpios' slot in the host's property order",
+          [x[1] for x in flat(got) if x[0] == SD] == ["compatible", "reg", "status", "vmmc-supply", "broken-cd",
+                                                      "bus-width", "no-sdio", "no-mmc"])
+    check("--sd-poll output still checks DTB_MIC_PATCHED (the boot.img parity gate's kit check)",
+          run(["check", sdo]) == (0, "DTB_MIC_PATCHED"))
+    rc, txt = run(["derive", "--sd-poll", sdo, os.path.join(tmp, "sd_again.dtb")])
+    check("re-derive --sd-poll on own output -> SKIP, sdpoll=sd-host-already-polls, nothing written",
+          rc == 3 and "sdpoll=sd-host-already-polls" in txt and not os.path.exists(os.path.join(tmp, "sd_again.dtb")))
+    rc, txt = run(["derive", "--no-mic", "--no-vbus", "--sd-poll", src, os.path.join(tmp, "sd_only.dtb")])
+    check("--no-mic --no-vbus --sd-poll: the SD swap alone is a valid derive",
+          rc == 0 and "mic=off vbus=off sdpoll=applied" in txt
+          and [x[:2] for x in flat(read(os.path.join(tmp, "sd_only.dtb"))) if x not in flat(base)] == [(SD, "broken-cd")])
+    both = flip2(sd=[sdhc(), sdhc(addr=0x8804100, no_mmc=False)])
+    p, o = os.path.join(tmp, "sd_plus_emmc.dtb"), os.path.join(tmp, "sd_plus_emmc.out.dtb")
+    open(p, "wb").write(both)
+    rc, txt = run(["derive", "--no-mic", "--sd-poll", p, o])
+    check("an sdhci host WITHOUT no-mmc (eMMC/SDIO) is never the target: only the SD slot changes",
+          rc == 0 and "sdpoll=applied" in txt and [x[:2] for x in flat(read(o)) if x not in flat(both)] == [(SD, "broken-cd")])
+    stands = [
+        ("no SD host in the DT", [], "no-sd-host"),
+        ("only an eMMC host (no no-mmc)", [sdhc(no_mmc=False)], "no-sd-host"),
+        ("two SD hosts", [sdhc(), sdhc(addr=0x8804100)], "multiple-sd-hosts"),
+        ("SD host disabled", [sdhc(status="disabled")], "sd-host-disabled"),
+        ("SD host non-removable", [sdhc(nonremovable=True)], "sd-host-non-removable"),
+        ("SD host already polls (upstream took over)", [sdhc(broken=True)], "sd-host-already-polls"),
+        ("SD host has no cd-gpios to drop", [sdhc(cd=False)], "sd-host-no-cd-gpios"),
+    ]
+    for desc, hosts, reason in stands:
+        blob = flip2(sd=hosts)
+        p, o = os.path.join(tmp, f"sdstand_{reason}_{len(hosts)}.dtb"), os.path.join(tmp, f"sdstand_{reason}_{len(hosts)}.out.dtb")
+        open(p, "wb").write(blob)
+        rc, txt = run(["derive", "--sd-poll", p, o])
+        check(f"{desc} -> sdpoll={reason}, mic still applied, no SD prop changed",
+              rc == 0 and f"mic=applied" in txt and f"sdpoll={reason}" in txt
+              and not [x for x in flat(read(o)) if "mmc@" in x[0] and x not in flat(blob)])
+    p = os.path.join(tmp, "sd_all_stand.dtb")
+    open(p, "wb").write(flip2(widgets=("Microphone", "Int Mic"), pmic=pm8150b(conn_vbus=True), sd=[sdhc(cd=False)]))
+    rc, txt = run(["derive", "--sd-poll", p, os.path.join(tmp, "sd_all_stand.out.dtb")])
+    check("all three deltas stand down -> SKIP, sdpoll reason named, nothing written",
+          rc == 3 and "sdpoll=sd-host-no-cd-gpios" in txt and not os.path.exists(os.path.join(tmp, "sd_all_stand.out.dtb")))
 
     if len(sys.argv) > 1:
         real = sys.argv[1]

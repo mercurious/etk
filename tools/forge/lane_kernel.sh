@@ -52,14 +52,24 @@ ETK_GPIO_SBU_BUILTIN="${ETK_GPIO_SBU_BUILTIN:-1}"
 # wdt sysfs + pretimeout govs, log-only lockup detectors, pseudo-NMI and a ramoops console. 0 =
 # every certified mint, unchanged. Never a release kernel.
 ETK_FORENSICS="${ETK_FORENSICS:-0}"
+# SD-SLOT POLL (2026-10-24, car8's dead card-detect switch): ETK_SD_POLL=1 adds the splicer's
+# opt-in sdpoll delta (SD host cd-gpios -> broken-cd) to the kit DTBs. 0 = every certified
+# mint, unchanged; a car with a working switch keeps instant hot-plug. Needs ETK_KIT_DTB=1.
+ETK_SD_POLL="${ETK_SD_POLL:-0}"
+if [ "$ETK_SD_POLL" = 1 ] && [ "$ETK_KIT_DTB" != 1 ]; then
+    log "FATAL: ETK_SD_POLL=1 is a kit DTB delta -- it needs ETK_KIT_DTB=1"; exit 1
+fi
 if [ "$KLANE" = 72 ] && [ "$BASEDATE" -ge 20261001 ] && [ "$ETK_KIT_DTB" = 1 ]; then
     SPL="$HOME/etk/bin/etk_dtb_mic.py"
     [ -f "$SPL" ] || { log "FATAL: $SPL missing on the node (pull ~/etk) -- or ETK_KIT_DTB=0 for a pure-parity mint"; exit 1; }
     docker cp "$SPL" rocknix-gtk-kernel-sid:/kernel/staging/etk_dtb_mic.py
-    log "kit DTB splicer staged: etk_dtb_mic.py sha $(sha256sum "$SPL" | cut -c1-16) from ~/etk @ $(git -C "$HOME/etk" rev-parse --short HEAD 2>/dev/null || echo '?') (mic=$ETK_INTERNAL_MIC)"
+    log "kit DTB splicer staged: etk_dtb_mic.py sha $(sha256sum "$SPL" | cut -c1-16) from ~/etk @ $(git -C "$HOME/etk" rev-parse --short HEAD 2>/dev/null || echo '?') (mic=$ETK_INTERNAL_MIC sdpoll=$ETK_SD_POLL)"
+    if [ "$ETK_SD_POLL" = 1 ] && ! grep -q -- '--sd-poll' "$SPL"; then
+        log "FATAL: ETK_SD_POLL=1 but the node's splicer has no --sd-poll (pull ~/etk)"; exit 1
+    fi
 fi
-log "build_${KLANE}.sh BASEDATE=$BASEDATE (KCC=gcc-15, enforced in-recipe; kit DTB=$ETK_KIT_DTB; gpio-sbu-mux built-in=$ETK_GPIO_SBU_BUILTIN; forensics=$ETK_FORENSICS)"
-docker exec rocknix-gtk-kernel-sid bash -lc "KCC=gcc-15 BASEDATE=$BASEDATE ETK_KIT_DTB=$ETK_KIT_DTB ETK_INTERNAL_MIC=$ETK_INTERNAL_MIC ETK_GPIO_SBU_BUILTIN=$ETK_GPIO_SBU_BUILTIN ETK_FORENSICS=$ETK_FORENSICS bash /work/scripts/build_${KLANE}.sh"
+log "build_${KLANE}.sh BASEDATE=$BASEDATE (KCC=gcc-15, enforced in-recipe; kit DTB=$ETK_KIT_DTB; gpio-sbu-mux built-in=$ETK_GPIO_SBU_BUILTIN; forensics=$ETK_FORENSICS; sd-poll=$ETK_SD_POLL)"
+docker exec rocknix-gtk-kernel-sid bash -lc "KCC=gcc-15 BASEDATE=$BASEDATE ETK_KIT_DTB=$ETK_KIT_DTB ETK_INTERNAL_MIC=$ETK_INTERNAL_MIC ETK_GPIO_SBU_BUILTIN=$ETK_GPIO_SBU_BUILTIN ETK_FORENSICS=$ETK_FORENSICS ETK_SD_POLL=$ETK_SD_POLL bash /work/scripts/build_${KLANE}.sh"
 
 echo "=== config drift vs rig ground truth (expect INITRAMFS/FIRMWARE paths + toolchain-probe lines; + ONE TYPEC_MUX_GPIO_SBU m->y line when the boot-logo fix is on) ==="
 docker exec rocknix-gtk-kernel-sid cat "/kernel/config${KLANE}${SFX}.drift" || true
