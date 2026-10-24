@@ -17,6 +17,16 @@ While a grant is valid, the enforcement surface is frozen: no edits to tools/hun
 .claude/ settings or ~/.claude/hooks, and no git command that restores etk files from local history.
 
 Belt and braces: the root-owned grant is the lock and the auto-mode classifier still runs.
+
+CAR8 LIFT ACCESS (operator, 2026-10-24): car8 is a headless test car -- dead panel and touch,
+nobody can see or change Pitstop on it, nothing on it to protect -- so it has standing,
+unconditional access, with no grant and no signing step. A command whose ssh/scp/rsync target is
+car8 (LIFT_HOSTS: its pinned ssh names; known_hosts holds car8's key, so another car at that
+address fails the handshake before anything runs) may reboot it, power it off, and write any of
+its state, hunt state included. install.sh / uninstall.sh / forge.sh / the lanes run freely while
+this checkout targets car8 (etk.conf CAR="car8"; install.sh's own car check refuses any other unit).
+Unchanged: publish (releases, tags -- other humans' machines), and power actions on this host or
+any other car.
 A crash here allows the call (a non-2 exit is a non-blocking hook error), never blocks it.
 """
 import json
@@ -41,6 +51,40 @@ SSH_ARG_OPTS = set("bcDEeFIiJLlmOopQRSWw")
 # grant, drop a core into hunt/ -- is self-escalation at the car.
 CAR_HUNT_STATE = ("etk-autonomy", "etk-hunt.grant", "emulators/hunt", "drivers/hunt", "override.tsv")
 REMOTE = {"ssh", "scp", "rsync", "sftp"}
+# car8 lift access (docstring): the car, and the ssh names that reach it and only it
+LIFT_CAR = "car8"
+LIFT_HOSTS = {"etk-rig-usb", "etk-rig", "169.254.170.2", "sm8250.local"}
+
+
+def conf_car(path=None):
+    """etk.conf's CAR= (the car this checkout targets), or None."""
+    try:
+        text = open(path or os.path.join(ETK, "etk.conf")).read()
+    except OSError:
+        return None
+    m = re.findall(r'^\s*CAR\s*=\s*"?([\w-]+)"?', text, re.M)
+    return m[-1] if m else None
+
+
+def remote_hosts(argv):
+    """The hosts an ssh/scp/rsync/sftp argv reaches, lowercased, without user@."""
+    b = os.path.basename(argv[0]) if argv else ""
+    if b not in REMOTE:
+        return []
+    if b in ("ssh", "sftp"):
+        i = 1
+        while i < len(argv) and argv[i].startswith("-"):
+            i += 2 if len(argv[i]) == 2 and argv[i][1] in SSH_ARG_OPTS else 1
+        hosts = argv[i:i + 1]
+    else:
+        hosts = [a.split(":", 1)[0] for a in argv[1:] if not a.startswith("-") and ":" in a]
+    return [h.rpartition("@")[2].lower() for h in hosts if h]
+
+
+def lifted(argv):
+    """True when every host this remote argv reaches is car8."""
+    hosts = remote_hosts(argv)
+    return bool(hosts) and all(h in LIFT_HOSTS for h in hosts)
 HUNT_NO_GRANT = {"status", "audit", "check", "unpin", "rollback", "end", "-h", "--help", None}   # read or undo
 # rewrite local files from local history; pull/merge/rebase (integrating origin, §1.6) stay open
 GIT_TREE_WRITERS = {"checkout", "switch", "reset", "restore", "stash", "apply", "am", "cherry-pick",
@@ -164,27 +208,28 @@ def ssh_inner(argv):
     return " ".join(argv[i + 1:]) if i < len(argv) - 1 else None
 
 
-def judge_argv(argv, cwd, grant_ok, depth):
-    """-> deny reason or None for one simple command."""
+def judge_argv(argv, cwd, grant_ok, depth, onrig=False, car8=lambda: False):
+    """-> deny reason or None for one simple command. onrig: it runs ON car8 (reached over ssh);
+    car8(): this checkout targets car8 -- the two halves of car8 lift access."""
     redirs = [argv[k + 1] for k, t in enumerate(argv[:-1]) if t == ">"]
     argv = [t for k, t in enumerate(argv) if t != ">" and (k == 0 or argv[k - 1] != ">")]
     argv, inline = program(argv)
     if inline is not None:
-        return judge(inline, cwd, grant_ok, depth + 1)
+        return judge(inline, cwd, grant_ok, depth + 1, onrig, car8)
     if not argv:
         return None
     b = os.path.basename(argv[0])
-    if b in REMOTE and any(x in t for t in argv[1:] for x in CAR_HUNT_STATE):
+    if b in REMOTE and not lifted(argv) and any(x in t for t in argv[1:] for x in CAR_HUNT_STATE):
         return ("the car's hunt state (Autonomy switch, rig grant, hunt/ files) changes only through "
                 "tools/hunt/hunt.py and Pitstop; read it with `hunt.py status --probe`")
     inner = ssh_inner(argv)
     if inner:
-        return judge(inner, "/", grant_ok, depth + 1)
-    if ATOMS.match(b):
+        return judge(inner, "/", grant_ok, depth + 1, onrig or lifted(argv), car8)
+    if ATOMS.match(b) and not (onrig or car8()):
         return (f"{b} is a bytes-to-atoms control (TRACK_MANUAL §1.1): the operator runs it. "
                 f"Hand it over as a ```bash block")
     if (b in POWER or (b == "systemctl" and any(x in POWER or x == "soft-reboot" for x in argv[1:]))) \
-            and not {"-h", "--help", "-v", "--version"} & set(argv[1:]):
+            and not {"-h", "--help", "-v", "--version"} & set(argv[1:]) and not onrig:
         return "no reboots or power actions from the Engineer (TRACK_MANUAL §1.5); ask the operator"
     if b == "gh" and argv[1:2] == ["release"] and len(argv) > 2 and argv[2] in (
             "create", "upload", "edit", "delete", "delete-asset"):
@@ -224,7 +269,8 @@ def judge_argv(argv, cwd, grant_ok, depth):
         sub = next((x for x in argv[1:] if not x.startswith("-")), None)
         if sub not in HUNT_NO_GRANT and not grant_ok() and not {"-h", "--help"} & set(argv[1:]):
             return f"hunt.py {sub} needs a valid hunt grant (tools/hunt/hunt.py status says why there is none)"
-    if b == "pitlink.py" and argv[1:2] == ["garage"] and len(argv) > 2 and argv[2] in ("put", "pin"):
+    if b == "pitlink.py" and argv[1:2] == ["garage"] and len(argv) > 2 and argv[2] in ("put", "pin") \
+            and not car8():
         return f"garage {argv[2]} is a hunt act: run it as tools/hunt/hunt.py {argv[2]} (validated + audited)"
     if grant_ok():
         targets = list(redirs)
@@ -235,13 +281,18 @@ def judge_argv(argv, cwd, grant_ok, depth):
     return None
 
 
-def judge(cmd, cwd, grant_ok, depth=0):
+def judge(cmd, cwd, grant_ok, depth=0, onrig=False, car8=lambda: False):
     if depth > 4:
         return None
     cmd, docs = split_heredocs(cmd)
     for opener, body in docs:
-        if re.search(r"(^|[\s;&|(/])(ssh|bash|sh|dash|zsh|busybox)\b", opener.split("<<")[0]):
-            r = judge(body, "/", grant_ok, depth + 1)
+        head = opener.split("<<")[0]
+        if re.search(r"(^|[\s;&|(/])(ssh|bash|sh|dash|zsh|busybox)\b", head):
+            try:   # a heredoc fed to `ssh car8 …` runs ON car8: lifted like the ssh itself
+                body_onrig = onrig or any(lifted(unwrap(s)) for s in segments(head) if s)
+            except ValueError:
+                body_onrig = onrig
+            r = judge(body, "/", grant_ok, depth + 1, body_onrig, car8)
             if r:
                 return r
     try:
@@ -257,19 +308,22 @@ def judge(cmd, cwd, grant_ok, depth=0):
             cwd = None if "$" in to or "`" in to or (cwd is None and not os.path.isabs(os.path.expanduser(to))) \
                 else os.path.normpath(os.path.join(cwd or "/", os.path.expanduser(to)))
             continue
-        r = judge_argv(seg, cwd, grant_ok, depth)
+        r = judge_argv(seg, cwd, grant_ok, depth, onrig, car8)
         if r:
             return r
     return None
 
 
-def decide(payload, grant_ok):
-    """payload = the hook's stdin JSON; grant_ok() -> bool (lazy). -> deny reason or None."""
+def decide(payload, grant_ok, car8=None):
+    """payload = the hook's stdin JSON; grant_ok() -> bool (lazy); car8() -> bool: this checkout
+    targets car8 (default: etk.conf CAR=). -> deny reason or None."""
+    if car8 is None:
+        car8 = lambda: conf_car() == LIFT_CAR  # noqa: E731
     tool = payload.get("tool_name")
     ti = payload.get("tool_input") or {}
     cwd = payload.get("cwd") or os.getcwd()
     if tool == "Bash":
-        return judge(ti.get("command", ""), cwd, grant_ok)
+        return judge(ti.get("command", ""), cwd, grant_ok, car8=car8)
     if tool in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
         path = ti.get("file_path") or ti.get("notebook_path") or ""
         if path and protected(path, cwd) and grant_ok():

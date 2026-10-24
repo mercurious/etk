@@ -741,10 +741,21 @@ BASH_TABLE = [
     ("git push --tags", False, DENY),
     ("git push origin v0.10.0", False, DENY),
     ("git push origin :refs/tags/v0.9.0", False, DENY),
-    ("ssh root@SM8250.local reboot", False, DENY),
-    ("ssh -o ConnectTimeout=5 root@169.254.170.2 'sync; systemctl reboot'", False, DENY),
+    # car8 lift access (2026-10-24): power actions ON car8 are allowed; on any other car or this host, never
+    ("ssh root@SM8250.local reboot", False, ALLOW),
+    ("ssh -o ConnectTimeout=5 root@169.254.170.2 'sync; systemctl reboot'", False, ALLOW),
     ("ssh root@169.254.170.2 'cat /proc/uptime'", False, ALLOW),
-    ("ssh root@169.254.170.2 sh -s <<'EOF'\nuptime\nreboot\nEOF", False, DENY),
+    ("ssh root@169.254.170.2 sh -s <<'EOF'\nuptime\nreboot\nEOF", False, ALLOW),
+    ("ssh -o BatchMode=yes etk-rig-usb 'systemctl reboot'", False, ALLOW),
+    ("ssh flip2-12g reboot", False, DENY),
+    ("ssh root@sm8250-12gb.local 'sync; systemctl reboot'", False, DENY),
+    ("ssh -o ConnectTimeout=5 root@169.254.170.6 'systemctl poweroff'", False, DENY),
+    ("ssh flip2-12g-usb sh -s <<'EOF'\nuptime\nreboot\nEOF", False, DENY),
+    ("ssh etk-cloud 'sudo reboot'", False, DENY),
+    ("reboot", False, DENY),
+    ("sudo systemctl reboot", False, DENY),
+    ("bash -c 'ssh etk-rig-usb reboot; reboot'", False, DENY),
+    ("ssh evil-etk-rig-usb reboot", False, DENY),
     ("git commit -F - <<'EOF'\nreboot gate notes\n./install.sh is the operator's\nEOF", False, ALLOW),
     ("tools/hunt/grant.sh issue --game BCUS98296 --hours 10", False, DENY),
     ("tools/hunt/grant.sh show", False, ALLOW),
@@ -772,9 +783,13 @@ BASH_TABLE = [
     ("python3 /home/dave/etk/tools/pitlink/pitlink.py garage put kind=core name=x", True, DENY),
     ("python3 tools/pitlink/pitlink.py garage pin game=BCUS98296 core=x", True, DENY),
     ("python3 tools/pitlink/pitlink.py garage hunt_status", False, ALLOW),
-    ("ssh root@SM8250.local 'echo on > /storage/.config/etk-autonomy'", False, DENY),
-    ("ssh root@169.254.170.2 \"sed -i s/expires_epoch=.*/expires_epoch=9999999999/ /storage/.config/etk-hunt.grant\"", True, DENY),
-    ("scp x.AppImage root@SM8250.local:/storage/games-internal/roms/etk/emulators/hunt/", True, DENY),
+    # car8 lift access: car8's hunt state is car8's; any other car's still changes only through hunt.py/Pitstop
+    ("ssh root@SM8250.local 'echo on > /storage/.config/etk-autonomy'", False, ALLOW),
+    ("ssh root@169.254.170.2 \"sed -i s/expires_epoch=.*/expires_epoch=9999999999/ /storage/.config/etk-hunt.grant\"", True, ALLOW),
+    ("scp x.AppImage root@SM8250.local:/storage/games-internal/roms/etk/emulators/hunt/", True, ALLOW),
+    ("ssh flip2-12g 'echo on > /storage/.config/etk-autonomy'", False, DENY),
+    ("scp x.AppImage root@sm8250-12gb.local:/storage/games-internal/roms/etk/emulators/hunt/", True, DENY),
+    ("scp x.AppImage root@SM8250.local:/tmp/ root@sm8250-12gb.local:/storage/.config/etk-hunt.grant", False, DENY),
     ("ssh root@SM8250.local 'cat /proc/uptime'", True, ALLOW),
     ("python3 /home/dave/etk/tools/hunt/hunt.py end", False, ALLOW),
     ("python3 /home/dave/etk/tools/hunt/hunt.py rollback", False, ALLOW),
@@ -798,9 +813,27 @@ BASH_TABLE = [
 ]
 
 
+# car8 lift access, the checkout half: with etk.conf CAR="car8" the bytes-to-atoms scripts run freely;
+# publish, tags, signing a grant and power actions off car8 stay denied. (command, grant valid?, denied?)
+LIFT_TABLE = [
+    ("./install.sh", False, ALLOW),
+    ("cd /home/dave/etk && ./install.sh", False, ALLOW),
+    ("FOO=1 sudo -u dave /home/dave/etk/uninstall.sh --yes", False, ALLOW),
+    ("FORGE_KERNEL_VER=0.6.4.6 ETK_SD_POLL=1 ./forge.sh kernel", False, ALLOW),
+    ("tools/forge/lane_rpcs3.sh", False, ALLOW),
+    ("python3 tools/pitlink/pitlink.py garage put kind=core name=x", False, ALLOW),
+    ("gh release create v0.10.0", False, DENY),
+    ("git tag v0.10.1", False, DENY),
+    ("git push --tags", False, DENY),
+    ("tools/hunt/grant.sh issue --game BCUS98296 --hours 10", False, DENY),
+    ("reboot", False, DENY),
+    ("ssh flip2-12g reboot", False, DENY),
+]
+
+
 class GuardTests(unittest.TestCase):
-    def decide(self, payload, ok):
-        return guard.decide(dict(payload, cwd=payload.get("cwd", ETK)), lambda: ok)
+    def decide(self, payload, ok, car8=False):
+        return guard.decide(dict(payload, cwd=payload.get("cwd", ETK)), lambda: ok, lambda: car8)
 
     def test_bash_table(self):
         bad = []
@@ -809,6 +842,25 @@ class GuardTests(unittest.TestCase):
             if bool(r) != deny:
                 bad.append(f"{'DENY' if deny else 'ALLOW'} expected, got {r!r}: {cmd!r} (grant={ok})")
         self.assertEqual(bad, [])
+
+    def test_lift_table(self):
+        bad = []
+        for cmd, ok, deny in LIFT_TABLE:
+            r = self.decide({"tool_name": "Bash", "tool_input": {"command": cmd}}, ok, car8=True)
+            if bool(r) != deny:
+                bad.append(f"{'DENY' if deny else 'ALLOW'} expected, got {r!r}: {cmd!r} (car8 lift)")
+        self.assertEqual(bad, [])
+
+    def test_lift_follows_etk_conf(self):
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".conf", delete=False) as f:
+            f.write('# CAR="car8" in a comment does not count\nCAR="car12"\nCAR8_SSH="root@SM8250.local"\n')
+        self.assertEqual(guard.conf_car(f.name), "car12")
+        with open(f.name, "w") as g:
+            g.write('CAR="car12"\n# switched for the headless car\nCAR="car8"\n')
+        self.assertEqual(guard.conf_car(f.name), "car8")
+        os.remove(f.name)
+        self.assertIsNone(guard.conf_car("/nonexistent/etk.conf"))
 
     def test_edit_freeze(self):
         for path, ok, deny in ((os.path.join(ETK, "tools/hunt/hunt.py"), True, DENY),
@@ -824,7 +876,7 @@ class GuardTests(unittest.TestCase):
         import subprocess
         r = subprocess.run([sys.executable, os.path.join(HERE, "guard.py")], capture_output=True, text=True,
                            input=json.dumps({"tool_name": "Bash", "cwd": ETK,
-                                             "tool_input": {"command": "./forge.sh rpcs3"}}))
+                                             "tool_input": {"command": "sudo systemctl reboot"}}))  # denied with or without car8 lift
         d = json.loads(r.stdout)["hookSpecificOutput"]
         self.assertEqual((r.returncode, d["permissionDecision"], d["hookEventName"]), (0, "deny", "PreToolUse"))
         r = subprocess.run([sys.executable, os.path.join(HERE, "guard.py")], capture_output=True, text=True,

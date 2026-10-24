@@ -115,6 +115,21 @@ or build node; every host-side gate/analysis tool (`release_sanity.sh`, `tools/t
 `etk_dyno.py`); staging artifacts; editing `etk.conf` knobs; `git` under the trunk protocol.
 Preparing a bytes-to-atoms tool's inputs is the whole job — running it is not part of it.
 
+**CAR8 LIFT ACCESS (operator, 2026-10-24) — the one standing exception.** car8 is the
+headless test car: dead panel and touch, nobody can see or change Pitstop on it, out of
+commission — **nothing on it to protect**. So the deploy threshold and the no-reboot rule do
+not apply to car8, with no grant and no signing step: the Engineer runs `install.sh` /
+`uninstall.sh` against car8, reboots and powers it, swaps kernels, DTBs, cores and Turnip
+builds, flips any Pitstop or rig setting (Autonomy, hunt state, debug env), and mints for
+car8 on the always-free node — to test any part of the stack, for any reason, without
+handing it over. The guard (`tools/hunt/guard.py`, LIFT_HOSTS / LIFT_CAR) enforces the
+scope: a remote command is lifted only when it reaches car8's pinned ssh names
+(`etk-rig-usb`, `etk-rig`, `169.254.170.2`, `SM8250.local`; known_hosts holds car8's key, so
+another car at that address fails the handshake), and the deploy and mint scripts run freely
+only while `etk.conf` says `CAR="car8"` (install.sh's own car check refuses any other
+unit). **Not lifted:** publish (other humans' machines), and anything aimed at car12, this
+host or another machine. The one thing car8 can't do for itself is power-cycle a hard wedge.
+
 **HUNT GRANTS (operator, 2026-10-10; `docs/AUTONOMY_SPEC.md`).** Because etk-cloud is sized
 inside the always-free tier (a mint costs no money) and the garage holds a reserve car (losing
 the hunt car is survivable), the operator may, for an autonomous crash hunt, sign one grant

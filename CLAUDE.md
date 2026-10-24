@@ -30,7 +30,13 @@ pointer; git history is its archive.) Don't re-derive documented facts live: fro
   yes = hand it over; when unsure, it crosses — ask. **Hunt grants (§1.1, `docs/AUTONOMY_SPEC.md`):**
   only while `tools/hunt/hunt.py status` says VALID may the Engineer mint/inject, and only through
   `hunt.py`; the guard hook (`tools/hunt/guard.py`) denies the raw controls either way.
-- **The operator runs the controls; Claude preps and hands off.** Never reboot the rig
+- **CAR8 LIFT ACCESS (§1.1, operator 2026-10-24) — the standing exception.** car8 is the
+  headless test car (dead panel/touch, nothing to protect): on car8 the Engineer has blanket
+  access, with no grant and no handoff. It runs install/uninstall/forge for car8, reboots it,
+  and changes any kernel, driver, core or Pitstop setting itself. Never extends to publish,
+  car12, this host or another machine; the guard enforces the scope (car8's pinned ssh names
+  + `etk.conf CAR="car8"`).
+- **The operator runs the controls; Claude preps and hands off** (everywhere but car8). Never reboot the rig
   remotely; never run install/forge/publish "to check." A handoff ends with the exact
   command in its own ```bash fenced block (ONE command, no `$`) so the operator gets a Run
   button — say what it does, what to watch, what would falsify it. A handoff without a
