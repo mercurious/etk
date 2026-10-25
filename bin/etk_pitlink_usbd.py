@@ -25,6 +25,7 @@ import collections
 import errno
 import hashlib
 import json
+import glob
 import os
 import re
 import signal
@@ -761,7 +762,7 @@ ONBOARD_CONF = os.environ.get("ETK_CONF_FILE", os.path.join(ETK_ROOT, "etk.conf"
 ONBOARD_FPS_DEFAULT, ONBOARD_FPS_MAX = 5.0, 30.0
 ONBOARD_SCALE_DEFAULT = 0.5
 ONBOARD_SNAP_QUALITY = 100
-ONBOARD_CAP_TIMEOUT = 5.0                 # a grim that hangs this long is a backend failure
+ONBOARD_CAP_TIMEOUT = 5.0                 # a grim that hangs this long is a backend failure (one power-on nudge + one retry first)
 ONBOARD_POLL = 0.1                        # capture / link-drain poll (CLOSE -> kill well < 1 s)
 ONBOARD_MODE_EVERY = 1.0
 _ONBOARD_CAP_LOCK = threading.Lock()      # two viewers share one grim at a time
@@ -883,6 +884,24 @@ def onboard_sessions():
 
 class _OnboardClosed(Exception):
     pass
+
+
+
+def onboard_nudge_output(output):
+    """`swaymsg output <name> power on` with the session's Wayland env (bin/screenshot.sh's
+    defaults); best effort, never raises -- the retry decides."""
+    env = dict(os.environ)
+    env.setdefault("XDG_RUNTIME_DIR", "/var/run/0-runtime-dir")
+    env.setdefault("WAYLAND_DISPLAY", "wayland-1")
+    if "SWAYSOCK" not in env:
+        socks = sorted(glob.glob(os.path.join(env["XDG_RUNTIME_DIR"], "sway-ipc.*.sock")))
+        if socks:
+            env["SWAYSOCK"] = socks[0]
+    try:
+        subprocess.run(["swaymsg", "output", output, "power", "on"], env=env, timeout=3,
+                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as e:  # noqa: BLE001 -- a missing swaymsg is just a nudge that did nothing
+        log(f"onboard: output nudge failed: {e}")
 
 
 class OnboardCapture:
@@ -1026,43 +1045,61 @@ class OnboardCapture:
 
     def capture(self, quality, scale, snap=False):
         """One JPEG from grim: (bytes, car_ns), or None when the channel closed / the policy
-        went to 0 meanwhile. Raises RuntimeError on a backend failure."""
+        went to 0 meanwhile. Raises RuntimeError on a backend failure.
+
+        Self-heal (car8, 2026-10-25, PM validation): after a long idle at ES the compositor
+        stopped delivering screencopy frames -- every grim blocked past 10 s -- until the
+        output was powered on again (`swaymsg output DSI-1 power on`); captures then ran at
+        80-130 ms. A first timeout therefore nudges the output and retries once; a second
+        timeout is the backend failure (END)."""
         while not _ONBOARD_CAP_LOCK.acquire(timeout=ONBOARD_POLL):
             if self.closed.is_set():
                 return None
         try:
-            car_ns = time.monotonic_ns()
-            self.proc = subprocess.Popen(["/bin/sh", ONBOARD_CAP, str(int(quality)), f"{scale:g}", ONBOARD_OUTPUT],
-                                         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                         stderr=subprocess.PIPE, start_new_session=True)
-            self.stats["captures"] += 1
-            deadline = time.monotonic() + ONBOARD_CAP_TIMEOUT
-            next_mode = time.monotonic() + ONBOARD_MODE_EVERY
-            while True:
-                try:
-                    out, err = self.proc.communicate(timeout=ONBOARD_POLL)
-                    break
-                except subprocess.TimeoutExpired:
-                    pass
-                if self.closed.is_set():
-                    return None
-                if time.monotonic() >= deadline:
-                    raise RuntimeError(f"grim timed out ({ONBOARD_CAP_TIMEOUT:g} s)")
-                if time.monotonic() >= next_mode:
-                    next_mode += ONBOARD_MODE_EVERY
-                    self.tick_mode()
-                    if not snap and self.fps() <= 0:
+            for attempt in (1, 2):
+                car_ns = time.monotonic_ns()
+                self.proc = subprocess.Popen(["/bin/sh", ONBOARD_CAP, str(int(quality)), f"{scale:g}", ONBOARD_OUTPUT],
+                                             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                             stderr=subprocess.PIPE, start_new_session=True)
+                self.stats["captures"] += 1
+                deadline = time.monotonic() + ONBOARD_CAP_TIMEOUT
+                next_mode = time.monotonic() + ONBOARD_MODE_EVERY
+                timed_out = False
+                while True:
+                    try:
+                        out, err = self.proc.communicate(timeout=ONBOARD_POLL)
+                        break
+                    except subprocess.TimeoutExpired:
+                        pass
+                    if self.closed.is_set():
                         return None
-            rc, self.proc = self.proc.returncode, None
-            if rc != 0:
-                tail = (err or b"").decode(errors="replace").strip().splitlines()[-1:] or ["no stderr"]
-                raise RuntimeError(f"grim failed (exit {rc}): {tail[0][:160]}")
-            if not out:
-                raise RuntimeError("grim produced no image")
-            return out, car_ns
+                    if time.monotonic() >= deadline:
+                        timed_out = True
+                        break
+                    if time.monotonic() >= next_mode:
+                        next_mode += ONBOARD_MODE_EVERY
+                        self.tick_mode()
+                        if not snap and self.fps() <= 0:
+                            return None
+                if timed_out:
+                    self._kill()
+                    if attempt == 1:
+                        self.stats["nudges"] = self.stats.get("nudges", 0) + 1
+                        log(f"onboard: grim timed out ({ONBOARD_CAP_TIMEOUT:g} s); output {ONBOARD_OUTPUT} power on, retrying once")
+                        onboard_nudge_output(ONBOARD_OUTPUT)
+                        continue
+                    raise RuntimeError(f"grim timed out ({ONBOARD_CAP_TIMEOUT:g} s, after a power-on nudge)")
+                rc, self.proc = self.proc.returncode, None
+                if rc != 0:
+                    tail = (err or b"").decode(errors="replace").strip().splitlines()[-1:] or ["no stderr"]
+                    raise RuntimeError(f"grim failed (exit {rc}): {tail[0][:160]}")
+                if not out:
+                    raise RuntimeError("grim produced no image")
+                return out, car_ns
         finally:
             self._kill()
             _ONBOARD_CAP_LOCK.release()
+
 
     def frame(self, quality, scale, flags, skipped):
         got = self.capture(quality, scale, snap=bool(flags & ONBD_FLAG_SNAP))

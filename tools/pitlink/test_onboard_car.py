@@ -89,6 +89,7 @@ case "$MODE" in
     fail)  echo "failed to create display: compositor gone" >&2; exit 3 ;;
     empty) exit 0 ;;
     slow)  exec sleep 30 ;;
+    hang_once) if [ -e "$T/hung_once" ]; then :; else : > "$T/hung_once"; exec sleep 30; fi ;;
 esac
 sleep "$(cat "$T/delay" 2>/dev/null || echo 0.02)"
 if [ "$S" = "1" ]; then cat "$T/native.jpg"; else cat "$T/small.jpg"; fi
@@ -177,6 +178,9 @@ class Base(unittest.TestCase):
         os.makedirs(self.shm)
         with open(os.path.join(self.bin, "grim"), "w") as f:
             f.write(FAKE_GRIM.replace("@T@", self.tmp))
+        with open(os.path.join(self.bin, "swaymsg"), "w") as f:
+            f.write("#!/bin/sh\necho \"$*\" >> \"%s/swaymsg\"\n" % self.tmp)
+        os.chmod(os.path.join(self.bin, "swaymsg"), 0o755)
         os.chmod(os.path.join(self.bin, "grim"), 0o755)
         for n, b in (("small.jpg", SMALL), ("native.jpg", NATIVE)):
             with open(os.path.join(self.tmp, n), "wb") as f:
@@ -494,6 +498,19 @@ class TestStop(Base):
         self._slow_capture_running(9)
         self.relay.link_down()                                          # DISABLE / unplug
         self.assertTrue(self.host.wait(lambda: not self.capture_pids(), 1.0))
+        self.assertTrue(self.host.wait(lambda: not D.onboard_sessions(), 1.0))
+
+    def test_grim_hang_is_healed_by_an_output_power_on_and_one_retry(self):
+        """car8 2026-10-25: after a long idle every grim blocked until `swaymsg output DSI-1
+        power on`; onboard_cap.sh bounds the attempt, nudges the output, retries once."""
+        self.grim_mode("hang_once")
+        self.host.open(13)
+        self.assertTrue(self.host.wait(lambda: len(self.frames(13)) >= 1, 12), "no frame after the heal")
+        with open(os.path.join(self.tmp, "swaymsg")) as f:
+            nudges = f.read().splitlines()
+        self.assertEqual(nudges, ["output DSI-1 power on"])
+        self.assertEqual(self.host.of(13, END), [])
+        self.host.close(13)
         self.assertTrue(self.host.wait(lambda: not D.onboard_sessions(), 1.0))
 
     def test_grim_failure_sends_end_and_daemon_lives_on(self):
