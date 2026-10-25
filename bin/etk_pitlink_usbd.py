@@ -717,6 +717,435 @@ def dump_threads(timeout=6.0):
     return {"consumed": True, "from": start, **rep}
 
 
+# ---- onboard: the lobby cam (ONBD v1 over a PLUSB channel, target "onboard") -------------
+# The car's half of ONBOARD (etk-dossiers/Onboard_LiveMirror_20261025.md section 8.3). A host OPENs
+# a channel with target b"onboard"; everything after is ONBD v1 messages both ways:
+#   header <4sBBBBHHIQ> magic b"ONBD", ver 1, kind, codec, flags, w, h, seq, car_ns
+#   then <I> len, then len payload bytes (28 B fixed part).
+#   kind 0 INFO  car->host  JSON: backend, encoder, mode, fps (effective), fps_req, quality,
+#                            scale, transform, panel, output, policy_fps, pinned, daemon, seq
+#   kind 1 FRAME car->host  codec 2 = JPEG; w,h as delivered (landscape); car_ns = CLOCK_MONOTONIC
+#                            at capture start; flags bit1 = snap
+#   kind 2 CTRL  host->car  JSON: fps / quality / scale / pin / snap; unknown keys ignored; every
+#                            CTRL is answered by an INFO
+#   kind 3 END   car->host  UTF-8 reason; the channel closes after it
+# Backend "jpeg-grim": bin/onboard_cap.sh runs ONE `grim -o DSI-1 -t jpeg -q Q -s S -` per
+# frame (exec'd, so the child IS grim). The next capture starts only after the previous frame's
+# write returned AND the link drained it (our socket's unread bytes = 0 and the relay's IN
+# queue empty): a slow link skips capture slots (seq jumps by the skipped slots) instead of
+# queueing frames -- latest-wins, never a backlog. Policy: RUNNING (a game is up) caps the rate
+# at ETK_ONBOARD_RUNNING_FPS (default 0 = INFO only, no capture process at all) unless the host
+# pinned; the mode is re-read every second and every change is announced with an INFO. Nothing
+# runs while no onboard channel is open: the capture lives inside the channel's own thread.
+import fcntl  # noqa: E402
+import queue  # noqa: E402
+import termios  # noqa: E402
+
+ONBD_MAGIC, ONBD_VER = b"ONBD", 1
+ONBD_HDR = struct.Struct("<4sBBBBHHIQ")   # 24 B
+ONBD_LEN = struct.Struct("<I")            # 4 B
+ONBD_FIXED = ONBD_HDR.size + ONBD_LEN.size
+ONBD_INFO, ONBD_FRAME, ONBD_CTRL, ONBD_END = range(4)
+ONBD_RAW, ONBD_ZSTD, ONBD_JPEG, ONBD_H264 = range(4)
+ONBD_FLAG_KEY, ONBD_FLAG_SNAP = 1, 2
+ONBD_MAX = 16 << 20                       # a payload larger than this is a framing error
+ONBOARD_TARGET = getattr(L, "TARGET_ONBOARD", b"onboard").decode()
+ONBOARD_CAP = os.environ.get("ETK_ONBOARD_CAP", os.path.join(HERE, "onboard_cap.sh"))
+ONBOARD_OUTPUT = os.environ.get("ETK_ONBOARD_OUTPUT", "DSI-1")
+ONBOARD_PANEL, ONBOARD_TRANSFORM = (1080, 1920), 90   # DSI-1 as probed on car8; grim un-rotates
+ONBOARD_SHM = os.environ.get("SHM_DIR", "/dev/shm/etk_shm")   # scripts/env.sh's SHM_DIR
+ONBOARD_CONF = os.environ.get("ETK_CONF_FILE", os.path.join(ETK_ROOT, "etk.conf"))
+ONBOARD_FPS_DEFAULT, ONBOARD_FPS_MAX = 5.0, 30.0
+ONBOARD_SCALE_DEFAULT = 0.5
+ONBOARD_SNAP_QUALITY = 100
+ONBOARD_CAP_TIMEOUT = 5.0                 # a grim that hangs this long is a backend failure
+ONBOARD_POLL = 0.1                        # capture / link-drain poll (CLOSE -> kill well < 1 s)
+ONBOARD_MODE_EVERY = 1.0
+ONBOARD_THERMAL_WORDS = ("RACE", "PIT")   # thermal_d / commander intents, not game states
+_ONBOARD_CAP_LOCK = threading.Lock()      # two viewers share one grim at a time
+_ONBOARD_LIVE = set()
+_ONBOARD_LIVE_LOCK = threading.Lock()
+
+OnbdMsg = collections.namedtuple("OnbdMsg", "kind codec flags w h seq car_ns payload")
+
+
+def pack_msg(kind, payload=b"", codec=0, flags=0, w=0, h=0, seq=0, car_ns=0):
+    """One ONBD v1 message. `payload` may be bytes, a str (UTF-8) or a dict (JSON)."""
+    if isinstance(payload, dict):
+        payload = json.dumps(payload, separators=(",", ":")).encode()
+    elif isinstance(payload, str):
+        payload = payload.encode()
+    payload = bytes(payload)
+    return (ONBD_HDR.pack(ONBD_MAGIC, ONBD_VER, kind, codec, flags, w & 0xFFFF, h & 0xFFFF,
+                          seq & 0xFFFFFFFF, car_ns & 0xFFFFFFFFFFFFFFFF)
+            + ONBD_LEN.pack(len(payload)) + payload)
+
+
+def parse_msg(buf, offset=0):
+    """(OnbdMsg, bytes consumed) for the message at buf[offset:], or (None, 0) while it is
+    incomplete. Raises ValueError on a bad magic / version / length (the caller resyncs)."""
+    if len(buf) - offset < ONBD_FIXED:
+        return None, 0
+    magic, ver, kind, codec, flags, w, h, seq, car_ns = ONBD_HDR.unpack_from(buf, offset)
+    if magic != ONBD_MAGIC:
+        raise ValueError(f"ONBD: bad magic {bytes(magic)!r}")
+    if ver != ONBD_VER:
+        raise ValueError(f"ONBD: version {ver} (this end speaks {ONBD_VER})")
+    (n,) = ONBD_LEN.unpack_from(buf, offset + ONBD_HDR.size)
+    if n > ONBD_MAX:
+        raise ValueError(f"ONBD: payload length {n} > {ONBD_MAX}")
+    if len(buf) - offset < ONBD_FIXED + n:
+        return None, 0
+    start = offset + ONBD_FIXED
+    return OnbdMsg(kind, codec, flags, w, h, seq, car_ns, bytes(buf[start:start + n])), ONBD_FIXED + n
+
+
+def jpeg_size(b):
+    """(w, h) from a JPEG's SOF marker, or (0, 0)."""
+    i = 2 if b[:2] == b"\xff\xd8" else len(b)
+    while i + 4 <= len(b):
+        if b[i] != 0xFF:
+            return 0, 0
+        m = b[i + 1]
+        if m == 0xFF:
+            i += 1
+            continue
+        if m in (0x01, 0xD8) or 0xD0 <= m <= 0xD7:
+            i += 2
+            continue
+        n = struct.unpack_from(">H", b, i + 2)[0]
+        if 0xC0 <= m <= 0xCF and m not in (0xC4, 0xC8, 0xCC):
+            if i + 9 > len(b):
+                return 0, 0
+            h, w = struct.unpack_from(">HH", b, i + 5)
+            return w, h
+        i += 2 + n
+    return 0, 0
+
+
+def onboard_conf():
+    """The ONBOARD knobs: the environment wins, else the kit's etk.conf (KEY=value lines, the
+    shell-sourced file env.sh reads; the systemd unit does not source it), else defaults."""
+    keys = ("ETK_ONBOARD", "ETK_ONBOARD_RUNNING_FPS", "ETK_ONBOARD_QUALITY")
+    conf = {}
+    try:
+        with open(ONBOARD_CONF, errors="replace") as f:
+            for ln in f:
+                ln = ln.strip()
+                if ln.startswith("export "):
+                    ln = ln[7:].lstrip()
+                k, sep, v = ln.partition("=")
+                if not sep or k not in keys:
+                    continue
+                v = v.strip()
+                if v[:1] in ("'", '"'):
+                    v = v[1:].split(v[0], 1)[0]
+                else:
+                    v = v.split("#", 1)[0].strip()
+                conf[k] = v
+    except OSError:
+        pass
+    conf.update({k: os.environ[k] for k in keys if k in os.environ})
+
+    def num(k, default, lo, hi):
+        try:
+            return min(hi, max(lo, float(conf[k])))
+        except (KeyError, ValueError):
+            return default
+    return {"enabled": conf.get("ETK_ONBOARD", "1").strip() != "0",
+            "running_fps": num("ETK_ONBOARD_RUNNING_FPS", 0.0, 0.0, ONBOARD_FPS_MAX),
+            "quality": int(num("ETK_ONBOARD_QUALITY", 70, 1, 100))}
+
+
+def _first_line(path):
+    try:
+        with open(path, errors="replace") as f:
+            return f.readline().strip()
+    except OSError:
+        return None
+
+
+def onboard_mode():
+    """RUNNING while a game is up, else IDLE. The Sentry's game signal is active_id.txt (IDLE
+    when no game runs, the title ID while one does); section 8.3's rule reads etk_mode.txt (not IDLE
+    = RUNNING, missing = IDLE). On the kit, etk_mode.txt holds the thermal governor's RACE/PIT
+    intent (seeded RACE at boot, also at ES), so those two words are not read as a game."""
+    gid = _first_line(os.path.join(ONBOARD_SHM, "active_id.txt"))
+    if gid not in (None, "", "IDLE"):
+        return "RUNNING"
+    m = _first_line(os.path.join(ONBOARD_SHM, "etk_mode.txt"))
+    if m not in (None, "", "IDLE") and m.upper() not in ONBOARD_THERMAL_WORDS:
+        return "RUNNING"
+    return "IDLE"
+
+
+def onboard_sessions():
+    """The live onboard channels (tests and status: no channel -> no capture)."""
+    with _ONBOARD_LIVE_LOCK:
+        return list(_ONBOARD_LIVE)
+
+
+class _OnboardClosed(Exception):
+    pass
+
+
+class OnboardCapture:
+    """One onboard channel: reader thread for CTRL, this thread for capture + every write."""
+
+    def __init__(self, sock, relay=None):
+        self.sock, self.relay = sock, relay
+        self.closed = threading.Event()
+        self.wake = threading.Event()
+        self.ctrl = queue.Queue()
+        self.proc = None
+        self.seq = 0
+        self.conf = onboard_conf()
+        self.mode = onboard_mode()
+        self.fps_req = ONBOARD_FPS_DEFAULT
+        self.quality = self.conf["quality"]
+        self.scale = ONBOARD_SCALE_DEFAULT
+        self.pinned = False
+        self.stats = collections.Counter()
+
+    # -- policy ------------------------------------------------------------------
+    def fps(self):
+        if self.mode == "RUNNING" and not self.pinned:
+            return min(self.fps_req, self.conf["running_fps"])
+        return self.fps_req
+
+    def info(self, **extra):
+        d = {"backend": "jpeg-grim", "encoder": "grim", "mode": self.mode, "fps": self.fps(),
+             "fps_req": self.fps_req, "quality": self.quality, "scale": self.scale,
+             "transform": ONBOARD_TRANSFORM, "panel": list(ONBOARD_PANEL), "output": ONBOARD_OUTPUT,
+             "policy_fps": self.conf["running_fps"], "pinned": self.pinned, "daemon": VERSION,
+             "onbd": ONBD_VER, "seq": self.seq}
+        d.update(extra)
+        self.send(ONBD_INFO, d, seq=self.seq, car_ns=time.monotonic_ns())
+
+    def tick_mode(self):
+        m = onboard_mode()
+        if m != self.mode:
+            self.mode = m
+            log(f"onboard: mode {m} -> {self.fps():g} fps")
+            self.info(why="mode")
+
+    # -- wire ----------------------------------------------------------------------
+    def send(self, kind, payload, **hdr):
+        try:
+            self.sock.sendall(pack_msg(kind, payload, **hdr))
+        except OSError:
+            self.closed.set()
+            raise _OnboardClosed()
+
+    def _reader(self):
+        buf = bytearray()
+        try:
+            while True:
+                b = self.sock.recv(64 * 1024)
+                if not b:
+                    break
+                buf += b
+                while True:
+                    try:
+                        m, n = parse_msg(buf)
+                    except ValueError:
+                        i = buf.find(ONBD_MAGIC, 1)
+                        del buf[:i if i > 0 else max(0, len(buf) - len(ONBD_MAGIC) + 1)]
+                        self.stats["resync"] += 1
+                        continue
+                    if m is None:
+                        break
+                    del buf[:n]
+                    if m.kind == ONBD_CTRL:
+                        try:
+                            req = json.loads(m.payload.decode("utf-8"))
+                        except ValueError:
+                            req = None
+                        self.ctrl.put(req if isinstance(req, dict) else {"_bad": True})
+                        self.wake.set()
+        except OSError:
+            pass
+        self.closed.set()
+        self.wake.set()
+
+    def apply(self, req):
+        """One CTRL: apply the keys it knows, ignore the rest, answer with an INFO."""
+        extra, ignored = {"why": "ctrl"}, []
+        if req.get("_bad"):
+            extra["err"] = "CTRL payload is not a JSON object"
+        for k, v in req.items():
+            try:
+                if k in ("fps", "quality", "scale") and isinstance(v, bool):
+                    raise ValueError(k)
+                if k == "fps":
+                    self.fps_req = min(ONBOARD_FPS_MAX, max(0.0, float(v)))
+                elif k == "quality":
+                    self.quality = int(min(100, max(1, int(v))))
+                elif k == "scale":
+                    self.scale = min(1.0, max(0.05, float(v)))
+                elif k == "pin":
+                    if not isinstance(v, bool):
+                        raise ValueError(k)
+                    self.pinned = v
+                elif k != "snap" and k != "_bad":
+                    ignored.append(k)
+            except (TypeError, ValueError):
+                ignored.append(k)
+        if ignored:
+            extra["ignored"] = sorted(ignored)
+        snap = req.get("snap") is True
+        if snap and self.mode == "RUNNING" and not self.pinned and self.conf["running_fps"] <= 0:
+            extra["snap"] = "refused: a game is running and ETK_ONBOARD_RUNNING_FPS=0 (pin to override)"
+            snap = False
+        self.info(**extra)
+        if snap:
+            self.frame(ONBOARD_SNAP_QUALITY, 1.0, ONBD_FLAG_SNAP, skipped=0)
+
+    # -- capture -------------------------------------------------------------------
+    def link_busy(self):
+        """True while our last write has not left the car: unread bytes in our socket (the
+        relay's pump has not taken them) or segments still queued for the IN endpoint."""
+        try:
+            outq = struct.unpack("i", fcntl.ioctl(self.sock.fileno(), termios.TIOCOUTQ, b"\0\0\0\0"))[0]
+        except OSError:
+            outq = 0
+        q = getattr(getattr(self.relay, "out", None), "q", None)   # plusb.OutQueue's queue
+        return outq > 0 or (q is not None and q.qsize() > 0)
+
+    def _kill(self):
+        p, self.proc = self.proc, None
+        if p is None:
+            return
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except OSError:
+            try:
+                p.kill()
+            except OSError:
+                pass
+        try:
+            p.communicate(timeout=2)
+        except Exception:
+            pass
+
+    def capture(self, quality, scale, snap=False):
+        """One JPEG from grim: (bytes, car_ns), or None when the channel closed / the policy
+        went to 0 meanwhile. Raises RuntimeError on a backend failure."""
+        while not _ONBOARD_CAP_LOCK.acquire(timeout=ONBOARD_POLL):
+            if self.closed.is_set():
+                return None
+        try:
+            car_ns = time.monotonic_ns()
+            self.proc = subprocess.Popen(["/bin/sh", ONBOARD_CAP, str(int(quality)), f"{scale:g}", ONBOARD_OUTPUT],
+                                         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                         stderr=subprocess.PIPE, start_new_session=True)
+            self.stats["captures"] += 1
+            deadline = time.monotonic() + ONBOARD_CAP_TIMEOUT
+            next_mode = time.monotonic() + ONBOARD_MODE_EVERY
+            while True:
+                try:
+                    out, err = self.proc.communicate(timeout=ONBOARD_POLL)
+                    break
+                except subprocess.TimeoutExpired:
+                    pass
+                if self.closed.is_set():
+                    return None
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(f"grim timed out ({ONBOARD_CAP_TIMEOUT:g} s)")
+                if time.monotonic() >= next_mode:
+                    next_mode += ONBOARD_MODE_EVERY
+                    self.tick_mode()
+                    if not snap and self.fps() <= 0:
+                        return None
+            rc, self.proc = self.proc.returncode, None
+            if rc != 0:
+                tail = (err or b"").decode(errors="replace").strip().splitlines()[-1:] or ["no stderr"]
+                raise RuntimeError(f"grim failed (exit {rc}): {tail[0][:160]}")
+            if not out:
+                raise RuntimeError("grim produced no image")
+            return out, car_ns
+        finally:
+            self._kill()
+            _ONBOARD_CAP_LOCK.release()
+
+    def frame(self, quality, scale, flags, skipped):
+        got = self.capture(quality, scale, snap=bool(flags & ONBD_FLAG_SNAP))
+        if got is None:
+            return False
+        img, car_ns = got
+        w, h = jpeg_size(img)
+        if not w:
+            w, h = round(ONBOARD_PANEL[1] * scale), round(ONBOARD_PANEL[0] * scale)
+        self.seq = (self.seq + 1 + skipped) & 0xFFFFFFFF
+        self.send(ONBD_FRAME, img, codec=ONBD_JPEG, flags=flags, w=w, h=h, seq=self.seq, car_ns=car_ns)
+        self.stats["frames"] += 1
+        return True
+
+    def run(self):
+        if not self.conf["enabled"]:
+            self.send(ONBD_END, "ONBOARD is off on this car (etk.conf ETK_ONBOARD=0)")
+            return
+        threading.Thread(target=self._reader, name="onboard-ctrl", daemon=True).start()
+        log(f"onboard: open ({self.mode}, {self.fps():g} fps, q{self.quality}, x{self.scale:g})")
+        self.info(why="open")
+        now = time.monotonic()
+        next_mode, due, busy_since = now + ONBOARD_MODE_EVERY, now, None
+        while not self.closed.is_set():
+            while True:
+                try:
+                    req = self.ctrl.get_nowait()
+                except queue.Empty:
+                    break
+                self.apply(req)
+            now = time.monotonic()
+            if now >= next_mode:
+                next_mode = now + ONBOARD_MODE_EVERY
+                self.tick_mode()
+            fps = self.fps()
+            if fps > 0 and now >= due:
+                if self.link_busy():
+                    busy_since = busy_since or now
+                    self.wake.wait(min(ONBOARD_POLL / 5, max(0.0, next_mode - now)))
+                    self.wake.clear()
+                    continue
+                period = 1.0 / fps
+                skipped = int((now - busy_since) / period) if busy_since else 0
+                busy_since = None
+                start = now
+                if self.frame(self.quality, self.scale, 0, skipped):
+                    due = start + period
+                    if due < time.monotonic() - period:
+                        due = time.monotonic()      # never burst to catch up
+                continue
+            waits = [next_mode - now] + ([due - now] if fps > 0 else [])
+            self.wake.wait(max(0.0, min(waits)))
+            self.wake.clear()
+
+
+def onboard_serve(sock, relay=None):
+    """The `onboard` channel service (CarRelay services entry): runs until CLOSE, link loss,
+    or END. A backend failure is answered with END + its reason, never a daemon crash."""
+    sess = OnboardCapture(sock, relay)
+    with _ONBOARD_LIVE_LOCK:
+        _ONBOARD_LIVE.add(sess)
+    try:
+        sess.run()
+    except _OnboardClosed:
+        pass
+    except Exception as e:
+        log(f"onboard: END ({e})")
+        try:
+            sess.send(ONBD_END, str(e) or e.__class__.__name__)
+        except _OnboardClosed:
+            pass
+    finally:
+        sess.closed.set()
+        sess._kill()
+        with _ONBOARD_LIVE_LOCK:
+            _ONBOARD_LIVE.discard(sess)
+        log(f"onboard: closed ({sess.stats['frames']} frames, {sess.stats['captures']} captures)")
+
+
 # ---- the relay -----------------------------------------------------------------------------
 class Daemon:
     def __init__(self, ep0):
@@ -725,6 +1154,7 @@ class Daemon:
         self.stop = threading.Event()
         self.relay = L.CarRelay(target=TARGET, status=self.status, log=log,
                                 services={"garage": lambda sock: L.serve_json_lines(sock, garage)})
+        self.relay.services[ONBOARD_TARGET] = lambda sock: onboard_serve(sock, self.relay)
         self.ep_in = os.open(MNT + "/ep1", os.O_RDWR)
         self.ep_out = os.open(MNT + "/ep2", os.O_RDWR)
 
