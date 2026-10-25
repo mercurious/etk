@@ -1,0 +1,20 @@
+# GT5 (BCUS98114): from the B-2 card, load the overview and start the test -- the second half of
+# gt5_b2_start.macro, for gt5_trial.py --attach once a driver has parked GT5 on the LICENSE TESTS B-2
+# card (cursor on the Tokyo R246 tile). The boot-to-card half is lossy on the macro's blind taps
+# (2026-10-25: the title's start and the GT home's sidebar->grid tap each dropped); a driver that
+# checks a frame after each press parks it reliably.
+#   DYNO_GAME=BCUS98114 DYNO_MACRO=tools/autopilot/macros/gt5_b2_card_start.macro \
+#   DYNO_TRIAL_ARGS="--attach --freeze-secs 25" DYNO_OBS_DELAY=4 tools/onboard/dyno_ab.sh on NAME OUTROOT
+sleep 10                     # the ONBOARD observer lands first (DYNO_OBS_DELAY=4)
+snap r8_b2_card
+press cross                  # the B-2 overview (track load; the 10-13 trigger dies at its end)
+sleep 60
+snap r9_b2_overview
+press cross                  # start the test: the baseline dies ~7 s later
+sleep 10
+snap r10_start_10
+sleep 20
+snap r11_start_30
+sleep 90
+snap r12_start_120
+exit

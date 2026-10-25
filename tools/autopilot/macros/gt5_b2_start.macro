@@ -5,6 +5,10 @@
 # ONBOARD observer for the ON arm. Route as the lift session drove it by hand: main menu left x3
 # (GT5 remembers the cursor; three lefts pin it to GT Mode), X; right, down = License Tests, X;
 # X = B; right = B-2; X = the overview; X = start.
+# BLIND TAPS ARE LOSSY: the title's start and the GT home's sidebar->grid tap each dropped (4 voids,
+# 2026-10-25). Do not lengthen them: `ms` is counted in flips at 60 Hz, so at GT5's 30 fps 250 ms is a
+# 500 ms hold and the d-pad auto-repeats. Reliable route: drive to the B-2 card checking a frame after
+# each press, then gt5_trial --attach with gt5_b2_card_start.macro.
 wait_lit 240
 sleep 60
 snap r1_boot_dialog
@@ -22,9 +26,9 @@ press left
 sleep 2
 snap r4_gt_mode_tile
 press cross                  # GT Mode
-sleep 30                     # the home grid takes focus late: at +15 s a right was dropped (void on2)
+sleep 30                     # the home grid settles late (at +20 s it is still animating)
 snap r5_gt_home
-press right 300              # sidebar -> grid: a 120 ms tap was dropped 2 of 4 (void on2/on3)
+press right                  # sidebar -> grid: this tap dropped 2 of 4 (void on2/on3)
 sleep 2
 press down
 sleep 2

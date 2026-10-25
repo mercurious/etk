@@ -24,12 +24,14 @@ cd "$(dirname "$0")/../.." || exit 1
 OUT="$ROOT/$NAME"; mkdir -p "$OUT"
 GAME="${DYNO_GAME:-BCUS98296}"
 MACRO="${DYNO_MACRO:-tools/autopilot/macros/gt6_apricot_ab.macro}"
+# DYNO_TRIAL_ARGS: extra gt5_trial flags, e.g. "--freeze-secs 25" to thread-dump a stall early
+# shellcheck disable=SC2086
 python3 tools/autopilot/gt5_trial.py --game "$GAME" --host etk-rig-usb --macro "$MACRO" \
-    --out "$OUT" --secs 900 --label "$NAME" > "$OUT.log" 2>&1 &
+    --out "$OUT" --secs 900 --label "$NAME" ${DYNO_TRIAL_ARGS:-} > "$OUT.log" 2>&1 &
 TRIAL=$!
 WIN=""
 if [ "$ARM" = "on" ]; then
-    sleep 25
+    sleep "${DYNO_OBS_DELAY:-25}"    # after the trial's HELLO holds the wheel; --attach runs need less
     ./onboard --game --ring "$OUT/onboard" > "$OUT/onboard.log" 2>&1 &
     WIN=$!
     echo "$(date +%T) observer window pid $WIN attached" >> "$OUT.log"
@@ -37,6 +39,12 @@ fi
 wait $TRIAL; RC=$?
 [ -n "$WIN" ] && { kill "$WIN" 2>/dev/null; wait "$WIN" 2>/dev/null; echo "$(date +%T) observer window stopped" >> "$OUT.log"; }
 echo "$(date +%T) trial exit $RC" >> "$OUT.log"
+# FREEZE: the trial dumped the threads once; a second dump ~10 s on says whether anything moved
+if [ "$RC" = 5 ]; then
+    sleep 10
+    python3 tools/pitlink/pitlink.py garage --out "$OUT/dump2.txt" dump_threads timeout=8 > /dev/null 2>&1
+    echo "$(date +%T) second thread dump: $(wc -c < "$OUT/dump2.txt" 2>/dev/null || echo 0) bytes" >> "$OUT.log"
+fi
 # the trial keeps only the log's last 400 lines; keep the whole session (a live car's log is the session's)
 ssh -o ConnectTimeout=5 etk-rig-usb cat /storage/.cache/rpcs3/RPCS3.log > "$OUT/RPCS3_full.log" 2>/dev/null
 # CRASH (3) / FREEZE (5) leave the car up with RPCS3 still holding the game (an anti-lock stop does
