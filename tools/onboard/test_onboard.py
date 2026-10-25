@@ -4,6 +4,7 @@
   [WIRE]    ONBD v1 pack/parse: byte-exact against the §8.3 table, partial input, bad magic/version
   [RING]    60 s window + byte cap, ring.N directories
   [ROLES]   GAME is an observer beside a controller; with no controller it refuses the wheel
+  [WHEEL]   --wheel keeps a landed wheel as an idle controller (GAME shows, no control op sent)
   [POLICY]  PANEL by default, GAME when PANEL goes quiet (RUNNING, policy 0), back; p/g pins
   [STALE]   GAME flips stop for 2 s; PANEL seq stops for 2 intervals
   [FLUSH]   link death (PitlinkClosed / socket EOF) writes index.tsv, frames.bin, last.png, sheet.png
@@ -333,6 +334,45 @@ class TestRoles(unittest.TestCase):
         hunt.hello()
         self.assertTrue(hunt.controller)
         self.assertIsNone(rig.ob._game_client)
+
+
+class TestWheel(unittest.TestCase):
+    """--wheel (field finding, car8 with no driver): keep the wheel the HELLO lands, idle."""
+
+    def test_wheel_keeps_it_and_shows_game(self):
+        rig = Rig(self, panel=False, controller=False, want_panel=False, wheel=True)
+        ob = rig.ob
+        self.assertTrue(wait_until(lambda: ob.game.frames > 10, 3.0), ob.game.link)
+        self.assertTrue(ob._game_client.controller)
+        self.assertEqual(ob.game.link, O.WHEEL_LINK)
+        self.assertIn("holding the wheel (--wheel): a hunt cannot start until this window quits", ob.status_line())
+        self.assertEqual(ob.active(), "game")
+        rec, rgb, note = ob.frame_for("game")
+        self.assertEqual((rgb.shape, note), ((GAME_H, GAME_W, 3), None))
+        self.assertEqual(rig.car.pads, [])  # idle: no PAD, no control op ever reached the car
+        self.assertFalse(rig.car.paused)
+        hunt = PitlinkClient(rig.car.addrs[0], timeout=3)
+        self.addCleanup(hunt.close)
+        hunt.hello()
+        self.assertFalse(hunt.controller)  # exactly what the status bar warns about
+
+    def test_wheel_still_observer_beside_a_controller(self):
+        rig = Rig(self, panel=False, want_panel=False, wheel=True)
+        self.assertTrue(wait_until(lambda: rig.ob.game.frames > 5))
+        self.assertEqual(rig.ob.game.link, "observer")
+        self.assertFalse(rig.ob._game_client.controller)
+
+    def test_cli_wheel_snap(self):
+        rig = Rig(self, panel=False, controller=False, want_panel=False)  # the default viewer refuses meanwhile
+        out = os.path.join(rig.tmp, "w.png")
+        p = subprocess.run([sys.executable, os.path.join(HERE, "onboard.py"), "--snap", out, "--game", "--wheel",
+                            "--addr", rig.car.addrs[0], "--ring", rig.tmp, "--timeout", "5"],
+                           capture_output=True, text=True, timeout=30)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(img_size(out), (GAME_W, GAME_H))
+        p = subprocess.run([sys.executable, os.path.join(HERE, "onboard.py"), "--snap", out, "--panel", "--wheel"],
+                           capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(p.returncode, 0)
 
 
 # ============================================================================ [POLICY]

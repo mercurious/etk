@@ -14,6 +14,7 @@ Plan and wire format: `etk-dossiers/Onboard_LiveMirror_20261025.md` §2 and §8.
 tools/onboard/onboard.py                 # the window
 tools/onboard/onboard.py --game          # GAME only: the PANEL channel is never opened, so nothing captures on the car
 tools/onboard/onboard.py --panel         # PANEL only: never opens PLNK (no HELLO: safe beside any hunt)
+tools/onboard/onboard.py --wheel         # eyes on a car with no driver: keep the wheel the HELLO lands (idle)
 tools/onboard/onboard.py --snap out.png  # one frame from the active source, no window
 tools/onboard/onboard.py --ring "$RUN"   # flush the ring into a hunt run directory ($RUN/ring/)
 ```
@@ -61,6 +62,17 @@ USB). A driver whose HELLO lands inside that window becomes an observer, and the
 that (`gtdrive.py`, `pitlink.py` control ops, `gt5_trial.py`). So beside a hunt that has not yet
 taken the wheel, run **`--panel`** (it never opens PLNK at all) or start ONBOARD after the driver holds
 the wheel. In-game snaps use the observer's `latest_frame()`/`wait_frame()` only.
+
+**`--wheel` vs the default.** The default (refuse the wheel, retry every 5 s) is for running beside a
+hunt: ONBOARD never stands between a driver and the wheel for longer than that one window. But with no
+driver at all -- a headless car (car8) running a game with nobody on PLNK -- the default shows nothing in
+a game: GAME refuses the wheel and PANEL is silent by RUNNING policy. `--wheel` is for that case: when
+the HELLO lands the wheel, ONBOARD KEEPS it as an idle controller, so the game's frames reach the window.
+It still sends no control op of any kind (no PAD, VIDEO, SNAP, freeze, single-flip, EXIT; snaps stay
+`latest_frame()`/`wait_frame()`), and beside a driver that already holds the wheel it is a plain
+observer. The cost is the wheel itself: the status bar reads `holding the wheel (--wheel): a hunt cannot
+start until this window quits`, and any driver that HELLOs meanwhile lands as an observer and exits. Quit
+the window before starting a hunt.
 
 ## The ring (the forensic instrument)
 
