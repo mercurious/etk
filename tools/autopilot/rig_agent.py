@@ -378,7 +378,14 @@ class MemReader:
     def block(self, addr, n):
         if not self.open():
             raise ConnectionError("no RPCS3 guest memory (not running?)")
-        return os.pread(self.fd, n, self.sudo + addr)
+        b = os.pread(self.fd, n, self.sudo + addr)
+        if len(b) < n:
+            # a dead pid's /proc/<pid>/mem reads 0 bytes, not an error: an R3'd game left this fd
+            # stale (car8 2026-10-25), so reopen on the current RPCS3 once before answering
+            self.close()
+            if self.open():
+                b = os.pread(self.fd, n, self.sudo + addr)
+        return b
 
 
 def parse_ranges(spec, committed):
