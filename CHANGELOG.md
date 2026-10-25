@@ -4,6 +4,20 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ## [Unreleased]
 
+### Fixed
+
+- **Gran Turismo 6's rear-view mirror renders** (RPCS3 GTK Edition **0.10.1-dev**, fork
+  `etk-rpcs3-gtk` `d2fb2fd`). The HUD mirror had drawn black with the minimap bleeding into it on
+  every GTK core. Upstream found the cause after our base was cut: GT6's mirror colour target shares
+  memory with an oversized depth clip, both carry the same use tag, and the texture lookup picked the
+  depth surface. kd-11's tie-break (RPCS3 #19760, merged 2026-10-08, one file) is backported onto the
+  0.10.0 patch with nothing else changed; the base already had the *Framebuffer Aliasing Heuristic
+  Bias* setting it honours, and the default `Auto` is enough. Proven on car8 (headless lift access):
+  same Apricot Hill night race before and after, one reboot apart — mirror black vs mirror showing
+  the grandstand and curbs (`etk-dossiers/GT6Mirror_20261024.md`). Staged as the
+  `rpcs3-EXP-gt6mirror-0.10.1…` probe core; certifying it as the shipping 0.10.1 is the operator's
+  call. Still open on GT6: the Car Selection thumbnail is black.
+
 ### Added
 
 - **Card Transplant** (`tools/card_transplant.py`, host-side Garage Gear): turns one car's
