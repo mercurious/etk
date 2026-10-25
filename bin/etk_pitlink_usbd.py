@@ -739,7 +739,10 @@ def dump_threads(timeout=6.0):
 # runs while no onboard channel is open: the capture lives inside the channel's own thread.
 import fcntl  # noqa: E402
 import queue  # noqa: E402
-import termios  # noqa: E402
+try:
+    from termios import TIOCOUTQ as _ONBOARD_TIOCOUTQ  # noqa: E402
+except ImportError:  # a python without termios must not take garage / hunts down with it
+    _ONBOARD_TIOCOUTQ = 0x5411  # SIOCOUTQ == TIOCOUTQ on Linux (asm-generic/ioctls.h)
 
 ONBD_MAGIC, ONBD_VER = b"ONBD", 1
 ONBD_HDR = struct.Struct("<4sBBBBHHIQ")   # 24 B
@@ -761,7 +764,6 @@ ONBOARD_SNAP_QUALITY = 100
 ONBOARD_CAP_TIMEOUT = 5.0                 # a grim that hangs this long is a backend failure
 ONBOARD_POLL = 0.1                        # capture / link-drain poll (CLOSE -> kill well < 1 s)
 ONBOARD_MODE_EVERY = 1.0
-ONBOARD_THERMAL_WORDS = ("RACE", "PIT")   # thermal_d / commander intents, not game states
 _ONBOARD_CAP_LOCK = threading.Lock()      # two viewers share one grim at a time
 _ONBOARD_LIVE = set()
 _ONBOARD_LIVE_LOCK = threading.Lock()
@@ -852,7 +854,7 @@ def onboard_conf():
             return min(hi, max(lo, float(conf[k])))
         except (KeyError, ValueError):
             return default
-    return {"enabled": conf.get("ETK_ONBOARD", "1").strip() != "0",
+    return {"enabled": conf.get("ETK_ONBOARD", "1").strip() == "1",   # install.sh: = "1"
             "running_fps": num("ETK_ONBOARD_RUNNING_FPS", 0.0, 0.0, ONBOARD_FPS_MAX),
             "quality": int(num("ETK_ONBOARD_QUALITY", 70, 1, 100))}
 
@@ -866,17 +868,11 @@ def _first_line(path):
 
 
 def onboard_mode():
-    """RUNNING while a game is up, else IDLE. The Sentry's game signal is active_id.txt (IDLE
-    when no game runs, the title ID while one does); section 8.3's rule reads etk_mode.txt (not IDLE
-    = RUNNING, missing = IDLE). On the kit, etk_mode.txt holds the thermal governor's RACE/PIT
-    intent (seeded RACE at boot, also at ES), so those two words are not read as a game."""
+    """RUNNING while a game is up, else IDLE (section 8.3 as amended): the Sentry's active_id.txt
+    is the only signal -- missing / empty / IDLE = IDLE, anything else (a title ID, UNKNOWN_ID)
+    = RUNNING. etk_mode.txt is the thermal governor's RACE/PIT file and is never read here."""
     gid = _first_line(os.path.join(ONBOARD_SHM, "active_id.txt"))
-    if gid not in (None, "", "IDLE"):
-        return "RUNNING"
-    m = _first_line(os.path.join(ONBOARD_SHM, "etk_mode.txt"))
-    if m not in (None, "", "IDLE") and m.upper() not in ONBOARD_THERMAL_WORDS:
-        return "RUNNING"
-    return "IDLE"
+    return "IDLE" if gid in (None, "", "IDLE") else "RUNNING"
 
 
 def onboard_sessions():
@@ -1006,9 +1002,9 @@ class OnboardCapture:
         """True while our last write has not left the car: unread bytes in our socket (the
         relay's pump has not taken them) or segments still queued for the IN endpoint."""
         try:
-            outq = struct.unpack("i", fcntl.ioctl(self.sock.fileno(), termios.TIOCOUTQ, b"\0\0\0\0"))[0]
-        except OSError:
-            outq = 0
+            outq = struct.unpack("i", fcntl.ioctl(self.sock.fileno(), _ONBOARD_TIOCOUTQ, b"\0\0\0\0"))[0]
+        except (OSError, ValueError, TypeError, struct.error):
+            outq = 0                                # cannot tell: the link counts as not busy
         q = getattr(getattr(self.relay, "out", None), "q", None)   # plusb.OutQueue's queue
         return outq > 0 or (q is not None and q.qsize() > 0)
 
