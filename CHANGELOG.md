@@ -14,9 +14,12 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
   0.10.0 patch with nothing else changed; the base already had the *Framebuffer Aliasing Heuristic
   Bias* setting it honours, and the default `Auto` is enough. Proven on car8 (headless lift access):
   same Apricot Hill night race before and after, one reboot apart — mirror black vs mirror showing
-  the grandstand and curbs (`etk-dossiers/GT6Mirror_20261024.md`). Staged as the
-  `rpcs3-EXP-gt6mirror-0.10.1…` probe core; certifying it as the shipping 0.10.1 is the operator's
-  call. Still open on GT6: the Car Selection thumbnail is black.
+  the grandstand and curbs (`etk-dossiers/GT6Mirror_20261024.md`), then confirmed by the operator on
+  car12's 120 Hz panel after a cold boot. **Certified:** `CERT_RPCS3` is now
+  `rpcs3-etk_gtk-edition-0.10.1_armsx3-8290349e5_linux_aarch64.AppImage` (the exact car8-validated
+  bytes under the shipping name, not a re-mint), 0.10.0 stays as the one fallback core, 0.9.0.3 is
+  retired. A per-title CORE pin outranks the new default, so a rig that had pinned GT6 keeps its
+  pick until it is changed. Still open on GT6: the Car Selection thumbnail is black.
 
 ### Added
 

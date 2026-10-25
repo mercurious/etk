@@ -29,7 +29,7 @@
     "sha256": "36860c4e0b021b5178c952b48e781dac8da43f14b89bd6e6460fefebef1fc2cd"
   },
   "rpcs3": {
-    "asset": "rpcs3-etk_gtk-edition-0.10.0_armsx3-8290349e5_linux_aarch64.AppImage",
-    "sha256": "b70d7695ceed3e9bdb209e0964261855523b8abb76bc52ed5a2ff83eca0000de"
+    "asset": "rpcs3-etk_gtk-edition-0.10.1_armsx3-8290349e5_linux_aarch64.AppImage",
+    "sha256": "37c0d5c4fb29785a306168e410ae6674027ea03940c85d8fbeb813a31b2a25af"
   }
 }
