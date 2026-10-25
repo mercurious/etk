@@ -1,0 +1,41 @@
+# GT6 (BCUS98296): My Home -> Arcade Mode -> Single Race -> Original Courses -> Apricot Hill Raceway,
+# current car, rolling start, 150 s flat out on R2, then a graceful exit (a CLEAN ledger row).
+# The route is the one driven frame-by-frame in etk-dossiers/GT6Mirror_20261024.md §1 (car8 lift);
+# the sleeps are the calibration of 2026-10-25 (ONBOARD observer dyno A/B). Same shape every run.
+wait_lit 180
+sleep 40
+snap r1_myhome
+press right
+sleep 3
+press right
+sleep 3
+snap r2_arcade_tile
+press cross                  # Arcade Mode
+sleep 8
+snap r3_arcade_menu
+press cross                  # Single Race
+sleep 8
+snap r4_course_select
+press down                   # Original Courses
+sleep 3
+press cross
+sleep 8
+snap r5_courses
+press cross                  # Apricot Hill Raceway
+sleep 10
+snap r6_car_select
+press cross                  # current car
+sleep 10
+snap r7_driving_options
+press cross                  # OK
+sleep 20
+snap r8_loading
+press cross                  # track intro
+sleep 95                     # the race load (~100 s on car8)
+snap r9_grid
+press cross                  # Starting Grid: rolling start
+sleep 6
+snap r10_start
+hold r2=1.0 secs=150
+snap r11_race_end
+exit
