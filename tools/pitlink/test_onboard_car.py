@@ -297,6 +297,13 @@ class TestWire(unittest.TestCase):
         with self.assertRaises(ValueError):
             D.parse_msg(bytes(bad_ver))
 
+    def test_daemon_imports_without_termios(self):
+        code = ("import sys; sys.modules['termios'] = None; sys.path[:0] = [sys.argv[1], sys.argv[2]]; "
+                "import etk_pitlink_usbd as D; print(hex(D._ONBOARD_TIOCOUTQ), callable(D.garage))")
+        r = subprocess.run([sys.executable, "-c", code, DAEMON_DIR, HERE], capture_output=True, text=True,
+                           timeout=30)
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, "0x5411 True"), r.stderr)
+
     def test_jpeg_size(self):
         self.assertEqual(D.jpeg_size(SMALL), (960, 540))
         self.assertEqual(D.jpeg_size(NATIVE), (1920, 1080))
@@ -399,17 +406,12 @@ class TestPolicy(Base):
         self.assertTrue(self.host.infos(4)[2]["pinned"])
         self.assertEqual(self.host.infos(4)[2]["fps"], 5)
 
-    def test_spec_rule_etk_mode_not_idle_is_running(self):
-        self.set_shm(active_id=None, etk_mode="RUNNING")
-        self.assertEqual(D.onboard_mode(), "RUNNING")
-        self.set_shm(active_id=None, etk_mode=None)
-        self.assertEqual(D.onboard_mode(), "IDLE")                      # missing = IDLE
-        self.set_shm(active_id="IDLE", etk_mode="RACE")                 # a kit car at ES
-        self.assertEqual(D.onboard_mode(), "IDLE")
-        self.set_shm(active_id="IDLE", etk_mode="PIT")
-        self.assertEqual(D.onboard_mode(), "IDLE")
-        self.set_shm(active_id="UNKNOWN_ID", etk_mode="RACE")           # a game the Sentry can't name
-        self.assertEqual(D.onboard_mode(), "RUNNING")
+    def test_mode_is_active_id_only(self):
+        for aid, want in ((None, "IDLE"), ("", "IDLE"), ("IDLE", "IDLE"),
+                          ("NPEA00050", "RUNNING"), ("UNKNOWN_ID", "RUNNING")):
+            for mode in (None, "RACE", "PIT", "RUNNING", "IDLE"):     # etk_mode.txt is ignored
+                self.set_shm(active_id=aid, etk_mode=mode)
+                self.assertEqual(D.onboard_mode(), want, (aid, mode))
 
     def test_running_rate_from_etk_conf_and_mode_flips(self):
         self.write_conf('# kit conf\nETK_ONBOARD_RUNNING_FPS="2"  # lobby cam during a game\n')
@@ -442,12 +444,35 @@ class TestPolicy(Base):
         self.assertEqual(self.capture_pids(), [])
 
     def test_kill_switch_ends_the_channel(self):
-        self.write_conf("ETK_ONBOARD=0\n")
-        self.host.open(7)
-        self.assertTrue(self.host.wait(lambda: self.host.of(7, END)))
-        self.assertIn("ETK_ONBOARD=0", self.host.of(7, END)[0][1].payload.decode())
-        self.assertTrue(self.host.wait(lambda: any(c == 7 for c, _w in self.host.closes)))
+        for chan, val in ((7, "0"), (17, "false"), (18, "00"), (19, '""')):   # enabled means exactly "1"
+            self.write_conf(f"ETK_ONBOARD={val}\n")
+            self.host.open(chan)
+            self.assertTrue(self.host.wait(lambda: self.host.of(chan, END)), val)
+            self.assertIn("ETK_ONBOARD=0", self.host.of(chan, END)[0][1].payload.decode())
+            self.assertTrue(self.host.wait(lambda: any(c == chan for c, _w in self.host.closes)))
         self.assertEqual(self.grim_calls(), [])
+        for chan, val in ((20, "1"), (21, '"1"')):
+            self.write_conf(f"ETK_ONBOARD={val}\n")
+            self.host.open(chan)
+            self.assertTrue(self.host.wait(lambda: len(self.frames(chan)) >= 1), val)
+            self.assertEqual(self.host.of(chan, END), [])
+            self.host.close(chan)
+        self.assertTrue(self.host.wait(lambda: not D.onboard_sessions(), 1.0))
+        self.write_conf("")                                             # unset = default on
+        self.assertTrue(D.onboard_conf()["enabled"])
+
+    def test_link_busy_survives_a_failing_ioctl(self):
+        import socket
+        a, b = socket.socketpair()
+        try:
+            sess = D.OnboardCapture(a, relay=None)
+            a.sendall(b"x" * 100)
+            self.assertTrue(sess.link_busy())                           # unread bytes = busy
+            with mock.patch.object(D.fcntl, "ioctl", side_effect=OSError(25, "ENOTTY")):
+                self.assertFalse(sess.link_busy())                      # unknown = not busy
+        finally:
+            a.close()
+            b.close()
 
 
 # =========================================================================== [STOP]
