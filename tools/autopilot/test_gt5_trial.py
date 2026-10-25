@@ -110,7 +110,7 @@ class FakeFrame:
 
 
 def run_scenario(die_at=None, back_at=None, freeze_at=None, secs=600, lit_frames=True, granted=True, uvlo=False, oom_at=None,
-                 game=None, macro=None, wheel_taken=False):
+                 game=None, macro=None, wheel_taken=False, host="fake-car", car="car12"):
     """Run gt5_trial.main() against a fake car. die_at/back_at/freeze_at are seconds after
     launch. game/macro add `--game`/`--macro`; wheel_taken makes every HELLO an observer (the exit
     verb must then refuse). Returns (exit code, verdict dict, out dir)."""
@@ -206,6 +206,8 @@ def run_scenario(die_at=None, back_at=None, freeze_at=None, secs=600, lit_frames
         if dead() or (not launched and False):
             return 255, ""
         boot = "boot-B" if rebooted() else "boot-A"
+        if cmd == "cat /storage/.etk/car":
+            return 0, car + "\n"
         if cmd.startswith("cat /proc/sys/kernel/random/boot_id"):
             return 0, boot + "\n"
         if cmd == gt.PON_READ:
@@ -260,7 +262,7 @@ def run_scenario(die_at=None, back_at=None, freeze_at=None, secs=600, lit_frames
     gt.threading.Event.wait = lambda self, t=None: sleep(t or 0)
     gt.threading.Thread = InlineThread
     out = tempfile.mkdtemp(prefix="gt5trial-")
-    sys.argv = ["gt5_trial.py", "--out", out, "--secs", str(secs), "--return-secs", "300", "--host", "fake-car"]
+    sys.argv = ["gt5_trial.py", "--out", out, "--secs", str(secs), "--return-secs", "300", "--host", host]
     if game:
         sys.argv += ["--game", game]
     if macro:
@@ -348,6 +350,18 @@ check("BCUS98114 (any case) still refuses without a grant", isinstance(code, str
 code, v, _ = run_scenario(die_at=164, back_at=240)
 check("the default stays BCUS98114: gated, audited", (v.get("game"), v.get("gated"), [c[0] for c in run_scenario.calls]),
       ("BCUS98114", True, ["check", "panic"]))
+
+print("\n[8b] car8 lift access: no grant, no budget -- but only car8, by name AND by identity")
+code, v, _ = run_scenario(die_at=164, back_at=240, host="root@etk-rig-usb", car="car8")
+check("car8 (pinned name + says car8) launches GT5 with no grant; death harvested, unaudited",
+      (v.get("verdict"), v.get("lift"), v.get("gated"), "lift" in v.get("audit", ""), run_scenario.calls),
+      ("PANIC", True, False, True, []))
+code, launched, _ = run_scenario(granted=False, host="etk-rig-usb", car="car12")
+check("a car12 answering at car8's name is NOT lifted: refuses without a grant",
+      (isinstance(code, str) and "panic budget" in code, launched), (True, {}))
+code, launched, _ = run_scenario(granted=False, host="flip2-12g-usb", car="car8")
+check("a non-car8 host name is NOT lifted even if the car says car8",
+      (isinstance(code, str) and "panic budget" in code, launched), (True, {}))
 
 print("\n[9] parse_macro: exit")
 try:

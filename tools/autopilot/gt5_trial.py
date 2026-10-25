@@ -74,6 +74,10 @@ import etkconf  # noqa: E402
 
 GAME = "BCUS98114"
 GATED = ("BCUS98114",)   # the only title that kills the kernel: grant + panic budget, audited
+# car8 lift access (manual §1.1, operator 2026-10-24): the headless test car runs GT5 with no grant.
+# Same scope as the guard: one of car8's pinned ssh names AND the car itself says car8.
+LIFT_CAR = "car8"
+LIFT_HOSTS = {"etk-rig-usb", "etk-rig", "169.254.170.2", "sm8250.local"}
 ETK = "/storage/games-internal/roms/etk"
 BB = ETK + "/etk_telemetry/blackbox"
 LEDGER = ETK + "/etk_telemetry/sessions.tsv"
@@ -377,6 +381,11 @@ def main():
             fh.write(line + "\n")
 
     gated = a.game in GATED
+    lift = gated and a.host.split("@")[-1].lower() in LIFT_HOSTS and \
+        ssh(a.host, "cat /storage/.etk/car")[1].strip() == LIFT_CAR
+    if lift:
+        gated = False
+        log(f"{a.game}: car8 lift access (manual §1.1) -- no grant, no panic budget; deaths still harvested")
     if gated:
         gate = subprocess.run([sys.executable, HUNT, "check", "--game", a.game, "--panic"],
                               capture_output=True, text=True)
@@ -385,7 +394,7 @@ def main():
                      f"(hunt.py check --game {a.game} --panic: {(gate.stdout or '').strip()}); "
                      "an unattended GT5 launch rides on the operator's signature")
     verdict = {"tool": "gt5_trial", "label": a.label, "game": a.game, "macro": a.macro, "host": a.host,
-               "gated": gated, "debug_env": garage({"op": "debug_env", "action": "show"})["env"]}
+               "gated": gated, "lift": lift, "debug_env": garage({"op": "debug_env", "action": "show"})["env"]}
     stop = threading.Event()
     t0 = time.time()
 
@@ -484,7 +493,8 @@ def main():
                                            capture_output=True, text=True)
                     verdict["audit"] = (audit.stdout or audit.stderr or "").strip()[-300:]
                 else:
-                    verdict["audit"] = f"unaudited: {a.game} is not a grant-gated title (no panic budget to spend)"
+                    verdict["audit"] = ("unaudited: car8 lift access (no grant, no panic budget)" if lift else
+                                        f"unaudited: {a.game} is not a grant-gated title (no panic budget to spend)")
                 kit = None
                 t_kit = time.time()
                 while kit is None and time.time() - t_kit < 180:
