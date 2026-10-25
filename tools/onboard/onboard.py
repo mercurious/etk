@@ -4,11 +4,11 @@
   onboard.py                         the window: PANEL (the car's screen) by default, GAME when only the game streams
   onboard.py --game                  GAME only: Pitlink EYES as an observer (the PANEL channel is never opened,
                                      so nothing captures on the car)
-  onboard.py --panel                 pin PANEL (GAME is still observed, for the ring)
+  onboard.py --panel                 PANEL only: never opens PLNK (no HELLO, the wheel is never touched)
   onboard.py --snap OUT.png          one frame from the active/selected source to a PNG, no window
   onboard.py --ring DIR              the ring flushes to DIR/ring/ (default state/onboard/<epoch>/ring/)
   onboard.py --record                record from the start: the ring, then every frame live, until r / q
-  onboard.py --fps N --quality Q --scale S    the PANEL CTRL sent when the channel opens
+  onboard.py --fps N --quality Q --scale S    PANEL CTRL at open, only the keys given (else the car's knobs)
   onboard.py --gst                   decode PANEL H.264 through GStreamer (openh264dec); without it an H.264
                                      frame is ring-recorded and shown as "H.264 (needs --gst)"
 
@@ -31,6 +31,7 @@ import io
 import json
 import os
 import queue
+import re
 import socket
 import struct
 import sys
@@ -308,15 +309,24 @@ def contact_sheet(pics, t_ref=None):
 
 
 class DiskWorker:
-    """Every disk write happens here, in order: the receive threads only enqueue."""
+    """Every disk write happens here, in order: the receive threads only enqueue. The queue is
+    bounded: a disk that cannot keep up costs dropped recorder rows (counted), never host memory."""
+
+    MAX_JOBS = 4096
 
     def __init__(self):
-        self.q = queue.Queue()
+        self.q = queue.Queue(self.MAX_JOBS)
         self.errors = []
+        self.dropped = 0
         threading.Thread(target=self._run, name="onboard-disk", daemon=True).start()
 
     def submit(self, fn, *a):
-        self.q.put((fn, a))
+        try:
+            self.q.put_nowait((fn, a))
+            return True
+        except queue.Full:
+            self.dropped += 1
+            return False
 
     def _run(self):
         while True:
@@ -399,6 +409,9 @@ GAME_LIVE_S = 1.0        # GAME frames "flowing" = one arrived this recently
 PANEL_LIVE_MIN_S = 2.0   # PANEL "sending" = a frame within max(this, 3 intervals)
 PANEL_STALE_FLOOR_S = 0.25
 WHEEL_RETRY_S = 5.0      # after refusing the wheel: wait this long before the next HELLO
+END_RETRY_S = 30.0       # after the car ENDs the PANEL channel: wait this long before reopening it
+DEATH_FLUSH_GAP_S = 30.0  # one link-death flush per source per this long (a flapping link is not news)
+ONBOARD_OFF_RE = re.compile(r"ETK_ONBOARD\s*=\s*0|onboard (is )?(off|disabled)", re.I)  # END: stop retrying
 BACKOFF = (0.25, 0.5, 1.0, 2.0, 4.0)
 SNAP_PANEL_GRACE_S = 2.0
 
@@ -460,7 +473,7 @@ class Onboard:
         self.want_game, self.want_panel = want_game, want_panel
         self.pinned = pin
         self.ring_base = ring_base
-        self.ctrl = dict(ctrl if ctrl is not None else {"fps": 5, "quality": 70, "scale": 0.5})
+        self.ctrl = dict(ctrl or {})  # only what the operator set: the car's own knobs rule the rest
         self.token, self.timeout = token, timeout
         self.log = log or (lambda *a: None)
         self.game, self.panel = Source("game"), Source("panel")
@@ -471,7 +484,9 @@ class Onboard:
         self.lock = threading.RLock()
         self.stop_ev = threading.Event()
         self.recorder = None
-        self._flushed_mark = 0
+        self._fresh = {"game": 0, "panel": 0}   # frames per source since the last flush
+        self._last_death_flush = {}            # source -> monotonic time of its last link-death flush
+        self._flush_busy = False               # one flush in flight; another request is dropped
         self._choice = "panel" if want_panel else "game"
         self._game_client = None
         self._panel_sock, self._panel_slock = None, threading.Lock()
@@ -534,6 +549,7 @@ class Onboard:
                 tries += 1
                 continue
             got_link, why = False, "closed"
+            n0 = self.game.frames
             try:
                 info = c.hello(self.token)
                 if c.controller:
@@ -564,7 +580,7 @@ class Onboard:
                 return
             self.game.link = f"down: {why}"
             if got_link:
-                self._link_died("game", why)
+                self._link_died("game", why, delivered=self.game.frames > n0)
             self._wait(BACKOFF[min(tries, len(BACKOFF) - 1)])
             tries += 1
 
@@ -612,15 +628,17 @@ class Onboard:
                 continue
             with self._panel_slock:
                 self._panel_sock = s
-            got, why = False, "closed"
+            got, why, n0 = False, "closed", self.panel.frames
             try:
-                s.sendall(pack_ctrl(self.ctrl))
+                if self.ctrl:
+                    s.sendall(pack_ctrl(self.ctrl))
                 with self.lock:
                     self.panel.connected, self.panel.link, self.panel.end_reason = True, "open", None
                 while not self.stop_ev.is_set():
                     m = read_msg(s)
                     got = True
-                    tries = 0
+                    if m.kind == FRAME:
+                        tries = 0  # only pictures prove the channel works (an INFO+END loop does not)
                     if m.kind == INFO:
                         info = msg_json(m)
                         with self.lock:
@@ -644,13 +662,22 @@ class Onboard:
                 plusb._hangup(s)
             if self.stop_ev.is_set():
                 return
-            if self.panel.end_reason:
-                why = f"END {self.panel.end_reason}"
-            elif not got:
+            end = self.panel.end_reason
+            if end is not None:
+                # the car stopped capture on purpose (policy, backend failure, ONBOARD off): not a link
+                # death, never a flush; reopen slowly, or never when ONBOARD is switched off on the car
+                self._event("panel", f"channel ended by the car: {end}")
+                if ONBOARD_OFF_RE.search(end):
+                    self.panel.link = f"off on the car: {end}"
+                    return
+                self.panel.link = f"ended by the car: {end} (reopening in {END_RETRY_S:.0f} s)"
+                self._wait(END_RETRY_S)
+                continue
+            if not got:
                 why += " before any INFO (car daemon without the onboard target?)"
             self.panel.link = f"down: {why}"
             if got:
-                self._link_died("panel", why)
+                self._link_died("panel", why, delivered=self.panel.frames > n0)
             self._wait(BACKOFF[min(tries, len(BACKOFF) - 1)])
             tries += 1
 
@@ -680,16 +707,30 @@ class Onboard:
     # ---- ring / record ------------------------------------------------------------------
     def _ingest(self, rec):
         self.ring.add(rec)
+        with self.lock:
+            self._fresh[rec.source] += 1
         r = self.recorder
         if r is not None:
             self.disk.submit(r.write, rec)
 
-    def _link_died(self, source, why):
+    def _link_died(self, source, why, delivered):
+        """Flush only when THIS source delivered frames on the link that died and since the last
+        flush, at most once per DEATH_FLUSH_GAP_S per source, and never while recording."""
         self._event(source, f"link died: {why}")
+        now = time.monotonic()
         with self.lock:
-            fresh = self.ring.added > self._flushed_mark
-        if fresh and self.recorder is None:
-            self.flush(f"{source} link died: {why}")
+            fresh = self._fresh[source] > 0
+            last = self._last_death_flush.get(source)
+        if not (delivered and fresh) or self.recorder is not None:
+            return None
+        if last is not None and now - last < DEATH_FLUSH_GAP_S:
+            self._event("ring", f"{source} death flush skipped: the last one was {now - last:.1f} s ago")
+            return None
+        path = self.flush(f"{source} link died: {why}")
+        if path:
+            with self.lock:
+                self._last_death_flush[source] = now
+        return path
 
     def _base(self):
         return self.ring_base or os.path.join(REPO, "state", "onboard", str(int(time.time())))
@@ -701,21 +742,41 @@ class Onboard:
                     "ring_secs": self.ring.secs}
 
     def flush(self, reason="flush"):
-        """Write the ring to <base>/ring/ (in the background). -> the directory it goes to."""
-        recs = self.ring.snapshot(time.monotonic())
-        path = ring_dir(self._base())
+        """Write the ring to <base>/ring/ (in the background). -> the directory it goes to, or None
+        when a flush is already in flight (that one holds these frames too: one at a time, so a
+        storm of requests can never pin N snapshots in memory or N copies on disk)."""
         with self.lock:
-            self._flushed_mark = self.ring.added
+            if self._flush_busy:
+                self._event("ring", f"flush ({reason}) dropped: one already in flight")
+                return None
+            self._flush_busy = True
+            self._fresh = {"game": 0, "panel": 0}
+        try:
+            recs = self.ring.snapshot(time.monotonic())
+            path = ring_dir(self._base())
+            meta = self._meta()
+        except Exception:
+            with self.lock:
+                self._flush_busy = False
+            raise
+        with self.lock:
             self.flushes.append((path, reason))
-        meta = self._meta()
         w = RingWriter(path)
 
         def job():
-            w.open()
-            for r in recs:
-                w.write(r)
-            w.close(reason, meta)
-        self.disk.submit(job)
+            try:
+                w.open()
+                for r in recs:
+                    w.write(r)
+                w.close(reason, meta)
+            finally:
+                with self.lock:
+                    self._flush_busy = False
+        if not self.disk.submit(job):
+            with self.lock:
+                self._flush_busy = False
+            self._event("ring", f"flush ({reason}) dropped: disk queue full")
+            return None
         self._event("ring", f"flush ({reason}) -> {path}")
         return path
 
@@ -734,13 +795,13 @@ class Onboard:
             self.disk.submit(opened)
             with self.lock:
                 self.recorder = w
-                self._flushed_mark = self.ring.added
+                self._fresh = {"game": 0, "panel": 0}
             self._event("ring", f"recording -> {path}")
             return path
         if not on and self.recorder is not None:
             with self.lock:
                 w, self.recorder = self.recorder, None
-                self._flushed_mark = self.ring.added
+                self._fresh = {"game": 0, "panel": 0}
                 self.flushes.append((w.path, "record"))
             self.disk.submit(w.close, "record", self._meta())
             self._event("ring", f"recording stopped: {w.path}")
@@ -993,7 +1054,8 @@ def main(argv=None):
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--game", action="store_true", help="GAME only (Pitlink EYES, observer); no PANEL channel")
-    g.add_argument("--panel", action="store_true", help="pin PANEL (GAME still observed for the ring)")
+    g.add_argument("--panel", action="store_true", help="PANEL only: never opens PLNK (no HELLO, the wheel "
+                   "is never touched)")
     ap.add_argument("--ring", metavar="DIR", default=None, help="flush the ring to DIR/ring/ "
                     "(default state/onboard/<epoch>/)")
     ap.add_argument("--record", action="store_true", help="record from the start until r / q")
@@ -1001,9 +1063,10 @@ def main(argv=None):
     ap.add_argument("--addr", default=None, help="PLNK address (default $PITLINK_ADDR else usb = the broker)")
     ap.add_argument("--onboard-addr", default=os.environ.get("ONBOARD_ADDR", plusb.ONBOARD_SOCKET),
                     help=f"ONBD address (default $ONBOARD_ADDR else {plusb.ONBOARD_SOCKET})")
-    ap.add_argument("--fps", type=float, default=5, help="PANEL frames/s asked of the car (<= 30)")
-    ap.add_argument("--quality", type=int, default=70, help="PANEL JPEG quality")
-    ap.add_argument("--scale", type=float, default=0.5, help="PANEL capture scale")
+    ap.add_argument("--fps", type=float, default=None, help="PANEL frames/s asked of the car (<= 30; "
+                    "default: the car's knob)")
+    ap.add_argument("--quality", type=int, default=None, help="PANEL JPEG quality (default: the car's knob)")
+    ap.add_argument("--scale", type=float, default=None, help="PANEL capture scale (default: the car's knob)")
     ap.add_argument("--gst", action="store_true", help="decode PANEL H.264 with GStreamer (openh264dec)")
     ap.add_argument("--token", default=os.environ.get("PITLINK_TOKEN", ""))
     ap.add_argument("--timeout", type=float, default=10.0, help="--snap: seconds to wait for a frame")
@@ -1011,10 +1074,13 @@ def main(argv=None):
     ap.add_argument("--ring-mb", type=int, default=1024, help="ring payload cap (MB; default 1024)")
     ap.add_argument("-v", "--verbose", action="store_true")
     a = ap.parse_args(argv)
-    fps = int(a.fps) if float(a.fps).is_integer() else a.fps
+    ctrl = {k: v for k, v in (("fps", a.fps), ("quality", a.quality), ("scale", a.scale)) if v is not None}
+    if "fps" in ctrl and float(ctrl["fps"]).is_integer():
+        ctrl["fps"] = int(ctrl["fps"])
     ob = Onboard(game_addr=a.addr or C.default_addr(), panel_addr=a.onboard_addr,
-                 want_game=True, want_panel=not a.game, pin="game" if a.game else ("panel" if a.panel else None),
-                 ring_base=a.ring, ctrl={"fps": fps, "quality": a.quality, "scale": a.scale}, token=a.token,
+                 want_game=not a.panel, want_panel=not a.game,
+                 pin="game" if a.game else ("panel" if a.panel else None),
+                 ring_base=a.ring, ctrl=ctrl, token=a.token,
                  gst=a.gst, ring_secs=a.ring_secs, ring_bytes=a.ring_mb << 20,
                  log=(lambda m: print(f"onboard: {m}", file=sys.stderr)) if a.verbose else None)
     ob.start()

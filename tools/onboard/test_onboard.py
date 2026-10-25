@@ -10,6 +10,9 @@
             with rows that decode back to the flip/seq they claim; H.264 stored raw
   [SNAP]    a PNG from either source (API and CLI); --help lists the flags
   [CTRL]    the CTRL sent at open carries --fps/--quality/--scale; the PANEL channel reconnects
+  [END]     a car END is not a link death: no flush storm, 30 s reopen, ETK_ONBOARD=0 stops; one flush
+            in flight; death flushes per source, rate-limited
+  [CLI]     --panel never opens PLNK; CTRL carries only the keys the operator set
   [BROKER]  @...-onboard on usb_broker opens a car channel with target b"onboard" (fake USB pipe)
   [LAW]     onboard.py has no PAUSE / STEP / SNAP-request call (grep)
 
@@ -74,8 +77,8 @@ class FakePanel:
     allows (IDLE, or RUNNING with policy_fps > 0), an INFO after every mode change and every CTRL.
     serve(sock) is one channel; listen(addr) serves an abstract socket with it."""
 
-    def __init__(self, fps=10, codecs=(O.CODEC_JPEG, O.CODEC_RAW, O.CODEC_ZSTD)):
-        self.fps, self.codecs = fps, list(codecs)
+    def __init__(self, fps=10, codecs=(O.CODEC_JPEG, O.CODEC_RAW, O.CODEC_ZSTD), end_reason=None):
+        self.fps, self.codecs, self.end_reason = fps, list(codecs), end_reason
         self.mode, self.policy_fps, self.frames_on = "IDLE", 0, True
         self.ctrls, self.conns, self.live = [], 0, []
         self.seq, self.sent = 0, []
@@ -169,6 +172,10 @@ class FakePanel:
         seen = None
         try:
             s.sendall(O.pack_json(O.INFO, self.info()))
+            if self.end_reason is not None:  # capture refused / failed at once: INFO, END, close
+                s.sendall(O.pack_msg(O.END, self.end_reason.encode()))
+                time.sleep(0.05)
+                return
             nxt = time.monotonic()
             while not self.stop_ev.is_set():
                 if ctrl_ev.is_set() or seen != self.version:
@@ -496,7 +503,62 @@ class TestFlush(unittest.TestCase):
         self.assertLess(time.monotonic() - t0, 0.2)
         n = ob.panel.frames
         self.assertTrue(wait_until(lambda: ob.panel.frames > n + 2, 2.0))
+        self.assertIsNone(ob.flush("second while the first is queued"))  # one in flight, never two
         gate.set()
+        self.assertTrue(ob.disk.wait(10))
+        self.assertEqual(len(ob.flushes), 1)
+        self.assertIsNotNone(ob.flush("after"))  # the slot is free again
+
+
+# ============================================================================ [END] (review finding 1)
+def ring_dirs(base):
+    return sorted(d for d in os.listdir(base) if d == "ring" or d.startswith("ring."))
+
+
+class TestEnd(unittest.TestCase):
+    def test_end_only_producer_beside_streaming_game_never_storms(self):
+        """The car answers every OPEN with INFO+END (grim failing) while GAME streams at 60 fps:
+        END is not a link death -- no flush, no fast reopen, nothing piles up in memory."""
+        rig = Rig(self, panel_kw={"end_reason": "grim failed: exit 1"})
+        ob = rig.ob
+        peak = 0
+        t_end = time.monotonic() + 5.0
+        while time.monotonic() < t_end:
+            peak = max(peak, ob.disk.q.unfinished_tasks)
+            time.sleep(0.02)
+        self.assertGreater(ob.game.frames, 100)
+        self.assertLessEqual(len(ring_dirs(rig.tmp)), 1, ring_dirs(rig.tmp))
+        self.assertEqual(ob.flushes, [])
+        self.assertLessEqual(peak, 1)
+        self.assertEqual(rig.panel.conns, 1, "reopened before END_RETRY_S")
+        self.assertIn("ended by the car", ob.panel.link)
+
+    def test_onboard_off_end_stops_retrying(self):
+        rig = Rig(self, game=False, want_game=False, panel_kw={"end_reason": "ETK_ONBOARD=0"})
+        ob = rig.ob
+        self.assertTrue(wait_until(lambda: "off on the car" in ob.panel.link, 3.0), ob.panel.link)
+        self.assertTrue(wait_until(lambda: not any(t.is_alive() for t in ob.threads), 2.0))
+        self.assertEqual((rig.panel.conns, ob.flushes), (1, []))
+
+    def test_end_after_frames_is_not_a_flush(self):
+        rig = Rig(self, game=False, want_game=False)
+        ob = rig.ob
+        self.assertTrue(wait_until(lambda: ob.panel.frames > 3))
+        rig.panel.end_reason = "policy"
+        rig.panel.drop()  # the next OPEN is ENDed; this drop itself is a socket EOF after frames
+        self.assertTrue(wait_until(lambda: "ended by the car" in ob.panel.link, 5.0), ob.panel.link)
+        self.assertTrue(ob.disk.wait(10))
+        self.assertEqual(len(ob.flushes), 1)  # the EOF after frames flushed; the END did not
+
+    def test_panel_death_flush_is_rate_limited(self):
+        rig = Rig(self, game=False, want_game=False)
+        ob = rig.ob
+        for _ in range(3):
+            n = ob.panel.frames
+            self.assertTrue(wait_until(lambda: ob.panel.frames > n + 2, 4.0))
+            rig.panel.drop()
+        self.assertTrue(ob.disk.wait(10))
+        self.assertEqual(len(ob.flushes), 1, ob.flushes)
 
 
 # ============================================================================ [SNAP]
@@ -544,6 +606,56 @@ class TestCtrl(unittest.TestCase):
         self.assertTrue(wait_until(lambda: len(rig.panel.ctrls) == 2))
 
 
+class TestCli(unittest.TestCase):
+    """Review findings 2 + 3: --panel never opens PLNK; CTRL carries only what the operator set."""
+
+    def run_cli(self, *args):
+        return subprocess.run([sys.executable, os.path.join(HERE, "onboard.py"), *args], capture_output=True,
+                              text=True, timeout=30)
+
+    def test_panel_never_opens_plnk(self):
+        accepts = []
+        car = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)  # a "car" that only counts connections
+        addr = name("counting-car")
+        car.bind("\0" + addr[1:])
+        car.listen(8)
+        self.addCleanup(car.close)
+
+        def acc():
+            while True:
+                try:
+                    c, _ = car.accept()
+                except OSError:
+                    return
+                accepts.append(1)
+                c.close()
+        threading.Thread(target=acc, daemon=True).start()
+        panel = FakePanel().listen(name("panel"))
+        self.addCleanup(panel.stop)
+        tmp = tempfile.mkdtemp(prefix="onboard-cli-")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        p = self.run_cli("--panel", "--snap", os.path.join(tmp, "p.png"), "--addr", addr, "--onboard-addr",
+                         panel.addr, "--ring", tmp, "--timeout", "5")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        time.sleep(0.2)
+        self.assertEqual(accepts, [], "--panel opened the PLNK socket")
+
+    def test_ctrl_carries_only_the_keys_set(self):
+        panel = FakePanel().listen(name("panel"))
+        self.addCleanup(panel.stop)
+        tmp = tempfile.mkdtemp(prefix="onboard-cli-")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        common = ("--panel", "--onboard-addr", panel.addr, "--ring", tmp, "--timeout", "5")
+        p = self.run_cli("--snap", os.path.join(tmp, "a.png"), *common)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        time.sleep(0.2)
+        self.assertEqual(panel.ctrls, [])
+        p = self.run_cli("--snap", os.path.join(tmp, "b.png"), "--quality", "40", *common)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertTrue(wait_until(lambda: panel.ctrls, 2.0))
+        self.assertEqual(panel.ctrls, [{"quality": 40}])
+
+
 # ============================================================================ [BROKER]
 class TestBroker(unittest.TestCase):
     def test_default_socket_names(self):
@@ -585,13 +697,15 @@ class TestBroker(unittest.TestCase):
         self.addCleanup(ob.stop)
         self.assertTrue(wait_until(lambda: ob.panel.frames > 2 and ob.game.frames > 2, 5), ob.status())
         self.assertEqual(targets, ["onboard"])
-        self.assertEqual(panel.ctrls[0], {"fps": 5, "quality": 70, "scale": 0.5})
+        self.assertEqual(panel.ctrls, [])  # nothing set by the operator: no CTRL, the car's knobs rule
         self.assertFalse(ob._game_client.controller)
         pipes[-1].close()  # yank the cable: both links die, one flush
         self.assertTrue(wait_until(lambda: ob.flushes, 4))
         self.assertTrue(ob.disk.wait(10))
         _, rows = read_index(ob.flushes[0][0])
         self.assertEqual({r["source"] for r in rows}, {"game", "panel"})
+        time.sleep(0.5)
+        self.assertEqual(len(ob.flushes), 1, ob.flushes)  # one cable, one flush
 
 
 # ============================================================================ [GST] (optional)
