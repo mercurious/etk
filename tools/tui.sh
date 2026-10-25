@@ -18,6 +18,7 @@
 #   TUI_HEADER_TITLE         e.g. "ETK INSTALL" / "ETK UNINSTALL"  (max 14 chars)
 #   TUI_TOTAL_STEPS          step count for the dashboard (default 6)
 #   TUI_STEP_LABELS          array of 15-char-padded step labels
+#   TUI_HEADER_KEY / TUI_HEADER_VERSION   header line 3 (default "TIER" / "v14.1.0")
 # Caller content for tui_finish (set BEFORE tui_finish):
 #   TUI_FINISH_BANNER         large finish line, e.g. "━━━ KIT ARMED ━━━━..."
 #   TUI_FINISH_LINE1          status summary (may contain literal \033 escapes)
@@ -115,7 +116,8 @@ tui_draw_header() {
     local title="${TUI_HEADER_TITLE:-ETK INSTALL}"
     local rig="${RIG_SSH#root@}"
     local tier="${ETK_BUILD_TYPE:-FULL}"
-    local version="v14.1.0"
+    local version="${TUI_HEADER_VERSION:-v14.1.0}"
+    local key="${TUI_HEADER_KEY:-TIER}"   # 4 chars: tools/tow.sh shows LINK
 
     tui_goto $TUI_ROW_HEADER_TOP 1
     printf '\033[36m╔══════════════════════════════════════════════════════════════════════╗\033[0m'
@@ -123,7 +125,7 @@ tui_draw_header() {
     # Visible width tally: 1(║) + 2 + 14(%-14s title) + 2 + 2(━━) + 2 + 8(PIT WALL) + 14 + 5("RIG: ") + 21(%-21s rig) + 1(║) = 72.
     printf '\033[36m║\033[0m  \033[1;36m%-14s\033[0m  \033[36m━━\033[0m  \033[1;36mPIT WALL\033[0m              RIG: \033[1;33m%-21s\033[0m\033[36m║\033[0m' "$title" "$rig"
     tui_goto $TUI_ROW_HEADER_L3 1
-    printf '\033[36m║\033[0m                                         TIER: \033[1;33m%-4s\033[0m  •  %-13s \033[36m║\033[0m' "$tier" "$version"
+    printf '\033[36m║\033[0m                                         %-4s: \033[1;33m%-4s\033[0m  •  %-13s \033[36m║\033[0m' "$key" "$tier" "$version"
     tui_goto $TUI_ROW_HEADER_BOT 1
     printf '\033[36m╚══════════════════════════════════════════════════════════════════════╝\033[0m'
 }
