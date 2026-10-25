@@ -42,7 +42,7 @@
 # (1,980,084 bytes on ROCKNIX 20261001, the blob S0 proved). On the car:
 #   sha256sum /lib/firmware/qcom/vpu-1.0/venus.mbn
 # Until this is 64 hex characters, apply refuses to seed (and says so in the log).
-VPU_FW_SHA256="UNPINNED-sha256-of-stock-venus.mbn"
+VPU_FW_SHA256="a66e86e34dc69a870fe631c73ed4a93d9fcfea6f3f2a4ac02cb118cb505bbbb2"  # ROCKNIX 20261001 stock venus.mbn, 1,980,084 B (car8 2026-10-25)
 
 ENV_SH="${ETK_VPU_ENV:-$(dirname "$0")/../scripts/env.sh}"
 # shellcheck disable=SC1090
