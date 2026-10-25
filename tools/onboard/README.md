@@ -13,7 +13,7 @@ Plan and wire format: `etk-dossiers/Onboard_LiveMirror_20261025.md` §2 and §8.
 ```bash
 tools/onboard/onboard.py                 # the window
 tools/onboard/onboard.py --game          # GAME only: the PANEL channel is never opened, so nothing captures on the car
-tools/onboard/onboard.py --panel         # pin PANEL (GAME is still observed for the ring)
+tools/onboard/onboard.py --panel         # PANEL only: never opens PLNK (no HELLO: safe beside any hunt)
 tools/onboard/onboard.py --snap out.png  # one frame from the active source, no window
 tools/onboard/onboard.py --ring "$RUN"   # flush the ring into a hunt run directory ($RUN/ring/)
 ```
@@ -21,7 +21,8 @@ tools/onboard/onboard.py --ring "$RUN"   # flush the ring into a hunt run direct
 Keys: `p` pin PANEL · `g` pin GAME · `a` auto · `s` snap (to `<ring>/snaps/`) · `r` record on/off · `q` quit.
 
 Other flags: `--record` (start recording at launch), `--fps N --quality Q --scale S` (the PANEL CTRL sent
-when the channel opens; the car clamps it to its policy), `--addr` (the PLNK address, default
+when the channel opens, carrying only the keys you give: with none of them no CTRL is sent and the car's
+own knobs, e.g. `ETK_ONBOARD_QUALITY`, rule; the car clamps fps to its policy), `--addr` (the PLNK address, default
 `$PITLINK_ADDR` else `usb`), `--onboard-addr` (default `@etk-onboard-usb`), `--gst` (see H.264 below),
 `--ring-mb` (the ring's payload cap, default 1024 MB), `-v`.
 
@@ -50,16 +51,29 @@ On PLNK, ONBOARD sends a HELLO and nothing else that touches the emulator: no PA
 single-flip or EXIT (`test_onboard.py` [LAW] greps for these). PLNK v1 has no "observer please"
 request: the first HELLO while the wheel is free gets the wheel. When ONBOARD's HELLO lands the wheel, it
 closes that link at once and tries again 5 s later. The status bar then reads `no controller on the car:
-refused the wheel`. A hunt that starts later always finds the wheel free. In-game snaps use the
-observer's `latest_frame()`/`wait_frame()` only.
+refused the wheel`.
+
+What that does and does not guarantee: once a hunt driver holds the wheel, ONBOARD can never take it
+(roles are decided at HELLO; an observer is never promoted). But while NO controller holds it -- e.g.
+at every RPCS3 relaunch -- ONBOARD holds the wheel for one window every 5 s: from its HELLO_OK until its
+CLOSE reaches RPCS3 (a broker round trip plus a PLUSB CLOSE through the car's relay, milliseconds over
+USB). A driver whose HELLO lands inside that window becomes an observer, and the hunt drivers exit on
+that (`gtdrive.py`, `pitlink.py` control ops, `gt5_trial.py`). So beside a hunt that has not yet
+taken the wheel, run **`--panel`** (it never opens PLNK at all) or start ONBOARD after the driver holds
+the wheel. In-game snaps use the observer's `latest_frame()`/`wait_frame()` only.
 
 ## The ring (the forensic instrument)
 
 The ring holds the last 60 s of received frames from both sources in memory, with the payloads exactly
 as they arrived. It flushes to `DIR/ring/` on these events:
 
-- **Link death:** `PitlinkClosed`, socket EOF, or the broker or USB link going away. A death flushes
-  only if frames arrived since the last flush, so a broker dying under both links writes one directory.
+- **Link death:** `PitlinkClosed`, socket EOF, or the broker or USB link going away. A source's death
+  flushes only when THAT source delivered frames on the link that died and since the last flush, at most
+  once per 30 s per source, so a broker dying under both links writes one directory and a flapping link
+  writes one, not one per flap.
+- **Not on END.** A car END (policy, a capture failure, ONBOARD off) is the car stopping capture on
+  purpose, not a death: no flush. The viewer reopens the channel 30 s later, or never again when the
+  END reason says ONBOARD is off (`ETK_ONBOARD=0`, "onboard off/disabled").
 - **Record:** `r` or `--record` writes the ring so far, then appends every live frame until `r` again
   or `q`.
 
@@ -74,7 +88,10 @@ as they arrived. It flushes to `DIR/ring/` on these events:
 | `sheet.png` | A 4×4 contact sheet of the last 16 decodable frames, oldest first. Each tile is labelled with its flip or seq and its age relative to the newest frame. |
 | `meta.json` | The reason, `epoch`, `duration_s` (joins the ledger row by `[epoch - duration_s, epoch]`, the Pitlink recorder's rule), per-source counts, HELLO_OK, the last INFO, and the link events. |
 
-All disk writes go through one background worker, so a flush costs the receive thread only a list copy.
+All disk writes go through one background worker with a bounded queue, so a flush costs the receive
+thread only a list copy. One flush is in flight at a time: a request while one is queued is dropped (the
+queued one holds those frames), so a storm of requests can pin at most one snapshot in memory and write
+at most one copy to disk. A recorder that outruns the disk drops rows (counted) rather than memory.
 
 ## H.264 (PANEL codec 3)
 
