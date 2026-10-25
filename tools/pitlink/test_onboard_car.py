@@ -444,14 +444,14 @@ class TestPolicy(Base):
         self.assertEqual(self.capture_pids(), [])
 
     def test_kill_switch_ends_the_channel(self):
-        for chan, val in ((7, "0"), (17, "false"), (18, "00"), (19, '""')):   # enabled means exactly "1"
+        for chan, val in ((7, "0"), (17, "false"), (18, "00")):   # enabled means exactly "1" (install.sh: = "1")
             self.write_conf(f"ETK_ONBOARD={val}\n")
             self.host.open(chan)
             self.assertTrue(self.host.wait(lambda: self.host.of(chan, END)), val)
             self.assertIn("ETK_ONBOARD=0", self.host.of(chan, END)[0][1].payload.decode())
             self.assertTrue(self.host.wait(lambda: any(c == chan for c, _w in self.host.closes)))
         self.assertEqual(self.grim_calls(), [])
-        for chan, val in ((20, "1"), (21, '"1"')):
+        for chan, val in ((20, "1"), (21, '"1"'), (19, '""'), (22, "")):   # empty = on, like install.sh's ${ETK_ONBOARD:-1}
             self.write_conf(f"ETK_ONBOARD={val}\n")
             self.host.open(chan)
             self.assertTrue(self.host.wait(lambda: len(self.frames(chan)) >= 1), val)

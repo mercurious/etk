@@ -854,7 +854,7 @@ def onboard_conf():
             return min(hi, max(lo, float(conf[k])))
         except (KeyError, ValueError):
             return default
-    return {"enabled": conf.get("ETK_ONBOARD", "1").strip() == "1",   # install.sh: = "1"
+    return {"enabled": (conf.get("ETK_ONBOARD") or "1").strip() == "1",   # install.sh: = "1"
             "running_fps": num("ETK_ONBOARD_RUNNING_FPS", 0.0, 0.0, ONBOARD_FPS_MAX),
             "quality": int(num("ETK_ONBOARD_QUALITY", 70, 1, 100))}
 
