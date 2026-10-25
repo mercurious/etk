@@ -1,0 +1,11 @@
+#!/bin/sh
+# onboard -- the ONBOARD camera: a live mirror of the car's screen on this host (tools/onboard/onboard.py).
+#
+#   ./onboard                 the window: PANEL (what the car's screen shows) or GAME (Pitlink EYES)
+#   ./onboard --panel         panel only (never touches the Pitlink wheel)
+#   ./onboard --game          game only (nothing captures on the car)
+#   ./onboard --ring DIR      keep the last 60 s on disk when the link dies (a hunt's run dir)
+#   ./onboard --snap OUT.png  one frame, no window
+#
+# Dossier: etk-dossiers/Onboard_LiveMirror_20261025.md. Needs the car on the USB cable (the Pitlink broker).
+exec python3 "$(dirname "$0")/tools/onboard/onboard.py" "$@"
