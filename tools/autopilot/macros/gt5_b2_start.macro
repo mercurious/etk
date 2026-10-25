@@ -1,0 +1,50 @@
+# GT5 (BCUS98114): boot -> GT Mode -> License Tests -> B-2 -> start the test, all on one wheel.
+# The car8 lift-session killer (2026-10-25, Hunt_GT5_Lift_20261025.md): the B-2 overview loads fine,
+# the death comes ~7 s after X = start test (3/3 at baseline). The trial holds the wheel (and the
+# frame stream) the whole way, the shape of the GT6 dyno OFF arm; tools/onboard/dyno_ab.sh adds the
+# ONBOARD observer for the ON arm. Route as the lift session drove it by hand: main menu left x3
+# (GT5 remembers the cursor; three lefts pin it to GT Mode), X; right, down = License Tests, X;
+# X = B; right = B-2; X = the overview; X = start.
+wait_lit 240
+sleep 60
+snap r1_boot_dialog
+press cross
+sleep 25
+snap r2_title
+press start
+sleep 12
+snap r3_main_menu
+press left
+sleep 2
+press left
+sleep 2
+press left
+sleep 2
+snap r4_gt_mode_tile
+press cross                  # GT Mode
+sleep 30                     # the home grid takes focus late: at +15 s a right was dropped (void on2)
+snap r5_gt_home
+press right 300              # sidebar -> grid: a 120 ms tap was dropped 2 of 4 (void on2/on3)
+sleep 2
+press down
+sleep 2
+snap r6_license_tile
+press cross                  # License Tests
+sleep 10
+snap r7_licenses
+press cross                  # B
+sleep 8
+press right                  # B-2
+sleep 3
+snap r8_b2_card
+press cross                  # the B-2 overview (track load)
+sleep 60
+snap r9_b2_overview
+press cross                  # start the test: the baseline dies ~7 s later
+sleep 10
+snap r10_start_10
+sleep 20
+snap r11_start_30
+sleep 90
+snap r12_start_120
+exit

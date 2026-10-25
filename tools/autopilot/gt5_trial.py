@@ -381,8 +381,13 @@ def main():
             fh.write(line + "\n")
 
     gated = a.game in GATED
-    lift = gated and a.host.split("@")[-1].lower() in LIFT_HOSTS and \
-        ssh(a.host, "cat /storage/.etk/car")[1].strip() == LIFT_CAR
+    lift = False
+    if gated and a.host.split("@")[-1].lower() in LIFT_HOSTS:
+        for _ in range(3):   # one empty read right after a run refused a car8 arm (2026-10-25); still fails closed
+            lift = ssh(a.host, "cat /storage/.etk/car")[1].strip() == LIFT_CAR
+            if lift:
+                break
+            time.sleep(2)
     if lift:
         gated = False
         log(f"{a.game}: car8 lift access (manual §1.1) -- no grant, no panic budget; deaths still harvested")

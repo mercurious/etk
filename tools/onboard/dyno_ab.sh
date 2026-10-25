@@ -10,6 +10,8 @@
 # and stopped when the trial ends. The window records a ring beside the run.
 #
 #   tools/onboard/dyno_ab.sh off|on NAME [OUTROOT]     (default OUTROOT state/hunt/ab-onboard-<date>)
+#   DYNO_GAME=BCUS98114 DYNO_MACRO=tools/autopilot/macros/gt5_b2_start.macro tools/onboard/dyno_ab.sh on ...
+#                                         (another title/route; default GT6 Apricot Hill)
 #
 # Alternate arms (off on off on ...), N>=3 each, then:
 #   awk the two arms' epochs out of the rig ledger into two files and run
@@ -20,8 +22,9 @@ set -u
 ARM="${1:?off|on}"; NAME="${2:?run name}"; ROOT="${3:-state/hunt/ab-onboard-$(date +%Y%m%d)}"
 cd "$(dirname "$0")/../.." || exit 1
 OUT="$ROOT/$NAME"; mkdir -p "$OUT"
-MACRO=tools/autopilot/macros/gt6_apricot_ab.macro
-python3 tools/autopilot/gt5_trial.py --game BCUS98296 --host etk-rig-usb --macro "$MACRO" \
+GAME="${DYNO_GAME:-BCUS98296}"
+MACRO="${DYNO_MACRO:-tools/autopilot/macros/gt6_apricot_ab.macro}"
+python3 tools/autopilot/gt5_trial.py --game "$GAME" --host etk-rig-usb --macro "$MACRO" \
     --out "$OUT" --secs 900 --label "$NAME" > "$OUT.log" 2>&1 &
 TRIAL=$!
 WIN=""
@@ -34,4 +37,11 @@ fi
 wait $TRIAL; RC=$?
 [ -n "$WIN" ] && { kill "$WIN" 2>/dev/null; wait "$WIN" 2>/dev/null; echo "$(date +%T) observer window stopped" >> "$OUT.log"; }
 echo "$(date +%T) trial exit $RC" >> "$OUT.log"
+# the trial keeps only the log's last 400 lines; keep the whole session (a live car's log is the session's)
+ssh -o ConnectTimeout=5 etk-rig-usb cat /storage/.cache/rpcs3/RPCS3.log > "$OUT/RPCS3_full.log" 2>/dev/null
+# CRASH (3) / FREEZE (5) leave the car up with RPCS3 still holding the game (an anti-lock stop does
+# not exit the process): R3 it, or the next arm refuses with NO_GAME
+if [ "$RC" = 3 ] || [ "$RC" = 5 ]; then
+    echo "$(date +%T) recover: $(python3 tools/autopilot/gtpilot.py --host etk-rig-usb recover 2>&1 | tr '\n' ' ')" >> "$OUT.log"
+fi
 exit $RC
