@@ -4569,6 +4569,85 @@ else
 fi
 
 # ==========================================================
+# STEP 6.86: ONBOARD + VPU FIRMWARE (iris H.264 encoder, 2026-10-25)
+# ==========================================================
+# ONBOARD (the live mirror car -> pit wall; dossier Onboard_LiveMirror_20261025.md) has
+# no unit of its own: its car side is the `onboard` target inside STEP 6.73's daemon
+# (bin/etk_pitlink_usbd.py) plus bin/onboard_cap.sh, both shipped by STEP 2's bin/ push
+# (rsync --delete + chmod +x $ETK_ROOT/bin/*; uninstall.sh removes $ETK_ROOT/bin), so
+# they need no push-list line here. Its knobs (ETK_ONBOARD, ETK_ONBOARD_RUNNING_FPS,
+# ETK_ONBOARD_QUALITY) are read live from $ETK_ROOT/etk.conf by the daemon; this step
+# only names them.
+# VPU firmware: kernel 7.2.0's qcom-iris asks for qcom/vpu/vpu20_p4.mbn; ROCKNIX ships
+# the same SM8250 blob only as qcom/vpu-1.0/venus.mbn, so the encoder node is dead at
+# every boot (ENOMEM on open). etk-vpu-fw.service runs bin/etk_vpu_fw.sh apply at boot,
+# and only when the encoder does not already open: seed /storage/etk-fw/qcom/vpu/
+# vpu20_p4.mbn from the OS's own venus.mbn (only when its sha256 is the pinned one),
+# point firmware_class.path (volatile) at /storage/etk-fw, rebind qcom-iris once.
+# Proven by hand on car8 2026-10-25 (dossier §3 S0: H.264, 60/60 frames decoded). It
+# also runs now, so a dead encoder wakes without a reboot and a live one is left alone.
+# When a kernel mint ships the blob under the iris name, apply logs "already up" and
+# does nothing. Kill-switch ETK_VPU_FW=0 removes the unit, clears the path (if ours)
+# and deletes /storage/etk-fw. No toast of its own: the stage-beacon roster is pinned
+# (tools/test_notify.py). Harness: tools/test_onboard_deploy.sh (this block),
+# tools/test_vpu_fw.sh (the script).
+# ==========================================================
+if [ "${ETK_ONBOARD:-1}" = "1" ]; then
+    say "${G}[ETK]${N} ONBOARD live mirror: on (the Pitlink USB daemon's onboard target; PANEL during a game ${ETK_ONBOARD_RUNNING_FPS:-0} fps, JPEG quality ${ETK_ONBOARD_QUALITY:-70}; read live from etk.conf)"
+    [ "${ETK_PITLINK_USB:-1}" = "1" ] || say "${Y}[WARN] ONBOARD rides the Pitlink USB daemon, which ETK_PITLINK_USB=0 removed: no mirror until it is back.${N}"
+else
+    say "${G}[ETK]${N} ONBOARD live mirror: off (kill-switch ETK_ONBOARD=0; the daemon refuses the onboard channel)"
+fi
+if [ "${ETK_VPU_FW:-1}" = "1" ]; then
+    VPU_OUT=$(ssh $RIG_SSH "ETK_ROOT='$ETK_ROOT' sh -s" 2>&1 <<'VPUFWREMOTE'
+mkdir -p /storage/.config/system.d
+cat << VPUFWUNIT > /storage/.config/system.d/etk-vpu-fw.service
+[Unit]
+Description=ETK VPU firmware (wake the iris H.264/HEVC encoder: the OS venus.mbn as vpu20_p4.mbn)
+# After the game card is mounted (the script lives on it: the etk-blackbox lesson) and the
+# ES autostart (udev coldplug has loaded qcom-iris by then). Unknown units are ignored.
+After=local-fs.target rocknix-automount.service etk-sd-rebind.service rocknix-autostart.service
+ConditionPathExists=$ETK_ROOT/bin/etk_vpu_fw.sh
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=30
+ExecStart=/bin/bash $ETK_ROOT/bin/etk_vpu_fw.sh apply
+
+[Install]
+WantedBy=rocknix.target
+VPUFWUNIT
+systemctl daemon-reload
+systemctl enable /storage/.config/system.d/etk-vpu-fw.service >/dev/null 2>&1
+systemctl restart etk-vpu-fw.service >/dev/null 2>&1
+V=$(/bin/bash "$ETK_ROOT/bin/etk_vpu_fw.sh" verify 2>&1 | tail -n1)
+[ "$(systemctl is-enabled etk-vpu-fw.service 2>/dev/null)" = enabled ] \
+    && echo "VPUFW_OK verify=$V" || echo "VPUFW_FAIL verify=$V"
+VPUFWREMOTE
+)
+    VPU_V=$(printf '%s\n' "$VPU_OUT" | grep -E '^VPUFW_(OK|FAIL)' | tail -n1 | sed 's/^[^=]*=//')
+    case "$VPU_OUT" in
+        *"VPUFW_OK verify=VPU verify OK"*)
+            say "${G}[ETK]${N} VPU firmware armed (etk-vpu-fw.service; iris H.264 encoder: ${VPU_V}; log /storage/etk_vpu_fw.log)" ;;
+        *VPUFW_OK*)
+            say "${Y}[WARN] VPU firmware unit armed, but the encoder is not up (${VPU_V:-no verify line}) -- ONBOARD falls back to x264/JPEG; read /storage/etk_vpu_fw.log${N}" ;;
+        *)
+            say "${Y}[WARN] VPU firmware unit did not verify ($(printf '%s' "$VPU_OUT" | tail -n1)) -- ONBOARD falls back to x264/JPEG.${N}" ;;
+    esac
+else
+    ssh $RIG_SSH "ETK_ROOT='$ETK_ROOT' sh -s" > /dev/null 2>&1 <<'VPUFWREMOVE'
+systemctl disable etk-vpu-fw.service >/dev/null 2>&1
+rm -f /storage/.config/system.d/etk-vpu-fw.service
+systemctl daemon-reload
+if [ -f "$ETK_ROOT/bin/etk_vpu_fw.sh" ]; then /bin/bash "$ETK_ROOT/bin/etk_vpu_fw.sh" undo
+else P=/sys/module/firmware_class/parameters/path; [ "$(cat $P 2>/dev/null)" = /storage/etk-fw ] && echo > $P; fi
+rm -rf /storage/etk-fw
+VPUFWREMOVE
+    say "${G}[ETK]${N} VPU firmware removed (kill-switch ETK_VPU_FW=0; firmware path cleared, /storage/etk-fw deleted; the encoder is dark from the next boot)"
+fi
+
+# ==========================================================
 # STEP 7: PADDOCK LINK (Private Paddock, 0.3.0)
 # Optional and conditional: runs ONLY if PADDOCK_TOKEN is set in etk.conf
 # ("to get private shader storage, add your GitHub token to etk.conf

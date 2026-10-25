@@ -358,6 +358,21 @@ ssh $RIG_SSH > /tmp/etk_uninstall_clean.log 2>&1 << CLEAN
     rm -f /storage/.config/system.d/etk-mdns-heal.timer /storage/.config/system.d/etk-mdns-heal.service /storage/.config/custom_scripts/etk-mdns-heal.sh
     echo "    Removed: etk-mdns-heal.timer (mDNS name heal)"
 
+    # VPU firmware (install.sh STEP 6.86): drop the unit, hand firmware_class.path back
+    # (cleared, or the value the unit displaced; only when it is still ours: a newline
+    # write, since an empty write never reaches the kernel), delete the staged blob and
+    # the log. No rebind: the encoder stays up until the next boot, dark after it.
+    systemctl disable etk-vpu-fw.service 2>/dev/null
+    rm -f /storage/.config/system.d/etk-vpu-fw.service
+    VPUP=/sys/module/firmware_class/parameters/path
+    if [ "\$(cat \$VPUP 2>/dev/null)" = /storage/etk-fw ]; then
+        VPUD=\$(cat /storage/etk-fw/.displaced_path 2>/dev/null)
+        if [ -n "\$VPUD" ]; then printf '%s' "\$VPUD" > \$VPUP 2>/dev/null; else echo > \$VPUP 2>/dev/null; fi
+    fi
+    rm -rf /storage/etk-fw
+    rm -f /storage/etk_vpu_fw.log
+    echo "    Removed: etk-vpu-fw.service + /storage/etk-fw (iris encoder firmware path cleared)"
+
     systemctl disable --now etk-blackbox.service 2>/dev/null
     rm -f /storage/.config/system.d/etk-blackbox.service
     rm -f /storage/.config/modules-load.d/etk-ramoops.conf /storage/.config/modprobe.d/etk-ramoops.conf

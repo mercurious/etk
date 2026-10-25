@@ -332,6 +332,29 @@ ETK_BATTERY_CHECK_MIN=30    # minutes between RTC checks while asleep
 # POWER tab exposes the same knob live. 1 = on (default) · 0 = stock scaling.
 ETK_UFS_PIN=1
 
+# --- ONBOARD live mirror (the handheld's screen on the pit-wall computer, ships ON) ---
+# A live view of the handheld's screen in a window on the computer it is cabled to
+# (./onboard). The car side is part of the Pitlink USB daemon (install.sh STEP 6.73):
+# it captures only while a viewer is open, so nothing runs on an unwatched handheld.
+# Read live by the daemon from etk.conf (no reinstall needed).
+# 1 = on (default) · 0 = kill-switch (the daemon refuses the onboard channel)
+ETK_ONBOARD=1
+# Screen frames per second while a GAME is running. 0 (default) = none: the game's own
+# frames still reach the window, but nothing captures the screen during a race, so the
+# mirror never costs a frame or a core. A viewer can pin a rate for one session.
+ETK_ONBOARD_RUNNING_FPS=0
+# JPEG quality of the screen frames, 1-100. 70 (default) = about 70 KB a 1080p frame.
+ETK_ONBOARD_QUALITY=70
+
+# --- Hardware video encoder firmware (install.sh STEP 6.86, ships ON) ---
+# The handheld's H.264/HEVC encoder is dead on stock ROCKNIX: the OS ships its
+# firmware under the old driver's file name. A boot unit hands the OS's own file to
+# the new driver (only when it is the exact file the kit was tested with) and restarts
+# just that driver; it does nothing when the encoder already works. ONBOARD's
+# hardware-encoded mirror uses it. 1 = on (default) · 0 = removed at the next install
+# (unit gone, the staged firmware copy deleted). Log: /storage/etk_vpu_fw.log
+ETK_VPU_FW=1
+
 # --- GT6 bundled patches (install.sh STEP 6.5545, ships ON) ---
 # Gran Turismo 6's "Disable MLAA" and "Disable Motion Blur" (illusion, via
 # ARMSX3): with MLAA on GT6 falls to 1 fps and wedges minutes in; without the
