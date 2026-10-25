@@ -5,6 +5,8 @@
   onboard.py --game                  GAME only: Pitlink EYES as an observer (the PANEL channel is never opened,
                                      so nothing captures on the car)
   onboard.py --panel                 PANEL only: never opens PLNK (no HELLO, the wheel is never touched)
+  onboard.py --wheel                 keep the wheel when the HELLO lands it (idle controller): GAME on a car
+                                     with no driver; a hunt cannot start until this window quits
   onboard.py --snap OUT.png          one frame from the active/selected source to a PNG, no window
   onboard.py --ring DIR              the ring flushes to DIR/ring/ (default state/onboard/<epoch>/ring/)
   onboard.py --record                record from the start: the ring, then every frame live, until r / q
@@ -17,7 +19,8 @@ Keys: p pin PANEL · g pin GAME · a auto · s snap · r record on/off · q quit
 Two sources, one window (docs: etk-dossiers/Onboard_LiveMirror_20261025.md §2, §8.3):
   GAME   PLNK v1 FRAME pushes from @etk-pitlink-usb. ONBOARD is an OBSERVER there: it HELLOs and sends
          nothing else that touches the emulator. If its HELLO lands the wheel (no one else holds it), it
-         drops the link at once and retries later -- a viewer must never hold the wheel a hunt needs.
+         drops the link at once and retries later -- a viewer must never hold the wheel a hunt needs
+         (unless --wheel: then it keeps it, idle, and still sends no control op).
   PANEL  ONBD v1 messages from @etk-onboard-usb (the broker opens a car channel with target "onboard").
 
 The ring (the forensic instrument): the last 60 s of received frames, both sources, payloads as received.
@@ -409,6 +412,7 @@ GAME_LIVE_S = 1.0        # GAME frames "flowing" = one arrived this recently
 PANEL_LIVE_MIN_S = 2.0   # PANEL "sending" = a frame within max(this, 3 intervals)
 PANEL_STALE_FLOOR_S = 0.25
 WHEEL_RETRY_S = 5.0      # after refusing the wheel: wait this long before the next HELLO
+WHEEL_LINK = "holding the wheel (--wheel): a hunt cannot start until this window quits"
 END_RETRY_S = 30.0       # after the car ENDs the PANEL channel: wait this long before reopening it
 DEATH_FLUSH_GAP_S = 30.0  # one link-death flush per source per this long (a flapping link is not news)
 ONBOARD_OFF_RE = re.compile(r"ETK_ONBOARD\s*=\s*0|onboard (is )?(off|disabled)", re.I)  # END: stop retrying
@@ -468,13 +472,14 @@ class Onboard:
 
     def __init__(self, game_addr="usb", panel_addr=plusb.ONBOARD_SOCKET, want_game=True, want_panel=True,
                  pin=None, ring_base=None, ctrl=None, token="", gst=False, ring_secs=60.0, ring_bytes=1 << 30,
-                 timeout=5.0, log=None):
+                 timeout=5.0, log=None, wheel=False):
         self.game_addr, self.panel_addr = game_addr, panel_addr
         self.want_game, self.want_panel = want_game, want_panel
         self.pinned = pin
         self.ring_base = ring_base
         self.ctrl = dict(ctrl or {})  # only what the operator set: the car's own knobs rule the rest
         self.token, self.timeout = token, timeout
+        self.wheel = wheel  # keep a wheel the HELLO lands (idle controller) instead of refusing it
         self.log = log or (lambda *a: None)
         self.game, self.panel = Source("game"), Source("panel")
         self.ring = Ring(ring_secs, ring_bytes)
@@ -552,19 +557,20 @@ class Onboard:
             n0 = self.game.frames
             try:
                 info = c.hello(self.token)
-                if c.controller:
+                if c.controller and not self.wheel:
                     # nobody else holds the wheel and the car just gave it to us: give it back NOW
                     c.close()
                     self.game.link = "no controller on the car: refused the wheel, retrying"
                     self._event("game", "HELLO landed the wheel: dropped the link (observer only)")
                     self._wait(WHEEL_RETRY_S)
                     continue
+                role = WHEEL_LINK if c.controller else "observer"  # --wheel: an IDLE controller, no control ops
                 with self.lock:
                     self.game.connected, self.game.info = True, info
-                    self.game.link = "observer"
+                    self.game.link = role
                     self._game_client = c
                 got_link, tries = True, 0
-                self._event("game", f"observer on {info.get('title_id')} {info.get('title')}")
+                self._event("game", f"{role} on {info.get('title_id')} {info.get('title')}")
                 while not self.stop_ev.is_set() and not c.closed:
                     c.wait_any(c.mark, 0.5)
                 why = c.closed or "closed"
@@ -1068,17 +1074,21 @@ def main(argv=None):
     ap.add_argument("--quality", type=int, default=None, help="PANEL JPEG quality (default: the car's knob)")
     ap.add_argument("--scale", type=float, default=None, help="PANEL capture scale (default: the car's knob)")
     ap.add_argument("--gst", action="store_true", help="decode PANEL H.264 with GStreamer (openh264dec)")
+    ap.add_argument("--wheel", action="store_true", help="when the HELLO lands the wheel, KEEP it as an idle "
+                    "controller (eyes on a car with no driver); a hunt cannot start until the window quits")
     ap.add_argument("--token", default=os.environ.get("PITLINK_TOKEN", ""))
     ap.add_argument("--timeout", type=float, default=10.0, help="--snap: seconds to wait for a frame")
     ap.add_argument("--ring-secs", type=float, default=60.0, help=argparse.SUPPRESS)
     ap.add_argument("--ring-mb", type=int, default=1024, help="ring payload cap (MB; default 1024)")
     ap.add_argument("-v", "--verbose", action="store_true")
     a = ap.parse_args(argv)
+    if a.wheel and a.panel:
+        ap.error("--wheel needs GAME (PLNK); --panel never opens it")
     ctrl = {k: v for k, v in (("fps", a.fps), ("quality", a.quality), ("scale", a.scale)) if v is not None}
     if "fps" in ctrl and float(ctrl["fps"]).is_integer():
         ctrl["fps"] = int(ctrl["fps"])
     ob = Onboard(game_addr=a.addr or C.default_addr(), panel_addr=a.onboard_addr,
-                 want_game=not a.panel, want_panel=not a.game,
+                 want_game=not a.panel, want_panel=not a.game, wheel=a.wheel,
                  pin="game" if a.game else ("panel" if a.panel else None),
                  ring_base=a.ring, ctrl=ctrl, token=a.token,
                  gst=a.gst, ring_secs=a.ring_secs, ring_bytes=a.ring_mb << 20,
