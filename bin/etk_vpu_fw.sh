@@ -153,6 +153,9 @@ do_apply() {
     fi
 
     cur=$(cat "$FWPARAM" 2>/dev/null)
+    # The path is volatile but $DISPLACED lives on /storage: an empty path means nobody
+    # set one this boot, so a record from an earlier boot must not be restored by undo.
+    [ -z "$cur" ] && rm -f "$DISPLACED"
     if [ "$cur" != "$FW_DIR" ]; then
         if [ -n "$cur" ]; then
             printf '%s\n' "$cur" > "$DISPLACED"

@@ -159,6 +159,14 @@ lg dp | grep -q "held '/foreign/fw' (not ours): replaced" && [ "$(cat "$TD/c/dp/
     && ok "a foreign firmware path is logged, saved and replaced" || fail "displace: $(lg dp)"
 run dp "$GOOD" undo
 [ "$(cat "$TD/c/dp/$FWP")" = /foreign/fw ] && [ ! -e "$TD/c/dp/storage/etk-fw" ] && ok "undo puts the displaced path back" || fail "undo displaced: '$(cat "$TD/c/dp/$FWP")'"
+# Two boots: boot 1 displaces a foreign path; a reboot empties the (volatile) path and
+# kills the core; boot 2's apply runs on an empty path -> undo must not resurrect boot 1's.
+mk tb; printf '/foreign/fw' > "$TD/c/tb/$FWP"; run tb "$GOOD" apply VPU_PROBE="$TD/probe.sh"
+: > "$TD/c/tb/$FWP"; : > "$TD/c/tb/$DRVR/bind"; : > "$TD/c/tb/$DRVR/unbind"; rm -f "$TD/c/tb/up"   # the reboot
+run tb "$GOOD" apply VPU_PROBE="$TD/probe.sh"
+[ "$(rc tb)" = 0 ] && [ ! -e "$TD/c/tb/storage/etk-fw/.displaced_path" ] && ok "boot 2 on an empty path drops boot 1's displaced record" || fail "stale .displaced_path survived the reboot"
+run tb "$GOOD" undo
+[ -z "$(cat "$TD/c/tb/$FWP")" ] && ok "two-boot undo clears the path (does not restore a path nobody set this boot)" || fail "two-boot undo restored '$(cat "$TD/c/tb/$FWP")'"
 mk uf; printf '/foreign/fw' > "$TD/c/uf/$FWP"; mkdir -p "$TD/c/uf/storage/etk-fw"; run uf "$GOOD" undo
 [ "$(cat "$TD/c/uf/$FWP")" = /foreign/fw ] && lg uf | grep -q "not ours): left alone" && ok "undo leaves a path that is not ours alone" || fail "undo foreign: $(lg uf)"
 
