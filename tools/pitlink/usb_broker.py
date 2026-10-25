@@ -7,6 +7,7 @@ channel (its own PLNK session, roles and all), multiplexed over the one bulk pip
 Clients don't start it by hand: PitlinkClient("usb") spawns it on first use.
 
   usb_broker.py serve [--socket @etk-pitlink-usb]   run (foreground; logs to stderr)
+                                                    (+ @etk-garage-usb: garage, @etk-onboard-usb: ONBOARD)
   usb_broker.py probe                               find + claim the interface, HELLO, 20 link pings
 
 Permissions: the M1 needs tools/pitlink/71-etk-pitlink.rules in /etc/udev/rules.d (once,
@@ -161,8 +162,13 @@ class Broker:
     """USB <-> HostMux, with a reconnect loop: unplug / rig reboot / daemon restart all end
     the link (every channel closes; clients reconnect) and the broker waits for the car."""
 
-    def __init__(self, open_pipe=UsbPipe, sock_name=L.HOST_SOCKET, garage_name=L.GARAGE_SOCKET):
+    def __init__(self, open_pipe=UsbPipe, sock_name=L.HOST_SOCKET, garage_name=L.GARAGE_SOCKET, onboard_name=None):
         self.open_pipe, self.sock_name, self.garage_name = open_pipe, sock_name, garage_name
+        # a broker on a non-default PLNK socket (a test, a second car) puts its ONBOARD socket beside
+        # it, so it can never collide with the M1's real broker on @etk-onboard-usb
+        if onboard_name is None:
+            onboard_name = L.ONBOARD_SOCKET if sock_name == L.HOST_SOCKET else sock_name + "-onboard"
+        self.onboard_name = onboard_name
         self.mux = L.HostMux(log=log)
         self.pipe = None
         self.stop = threading.Event()
@@ -179,8 +185,10 @@ class Broker:
             srv.close()
 
     def serve(self):
-        """PLNK clients on sock_name, garage clients on garage_name; each its own chan."""
-        for name, target in ((self.sock_name, L.TARGET_PITLINK), (self.garage_name, L.TARGET_GARAGE)):
+        """PLNK clients on sock_name, garage clients on garage_name, ONBOARD clients on
+        onboard_name; each its own chan."""
+        for name, target in ((self.sock_name, L.TARGET_PITLINK), (self.garage_name, L.TARGET_GARAGE),
+                             (self.onboard_name, L.TARGET_ONBOARD)):
             srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             srv.bind("\0" + name.lstrip("@"))
             srv.listen(16)
@@ -188,7 +196,7 @@ class Broker:
             if target is not L.TARGET_PITLINK:
                 threading.Thread(target=self._accept, args=(srv, target), daemon=True).start()
         threading.Thread(target=self._link_loop, name="usb-link", daemon=True).start()
-        log(f"serving {self.sock_name} (PLNK) + {self.garage_name} (garage)")
+        log(f"serving {self.sock_name} (PLNK) + {self.garage_name} (garage) + {self.onboard_name} (onboard)")
         self._accept(self.srvs[0], L.TARGET_PITLINK)
 
     def _accept(self, srv, target):
@@ -311,11 +319,12 @@ def main():
     p = sub.add_parser("serve")
     p.add_argument("--socket", default=L.HOST_SOCKET)
     p.add_argument("--garage-socket", default=L.GARAGE_SOCKET)
+    p.add_argument("--onboard-socket", default=None, help=f"default {L.ONBOARD_SOCKET} (beside a non-default --socket)")
     sub.add_parser("probe")
     a = ap.parse_args()
     if a.cmd == "probe":
         return probe()
-    Broker(sock_name=a.socket, garage_name=a.garage_socket).serve()
+    Broker(sock_name=a.socket, garage_name=a.garage_socket, onboard_name=a.onboard_socket).serve()
     return 0
 
 

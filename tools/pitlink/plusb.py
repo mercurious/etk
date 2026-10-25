@@ -10,7 +10,8 @@ Segment = 12-byte header + payload:  <4sHBBI  magic b"PLUB", chan, kind, flags, 
   chan 0 = the link itself (HELLO/HELLO_ACK/PING/PONG); sessions use 1..65535.
   DATA      chan's byte stream (split freely: PLNK frames itself)
   OPEN      host -> car: start chan; payload = target ("" / "pitlink" = RPCS3's @etk-pitlink,
-            "garage" = the car daemon's own JSON-line control service: launch games, ...).
+            "garage" = the car daemon's own JSON-line control service: launch games, ...;
+            "onboard" = the car daemon's ONBOARD screen feed, ONBD v1 messages).
             DATA may follow at once
   CLOSE     either way: chan is over (payload: reason, utf-8)
   HELLO     host -> car, chan 0: link (re)start; payload = 16-byte nonce. Drops every chan.
@@ -49,7 +50,9 @@ VREQ_RESET = 0x01                     # bmRequestType 0x41 (vendor, interface, O
 CAR_TARGET = "@etk-pitlink"           # RPCS3's own Pitlink socket (abstract unix)
 HOST_SOCKET = "@etk-pitlink-usb"      # the M1 broker's local socket for PLNK sessions
 GARAGE_SOCKET = "@etk-garage-usb"     # ... and for garage (car control) sessions
+ONBOARD_SOCKET = "@etk-onboard-usb"   # ... and for ONBOARD (the car's screen feed) sessions
 TARGET_PITLINK, TARGET_GARAGE = b"pitlink", b"garage"
+TARGET_ONBOARD = b"onboard"
 CHAN_QUEUE_CAP = 64 << 20             # bytes a slow local reader may owe before its chan closes
 
 
