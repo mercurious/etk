@@ -69,7 +69,22 @@ fixture() {   # $1 = root.  Sparse files by dd seek: BusyBox has no truncate
     printf 'NPEA00050' > "$R/ps3/Gran Turismo 5 Prologue Spec III.psn"
     printf 'BCUS98158' > "$R/ps3/Decoy.psn"
     sparse 1100M "$R/ps3/Decoy (BCUS98158).iso"
-    echo a > "$R/bios/rpcs3/dev_hdd0/game/BCUS98114/PARAM.SFO"
+    sfo() {   # $1 = path, $2 = TITLE: a minimal real PARAM.SFO (python3 is on the host and every car)
+        python3 -c '
+import struct, sys
+p, t = sys.argv[1], sys.argv[2].encode()
+key = b"TITLE\0"; val = t + b"\0" * (128 - len(t))
+idx = struct.pack("<HHIII", 0, 0x204, len(t) + 1, 128, 0)
+hdr = struct.pack("<4sIIII", b"\0PSF", 0x101, 20 + 16, 20 + 16 + len(key), 1)
+open(p, "wb").write(hdr + idx + key + val)' "$1" "$2"
+    }
+    sfo "$R/bios/rpcs3/dev_hdd0/game/BCUS98114/PARAM.SFO" "GRAN TURISMO 5"
+    # a save under ANOTHER serial of the same game (2026-10-26: SSX's saves are BLUS30849…, towed
+    # without them): carried when its PARAM.SFO TITLE equals the game's; a different title is not
+    mkdir -p "$R/bios/rpcs3/dev_hdd0/home/00000001/savedata/BLUS30849-GT5TWIN" \
+             "$R/bios/rpcs3/dev_hdd0/home/00000001/savedata/BLUS99999-OTHER"
+    sfo "$R/bios/rpcs3/dev_hdd0/home/00000001/savedata/BLUS30849-GT5TWIN/PARAM.SFO" "GRAN TURISMO 5"
+    sfo "$R/bios/rpcs3/dev_hdd0/home/00000001/savedata/BLUS99999-OTHER/PARAM.SFO" "Some Other Game"
     echo b > "$R/bios/rpcs3/dev_hdd0/game/BCUS98114/USRDIR/EBOOT.BIN"
     echo c > "$R/bios/rpcs3/dev_hdd0/game/BCUS98114DLC/x"
     echo d > "$R/bios/rpcs3/dev_hdd0/home/00000001/savedata/BCUS98114-GAME/SYS"
@@ -87,6 +102,7 @@ T * 1 bios/rpcs3/custom_configs/config_BCUS98114.yml
 T * 1 bios/rpcs3/dev_hdd0/game/BCUS98114DLC
 T * 1 bios/rpcs3/dev_hdd0/game/NPEA00050
 T * 1 bios/rpcs3/dev_hdd0/home/00000001/savedata/BCUS98114-GAME
+T * 1 bios/rpcs3/dev_hdd0/home/00000001/savedata/BLUS30849-GT5TWIN
 T * 1 ps3/Gran Turismo 5 (BCUS98114).m3u
 T * 1 ps3/Gran Turismo 5 Prologue Spec III.psn
 T * 2 bios/rpcs3/dev_hdd0/game/BCUS98114'

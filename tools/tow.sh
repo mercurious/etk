@@ -55,6 +55,20 @@ RATE_USB=32; RATE_WIFI=18   # MB/s, measured 2026-10-25 (plan ETA only)
 read -r -d '' SCOUT_SH <<'EOF'
 ROOT=${TOW_ROOT:-/storage/roms}; BIG=${TOW_BIG:-1073741824}
 cd "$ROOT" || { echo "E no $ROOT"; exit 1; }
+sfo_titles() {  # PARAM.SFO ... -> "TITLE<TAB>path" per readable file (python3 is on every car)
+  [ $# -gt 0 ] || return 0
+  python3 -c '
+import struct, sys
+for p in sys.argv[1:]:
+    try:
+        d = open(p, "rb").read(); kt, dt, n = struct.unpack_from("<III", d, 8)
+        for i in range(n):
+            ko, fmt, ln, mx, do = struct.unpack_from("<HHIII", d, 20 + 16 * i)
+            if d[kt + ko:kt + ko + 6] == b"TITLE\0":
+                print(d[dt + do:dt + do + ln].rstrip(b"\0").decode("utf-8", "replace") + "\t" + p); break
+    except Exception:
+        pass' "$@" 2>/dev/null
+}
 emit() {
   p=$1
   [ -e "$p" ] || return 0
@@ -87,6 +101,20 @@ for it in "$@"; do
                bios/rpcs3/dev_hdd0/home/*/exdata/*-"$it"_*.rap bios/rpcs3/custom_configs/config_"$it".yml; do
         [ -e "$d" ] && emit "$d"
       done
+      # Saves named under ANOTHER serial of the same game: a PSN title saves under its disc
+      # serial (SSX NPUB30892 -> BLUS308490000A; towed without it 2026-10-26, so Explore stayed
+      # locked on car8). Match PARAM.SFO TITLE: the save's equals the game's.
+      t=$(sfo_titles bios/rpcs3/dev_hdd0/game/"$it"/PARAM.SFO | cut -f1)
+      [ -n "$t" ] || for g in ps3/*"($it)"*/PS3_GAME/PARAM.SFO; do
+        [ -f "$g" ] && { t=$(sfo_titles "$g" | cut -f1); break; }
+      done
+      if [ -n "$t" ]; then
+        sfo_titles bios/rpcs3/dev_hdd0/home/*/savedata/*/PARAM.SFO | while IFS="$(printf '\t')" read -r st sp; do
+          [ "$st" = "$t" ] || continue
+          sd=${sp%/PARAM.SFO}; case "$sd" in */"$it"*) continue ;; esac   # the glob above has it
+          emit "$sd"
+        done
+      fi
       [ "$found" = 1 ] || echo "E $it: no game file under $ROOT/ps3 (no \"($it)\" name, no .psn stub)" ;;
     *) echo "E $it: not a title ID or a path under $ROOT" ;;
   esac
