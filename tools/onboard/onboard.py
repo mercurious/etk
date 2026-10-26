@@ -831,8 +831,11 @@ class Onboard:
         return g.latest is not None and now - g.latest.recv_t <= GAME_LIVE_S
 
     def active(self, now=None):
-        """PANEL by default; GAME when GAME frames flow and PANEL sends nothing; back when PANEL sends again.
-        Neither live: hold the last choice (the picture goes STALE instead of flapping)."""
+        """GAME whenever GAME frames flow (the game's own pixels at 30 Hz); PANEL whenever they do not
+        and PANEL sends (ES, Pitstop, RPCS3's boot -- a booting game has no emulator flips for ~2 min,
+        and with ETK_ONBOARD_RUNNING_FPS > 0 the panel keeps a picture through it; operator 2026-10-26:
+        a window that goes blank at every relaunch is brittle). Neither live: hold the last choice (the
+        picture goes STALE instead of flapping)."""
         if self.pinned:
             return self.pinned
         if not self.want_panel:
@@ -841,10 +844,10 @@ class Onboard:
             return "panel"
         now = time.monotonic() if now is None else now
         with self.lock:
-            if self.panel_sending(now):
-                self._choice = "panel"
-            elif self.game_flowing(now):
+            if self.game_flowing(now):
                 self._choice = "game"
+            elif self.panel_sending(now):
+                self._choice = "panel"
             return self._choice
 
     def stale(self, source=None, now=None):

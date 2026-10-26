@@ -401,7 +401,9 @@ def harvest(host, out, base_pon, log):
     t = time.time()
     pon_name = None
     while time.time() - t < 60:
-        rc, o = ssh(host, f"ls -t {BB}/pon-*.txt 2>/dev/null | head -1")
+        # by boot_id, never by mtime: pon files inherited from another car's card carry that car's
+        # pre-NTP clock (year 2094) and win every `ls -t` (car8 2026-10-26, SSX)
+        rc, o = ssh(host, f"grep -l \"boot_id=$(cat /proc/sys/kernel/random/boot_id)\" {BB}/pon-*.txt 2>/dev/null | head -1")
         name = o.strip()
         if rc == 0 and name and name != base_pon:
             pon_name = name

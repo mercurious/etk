@@ -381,21 +381,22 @@ class TestPolicy(unittest.TestCase):
         rig = Rig(self)
         ob = rig.ob
         self.assertTrue(wait_until(lambda: ob.panel.frames > 2 and ob.game.frames > 5))
-        self.assertEqual(ob.active(), "panel")  # both live: PANEL is the default
+        self.assertEqual(ob.active(), "game")  # both live: the game's own pixels win (2026-10-26)
         rig.panel.set_mode("RUNNING", policy_fps=0)  # the car starts a game: PANEL goes quiet
-        self.assertTrue(wait_until(lambda: ob.active() == "game", 2.0), ob.status())
+        self.assertTrue(wait_until(lambda: ob.status()["panel_off"], 2.0), ob.status())
         st = ob.status()
-        self.assertTrue(st["panel_off"])
+        self.assertEqual(ob.active(), "game")
         self.assertFalse(st["stale"])
         n = rig.panel.seq
         time.sleep(0.3)
         self.assertEqual(rig.panel.seq, n)  # policy 0: no frames
-        rig.panel.set_mode("IDLE")  # back at ES
-        self.assertTrue(wait_until(lambda: ob.active() == "panel", 2.0), ob.status())
+        rig.panel.set_mode("IDLE")  # back at ES: the game is gone, its frames stop
+        rig.car.stop()
+        self.assertTrue(wait_until(lambda: ob.active() == "panel", 4.0), ob.status())
 
     def test_panel_link_gone_falls_back_to_game(self):
         rig = Rig(self)
-        self.assertTrue(wait_until(lambda: rig.ob.active() == "panel" and rig.ob.game.frames > 2))
+        self.assertTrue(wait_until(lambda: rig.ob.panel.frames > 2 and rig.ob.game.frames > 2))
         rig.panel.stop()
         self.assertTrue(wait_until(lambda: rig.ob.active() == "game", 4.0), rig.ob.status())
 

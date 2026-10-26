@@ -29,11 +29,13 @@ own knobs, e.g. `ETK_ONBOARD_QUALITY`, rule; the car clamps fps to its policy), 
 
 ## Source policy
 
-- PANEL is shown by default.
-- The window switches to GAME when GAME frames are flowing and PANEL sends nothing. PANEL sends nothing
-  when its INFO says RUNNING with policy 0, when its link is down, or when no frame has arrived for
-  max(2 s, 3 intervals).
-- It switches back to PANEL when PANEL frames come again. While both sources are live, it shows PANEL.
+- GAME is shown whenever GAME frames are flowing: the game's own pixels at 30 Hz (2026-10-26; it used
+  to be PANEL whenever PANEL sent anything).
+- PANEL is shown whenever GAME is not flowing and PANEL sends: ES, Pitstop, and RPCS3's own boot, which
+  has no emulator flips for ~2 minutes. PANEL sends nothing when its INFO says RUNNING with policy 0,
+  when its link is down, or when no frame has arrived for max(2 s, 3 intervals) — so set
+  `ETK_ONBOARD_RUNNING_FPS=2` in the car's `etk.conf` (read live by the daemon; car8 has it) and the
+  window keeps a picture through every relaunch instead of going STALE.
 - When neither source is live, the window keeps the last choice and the status bar reads STALE.
 - `p`/`g` pin a source and `a` returns to auto. A pin is host-side only: `p` never sends the car
   `{"pin":true}`, so the car's RUNNING policy, which keeps the silver cores free during a race, stays in force.
