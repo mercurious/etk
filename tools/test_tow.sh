@@ -62,7 +62,8 @@ fixture() {   # $1 = root.  Sparse files by dd seek: BusyBox has no truncate
     sparse() { dd if=/dev/null of="$2" bs=1 seek="$1" 2>/dev/null; }
     mkdir -p "$R/ps3" "$R/bios/rpcs3/dev_hdd0/game/BCUS98114/USRDIR" "$R/bios/rpcs3/dev_hdd0/game/BCUS98114DLC" \
              "$R/bios/rpcs3/dev_hdd0/home/00000001/savedata/BCUS98114-GAME" "$R/bios/rpcs3/custom_configs" \
-             "$R/bios/rpcs3/dev_hdd0/game/NPEA00050" "$R/bios/rpcs3/dev_hdd0/game/BCUS98158" "$R/bigdir"
+             "$R/bios/rpcs3/dev_hdd0/game/NPEA00050" "$R/bios/rpcs3/dev_hdd0/game/BCUS98158" "$R/bigdir" \
+             "$R/bios/rpcs3/dev_hdd0/home/00000001/exdata"
     sparse 1100M "$R/ps3/Gran Turismo 5 (BCUS98114).iso"
     printf 'Gran Turismo 5 (BCUS98114).iso\r\n' > "$R/ps3/Gran Turismo 5 (BCUS98114).m3u"
     printf 'NPEA00050' > "$R/ps3/Gran Turismo 5 Prologue Spec III.psn"
@@ -75,9 +76,13 @@ fixture() {   # $1 = root.  Sparse files by dd seek: BusyBox has no truncate
     echo e > "$R/bios/rpcs3/custom_configs/config_BCUS98114.yml"
     echo f > "$R/bios/rpcs3/dev_hdd0/game/NPEA00050/x"
     sparse 9G "$R/bigdir/huge.bin"
+    # PSN licences: the title's own is carried, another title's is not (2026-10-26: SSX towed without its .rap)
+    printf 'rap-gt5-0123456' > "$R/bios/rpcs3/dev_hdd0/home/00000001/exdata/UP0006-BCUS98114_00-GT5LICENSE000000.rap"
+    printf 'rap-other-01234' > "$R/bios/rpcs3/dev_hdd0/home/00000001/exdata/UP0006-BCUS98158_00-OTHERLICENSE0000.rap"
 }
 # T sizes are du -sb (fs-dependent for dirs): compare kind + count + path; F exact
 SCOUT_WANT='F 1153433600 ps3/Gran Turismo 5 (BCUS98114).iso
+T * 1 bios/rpcs3/dev_hdd0/home/00000001/exdata/UP0006-BCUS98114_00-GT5LICENSE000000.rap
 T * 1 bios/rpcs3/custom_configs/config_BCUS98114.yml
 T * 1 bios/rpcs3/dev_hdd0/game/BCUS98114DLC
 T * 1 bios/rpcs3/dev_hdd0/game/NPEA00050

@@ -16,7 +16,8 @@
 # An ITEM is a PS3 title ID or a path under /storage/roms. A title ID tows
 # everything the game is: ps3/ files with "(ID)" in the name, a .psn stub
 # holding the ID, the files its .m3u names, dev_hdd0/game/ID* (update +
-# install data), home/*/savedata/ID*, custom_configs/config_ID.yml. The
+# install data), home/*/savedata/ID*, home/*/exdata/*-ID_*.rap (the PSN licence:
+# without it RPCS3 says "Failed to decrypt content"), custom_configs/config_ID.yml. The
 # donor keeps its copy: TOW only reads the donor (its scratch is /tmp, RAM).
 #
 # Integrity: every stream is md5'd in flight on BOTH ends (one read per
@@ -83,7 +84,7 @@ for it in "$@"; do
         done < "$m"
       done
       for d in bios/rpcs3/dev_hdd0/game/"$it"* bios/rpcs3/dev_hdd0/home/*/savedata/"$it"* \
-               bios/rpcs3/custom_configs/config_"$it".yml; do
+               bios/rpcs3/dev_hdd0/home/*/exdata/*-"$it"_*.rap bios/rpcs3/custom_configs/config_"$it".yml; do
         [ -e "$d" ] && emit "$d"
       done
       [ "$found" = 1 ] || echo "E $it: no game file under $ROOT/ps3 (no \"($it)\" name, no .psn stub)" ;;
