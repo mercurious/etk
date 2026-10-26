@@ -329,7 +329,7 @@ for h in "$TO:$RXDIR" "$FROM:$TXDIR"; do
 done
 printf '%s\n' "$RX_SH" | on "$TO" "cat > $RXDIR/rx.sh"
 printf '%s\n' "$TX_SH" | on "$FROM" "cat > $TXDIR/tx.sh"
-on "$TO" "cd $RXDIR && setsid sh -c 'echo \$\$ > pgid; exec sh rx.sh $RXDIR $PORT0' > rx.err 2>&1 < /dev/null &"
+on "$TO" "{ cd $RXDIR && setsid sh -c 'echo \$\$ > pgid; exec sh rx.sh $RXDIR $PORT0' > rx.err 2>&1 < /dev/null; } > /dev/null 2>&1 < /dev/null &"
 want=$(( ${#BIGL[@]} + (${#TARL[@]} > 0 ? 1 : 0) ))
 for _ in $(seq 1 20); do
     up=$(on "$TO" "netstat -ltn 2>/dev/null" | awk -v a=$PORT0 -v b=$((PORT0 + ${#BIGL[@]})) \
@@ -338,7 +338,7 @@ for _ in $(seq 1 20); do
 done
 [ "$up" -ge "$want" ] || fail "$RCAR listeners not up ($up/$want)"
 trap 'abort' INT TERM; STARTED=1
-on "$FROM" "cd $TXDIR && setsid sh -c 'echo \$\$ > pgid; exec sh tx.sh $TXDIR $DATA_ADDR $PORT0' > tx.err 2>&1 < /dev/null &"
+on "$FROM" "{ cd $TXDIR && setsid sh -c 'echo \$\$ > pgid; exec sh tx.sh $TXDIR $DATA_ADDR $PORT0' > tx.err 2>&1 < /dev/null; } > /dev/null 2>&1 < /dev/null &"
 log "streams started: tar=${#TARL[@]} items, images=${#BIGL[@]}, port0=$PORT0"
 [ ${#TARL[@]} -gt 0 ] && tui_step_start 2 || { tui_step_start 2; tui_step_done 2; }
 t0=$(date +%s); last=-1; lastmove=$t0; cur=""
@@ -412,10 +412,12 @@ if [ ${#shown[@]} -gt 0 ]; then
     if [ -n "$running" ] && ! grep -q "NO GAME RUNNING" <<<"$running"; then
         ES="a game is running on $RCAR: list not reloaded (it shows the game at the next ES start)"
     elif on "$TO" "curl -s -m 20 http://127.0.0.1:1234/reloadgames >/dev/null"; then
-        sleep 3
-        list=$(on "$TO" "curl -s -m 10 http://127.0.0.1:1234/systems/ps3/games")
-        ES="NOT in the list"
-        for s in "${shown[@]}"; do grep -qF "\"path\": \"$s\"" <<<"$list" && { ES="in the list (${s##*/})"; break; }; done
+        ES="NOT in the list"       # the reload is async: poll up to ~30 s (a fixed 3 s missed it, 2026-10-26)
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+            sleep 3
+            list=$(on "$TO" "curl -s -m 10 http://127.0.0.1:1234/systems/ps3/games")
+            for s in "${shown[@]}"; do grep -qF "\"path\": \"$s\"" <<<"$list" && { ES="in the list (${s##*/})"; break 2; }; done
+        done
     else
         ES="ES not answering on $RCAR (list unconfirmed)"
     fi
