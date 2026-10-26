@@ -9,6 +9,8 @@
                                      with no driver; a hunt cannot start until this window quits
   onboard.py --snap OUT.png          one frame from the active/selected source to a PNG, no window
   onboard.py --ring DIR              the ring flushes to DIR/ring/ (default state/onboard/<epoch>/ring/)
+  onboard.py --keep-mb N             state/onboard/ budget: the oldest <epoch>/ dumps go first (default 3072)
+  onboard.py --ring-quality Q        dump frames re-encoded as JPEG at Q (default 85; 0 = as received)
   onboard.py --record                record from the start: the ring, then every frame live, until r / q
   onboard.py --fps N --quality Q --scale S    PANEL CTRL at open, only the keys given (else the car's knobs)
   onboard.py --gst                   decode PANEL H.264 through GStreamer (openh264dec); without it an H.264
@@ -23,10 +25,12 @@ Two sources, one window (docs: etk-dossiers/Onboard_LiveMirror_20261025.md §2, 
          (unless --wheel: then it keeps it, idle, and still sends no control op).
   PANEL  ONBD v1 messages from @etk-onboard-usb (the broker opens a car channel with target "onboard").
 
-The ring (the forensic instrument): the last 60 s of received frames, both sources, payloads as received.
-On link death (PitlinkClosed, socket EOF, broker gone) or on record, it goes to DIR/ring/: index.tsv
-(one row per frame), frames.bin (payloads concatenated), last.png, sheet.png (4x4 contact sheet),
-meta.json (reason, epoch, duration_s: joins the ledger row by [epoch - duration_s, epoch]).
+The ring (the forensic instrument): the last 60 s of received frames, both sources, in memory. A link
+death (PitlinkClosed, socket EOF, broker gone) writes it to DIR/ring/ only when the CAR died: the car's
+garage still answering within VERDICT_S means the game exited (a relaunch) and nothing is written.
+On a dead car or on record: index.tsv (one row per frame), frames.bin (payloads concatenated; raw/zstd
+re-encoded as JPEG), last.png, sheet.png (4x4 contact sheet), meta.json (reason, epoch, duration_s:
+joins the ledger row by [epoch - duration_s, epoch]). The default state/onboard/ keeps KEEP_MB.
 """
 import argparse
 import collections
@@ -35,6 +39,7 @@ import json
 import os
 import queue
 import re
+import shutil
 import socket
 import struct
 import sys
@@ -233,11 +238,21 @@ def ring_dir(base):
     raise OSError(f"{base}: no free ring directory")
 
 
-class RingWriter:
-    """index.tsv + frames.bin as rows arrive; last.png + sheet.png + meta.json at close."""
+def jpeg_bytes(rgb, quality):
+    b = io.BytesIO()
+    to_image(rgb).save(b, "JPEG", quality=quality)
+    return b.getvalue()
 
-    def __init__(self, path):
+
+class RingWriter:
+    """index.tsv + frames.bin as rows arrive; last.png + sheet.png + meta.json at close. With `quality`,
+    raw/zstd payloads go to disk as JPEG (a 640x360 game frame: ~526 KB zstd -> ~40 KB); JPEG and H.264
+    are written as received."""
+
+    def __init__(self, path, quality=0):
         self.path = path
+        self.quality = int(quality or 0)
+        self.transcoded = 0
         self.offset, self.rows = 0, 0
         self.counts = collections.Counter()
         self.tail = collections.deque(maxlen=SHEET_N)  # the last decodable frames, for the pictures
@@ -254,13 +269,20 @@ class RingWriter:
     def write(self, r):
         if self.bin is None or self.bin.closed:
             return  # a frame that raced the recorder's close
-        self.bin.write(r.data)
+        data, codec = r.data, r.codec
+        if self.quality and codec in (CODEC_RAW, CODEC_ZSTD):
+            try:
+                data, codec = jpeg_bytes(decode_rgb(r), self.quality), CODEC_JPEG
+                self.transcoded += 1
+            except Exception:  # a corrupt payload goes to disk as received
+                data, codec = r.data, r.codec
+        self.bin.write(data)
         self.idx.write("\t".join((
             r.source, _cell(r.flip), _cell(r.vblank), _cell(r.host_ns), "%.6f" % r.recv_t, "%.6f" % r.recv_epoch,
-            _cell(r.seq), str(self.offset), str(len(r.data)), str(r.w), str(r.h),
-            CODEC_NAMES.get(r.codec, str(r.codec)), str(r.flags), _cell(r.fps, "%.2f"),
+            _cell(r.seq), str(self.offset), str(len(data)), str(r.w), str(r.h),
+            CODEC_NAMES.get(codec, str(codec)), str(r.flags), _cell(r.fps, "%.2f"),
             r.watch.hex() if r.watch else "-")) + "\n")
-        self.offset += len(r.data)
+        self.offset += len(data)
         self.rows += 1
         self.counts[r.source] += 1
         self.first_epoch = r.recv_epoch if self.first_epoch is None else self.first_epoch
@@ -286,11 +308,46 @@ class RingWriter:
              "duration_s": round(now - self.first_epoch, 3) if self.first_epoch else 0.0,
              "first_recv_epoch": self.first_epoch, "last_recv_epoch": self.last_epoch,
              "frames": dict(self.counts), "bytes": self.offset, "columns": list(INDEX_COLS),
-             "pictures": len(pics)}
+             "pictures": len(pics), "ring_quality": self.quality, "transcoded": self.transcoded}
         m.update(meta or {})
         with open(os.path.join(self.path, "meta.json"), "w") as f:
             json.dump(m, f, indent=1, default=str)
         return self.path
+
+
+def dir_bytes(path):
+    n = 0
+    for root, _dirs, files in os.walk(path):
+        for f in files:
+            try:
+                n += os.lstat(os.path.join(root, f)).st_size
+            except OSError:
+                pass
+    return n
+
+
+def prune(root, keep_bytes, protect=()):
+    """Delete the oldest <epoch>/ dirs under root until it holds <= keep_bytes. Only all-digit names
+    (the default per-flush dirs) ever go: a named dir (car8-...-panic-...) and anything in protect stay.
+    -> [(path, bytes)] removed, oldest first."""
+    try:
+        names = os.listdir(root)
+    except OSError:
+        return []
+    sizes = {n: dir_bytes(os.path.join(root, n)) for n in names if os.path.isdir(os.path.join(root, n))}
+    total = sum(sizes.values())
+    keep = {os.path.realpath(p) for p in protect}
+    removed = []
+    for n in sorted((n for n in sizes if n.isdigit()), key=int):
+        if total <= keep_bytes:
+            break
+        path = os.path.join(root, n)
+        if any(k == os.path.realpath(path) or k.startswith(os.path.realpath(path) + os.sep) for k in keep):
+            continue
+        shutil.rmtree(path, ignore_errors=True)
+        total -= sizes[n]
+        removed.append((path, sizes[n]))
+    return removed
 
 
 def contact_sheet(pics, t_ref=None):
@@ -415,6 +472,39 @@ WHEEL_RETRY_S = 5.0      # after refusing the wheel: wait this long before the n
 WHEEL_LINK = "holding the wheel (--wheel): a hunt cannot start until this window quits"
 END_RETRY_S = 30.0       # after the car ENDs the PANEL channel: wait this long before reopening it
 DEATH_FLUSH_GAP_S = 30.0  # one link-death flush per source per this long (a flapping link is not news)
+# After a link death: the car's garage answering within VERDICT_S = a game exit, no flush. Short on purpose:
+# a live car answers in < 1 s, and a reset car is back fast (car8 2026-10-26, SSX: last frame -> next boot
+# 14 s), so a long window would let a rebooted car's garage vouch for the crash that rebooted it.
+VERDICT_S = 5.0
+KEEP_MB = 3072            # the default state/onboard/ budget (MB): the oldest <epoch>/ dumps go first
+RING_QUALITY = 85         # dump frames: raw/zstd re-encoded as JPEG at this quality (0 = as received)
+DEFAULT_ROOT = os.path.join(REPO, "state", "onboard")
+
+
+def garage_alive(deadline_s=VERDICT_S, every_s=0.5):
+    """The car-alive probe: the garage `status` op over the USB link, retried until deadline_s.
+    -> "daemon <ver>, running <title|none>" when the car answers (an error reply counts: a busy ES
+    still proves the car is up), None when it stays dark."""
+    t_end = time.monotonic() + deadline_s
+    while True:
+        left = t_end - time.monotonic()
+        if left <= 0:
+            return None
+        try:
+            rep = C.garage({"op": "status"}, timeout=max(0.5, min(3.0, left)))
+            run = rep.get("running") or {}
+            return f"daemon {rep.get('daemon')}, running {run.get('name') or 'none'}"
+        except PitlinkClosed:
+            pass
+        except PitlinkError as e:
+            return f"garage answered: {e}"
+        except (OSError, ValueError):
+            pass
+        if time.monotonic() + every_s >= t_end:
+            return None
+        time.sleep(every_s)
+
+
 ONBOARD_OFF_RE = re.compile(r"ETK_ONBOARD\s*=\s*0|onboard (is )?(off|disabled)", re.I)  # END: stop retrying
 BACKOFF = (0.25, 0.5, 1.0, 2.0, 4.0)
 SNAP_PANEL_GRACE_S = 2.0
@@ -472,8 +562,12 @@ class Onboard:
 
     def __init__(self, game_addr="usb", panel_addr=plusb.ONBOARD_SOCKET, want_game=True, want_panel=True,
                  pin=None, ring_base=None, ctrl=None, token="", gst=False, ring_secs=60.0, ring_bytes=1 << 30,
-                 timeout=5.0, log=None, wheel=False):
+                 timeout=5.0, log=None, wheel=False, car_alive=None, ring_quality=RING_QUALITY, keep_mb=KEEP_MB):
         self.game_addr, self.panel_addr = game_addr, panel_addr
+        # car_alive(deadline_s) -> a detail string when the car still answers after a link death (the game
+        # exited: no flush), None when it stays dark (a crash: flush). None = every death flushes.
+        self.car_alive = car_alive
+        self.ring_quality, self.keep_mb = ring_quality, keep_mb
         self.want_game, self.want_panel = want_game, want_panel
         self.pinned = pin
         self.ring_base = ring_base
@@ -492,6 +586,7 @@ class Onboard:
         self._fresh = {"game": 0, "panel": 0}   # frames per source since the last flush
         self._last_death_flush = {}            # source -> monotonic time of its last link-death flush
         self._flush_busy = False               # one flush in flight; another request is dropped
+        self._verdict_busy = False             # one car-alive verdict pending; a 2nd death joins it
         self._choice = "panel" if want_panel else "game"
         self._game_client = None
         self._panel_sock, self._panel_slock = None, threading.Lock()
@@ -732,14 +827,53 @@ class Onboard:
         if last is not None and now - last < DEATH_FLUSH_GAP_S:
             self._event("ring", f"{source} death flush skipped: the last one was {now - last:.1f} s ago")
             return None
-        path = self.flush(f"{source} link died: {why}")
-        if path:
-            with self.lock:
-                self._last_death_flush[source] = now
-        return path
+        reason = f"{source} link died: {why}"
+        if self.car_alive is None:
+            path = self.flush(reason)
+            if path:
+                with self.lock:
+                    self._last_death_flush[source] = now
+            return path
+        with self.lock:
+            if self._verdict_busy:  # the other link's death is already asking (the ring holds both sources)
+                self._event("ring", f"{source} death joins the pending car verdict")
+                return None
+            self._verdict_busy = True
+        recs = self.ring.snapshot(now)  # the frames up to the death, held while the car is asked
+
+        def verdict():
+            try:
+                t0 = time.monotonic()
+                alive = None
+                try:
+                    alive = self.car_alive(VERDICT_S)
+                except Exception as e:
+                    self._event("ring", f"car verdict: {e!r}")
+                dt = time.monotonic() - t0
+                if alive:
+                    self._event("ring", f"{reason}; car alive after {dt:.1f} s ({alive}): a game exit, no flush")
+                    with self.lock:
+                        self._fresh = {"game": 0, "panel": 0}
+                    return
+                path = self.flush(f"{reason}; car dark {dt:.0f} s", recs=recs)
+                if path:
+                    with self.lock:
+                        self._last_death_flush[source] = now
+            finally:
+                with self.lock:
+                    self._verdict_busy = False
+        threading.Thread(target=verdict, name=f"onboard-verdict-{source}", daemon=True).start()
+        return None
 
     def _base(self):
-        return self.ring_base or os.path.join(REPO, "state", "onboard", str(int(time.time())))
+        return self.ring_base or os.path.join(DEFAULT_ROOT, str(int(time.time())))
+
+    def _prune(self, protect=()):
+        """The default root only (a --ring DIR belongs to its hunt): the oldest <epoch>/ dumps go first."""
+        if self.ring_base or not self.keep_mb:
+            return
+        for path, n in prune(DEFAULT_ROOT, self.keep_mb << 20, protect):
+            self._event("ring", f"pruned {path} ({n >> 20} MB; budget {self.keep_mb} MB)")
 
     def _meta(self):
         with self.lock:
@@ -747,7 +881,7 @@ class Onboard:
                     "events": [(round(t, 3), s, x) for t, s, x in self.events],
                     "ring_secs": self.ring.secs}
 
-    def flush(self, reason="flush"):
+    def flush(self, reason="flush", recs=None):
         """Write the ring to <base>/ring/ (in the background). -> the directory it goes to, or None
         when a flush is already in flight (that one holds these frames too: one at a time, so a
         storm of requests can never pin N snapshots in memory or N copies on disk)."""
@@ -758,7 +892,7 @@ class Onboard:
             self._flush_busy = True
             self._fresh = {"game": 0, "panel": 0}
         try:
-            recs = self.ring.snapshot(time.monotonic())
+            recs = self.ring.snapshot(time.monotonic()) if recs is None else recs
             path = ring_dir(self._base())
             meta = self._meta()
         except Exception:
@@ -767,7 +901,7 @@ class Onboard:
             raise
         with self.lock:
             self.flushes.append((path, reason))
-        w = RingWriter(path)
+        w = RingWriter(path, self.ring_quality)
 
         def job():
             try:
@@ -775,6 +909,7 @@ class Onboard:
                 for r in recs:
                     w.write(r)
                 w.close(reason, meta)
+                self._prune(protect=(path,))
             finally:
                 with self.lock:
                     self._flush_busy = False
@@ -791,7 +926,7 @@ class Onboard:
         on = (self.recorder is None) if on is None else on
         if on and self.recorder is None:
             path = ring_dir(self._base())
-            w = RingWriter(path)
+            w = RingWriter(path, self.ring_quality)
             recs = self.ring.snapshot(time.monotonic())
 
             def opened():
@@ -809,7 +944,12 @@ class Onboard:
                 w, self.recorder = self.recorder, None
                 self._fresh = {"game": 0, "panel": 0}
                 self.flushes.append((w.path, "record"))
-            self.disk.submit(w.close, "record", self._meta())
+            meta = self._meta()
+
+            def closed():
+                w.close("record", meta)
+                self._prune(protect=(w.path,))
+            self.disk.submit(closed)
             self._event("ring", f"recording stopped: {w.path}")
             return w.path
         return None
@@ -1083,6 +1223,12 @@ def main(argv=None):
     ap.add_argument("--timeout", type=float, default=10.0, help="--snap: seconds to wait for a frame")
     ap.add_argument("--ring-secs", type=float, default=60.0, help=argparse.SUPPRESS)
     ap.add_argument("--ring-mb", type=int, default=1024, help="ring payload cap (MB; default 1024)")
+    ap.add_argument("--ring-quality", type=int, default=RING_QUALITY, help="dump frames re-encoded as JPEG at "
+                    f"this quality (default {RING_QUALITY}; 0 = payloads as received)")
+    ap.add_argument("--keep-mb", type=int, default=KEEP_MB, help="state/onboard/ budget: the oldest <epoch>/ "
+                    f"dumps go first (default {KEEP_MB}; 0 = keep all; never touches a --ring DIR)")
+    ap.add_argument("--every-death", action="store_true", help="flush on every link death, even when the car "
+                    "still answers (a game exit); default: only when the car goes dark")
     ap.add_argument("-v", "--verbose", action="store_true")
     a = ap.parse_args(argv)
     if a.wheel and a.panel:
@@ -1095,6 +1241,8 @@ def main(argv=None):
                  pin="game" if a.game else ("panel" if a.panel else None),
                  ring_base=a.ring, ctrl=ctrl, token=a.token,
                  gst=a.gst, ring_secs=a.ring_secs, ring_bytes=a.ring_mb << 20,
+                 car_alive=None if a.every_death else garage_alive, ring_quality=a.ring_quality,
+                 keep_mb=a.keep_mb,
                  log=(lambda m: print(f"onboard: {m}", file=sys.stderr)) if a.verbose else None)
     ob.start()
     try:

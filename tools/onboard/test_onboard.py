@@ -13,6 +13,10 @@
   [CTRL]    the CTRL sent at open carries --fps/--quality/--scale; the PANEL channel reconnects
   [END]     a car END is not a link death: no flush storm, 30 s reopen, ETK_ONBOARD=0 stops; one flush
             in flight; death flushes per source, rate-limited
+  [VERDICT] a death the car survives (garage answers: a game exit) writes nothing; a dark car writes one
+            dump of the frames up to the death; two links dying share one verdict
+  [BUDGET]  --ring-quality: raw/zstd dump frames go to disk as JPEG that decodes to its flip; prune drops
+            the oldest <epoch>/ dirs to the budget, never a named or in-use dir, never a --ring DIR
   [CLI]     --panel never opens PLNK; CTRL carries only the keys the operator set
   [BROKER]  @...-onboard on usb_broker opens a car channel with target b"onboard" (fake USB pipe)
   [LAW]     onboard.py has no PAUSE / STEP / SNAP-request call (grep)
@@ -225,7 +229,8 @@ class Rig:
             self.panel = FakePanel(**(panel_kw or {})).listen(self.panel_addr)
             tc.addCleanup(self.panel.stop)
         kw = dict(game_addr=self.car.addrs[0] if self.car else name("nocar"), panel_addr=self.panel_addr,
-                  ring_base=self.tmp, ctrl={"fps": 10, "quality": 55, "scale": 0.25}, timeout=3.0)
+                  ring_base=self.tmp, ctrl={"fps": 10, "quality": 55, "scale": 0.25}, timeout=3.0,
+                  ring_quality=0)
         kw.update(ob_kw)
         self.ob = O.Onboard(**kw).start()
         tc.addCleanup(self.ob.stop)
@@ -600,6 +605,133 @@ class TestEnd(unittest.TestCase):
             rig.panel.drop()
         self.assertTrue(ob.disk.wait(10))
         self.assertEqual(len(ob.flushes), 1, ob.flushes)
+
+
+# ============================================================================ [VERDICT]
+class TestVerdict(unittest.TestCase):
+    def test_game_exit_on_a_live_car_writes_nothing(self):
+        asked = []
+        rig = Rig(self, panel=False, want_panel=False,
+                  car_alive=lambda deadline: asked.append(deadline) or "daemon test, running none")
+        ob = rig.ob
+        self.assertTrue(wait_until(lambda: ob.game.frames > 30))
+        rig.car.stop()  # the emulator exits; the car's garage still answers
+        self.assertTrue(wait_until(lambda: any("a game exit, no flush" in e[2] for e in ob.events), 3.0),
+                        list(ob.events))
+        self.assertTrue(ob.disk.wait(10))
+        self.assertEqual((ob.flushes, ring_dirs(rig.tmp)), ([], []))
+        self.assertEqual(asked, [O.VERDICT_S])
+
+    def test_dark_car_writes_the_frames_up_to_the_death(self):
+        rig = Rig(self, panel=False, want_panel=False, car_alive=lambda deadline: time.sleep(0.3))
+        ob = rig.ob
+        self.assertTrue(wait_until(lambda: ob.game.frames > 30))
+        rig.car.stop()
+        self.assertTrue(wait_until(lambda: ob.flushes, 3.0))
+        self.assertTrue(ob.disk.wait(10))
+        path, reason = ob.flushes[0]
+        self.assertIn("game link died", reason)
+        self.assertIn("car dark", reason)
+        _, rows = read_index(path)
+        self.assertGreater(len(rows), 30)
+
+    def test_two_links_one_verdict_one_dump(self):
+        calls = []
+        rig = Rig(self, car_alive=lambda deadline: calls.append(1) or time.sleep(0.5))
+        ob = rig.ob
+        self.assertTrue(wait_until(lambda: ob.game.frames > 30 and ob.panel.frames > 4))
+        rig.car.stop()
+        rig.panel.drop()
+        self.assertTrue(wait_until(lambda: ob.flushes, 3.0))
+        time.sleep(0.8)
+        self.assertTrue(ob.disk.wait(10))
+        self.assertEqual((len(calls), len(ob.flushes)), (1, 1), ob.flushes)
+
+    def test_garage_alive_answers_and_goes_dark(self):
+        orig = O.C.garage
+        self.addCleanup(setattr, O.C, "garage", orig)
+        O.C.garage = lambda req, timeout: {"ok": True, "daemon": "9.9", "running": {"name": "SSX"}}
+        self.assertEqual(O.garage_alive(1.0), "daemon 9.9, running SSX")
+
+        def dark(req, timeout):
+            raise ConnectionRefusedError("no car")
+        O.C.garage = dark
+        t0 = time.monotonic()
+        self.assertIsNone(O.garage_alive(0.6, every_s=0.1))
+        self.assertLess(time.monotonic() - t0, 1.5)
+
+        def closed(req, timeout):
+            raise O.PitlinkClosed("garage: the car closed the session (USB link down?)")
+        O.C.garage = closed
+        self.assertIsNone(O.garage_alive(0.3, every_s=0.1))
+
+        def busy(req, timeout):  # the daemon answered, ES did not: the car is up
+            raise O.PitlinkError("garage status: ES timed out")
+        O.C.garage = busy
+        self.assertIn("garage answered", O.garage_alive(1.0))
+        self.assertLessEqual(O.VERDICT_S, 10.0, "a reset car is back in ~14 s: the window must close first")
+
+
+# ============================================================================ [BUDGET]
+def _block_index_lossy(rgb):
+    """fake_server.block_index for a JPEG round trip: the white block is > 200, not exactly 255."""
+    import numpy as np
+    ys, xs = np.nonzero((rgb > 200).all(axis=2))
+    if not len(ys):
+        return None
+    from fake_server import BLOCK
+    return (int(np.median(ys)) // BLOCK) * (rgb.shape[1] // BLOCK) + int(np.median(xs)) // BLOCK
+
+
+class TestBudget(unittest.TestCase):
+    def test_dump_frames_go_to_disk_as_jpeg(self):
+        rig = Rig(self, panel=False, want_panel=False, ring_quality=85)
+        ob = rig.ob
+        self.assertTrue(wait_until(lambda: ob.game.frames > 30))
+        path = ob.flush("test")
+        self.assertTrue(ob.disk.wait(10))
+        _, rows = read_index(path)
+        with open(os.path.join(path, "frames.bin"), "rb") as f:
+            blob = f.read()
+        self.assertEqual({r["codec"] for r in rows}, {"jpeg"})
+        self.assertLess(len(blob), len(rows) * GAME_W * GAME_H * 4 / 4)
+        import numpy as np
+        from PIL import Image
+        for r in rows:
+            o, n = int(r["offset"]), int(r["len"])
+            rgb = np.asarray(Image.open(io.BytesIO(blob[o:o + n])).convert("RGB"))
+            self.assertEqual(rgb.shape, (GAME_H, GAME_W, 3))
+            self.assertEqual(_block_index_lossy(rgb), int(r["flip"]) % cells(GAME_W, GAME_H), r)
+        meta = json.loads(read_text(os.path.join(path, "meta.json")))
+        self.assertEqual((meta["ring_quality"], meta["transcoded"]), (85, len(rows)))
+
+    def test_prune_drops_oldest_epoch_dirs_only(self):
+        root = tempfile.mkdtemp(prefix="onboard-prune-")
+        self.addCleanup(shutil.rmtree, root, True)
+
+        def mk(name, kb):
+            d = os.path.join(root, name, "ring")
+            os.makedirs(d)
+            with open(os.path.join(d, "frames.bin"), "wb") as f:
+                f.write(b"x" * (kb << 10))
+        for n in ("100", "200", "300", "400"):
+            mk(n, 100)
+        mk("car8-20261025-gt6-panic-1", 500)  # named: never pruned, still counted
+        removed = O.prune(root, 700 << 10, protect=(os.path.join(root, "100", "ring"),))
+        self.assertEqual([os.path.basename(p) for p, _ in removed], ["200", "300"])
+        self.assertEqual(sorted(os.listdir(root)), ["100", "400", "car8-20261025-gt6-panic-1"])
+        self.assertEqual(O.prune(root, 1 << 30), [])
+        self.assertEqual(O.prune(os.path.join(root, "nope"), 0), [])
+
+    def test_ring_dir_given_never_prunes(self):
+        rig = Rig(self, game=False, want_game=False, keep_mb=1)
+        orig = O.prune
+        self.addCleanup(setattr, O, "prune", orig)
+        O.prune = lambda *a, **k: self.fail("pruned a --ring DIR")
+        self.assertTrue(wait_until(lambda: rig.ob.panel.frames > 3))
+        rig.ob.flush("test")
+        self.assertTrue(rig.ob.disk.wait(10))
+        self.assertEqual(rig.ob.disk.errors, [])
 
 
 # ============================================================================ [SNAP]

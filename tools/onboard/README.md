@@ -25,7 +25,7 @@ Other flags: `--record` (start recording at launch), `--fps N --quality Q --scal
 when the channel opens, carrying only the keys you give: with none of them no CTRL is sent and the car's
 own knobs, e.g. `ETK_ONBOARD_QUALITY`, rule; the car clamps fps to its policy), `--addr` (the PLNK address, default
 `$PITLINK_ADDR` else `usb`), `--onboard-addr` (default `@etk-onboard-usb`), `--gst` (see H.264 below),
-`--ring-mb` (the ring's payload cap, default 1024 MB), `-v`.
+`--ring-mb` (the ring's payload cap, default 1024 MB), `--ring-quality`, `--keep-mb`, `--every-death`, `-v`.
 
 ## Source policy
 
@@ -92,25 +92,37 @@ the window before starting a hunt.
 ## The ring (the forensic instrument)
 
 The ring holds the last 60 s of received frames from both sources in memory, with the payloads exactly
-as they arrived. It flushes to `DIR/ring/` on these events:
+as they arrived. It is written to `DIR/ring/` on these events:
 
-- **Link death:** `PitlinkClosed`, socket EOF, or the broker or USB link going away. A source's death
-  flushes only when THAT source delivered frames on the link that died and since the last flush, at most
-  once per 30 s per source, so a broker dying under both links writes one directory and a flapping link
-  writes one, not one per flap.
+- **The car dies, not the game.** Every game exit or relaunch also closes the link (`peer closed`), so a
+  link death alone proves nothing. On one, the ring's frames up to the death are held and the car's
+  garage is asked (`status` over the same USB link) for up to 5 s. If it answers (even with an error), the game exited and
+  nothing is written (the window logs `car alive ... a game exit, no flush`). If it stays dark (a SoC
+  stop, a reset, the cable), the held frames are written, with the reason ending `car dark N s`. Both
+  links dying share one question and one dump. The window is short on purpose: a reset car is back fast (car8 2026-10-26, SSX: last frame to the next boot 14 s), and a longer one would let the rebooted car's garage vouch for the crash that rebooted it. A death counts only when THAT source delivered frames on
+  the link that died and since the last dump, at most once per 30 s per source. An emulator crash on a
+  live car writes nothing here: the car's crash collector owns that case. `--every-death` writes on
+  every death, as before 2026-10-26.
 - **Not on END.** A car END (policy, a capture failure, ONBOARD off) is the car stopping capture on
   purpose, not a death: no flush. The viewer reopens the channel 30 s later, or never again when the
   END reason says ONBOARD is off (`ETK_ONBOARD=0`, "onboard off/disabled").
 - **Record:** `r` or `--record` writes the ring so far, then appends every live frame until `r` again
   or `q`.
 
+On disk, raw and zstd frames are re-encoded as JPEG (`--ring-quality`, default 85; 0 keeps the payloads
+as received). A 60 s GT/SSX game dump is about 40 MB instead of about 600 MB (a 640x360 frame: 526 KB
+zstd to 32 KB JPEG, 4.7 ms per frame on the M1). JPEG and H.264 payloads are written as received.
+
 `DIR` is `--ring DIR`, or `state/onboard/<epoch>/` by default. A later flush in the same `DIR` goes to
-`ring.2/`, `ring.3/`, and so on. Nothing is ever overwritten.
+`ring.2/`, `ring.3/`, and so on. Nothing is overwritten. The default `state/onboard/` keeps a budget
+(`--keep-mb`, default 3072; 0 = keep all): after each dump the oldest `<epoch>/` directories go until it
+fits. A directory with any other name (`car8-20261025-gt6-panic-...`, renamed to keep it) is never
+pruned, and a `--ring DIR` belongs to its hunt and is never pruned.
 
 | File | Contents |
 |---|---|
 | `index.tsv` | One row per frame: `source flip vblank host_ns recv_t recv_epoch seq offset len w h codec flags fps watch`. `host_ns` is the car's `CLOCK_MONOTONIC` (PLNK `host_ns` or ONBD `car_ns`). `recv_t` is host monotonic time and `recv_epoch` is host wall time. `-` means the field does not apply to that source. |
-| `frames.bin` | The payloads concatenated in arrival order, never re-encoded. Each row's `offset`/`len` addresses its payload. |
+| `frames.bin` | The payloads concatenated in arrival order (raw/zstd as JPEG unless `--ring-quality 0`; the row's `codec` says which). Each row's `offset`/`len` addresses its payload. |
 | `last.png` | The most recent decodable frame. |
 | `sheet.png` | A 4×4 contact sheet of the last 16 decodable frames, oldest first. Each tile is labelled with its flip or seq and its age relative to the newest frame. |
 | `meta.json` | The reason, `epoch`, `duration_s` (joins the ledger row by `[epoch - duration_s, epoch]`, the Pitlink recorder's rule), per-source counts, HELLO_OK, the last INFO, and the link events. |
