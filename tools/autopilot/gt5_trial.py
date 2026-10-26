@@ -128,6 +128,18 @@ def parse_macro(text):
                 steps.append(("settle", (mx, float(args[1])) if len(args) > 1 else mx))
             elif verb == "wait_motion":
                 steps.append(("wait_motion", float(args[0]) if args else 90.0))
+            elif verb == "wait_screen":
+                # wait_screen REF.png [MAX [THRESH]]: on the moment the live frame matches the
+                # reference (a recorded snap: route_rec.py), never a sleep past the screen's arrival
+                steps.append(("wait_screen", (args[0], float(args[1]) if len(args) > 1 else 120.0,
+                                              float(args[2]) if len(args) > 2 else SCREEN_MATCH)))
+            elif verb == "press_until":
+                # press_until BTN[+BTN] REF.png [MAX [EVERY [THRESH]]]: press, and press AGAIN every
+                # EVERY s until the reference screen is up (a blind tap is lossy: car8 2026-10-26, the
+                # title's START dropped and the whole macro waited on a screen that never came)
+                steps.append(("press_until", (args[0].split("+"), args[1], float(args[2]) if len(args) > 2 else 60.0,
+                                              float(args[3]) if len(args) > 3 else 6.0,
+                                              float(args[4]) if len(args) > 4 else SCREEN_MATCH)))
             elif verb == "snap":
                 steps.append(("snap", args[0]))
             elif verb == "drive":
@@ -254,6 +266,8 @@ def boot_id(host):
 SETTLE_CHANGE, SETTLE_CHANGE_WAIT = 4.0, 3.0   # mean |dgray| vs the pre-press frame; give up waiting for it
 SETTLE_STILL, SETTLE_QUIET, SETTLE_LIT = 2.5, 1.0, 8.0
 MOTION, MOTION_SECS = 6.0, 1.0
+SCREEN_MATCH = 10.0        # mean |dgray| vs a recorded snap below this = the same screen (SSX menus: ~2-6; a different screen: 20+)
+MACRO_DIR = {"dir": "."}   # wait_screen paths resolve beside the macro file (set in main)
 
 
 def small(rgb):
@@ -285,6 +299,29 @@ def settle_step(frames, pre, max_s, clock, quiet=SETTLE_QUIET):
             still = None
         prev = x
     return "max", (clock() - t0) if t0 is not None else 0.0
+
+
+def screen_step(frames, ref, max_s, clock, thresh=SCREEN_MATCH):
+    """Consume (t, small-frame) pairs until one matches `ref` (mean |dgray| < thresh): the
+    recorded screen is here, press now. Returns (reason, secs): "matched" | "max"."""
+    t0 = None
+    for t, x in frames:
+        t0 = t if t0 is None else t0
+        if mad(x, ref) < thresh:
+            return "matched", t - t0
+        if t - t0 >= max_s:
+            return "max", t - t0
+    return "max", (clock() - t0) if t0 is not None else 0.0
+
+
+def load_ref(path, macro_dir):
+    """A reference snap (PNG, any size) -> the 64x36 gray unit; relative paths resolve beside the macro."""
+    from PIL import Image
+    import numpy as np
+    p = path if os.path.isabs(path) else os.path.join(macro_dir, path)
+    with Image.open(p) as im:
+        rgb = np.asarray(im.convert("RGB"), dtype=float)
+    return small(rgb)
 
 
 def motion_step(frames, max_s, clock):
@@ -336,6 +373,23 @@ def run_macro(c_holder, steps, out, log, stop):
                 why, secs = motion_step(live_frames(c, stop), arg, time.time)
                 log(f"macro: wait_motion {why} after {secs:.1f}s")
                 continue
+            elif verb == "wait_screen":
+                ref = load_ref(arg[0], MACRO_DIR["dir"])
+                why, secs = screen_step(live_frames(c, stop), ref, arg[1], time.time, arg[2])
+                log(f"macro: wait_screen {os.path.basename(arg[0])} {why} after {secs:.1f}s")
+                continue
+            elif verb == "press_until":
+                buttons, path, mx, every, thresh = arg
+                ref = load_ref(path, MACRO_DIR["dir"])
+                t0, n, why = time.time(), 0, "max"
+                while time.time() - t0 < mx and not stop.is_set():
+                    c.press(buttons, ms=150)
+                    n += 1
+                    why, _ = screen_step(live_frames(c, stop), ref, min(every, mx - (time.time() - t0)), time.time, thresh)
+                    if why == "matched":
+                        break
+                log(f"macro: press_until {'+'.join(buttons)} {os.path.basename(path)} {why} after {time.time() - t0:.1f}s, {n} press(es)")
+                continue
             elif verb == "hold":
                 c.hold(**arg[0])
                 stop.wait(arg[1])
@@ -351,6 +405,8 @@ def run_macro(c_holder, steps, out, log, stop):
                         break
             elif verb == "snap":
                 f = c.snap(timeout=5.0)          # native frame: the tap may be idle
+                if f is None or f.rgb().mean() < 1.0:   # a black native snap (SSX on 0.10.1, 2026-10-26): keep the tap's frame
+                    f = c.latest_frame()
                 if f is not None:
                     f.png(os.path.join(out, f"{arg}.png"), max_w=640)
             elif verb == "observe":
@@ -466,6 +522,11 @@ def main():
     if a.host is None:
         a.host = etkconf.rig_ssh(fallback=etkconf.FALLBACK_SSH)
     steps = parse_macro(open(a.macro).read()) if a.macro else []
+    if a.macro:
+        MACRO_DIR["dir"] = os.path.dirname(os.path.abspath(a.macro))
+        for verb, arg in steps:      # a missing reference snap fails here, not three menus deep
+            if verb == "wait_screen":
+                load_ref(arg[0], MACRO_DIR["dir"])
     os.makedirs(a.out, exist_ok=True)
 
     def log(msg):

@@ -1,0 +1,8 @@
+# SSX (NPUB30892): fresh launch -> title -> autosave notice -> online-features dialog -> home, nothing more.
+# The first minutes of a launch, where car8 reset 4 times on 2026-10-26. Frame-cued (see ssx_explore_drop.macro).
+wait_screen ssx_ref/title.png 150 10
+press_until start ssx_ref/autosave.png 30 6 5
+press_until cross ssx_ref/online_dialog.png 150 20 5
+press cross 150
+sleep 25
+snap r3_home

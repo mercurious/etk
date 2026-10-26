@@ -28,7 +28,7 @@ flips(){ python3 $T status 2>/dev/null | python3 -c 'import sys,json
 try: d=json.load(sys.stdin); print(d["state"], d["flip"], (d["frame"] or {}).get("fps"))
 except Exception: print("down")'; }
 # the movie fd position on the car: "<file> pos:<bytes>" per open .vp6 (none = no movie open)
-MOVIEPOS='pid=$(for d in /proc/[0-9]*; do tr "\0" " " 2>/dev/null < $d/cmdline | grep -q "AppRun.wrapped --no-gui" && echo ${d#/proc/}; done | head -1); [ -n "$pid" ] || { echo "no game"; exit 0; }; for fd in /proc/$pid/fd/*; do t=$(readlink $fd 2>/dev/null); case "$t" in *.vp6) echo "${t##*/} $(grep pos /proc/$pid/fdinfo/${fd##*/} | tr -s "\t" " ")";; esac; done'
+MOVIEPOS='pid=$(for d in /proc/[0-9]*; do tr "\0" " " 2>/dev/null < $d/cmdline | grep -q "AppRun.wrapped --no-gu[i]" && echo ${d#/proc/}; done | head -1); [ -n "$pid" ] || { echo "no game"; exit 0; }; for fd in /proc/$pid/fd/*; do t=$(readlink $fd 2>/dev/null); case "$t" in *.vp6) echo "${t##*/} $(grep pos /proc/$pid/fdinfo/${fd##*/} | tr -s "\t" " ")";; esac; done'
 # spu/rsx host-thread CPU (top -H on the car: the 100 % SPU signature)
 CPUSIG='top -bn1 -H 2>/dev/null | grep -E "SPU\[|rsx::" | awk "{print \$NF, \$9}" | sort | uniq -c | sort -rn | head -4 | tr "\n" ";"'
 

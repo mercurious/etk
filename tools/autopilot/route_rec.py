@@ -12,7 +12,7 @@ the wheel (if its HELLO lands it, it holds it idle -- start `pitlink.py serve` f
 
 OUT/route.tsv    t_s  flip  kind  name  value     every button edge, hat and stick move
 OUT/snaps/NNN_name.png                            the frame at each button-down
-OUT/route.macro                                   gt5_trial / ssx_drive replay: sleep · press · hold · snap
+OUT/route.macro                                   gt5_trial replay: wait_screen (the snap as the cue) · press · hold · snap
 
 Why (operator 2026-10-26): blind press-frame-look loops over a menu cost a round trip per
 guess and never reach certainty; a human drives the menu in seconds and the recording IS
@@ -89,6 +89,7 @@ class Route:
         self._hat = {16: 0, 17: 0}
         self.snaps = []        # (index, name, flip) in press order
         self.on_down = None    # callback(name, flip, index) -> the host saves a frame
+        self.snap_dir = "snaps"  # macro cue path prefix (relative to the macro); None = plain sleeps
 
     def set_abs(self, code, lo, hi):
         self.absinfo[code] = (lo, hi)
@@ -157,17 +158,23 @@ class Route:
             i += 1
         t_prev = None
         for s in merged:
-            if t_prev is not None:
-                gap = s[0] - t_prev
-                if gap >= 0.3:
-                    out.append(f"sleep {round(gap * 2) / 2:g}")
+            gap = (s[0] - t_prev) if t_prev is not None else 0.0
             if s[1] == "press":
-                out.append(f"press {s[2]} {s[3]}")
                 idx = s[4]
-                if 0 <= idx < len(self.snaps):
-                    out.append(f"snap {idx:03d}_{self.snaps[idx][1]}")
+                snap = f"{idx:03d}_{self.snaps[idx][1]}" if 0 <= idx < len(self.snaps) else None
+                if snap and self.snap_dir:
+                    # the frame the operator pressed on IS the cue: press the moment it is back on screen
+                    # (max = the recorded gap plus slack), never a sleep past the screen's arrival
+                    out.append(f"wait_screen {self.snap_dir}/{snap}.png {max(30, int(gap) + 30)}")
+                elif gap >= 0.3:
+                    out.append(f"sleep {round(gap * 2) / 2:g}")
+                out.append(f"press {s[2]} {s[3]}")
+                if snap:
+                    out.append(f"snap {snap}")
                 t_prev = s[0] + s[3] / 1000.0
             else:
+                if gap >= 0.3:
+                    out.append(f"sleep {round(gap * 2) / 2:g}")
                 kv = " ".join(f"{k}={v:g}" for k, v in s[2].items())
                 out.append(f"hold {kv} secs={s[3]:g}")
                 t_prev = s[0] + s[3]

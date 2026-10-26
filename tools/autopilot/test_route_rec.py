@@ -35,13 +35,16 @@ class TestRouteRec(unittest.TestCase):
         self.assertEqual([d[1] for d in downs], ["start", "cross", "down", "up"])
         self.assertEqual(downs[0][2], 100)
         text = r.macro("hdr")
-        self.assertEqual(text.splitlines(), [
+        self.assertEqual(text.splitlines(), [   # the snap at each press is the cue; max = gap + 30 s slack
             "# hdr",
-            "press start 150", "snap 000_start",
-            "sleep 6", "press cross 80", "snap 001_cross",
-            "sleep 4", "press down 400", "snap 002_down",
-            "sleep 0.5", "press up 100", "snap 003_up",
+            "wait_screen snaps/000_start.png 30", "press start 150", "snap 000_start",
+            "wait_screen snaps/001_cross.png 35", "press cross 80", "snap 001_cross",
+            "wait_screen snaps/002_down.png 33", "press down 400", "snap 002_down",
+            "wait_screen snaps/003_up.png 30", "press up 100", "snap 003_up",
         ])
+        r.snap_dir = None   # no snaps on disk (--no-frames): the recorded gaps become sleeps
+        self.assertEqual(r.macro().splitlines()[:5], [
+            "press start 150", "snap 000_start", "sleep 6", "press cross 80", "snap 001_cross"])
 
     def test_chord_and_stick(self):
         r = Route()
@@ -56,6 +59,7 @@ class TestRouteRec(unittest.TestCase):
         r.feed(3.5, EV_ABS, 0, 0, 75)
         r.feed(5.0, EV_ABS, 0, 5000, 100)      # inside the deadzone: logged, not a hold
         r.feed(5.1, EV_ABS, 0, 0, 103)
+        r.snap_dir = None
         lines = r.macro().splitlines()
         self.assertEqual(lines[0], "press square+circle 200")
         self.assertIn("hold lx=-0.9 secs=0.5", lines)

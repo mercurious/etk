@@ -353,6 +353,17 @@ why, secs = gt.motion_step(iter(_seq((_K, 5)) + [(5 + i * 0.1, f) for i, f in en
 check("wait_motion: a static load, then the flyover moves -> on after 1 s of motion", (why, round(secs, 1)), ("moving", 6.0))
 check("settle / wait_motion parse with defaults", gt.parse_macro("settle\nsettle 8\nwait_motion\n"),
       [("settle", 15.0), ("settle", 8.0), ("wait_motion", 90.0)])
+check("wait_screen parses with defaults and overrides", gt.parse_macro("wait_screen r.png\nwait_screen a/b.png 40 5\n"),
+      [("wait_screen", ("r.png", 120.0, gt.SCREEN_MATCH)), ("wait_screen", ("a/b.png", 40.0, 5.0))])
+why, secs = gt.screen_step(iter(_seq((_K, 2), (_A, 3))), _A, 30, _clk)
+check("wait_screen: the recorded screen arrives at 2 s -> matched then, not after a sleep", (why, round(secs, 1)), ("matched", 2.0))
+why, secs = gt.screen_step(iter(_seq((_K, 6))), _A, 5, _clk)
+check("wait_screen: never arrives -> max", why, "max")
+why, secs = gt.screen_step(iter(_seq((_B, 3))), _A, 30, _clk, thresh=1.0)
+check("wait_screen: a near screen is not the screen under a tight threshold", why, "max")
+check("press_until parses with defaults", gt.parse_macro("press_until start t.png\npress_until cross+up c.png 30 4 5\n"),
+      [("press_until", (["start"], "t.png", 60.0, 6.0, gt.SCREEN_MATCH)), ("press_until", (["cross", "up"], "c.png", 30.0, 4.0, 5.0))])
+
 check("settle MAX QUIET parses as a pair", gt.parse_macro("settle 240 3\n"), [("settle", (240.0, 3.0))])
 why, secs = gt.settle_step(iter(_seq((_A, 1.5), (_B, 1.5), (_A, 1.5), (_K, 4), (_B, 5))), None, 240, _clk, quiet=3)
 check("an intro movie (1.5 s shots, a black fade) is not the title: QUIET 3 waits for the still lit screen",

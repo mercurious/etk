@@ -1,25 +1,19 @@
 # SSX (NPUB30892): fresh launch -> title -> dialogs -> Explore -> Start Run -> the chopper -> the drop.
-# The two route presses were recorded by the operator on car8 2026-10-26 (tools/autopilot/route_rec.py,
-# state/routes/ssx_explore: Start Run on the equipment card, the jump 101 s later). The preamble is the
-# fresh-launch path a garage launch lands on (car8 cap_r1 11:18: first lit frame = the title at +101 s).
-# Preconditions: the progressed save (BLUS308490000A / BLUS308490100, towed from car12) so the game
-# resumes at EXPLORE > RANGE after the dialogs; Write Color Buffers OFF (the VKTextureCache.cpp:1201
-# fatal otherwise); fmv/ moved aside (the VP6 pre-event movie never decodes on 0.10.1).
-# ~5 s after the jump the rider is on the slope (~14 fps, cold shader cache); car8 then reset ~60 s in.
-wait_lit 150
-snap r0_title                  # "Press START button"
-press start 150
-sleep 6
-snap r1_autosave               # the autosave notice, "Okay"
+# Every press waits for ITS screen (wait_screen on a recorded frame, ssx_ref/: the operator's two route
+# presses recorded by route_rec.py on car8 2026-10-26, the preamble screens from the same day's runs) and
+# fires the moment it is there -- no sleep past a screen's arrival (operator: "the menus hold things up").
+# Thresholds: same screen across runs reads 1-2, the two dialogs read 7 against each other (so 5 there),
+# the Explore globe rotates (26 against itself, so 32). Preconditions: the progressed save (the game
+# resumes at EXPLORE > RANGE), Write Color Buffers OFF, fmv/ aside (Hunt_SSX_Mountain_20261026.md).
+wait_screen ssx_ref/title.png 150 10
+press_until start ssx_ref/autosave.png 30 6 5      # a dropped START is pressed again
+press_until cross ssx_ref/online_dialog.png 150 20 5  # the loading screen, then the dialog
 press cross 150
-sleep 110                      # the loading screen; the online-features dialog sits on it by now
-snap r2_online_dialog
-press cross 150                # OKAY
-sleep 30
-snap r3_explore                # EXPLORE > RANGE (the save's last screen)
+wait_screen ssx_ref/explore.png 60 32
+snap r3_explore
 press cross 243                # Start Run (the equipment card)
-snap r4_start_run
-sleep 101                      # the event load; the chopper card appears ~95 s in
+wait_screen ssx_ref/chopper.png 150 10
+snap r4_chopper
 press cross 232                # jump
 sleep 8
 snap r5_slope
