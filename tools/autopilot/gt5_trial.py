@@ -47,6 +47,8 @@ the wheel, e.g. while a menu route is being mapped): no launch, this trial is an
 
 Macro lines (one step each; # comments): `sleep S` · `press BTN[+BTN] [MS]` ·
 `hold K=V ... secs=S` (gtdrive's controls, e.g. r2=0.8 lx=-0.3) · `wait_lit [S]` ·
+`settle [MAX [QUIET]]` (after a press: on as soon as the screen changed, then held still and lit for QUIET s,
+default 1; MAX = the old sleep; with no press before it, only the stillness counts: the end of an intro movie) · `wait_motion [MAX]` (a load ends when the picture moves: the track flyover) ·
 `snap NAME` · `drive GTDRIVE-ARGS...` (the last step: hands the wheel to gtdrive.py -- the
 trial lets go of the controller seat, gtdrive takes it, the trial rejoins as an observer;
 gtdrive's output goes to OUT/drive.log) · `observe N` (the last step: let go of the wheel and
@@ -85,7 +87,10 @@ RPCS3_LOG = "/storage/.cache/rpcs3/RPCS3.log"
 TRIPWIRE = "/storage/etk_tripwire.log"
 GUEST_OOM = re.compile(r"lv2_memory::on_id_create\(\): Cannot allocate")
 GUEST_OOM_MIN = 50          # one failed alloc can be a probe; a loop is hundreds a second
-FAULT = re.compile(r"VM: Access violation|SYS: Emulation has been frozen|Unhandled exception|PPU: Trap")
+# "Segfault (reading|writing) location": the HOST's own SIGSEGV (car8 2026-10-25, GT6 on 0.10.0: a wild
+# write 1 s into the boot, logged ·F, then RPCS3 paused itself at flip 0 -- no guest-side line ever came)
+FAULT = re.compile(r"VM: Access violation|SYS: Emulation has been frozen|Unhandled exception|PPU: Trap"
+                   r"|Segfault (?:reading|writing) location")
 HUNT = os.path.join(HERE, "..", "hunt", "hunt.py")
 # the blackbox's own PON parser/decoder (pure functions; importing runs no daemon code)
 _bbspec = importlib.util.spec_from_file_location("blackbox_d", os.path.join(HERE, "..", "..", "bin", "blackbox_d.py"))
@@ -118,6 +123,11 @@ def parse_macro(text):
                 steps.append(("hold", ({k: float(v) for k, v in kv.items()}, secs)))
             elif verb == "wait_lit":
                 steps.append(("wait_lit", float(args[0]) if args else 120.0))
+            elif verb == "settle":
+                mx = float(args[0]) if args else 15.0
+                steps.append(("settle", (mx, float(args[1])) if len(args) > 1 else mx))
+            elif verb == "wait_motion":
+                steps.append(("wait_motion", float(args[0]) if args else 90.0))
             elif verb == "snap":
                 steps.append(("snap", args[0]))
             elif verb == "drive":
@@ -237,6 +247,74 @@ def boot_id(host):
     return out.strip() if rc == 0 and out.strip() else None
 
 
+# Frame-driven waits (car8 2026-10-25): a fixed sleep is the slowest case, and a boot that got faster
+# (0.10.1) or slower (a cold cache) shifted every press after it by a screen. `settle` presses on as
+# soon as the screen has answered: it changed from the frame before the last press, then held still
+# and lit; `wait_motion` ends a load the moment the track flyover moves. Their MAX is the old sleep.
+SETTLE_CHANGE, SETTLE_CHANGE_WAIT = 4.0, 3.0   # mean |dgray| vs the pre-press frame; give up waiting for it
+SETTLE_STILL, SETTLE_QUIET, SETTLE_LIT = 2.5, 1.0, 8.0
+MOTION, MOTION_SECS = 6.0, 1.0
+
+
+def small(rgb):
+    """64x36 grayscale (float) of a frame's RGB array: the unit the frame-driven waits compare."""
+    h, w = rgb.shape[:2]
+    g = rgb[::max(h // 36, 1), ::max(w // 64, 1)].mean(axis=2)
+    return g[:36, :64]
+
+
+def mad(a, b):
+    return float(abs(a - b).mean())
+
+
+def settle_step(frames, pre, max_s, clock, quiet=SETTLE_QUIET):
+    """Consume (t, small-frame) pairs until the screen answered and is still: returns
+    (reason, secs). `pre` = the frame before the press (None: no change needed)."""
+    t0, changed, prev, still = None, pre is None, None, None
+    for t, x in frames:
+        t0 = t if t0 is None else t0
+        if t - t0 >= max_s:
+            return "max", t - t0
+        if not changed:
+            changed = mad(x, pre) > SETTLE_CHANGE or t - t0 >= SETTLE_CHANGE_WAIT
+        elif prev is not None and mad(x, prev) < SETTLE_STILL and x.mean() > SETTLE_LIT:
+            still = t if still is None else still
+            if t - still >= quiet:
+                return "settled", t - t0
+        else:
+            still = None
+        prev = x
+    return "max", (clock() - t0) if t0 is not None else 0.0
+
+
+def motion_step(frames, max_s, clock):
+    """Consume (t, small-frame) pairs until the picture has moved for MOTION_SECS straight."""
+    t0, prev, moving = None, None, None
+    for t, x in frames:
+        t0 = t if t0 is None else t0
+        if t - t0 >= max_s:
+            return "max", t - t0
+        if prev is not None and mad(x, prev) > MOTION:
+            moving = t if moving is None else moving
+            if t - moving >= MOTION_SECS:
+                return "moving", t - t0
+        elif prev is not None:
+            moving = None
+        prev = x
+    return "max", (clock() - t0) if t0 is not None else 0.0
+
+
+def live_frames(c, stop):
+    """(t, small-frame) from the Pitlink tap until stop."""
+    while not stop.is_set():
+        try:
+            f = c.wait_frame(timeout=2.0)
+        except PitlinkError:
+            continue
+        if f is not None:
+            yield time.time(), small(f.rgb())
+
+
 def run_macro(c_holder, steps, out, log, stop):
     for verb, arg in steps:
         if stop.is_set():
@@ -246,7 +324,18 @@ def run_macro(c_holder, steps, out, log, stop):
             if verb == "sleep":
                 stop.wait(arg)
             elif verb == "press":
+                f = c.latest_frame()
+                c_holder["pre"] = small(f.rgb()) if f is not None else None
                 c.press(arg[0], ms=arg[1])
+            elif verb == "settle":
+                mx, quiet = arg if isinstance(arg, tuple) else (arg, SETTLE_QUIET)
+                why, secs = settle_step(live_frames(c, stop), c_holder.pop("pre", None), mx, time.time, quiet)
+                log(f"macro: settle {why} after {secs:.1f}s")
+                continue
+            elif verb == "wait_motion":
+                why, secs = motion_step(live_frames(c, stop), arg, time.time)
+                log(f"macro: wait_motion {why} after {secs:.1f}s")
+                continue
             elif verb == "hold":
                 c.hold(**arg[0])
                 stop.wait(arg[1])
@@ -367,6 +456,9 @@ def main():
     ap.add_argument("--lost-secs", type=float, default=20, help="link silent this long = check the car")
     ap.add_argument("--return-secs", type=float, default=600, help="dark longer than this = UNREACHABLE")
     ap.add_argument("--freeze-secs", type=float, default=90, help="flips stopped this long (after a lit frame) = FREEZE")
+    ap.add_argument("--lit-secs", type=float, default=600,
+                    help="no lit frame this long after the launch, game still running = FREEZE (never lit); "
+                         "cold first-lit on car8: GT5P +266 s, GT6 +406 s")
     a = ap.parse_args()
     a.game = a.game.upper()
     if a.host is None:
@@ -524,6 +616,15 @@ def main():
             with open(os.path.join(a.out, "dump.txt"), "w") as fh:
                 fh.write(dump)
             finish("FREEZE", 5, last_flip=last_flip, stopped_secs=round(now - flip_t))
+        # never lit: the freeze clock above needs a lit frame, so a core that stalls before its first
+        # frame (car8 2026-10-25: paused at flip 0 after a host segfault) would otherwise sit out --secs
+        if not lit and now - t0 > a.lit_secs and now - last_ok < a.lost_secs \
+                and (gsafe({"op": "running"}) or {}).get("running"):
+            dump = (gsafe({"op": "dump_threads", "timeout": 8}, {}, timeout=60) or {}).get("text", "")
+            with open(os.path.join(a.out, "dump.txt"), "w") as fh:
+                fh.write(dump)
+            finish("FREEZE", 5, last_flip=last_flip, never_lit=True,
+                   note=f"no lit frame within --lit-secs {a.lit_secs:.0f}")
         if now - last_log_check > 10 and now - last_ok < a.lost_secs:
             last_log_check = now
             try:

@@ -1,0 +1,43 @@
+# GT5P disc (BCUS98158) variant of gt5p_hsr_drift.macro (read that header): the disc plays an intro movie
+# after its first lit frame that the PSN build does not. car8 2026-10-25 (0.10.1, warm): lit at +41 s, a
+# 45 s wait pressed Start into the movie and the route ended on Race Mode with no race; the 0.10.0
+# baseline lit at +105 s, after the movie. A fixed 100 s was not enough either (warm lit at +6 s, the movie
+# still playing at +155 s), so the boot waits for the title by stillness.
+settle 240 3                  # the intro movie (Start does not skip it; >150 s past the first lit frame): on when
+                              # the picture holds still and lit for 3 s -- the title screen
+snap r1_title
+press start
+settle 12                     # -> My Page (cursor rests on Arcade; the wake below covers a hidden bar)
+snap r2_my_page
+press l3                      # wake: GT5P menus auto-hide when idle and the first press only reveals them
+sleep 0.5                     # (car8 2026-10-25: a cross on a hidden My Page / a right on a hidden Race Mode
+press cross                   # bar was eaten); L3 does nothing on a visible menu
+settle 4                      # -> Track Select (rests on High Speed Ring); menus load < 3 s, so a short MAX
+snap r3_track_select          # keeps an animated background from idling the bar into hiding
+press l3
+sleep 0.5
+press cross
+settle 4                      # -> Race Mode, Time Trial highlighted
+snap r4_race_mode
+press l3
+sleep 0.5
+press right
+settle 3                      # -> Drift Trial highlighted
+snap r5_drift_trial
+press l3
+sleep 0.5
+press cross
+settle 6                      # -> Driving Options (cursor on OK: no wake press there, a d-pad would move it)
+snap r6_driving_options
+press cross                   # OK -> records / LOADING -> GT logo -> the track loads
+wait_motion 90                # the flyover moves (10-24: ~40 s)
+snap r7_flyover
+press start                   # Start brings up the menu over the flyover ...
+sleep 1.0
+press cross                   # ... X then X within 1.5 s (the menu auto-hides into the flyover)
+sleep 1.0
+press cross
+sleep 5
+snap r8_start
+drive --wait-race 120 --mt --map-y1 155 --secs 600 --restart-every 60 --max-restarts 20 --snap-every 30
+exit                          # waits for gtdrive, takes the wheel, Pitlink EXIT -> CLEAN row

@@ -1380,6 +1380,11 @@ Root cause and fix: §2.4).
   Common case `./forge.sh image`. A run that finishes in seconds built nothing. Base-bump
   mints: node fetch first (`armsx3` remote) + the preflight UNKNOWN-changes reset — walk
   §A.1's mint-loop list before the handoff.
+- **Core across titles (car8 lift):** `tools/autopilot/core_matrix.sh OUT SERIAL:CORE:MACRO:N|A-B ...`
+  pins each run's core in car8's `core_map.tsv`, cools, runs one `gt5_trial`, records ledger row + new
+  `cores/` files in `OUT/matrix.tsv`, restores the map. Never kill it mid-run (the trial survives it, the
+  map is restored under the live game). GT5P route = `gt5p_hsr_drift.macro` / `gt5p_disc_hsr_drift.macro`
+  (frame-driven `settle`/`wait_motion` + L3 wake: GT5P menus auto-hide). `CoreXTitle_0101_20261025.md`.
 
 ---
 

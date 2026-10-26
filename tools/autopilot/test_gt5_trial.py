@@ -320,6 +320,45 @@ check("thread dump banked", os.path.exists(os.path.join(out, "dump.txt")), True)
 code, v, _ = run_scenario(freeze_at=120, lit_frames=False, secs=400)
 check("no lit frame yet (PPU compile / loading) -> never FREEZE", (v.get("verdict"), code), ("SURVIVED", 0))
 
+print("\n[5c] never lit, game still up (car8 2026-10-25: host segfault 1 s in, RPCS3 paused at flip 0)")
+code, v, out = run_scenario(freeze_at=0, lit_frames=False, secs=900)
+check("no lit frame within --lit-secs -> FREEZE, exit 5, not --secs SURVIVED",
+      (v.get("verdict"), code, v.get("never_lit")), ("FREEZE", 5, True))
+check("ended at the lit ceiling, not the --secs one", 600 <= v.get("secs", 0) < 900, True)
+check("thread dump banked", os.path.exists(os.path.join(out, "dump.txt")), True)
+check("the host SIGSEGV line is a FAULT",
+      bool(gt.FAULT.search("·F 0:00:01.021592 {TID: 9299} SYS: \nSegfault writing location 0063a24cd7a37e1a at 0000ffff1404d090.")),
+      True)
+
+print("\n[5d] frame-driven waits: settle / wait_motion (car8 2026-10-25)")
+import numpy as _np
+_A, _B, _K = _np.full((36, 64), 60.0), _np.full((36, 64), 120.0), _np.zeros((36, 64))
+def _seq(*runs):      # (frame, seconds) runs at 10 Hz
+    out, t = [], 0.0
+    for fr, secs in runs:
+        for _ in range(int(secs * 10)):
+            out.append((t, fr)); t += 0.1
+    return out
+_clk = lambda: 0.0
+why, secs = gt.settle_step(iter(_seq((_A, 0.5), (_B, 3))), _A, 15, _clk)
+check("lagging transition: waits for the change, then 1 s still -> settled ~1.5 s", (why, abs(secs - 1.5) <= 0.15), ("settled", True))
+why, secs = gt.settle_step(iter(_seq((_A, 0.3), (_K, 2), (_B, 3))), _A, 15, _clk)
+check("a fade through black is not 'settled' (still but dark)", (why, secs > 2.2), ("settled", True))
+why, secs = gt.settle_step(iter(_seq((_A, 6))), _A, 15, _clk)
+check("no visible change (a cursor hop): gives up waiting for it after 3 s, then settles", (why, abs(secs - 4.0) <= 0.15), ("settled", True))
+_noise = [(_np.full((36, 64), 60.0 + 20 * (i % 2))) for i in range(200)]
+why, secs = gt.settle_step(iter([(i * 0.1, f) for i, f in enumerate(_noise)]), None, 6, _clk)
+check("a screen that never holds still ends at MAX (the old sleep)", why, "max")
+why, secs = gt.motion_step(iter(_seq((_K, 5)) + [(5 + i * 0.1, f) for i, f in enumerate(_noise)]), 90, _clk)
+check("wait_motion: a static load, then the flyover moves -> on after 1 s of motion", (why, round(secs, 1)), ("moving", 6.0))
+check("settle / wait_motion parse with defaults", gt.parse_macro("settle\nsettle 8\nwait_motion\n"),
+      [("settle", 15.0), ("settle", 8.0), ("wait_motion", 90.0)])
+check("settle MAX QUIET parses as a pair", gt.parse_macro("settle 240 3\n"), [("settle", (240.0, 3.0))])
+why, secs = gt.settle_step(iter(_seq((_A, 1.5), (_B, 1.5), (_A, 1.5), (_K, 4), (_B, 5))), None, 240, _clk, quiet=3)
+check("an intro movie (1.5 s shots, a black fade) is not the title: QUIET 3 waits for the still lit screen",
+      (why, abs(secs - 11.6) <= 0.15), ("settled", True))
+check("small(): 360x640 RGB -> 36x64", gt.small(_np.zeros((360, 640, 3))).shape, (36, 64))
+
 print("\n[5b] the guest runs its memory dry (0.9.1 pre-menu)")
 code, v, out = run_scenario(oom_at=60)
 check("verdict GUEST_OOM, exit 8", (v.get("verdict"), code), ("GUEST_OOM", 8))
