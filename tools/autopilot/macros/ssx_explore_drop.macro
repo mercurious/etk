@@ -1,0 +1,17 @@
+# SSX (NPUB30892): Explore -> Start Run -> the chopper -> the drop, as the operator drove it on car8
+# 2026-10-26 (recorded by tools/autopilot/route_rec.py, state/routes/ssx_explore: two presses, a frame each).
+# Preconditions: the progressed save (BLUS308490000A / BLUS308490100, towed from car12) so the game boots
+# straight into EXPLORE > RANGE; Write Color Buffers OFF (the VKTextureCache.cpp:1201 fatal otherwise);
+# fmv/ moved aside (the VP6 pre-event movie never decodes on 0.10.1, Hunt_SSX_Mountain_20261026.md).
+# Snap 000 = the equipment card "Start Run" (Off the Grid: RACE IT); snap 001 = the rider in the chopper
+# ("RACE IT: build your boost..."); ~5 s after the second press the rider is on the slope at ~14 fps
+# (fresh shader cache). car8 then BROWNED OUT (PMIC UVLO, blackbox pon verdict) ~60 s into the run.
+wait_lit 120
+sleep 20
+snap r0_explore
+press cross 243                # Start Run (the equipment card)
+snap r1_start_run
+sleep 101                      # the event load; the chopper card appears ~95 s in
+press cross 232                # jump
+sleep 8
+snap r2_slope
