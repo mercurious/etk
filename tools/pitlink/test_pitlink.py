@@ -573,6 +573,60 @@ class TestTools(unittest.TestCase):
         r = self.cli("--addr", "127.0.0.1:1", "status", ok=False)
         self.assertNotEqual(r.returncode, 0)
 
+    def test_serve_holds_the_wheel_and_relays(self):
+        """`serve` keeps the wheel; other runs ride through it (no second HELLO, so a window that
+        HELLOs meanwhile is an observer and keeps its frames); --direct lands as an observer."""
+        wheel = f"@etk-pitlink-wheel-test-{os.getpid()}"
+        env = dict(self.env, PITLINK_WHEEL=wheel)
+        p = subprocess.Popen([sys.executable, os.path.join(HERE, "pitlink.py"), "serve"], env=env,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            line = p.stdout.readline()
+            self.assertIn("holding the wheel", line)
+
+            def cli(*args, ok=True):
+                r = subprocess.run([sys.executable, os.path.join(HERE, "pitlink.py"), *args], env=env,
+                                   capture_output=True, text=True, timeout=30)
+                if ok:
+                    self.assertEqual(r.returncode, 0, r.stderr)
+                return r
+            # the holder is the ONLY controller: a direct run is an observer, control refused
+            st = json.loads(cli("--direct", "status").stdout)
+            self.assertEqual(st["role"], "observer")
+            r = cli("--direct", "press", "cross", ok=False)
+            self.assertIn("observer", r.stderr)
+            # relayed runs act as the controller and print exactly what the CLI prints
+            st = json.loads(cli("status").stdout)
+            self.assertEqual(st["role"], "controller")
+            self.assertIn("flips", cli("press", "cross", "--ms", "50").stdout)
+            self.assertTrue(wait_until(lambda: any(b & (1 << 14) for _, b in self.car.hist())))
+            with tempfile.TemporaryDirectory() as d:
+                r = subprocess.run([sys.executable, os.path.join(HERE, "pitlink.py"), "frame", "rel.png"],
+                                   env=env, cwd=d, capture_output=True, text=True, timeout=30)
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertIn("flip=", r.stdout)
+                with open(os.path.join(d, "rel.png"), "rb") as f:  # relative path resolved at the caller
+                    self.assertEqual(f.read(8), b"\x89PNG\r\n\x1a\n")
+            # an error on the holder comes back as the caller's exit status + stderr
+            r = cli("ram", "0xdead0000", "4", ok=False)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("unreadable", r.stderr)
+            r = cli("serve", ok=False)  # never nests
+            self.assertNotEqual(r.returncode, 0)
+            # a one-shot hold keeps its CLI semantics through the relay: the car's dead-man ends it
+            cli("hold", "cross=1", "--ttl", "600")
+            self.assertTrue(wait_until(lambda: self.car.agent[0].pressure_of("cross") > 0))
+            self.assertTrue(wait_until(lambda: self.car.agent[0].is_neutral(), timeout=3.0))
+            # a timed hold runs on the holder: the caller waits for it, the pad is released after
+            t0 = time.monotonic()
+            self.assertIn("released", cli("hold", "cross=1", "--secs", "0.5").stdout)
+            self.assertGreaterEqual(time.monotonic() - t0, 0.5)
+            self.assertTrue(wait_until(lambda: self.car.agent[0].is_neutral()))
+        finally:
+            p.terminate()
+            p.wait(timeout=10)
+        self.assertEqual(json.loads(self.cli("status").stdout)["role"], "controller")  # wheel freed
+
     def test_mcp(self):
         p = subprocess.Popen([sys.executable, os.path.join(HERE, "mcp_server.py")], env=self.env,
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)

@@ -63,6 +63,19 @@ that (`gtdrive.py`, `pitlink.py` control ops, `gt5_trial.py`). So beside a hunt 
 taken the wheel, run **`--panel`** (it never opens PLNK at all) or start ONBOARD after the driver holds
 the wheel. In-game snaps use the observer's `latest_frame()`/`wait_frame()` only.
 
+**Beside the Engineer's one-shot taps: hold the wheel with `pitlink.py serve`.** A `tools/pitlink/pitlink.py press`
+takes and drops the wheel at every tap, so between taps nobody holds it and the default window refuses the
+wheel its HELLO lands: the game feed never shows (2026-10-26, SSX on car8). Run the held wheel once, in the
+background, and keep it up for the session:
+
+```bash
+python3 tools/pitlink/pitlink.py serve &
+```
+
+It HELLOs once and stays the controller; every later `pitlink.py` run on this host is relayed through it (same
+output, same exit status), so plain `./onboard` lands as an observer and keeps the game's frames the whole time.
+Quit it (Ctrl-C / kill) to free the wheel. `--direct` on a run bypasses the relay.
+
 **`--wheel` vs the default.** The default (refuse the wheel, retry every 5 s) is for running beside a
 hunt: ONBOARD never stands between a driver and the wheel for longer than that one window. But with no
 driver at all -- a headless car (car8) running a game with nobody on PLNK -- the default shows nothing in

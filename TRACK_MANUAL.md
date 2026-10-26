@@ -1368,7 +1368,7 @@ Root cause and fix: §2.4).
   `survey`/`files` unprivileged, `scan`/`write` need `sudo` → the operator runs them;
   verdict card + `state/card_doctor/<run>/report.md`; USB exposes no SD health registers,
   so health is MEASURED — errors, two-pass hash agreement, latency tail, write class;
-  discriminate reader-vs-card with `--baseline` from a known-good card in the same reader) · **moving a card between cars:** `tools/card_transplant.py plan|apply` · **moving a game between cars:** `tools/tow.sh --from A --to B ID` (§0 TOW; USB-C car to car, WiFi fallback) · **seeing a car's screen:** `./onboard [--panel|--wheel|--snap OUT.png|--ring DIR]` (§0 ONBOARD; the car on the USB cable) · **encoder up?** `bin/etk_vpu_fw.sh verify` on the car
+  discriminate reader-vs-card with `--baseline` from a known-good card in the same reader) · **moving a card between cars:** `tools/card_transplant.py plan|apply` · **moving a game between cars:** `tools/tow.sh --from A --to B ID` (§0 TOW; USB-C car to car, WiFi fallback) · **seeing a car's screen:** `./onboard [--panel|--wheel|--snap OUT.png|--ring DIR]` (§0 ONBOARD; the car on the USB cable; beside the Engineer's one-shot `pitlink.py` taps, first `python3 tools/pitlink/pitlink.py serve &` — the held wheel — or the window refuses the wheel between taps and shows nothing in-game) · **encoder up?** `bin/etk_vpu_fw.sh verify` on the car
   (§0 CARD TRANSPLANT; apply needs `sudo` → the operator runs it).
 - **BusyBox laws (POSIX only):** no `--long-options`, `grep -P`, `find -printf`,
   `find -regex`/complex `-exec`, `du -h` (use `-k`/`-m`), `stat --format` (use
