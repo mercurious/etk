@@ -1228,7 +1228,16 @@ list too long` → one-line fix onto the live wedge, Sentry resurrected mid-game
   a Gold Trophy — is variance, not a cure (bit us twice). **N≥3 before any crown**;
   contemporaneous control; saturated-vs-saturated.
 - **Bake sessions lie:** a 7,423-shader run logged fps 30.8 that was really compile-stall
-  cadence (real warm run: 20.0). Only warm runs (shd≈0) count for feel/fps.
+  cadence (real warm run: 20.0). Only warm runs (shd≈0) count for feel/fps. **They lie about
+  crashes too (2026-10-27):** the first launches of a new core on a cold boot died while rebuilding
+  the driver pipeline cache and the first warm run looked like a cure; it was not.
+- **A GPU fault is not a death (2026-10-27).** The keepalive keeps the context on every a6xx fault;
+  the emu dies only when RPCS3's FIFO never resumes (ETK RSX watchdog → ledger `RECOVERY`); a rescued
+  fault is `SURVIVED` with `r=` rescues. Judge runs by those columns, never by "a fault line appeared".
+  **Read the title's own baseline first:** GT5P on car12 carries 3–10 rescued faults per 10–30 min
+  session (~1 per 2–3 min); HD Concept's distinguishing fact is that its faults rarely rescue (FIFO
+  empty after the reset) — dossier `Audio_Crunch_HDConcept_20261027.md`. The ledger's epoch column is
+  the row's WRITE time (session END).
 - **Attribution outranks narrative:** verify `active_core`/`tune_tag` names the test
   BEFORE interpreting a run. An unattributed row is a diary entry, not evidence.
 - **Attract-mode runs are invalid for crash-class studies** — the fault is
