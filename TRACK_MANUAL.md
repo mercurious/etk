@@ -1238,7 +1238,12 @@ list too long` → one-line fix onto the live wedge, Sentry resurrected mid-game
   fork-side counters (`aud=` col). **So are whole-block drops** (ARMSX3 `14e740513`): a
   5.33 ms block that does not fit the ring is discarded — a click with `ur=0`, the GT5P
   signature. Drop-counter builds append `drop=` (per guest boot, after `buf_ms`); a cell
-  without it is UNKNOWN, never 0. `etk_dyno.py --audio` prints DROP/min over the carrying
+  without it is UNKNOWN, never 0. **`sil=` is the sub-native-fps crunch** (car12
+  2026-10-27, GT HD Concept at ~51 fps: `sil` ~40/s tracking the frame deficit, `ur`/`drop` 0;
+  the game fills audio once per frame and stock cellAudio ships every unwritten 5.33 ms
+  period as silence, which also keeps the ring full so time stretching never engages).
+  Core 0.10.2 conceals those periods (`GTK_AUDIO_CONCEAL`, kill-switch `=0`) and appends
+  `conc=` after `drop=`; a cell without it is a pre-conceal build, never 0. `etk_dyno.py --audio` prints DROP/min over the carrying
   cells only, with their own N; `tools/test_audio_stat.py` pins both line formats.
 - **Observability bias (operator doctrine, 2026-06-12):** shader-storm pain filters which
   games stay in player rotation, so community evidence systematically under-represents

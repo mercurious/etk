@@ -74,6 +74,11 @@ OLD_LINE = ("up_s=1804.1 ur=0 urb=0 skip=43 sil=252 ratio=1.000 rmin=1.000 "
 NEW_LINE = OLD_LINE + " drop=3"
 OLD_KEYS = ["up_s", "ur", "urb", "skip", "sil", "ratio", "rmin", "enq_ms", "buf_ms"]
 NEW_KEYS = OLD_KEYS + ["drop"]
+# 0.10.2 (GTK_AUDIO_CONCEAL): conc= appended after drop= -- untouched periods shipped
+# as concealment instead of silence (a subset of sil=). Same rule: every earlier key
+# keeps its place; a cell without conc= is a pre-conceal build, not zero.
+CONC_LINE = NEW_LINE + " conc=17"
+CONC_KEYS = NEW_KEYS + ["conc"]
 
 
 def keys(line):
@@ -86,6 +91,9 @@ check("old line carries the nine aud1 keys in order", keys(OLD_LINE), OLD_KEYS)
 check("new line = old keys, then drop", keys(NEW_LINE), NEW_KEYS)
 check("new line's first nine tokens are the old line verbatim",
       NEW_LINE.split()[:9], OLD_LINE.split())
+check("conceal line = new keys, then conc", keys(CONC_LINE), CONC_KEYS)
+check("conceal line's first ten tokens are the drop line verbatim",
+      CONC_LINE.split()[:10], NEW_LINE.split())
 
 producer = os.environ.get("ETK_AUDIO_PRODUCER")
 if producer:
@@ -95,8 +103,8 @@ if producer:
     m = re.search(r'"(up_s=[^"]*)\\n"', src)
     check_true("producer carries the rpcs3_audio_stat format string", m)
     if m:
-        check("producer format keys == NEW_KEYS",
-              [t.partition("=")[0] for t in m.group(1).split()], NEW_KEYS)
+        check("producer format keys == CONC_KEYS",
+              [t.partition("=")[0] for t in m.group(1).split()], CONC_KEYS)
 else:
     print("    skip producer pin (set ETK_AUDIO_PRODUCER=<cellAudio.cpp|patch>)")
 
@@ -129,7 +137,7 @@ def postmortem_aud(line, duration):
         return r.stdout
 
 
-for label, line in (("old", OLD_LINE), ("new", NEW_LINE)):
+for label, line in (("old", OLD_LINE), ("new", NEW_LINE), ("conceal", CONC_LINE)):
     folded = line.replace(" ", ",")
     check(f"{label} line folds into one ledger token, every byte kept",
           postmortem_aud(line, 1810), folded)
@@ -149,6 +157,12 @@ check("old cell parses to the nine keys", sorted(old_kv), sorted(OLD_KEYS))
 check("new cell = old cell's values + drop",
       {k: v for k, v in new_kv.items() if k != "drop"}, old_kv)
 check("new cell's drop value", new_kv.get("drop"), 3.0)
+conc_kv = dyno.parse_kv(CONC_LINE.replace(" ", ","))
+check("conceal cell = drop cell's values + conc",
+      {k: v for k, v in conc_kv.items() if k != "conc"}, new_kv)
+check("conceal cell's conc value", conc_kv.get("conc"), 17.0)
+check("old and drop cells carry no conc (pre-conceal builds, never 0)",
+      ("conc" in old_kv, "conc" in new_kv), (False, False))
 
 rate = getattr(dyno, "aud_drop_per_min", None)
 check_true("dyno exposes aud_drop_per_min", rate is not None)
