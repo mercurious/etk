@@ -153,6 +153,9 @@ ETK_PATCH_FETCH="1"
 # here for normal play — the #11912 road-flicker FIX is ON BY DEFAULT.
 # Diagnostic switches, if ever asked for:
 #   GTK_REMAP0_ONE=0       # kill-switch: revert to stock decode (flicker returns)
+#   GTK_AUDIO_CONCEAL=0    # kill-switch (core 0.10.2+): stock silence for the audio periods a
+#                          # slow game never writes (the sub-native-fps crunch returns)
+#   GTK_AUDIO_CONCEAL_MAX=N # run cap in 5.33 ms blocks before concealment yields to silence (1-64, default 8)
 #   GTK_REMAP0_IDENTITY=1  # identity-crossbar A/B variant of the fix
 #   GTK_PROBE_11912=1      # dev TIU-transition log
 # Leave EMPTY to inject nothing; clearing it removes the profile.d entry on
