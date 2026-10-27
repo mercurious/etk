@@ -454,7 +454,24 @@ if lane_selected rpcs3; then
             TREE_STATE="hunt worktree, prior state (the lane banks its diff before the reset)"
         else
             FSSH "cd '$FORGE_RPCS3_TREE' && git diff > \$HOME/$RRUNDIR/preflight-dirty.diff" 2>/dev/null
-            MISSING_PRE="$MISSING_PRE rpcs3:tree-has-UNKNOWN-changes(banked:~/$RRUNDIR/preflight-dirty.diff)"
+            # A pin bump leaves the tree at the PREVIOUS pin's resting state (2026-10-27: the
+            # 0.10.1 tree under a 0.10.2 pin failed here as UNKNOWN and cost a run). The lane
+            # resets to base before it applies anyway, so a tree that is exactly base + one of
+            # the fork's committed -dev patches is known, not unknown: reverse-check the newest
+            # few other cumulative patches on the node (the same test the pin just failed; a
+            # sha of the banked diff is NOT reliable -- git's index lines differ by tree).
+            _prev=""
+            for _p in $(ls -t "$(dirname "$FORGE_RPCS3_PATCH")"/*-dev.patch 2>/dev/null | grep -vxF "$FORGE_RPCS3_PATCH" | head -3); do
+                FTAR -C "$(dirname "$_p")" "$(basename "$_p")" | FPUSH_TAR "$RRUNDIR"
+                if FSSH "cd '$FORGE_RPCS3_TREE' && git apply -R --check \$HOME/$RRUNDIR/$(basename "$_p") 2>/dev/null"; then
+                    _prev=$(basename "$_p"); break
+                fi
+            done
+            if [ -n "$_prev" ]; then
+                TREE_STATE="patch-applied (previous pin $_prev; the lane resets to base)"
+            else
+                MISSING_PRE="$MISSING_PRE rpcs3:tree-has-UNKNOWN-changes(banked:~/$RRUNDIR/preflight-dirty.diff)"
+            fi
         fi
     fi
     say "rpcs3 tree: $TREE_STATE"
