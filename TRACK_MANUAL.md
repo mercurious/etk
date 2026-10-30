@@ -514,7 +514,14 @@ A local mint never takes a pinned name: the node has no fingerprint history to S
 Don't split an A/B's arms across the two nodes. **Not host-tuned:** the mint path passes
 `USE_NATIVE_INSTRUCTIONS=OFF` and an explicit `armv8.2-a+dotprod+fp16`, so an M1 cannot leak
 features the SM8250 lacks. By the letter of §1.1 a build here is still a mint: the operator runs
-it (bringing the empty VM up is not a build).
+it (bringing the empty VM up is not a build). **Turnip lane PROVEN 2026-10-30** (first local mint,
+run 20261030-183558): 26.2.3 from the seeded tree vs etk-cloud's own `26.2.3_gtk_0.8`, same tree,
+same container, same `git-781275e482`: 10,758 of 10,766 symbols identical in name and size; the 8
+that differ are all `snippet__instruction_N` (+5 vs +6 erratum 843419 stubs follow). Mechanism, and
+part of why Mesa is "not byte-reproducible": `src/compiler/isaspec/encode.py` walks a hash-ordered
+collection, so `encode.h` changes with `PYTHONHASHSEED` (seeds 1/2/3 and the real build all differ,
+yet sort to the same lines: reordering only). rpcs3, kernel, image and chiaki/wl-mirror have not
+built on this node yet.
 
 **IP no longer drifts (2026-08-30).** etk-cloud's public address used to be an
 Oracle *ephemeral* IP: it was reassigned on every stop/start, so `ssh etk-cloud`
