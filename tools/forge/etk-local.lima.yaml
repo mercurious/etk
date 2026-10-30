@@ -1,0 +1,43 @@
+# etk-local -- a build node on this Mac, shaped like etk-cloud (tools/forge/local_node.sh).
+# Same OS, arch, user and home as the Oracle node, so forge.sh, the lanes and provision_node.sh
+# run against it unchanged through an ssh alias. Bigger than the A1 (4 cores / 23 GB / 145 GB).
+vmType: vz
+arch: aarch64
+cpus: 8
+memory: 32GiB
+disk: 150GiB          # sparse: uses what the builds use, up to this
+images:
+  - location: https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img
+    arch: aarch64
+# NO host mounts, on purpose. Everything builds on the VM's own ext4: this Mac's APFS is
+# case-insensitive (a kernel tree does not survive that), and the §A.1 colima-virtiofs trap class
+# stays closed. It also keeps etk.conf (PAT) and the game dumps out of the build box.
+mounts: []
+containerd:
+  system: false
+  user: false
+user:
+  name: ubuntu
+  home: /home/ubuntu
+ssh:
+  localPort: 60022    # fixed, so the `Host etk-local` alias survives a restart
+  loadDotSSHPubKeys: false
+  forwardAgent: false
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux
+      export DEBIAN_FRONTEND=noninteractive
+      command -v docker >/dev/null || {
+          apt-get update -qq
+          apt-get install -y -qq docker.io rsync git curl python3 xz-utils
+      }
+      usermod -aG docker ubuntu
+      systemctl enable --now docker
+probes:
+  - description: docker is up and ubuntu can reach it
+    script: |
+      #!/bin/bash
+      set -eu
+      timeout 600 bash -c 'until sudo -u ubuntu -g docker docker info >/dev/null 2>&1; do sleep 3; done'

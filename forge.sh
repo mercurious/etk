@@ -35,7 +35,8 @@
 #   ./forge.sh --dry-run          # preflight + would-build report, no builds
 #   ./forge.sh --status           # reprint the last/live run's lane states
 #   ./forge.sh --force            # rebuild even if fingerprints are fresh
-#   ./forge.sh --local            # colima fallback (compact; node down / IP moved)
+#   ./forge.sh --local            # build on the VM on this Mac (etk-local), not etk-cloud:
+#                                 # tools/forge/local_node.sh; never over a pinned artifact name
 #   ./forge.sh --verbose | -v     # raw output, no TUI (this is also the CI path)
 #   ./forge.sh --hunt <id> rpcs3  # a HUNT mint (docs/AUTONOMY_SPEC.md §3.4): only under a
 #                                 # valid hunt grant, run by tools/hunt/hunt.py mint
@@ -66,6 +67,7 @@ G='\033[0;32m'; R='\033[0;31m'; Y='\033[1;33m'; C='\033[0;36m'; N='\033[0m'
 
 # --- FORGE knobs (etk.conf may override; defaults reproduce the v0.8.4 stage) ---
 FORGE_HOST="${FORGE_HOST:-etk-cloud}"
+FORGE_LOCAL_HOST="${FORGE_LOCAL_HOST:-etk-local}"   # the Lima VM (tools/forge/local_node.sh)
 FORGE_RPCS3_TREE="${FORGE_RPCS3_TREE:-/home/ubuntu/rpcs3}"
 FORGE_RPCS3_BASE="${FORGE_RPCS3_BASE:-a1deb2921}"
 FORGE_RPCS3_FORK="${FORGE_RPCS3_FORK:-$HOME/etk-rpcs3-gtk}"
@@ -122,6 +124,10 @@ for a in "$@"; do
     esac
 done
 [ "$_want_hunt" = 1 ] && { echo "--hunt needs a grant id" >&2; exit 2; }
+# The local node is a build host like any other, reached the same way. MODE only remembers
+# that it is local: FORGE_HOST=etk-local gets the same gates as --local.
+[ "$MODE" = local ] && FORGE_HOST="$FORGE_LOCAL_HOST"
+[ "$FORGE_HOST" = "$FORGE_LOCAL_HOST" ] && MODE=local
 
 # --- HUNT MODE (docs/AUTONOMY_SPEC.md §3.4) ---------------------------------
 # A hunt mint is the one forge run the Engineer may start, and only through
@@ -188,15 +194,11 @@ fsize() { wc -c < "$1" | tr -d ' '; }
 # ssh with a shared control socket: the poll loop ticks every ~8 s and must not
 # pay a full handshake per tick.
 SSH_OPTS="-o BatchMode=yes -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=$HOME/.ssh/forge-%r@%h-%p -o ControlPersist=600"
-FSSH() {
-    if [ "$MODE" = local ]; then bash -c "$1"
-    else # shellcheck disable=SC2086
-         ssh $SSH_OPTS "$FORGE_HOST" "$1"; fi
+FSSH() {  # shellcheck disable=SC2086
+    ssh $SSH_OPTS "$FORGE_HOST" "$1"
 }
-FPUSH_TAR() {  # stream a tar (stdin) into a node-side dir
-    if [ "$MODE" = local ]; then mkdir -p "$HOME/$1" && tar -xf - -C "$HOME/$1"
-    else # shellcheck disable=SC2086
-         ssh $SSH_OPTS "$FORGE_HOST" "mkdir -p \$HOME/$1 && tar -xf - -C \$HOME/$1"; fi
+FPUSH_TAR() {  # stream a tar (stdin) into a node-side dir; shellcheck disable=SC2086
+    ssh $SSH_OPTS "$FORGE_HOST" "mkdir -p \$HOME/$1 && tar -xf - -C \$HOME/$1"
 }
 # macOS bsdtar writes xattr headers GNU tar warns about on every push — strip.
 FTAR() { COPYFILE_DISABLE=1 tar --no-xattrs -cf - "$@"; }
@@ -328,6 +330,23 @@ CERT_KSHA=$(_manifest_sha kernel)
 CERT_KREL=$(sed -n '/"kernel": {/,/}/p' "$REPO_ROOT/config/gtk_stack.json" | sed -n 's/.*"kernel_release": "\([^"]*\)".*/\1/p' | head -1)
 CERT_ASHA=$(_manifest_sha rpcs3)
 CERT_TSHA=$(_manifest_sha turnip)
+# A LOCAL NODE NEVER MINTS OVER A PINNED NAME. stage_artifact replaces the file at that name
+# and the rig's pins are shas: same name, different bytes (kernel and Mesa are not reproducible
+# across hosts, §A.1), and a kernel's failure mode is a silent black screen. The local node has
+# no fingerprint history to SKIP on, so a bare `--local kernel` would do exactly that. A new
+# build gets a new name (FORGE_KERNEL_VER, FORGE_RPCS3_ARTIFACT, FORGE_TURNIP_GTKVER).
+if [ "$MODE" = local ]; then
+    _pinned=""
+    lane_selected kernel && [ "$KNAME" = "$CERT_KNAME" ] && _pinned="$_pinned $KNAME"
+    lane_selected rpcs3 && [ "$FORGE_RPCS3_ARTIFACT" = "$CERT_ANAME" ] && _pinned="$_pinned $FORGE_RPCS3_ARTIFACT"
+    if lane_selected turnip; then
+        for _v in $FORGE_TURNIP_VERS; do
+            _t="etk_turnip_rocknix_${_v}_gtk_${FORGE_TURNIP_GTKVER}.so"
+            case " $CERT_TCAT " in *" $_t:"*) _pinned="$_pinned $_t" ;; esac
+        done
+    fi
+    [ -z "$_pinned" ] || tui_fail "local node: these names are pinned by the release, so a local mint would replace certified bytes:$_pinned -- give the build a new name"
+fi
 if lane_selected image; then
     for _p in "kernel:$CERT_KNAME" "rpcs3:$CERT_ANAME" "turnip:$CERT_TNAME"; do
         [ -n "${_p#*:}" ] || tui_fail "gtk_stack.json has no ${_p%%:*} asset — cannot bake an image"
@@ -354,13 +373,14 @@ fi
 tui_step_progress 0 15
 
 # node reachability — the ephemeral-IP trap gets the loud remediation
-if [ "$MODE" = cloud ] && ! FSSH true 2>/dev/null; then
+if ! FSSH true 2>/dev/null; then
     tui_cleanup
     echo -e "${R}FATAL: build host '$FORGE_HOST' unreachable.${N}" >&2
+    [ "$MODE" = local ] && { echo "  Start it: tools/forge/local_node.sh up" >&2; exit 2; }
     echo    "  The IP is RESERVED (2026-08-30), so it no longer drifts. Likelier:" >&2
     echo    "  the instance is stopped, or it was REBUILT and its new host key fails" >&2
     echo    "  BatchMode — ssh-keygen -R the address, then one interactive ssh." >&2
-    echo    "  A rebuilt node: tools/forge/provision_node.sh. Or --local (colima)." >&2
+    echo    "  A rebuilt node: tools/forge/provision_node.sh. Or --local (the VM on this Mac)." >&2
     exit 2
 fi
 tui_step_progress 0 30
@@ -827,16 +847,15 @@ run_stager() {  # <name> <script> [args]
 }
 if lane_selected chiaki || lane_selected wlmirror; then
     tui_step_start 4
-    STG_ARGS=""; [ "$MODE" = local ] && STG_ARGS="--local"
+    # the stagers default to etk-cloud: they build on whichever node this run is on
+    export CHIAKI_BUILD_HOST="$FORGE_HOST" WLM_BUILD_HOST="$FORGE_HOST"
     OK4=1
     if lane_selected chiaki; then
-        # shellcheck disable=SC2086
-        run_stager chiaki tools/rocknix-bin/build_chiaki.sh $STG_ARGS || OK4=0
+        run_stager chiaki tools/rocknix-bin/build_chiaki.sh || OK4=0
         tui_step_progress 4 50
     fi
     if lane_selected wlmirror; then
-        # shellcheck disable=SC2086
-        run_stager wl-mirror tools/rocknix-bin/build_wl_mirror.sh $STG_ARGS || OK4=0
+        run_stager wl-mirror tools/rocknix-bin/build_wl_mirror.sh || OK4=0
     fi
     [ "$OK4" = 1 ] && tui_step_done 4
 fi

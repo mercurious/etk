@@ -438,6 +438,7 @@ PADDOCK_REPO=""
 # Uncomment to override per release cycle:
 #   FORGE_HOST="etk-cloud"            # ~/.ssh/config alias (IP is EPHEMERAL —
 #                                     # re-read from the Oracle console on stop/start)
+#   FORGE_LOCAL_HOST="etk-local"      # the VM on this Mac: ./forge.sh --local (tools/forge/local_node.sh)
 #   FORGE_RPCS3_BASE="a1deb2921"      # upstream base commit the patch applies to
 #   FORGE_RPCS3_PATCH=""              # empty = newest patches/*-dev.patch in the fork
 #   FORGE_RPCS3_ARTIFACT="rpcs3-etk_gtk-edition-0.8.5_v0.0.41-19638-a1deb2921_linux_aarch64.AppImage"

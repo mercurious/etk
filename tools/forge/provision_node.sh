@@ -29,28 +29,40 @@
 #   groundtruth  kernel 7.2 ground truth derived from the PUBLIC base image,
 #                then stage_72.sh into the kernel container
 #   toolchain    the rpcs3 LLVM-22 toolchain image — DETACHED, multi-hour
-#   all          every phase above, in dependency order
+#   seed         clone the toolchains, not rebuild them: the rpcs3 image, the turnip and
+#                kernel containers (compilers, trees, kernel staging) and ~/gt72 from a
+#                live node (PROVISION_SEED_HOST, default etk-cloud), and fetch any
+#                manifest-pinned artifact this host lacks. Stands in for `containers
+#                trees groundtruth toolchain`; run after `checkouts`, before `inputs`
+#   all          every phase but seed, in dependency order
+#
+# A second node, on this Mac: FORGE_HOST=etk-local tools/forge/provision_node.sh checkouts seed inputs check
 #
 # Knobs: the FORGE_* defaults are read out of forge.sh itself (one source), then
-# etk.conf. PROVISION_BASE_SHA pins the base image (default: the 20260901 sha).
+# etk.conf. PROVISION_BASE_SHA pins the base image (default: by BASEDATE, below).
 # ==========================================================
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
-# ONE source for the knobs: forge.sh's own default lines, then the operator's
-# etk.conf. Copying defaults here is how two tools drift apart. (etk.conf can
+# ONE source for the knobs: the operator's etk.conf, then forge.sh's own default
+# lines for the rest (forge.sh's order: its defaults are all `${X:-...}`). Copying defaults here is how two tools drift apart. (etk.conf can
 # hold a PADDOCK_TOKEN — sourced, never echoed.)
-eval "$(grep -E '^FORGE_[A-Z0-9_]+="\$\{FORGE_[A-Z0-9_]+:-' forge.sh)"
 [ -f ./etk.conf ] && . ./etk.conf
+eval "$(grep -E '^FORGE_[A-Z0-9_]+="\$\{FORGE_[A-Z0-9_]+:-' forge.sh)"
 
 HOST="$FORGE_HOST"
 BASEDATE="$FORGE_IMAGE_BASEDATE"
 BASE_GZ="ROCKNIX-SM8250.aarch64-$BASEDATE.img.gz"
 BASE_URL="https://github.com/ROCKNIX/distribution/releases/download/$BASEDATE/$BASE_GZ"
-# Recorded 2026-10-04 from upstream's own .sha256 asset. Pinned HERE so a re-fetch
-# is checked against what we recorded, not only against a file served beside it.
-PROVISION_BASE_SHA="${PROVISION_BASE_SHA:-3a4bf87ff2a45f60d6d4bc2c67177fd8e9c3e974805a7579b34d9fcd68c9667d}"
+# Recorded from upstream's own .sha256 asset (20260901 on 2026-10-04, 20261001 on 2026-10-30).
+# Pinned HERE so a re-fetch is checked against what we recorded, not only against a file
+# served beside it. Any other date dies on the sha: set PROVISION_BASE_SHA deliberately.
+case "$BASEDATE" in
+    20261001) _BASE_SHA=86f79670d7f9385b65c144c283374c6f6d122915cc59e4bec5bf6a1f0b64ffb8 ;;
+    *)        _BASE_SHA=3a4bf87ff2a45f60d6d4bc2c67177fd8e9c3e974805a7579b34d9fcd68c9667d ;;
+esac
+PROVISION_BASE_SHA="${PROVISION_BASE_SHA:-$_BASE_SHA}"
 # The digest the turnip-android/chiaki/wl-mirror lanes already pin. The old
 # turnip-rocknix rode the rolling ubuntu:24.04 tag; a rebuild is the moment to pin.
 TURNIP_IMAGE="${TURNIP_IMAGE:-ubuntu@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea}"
@@ -138,16 +150,8 @@ REMOTE
 }
 
 # ---------------------------------------------------------------------------
-phase_containers() {
-    say "containers: turnip-rocknix (fork provisioner, $TURNIP_IMAGE)"
-    # Run the fork's provisioner ON the node: driven from the Air it defaults to
-    # SSH_KEY=~/.ssh/etk_rig, which the Asahi boot does not authorize.
-    NSSH "cd ~/etk-turnip-gtk && IMAGE='$TURNIP_IMAGE' scripts/provision-build-container.sh"
-
-    say "containers: rocknix-gtk-kernel-sid (fork provisioner)"
-    # staging/ is gitignored, so a fresh clone lacks it and the provisioner dies.
-    NSSH "mkdir -p ~/rocknix-gtk/staging && cd ~/rocknix-gtk && scripts/provision-build-container.sh"
-
+# etk-imgtool has no fork to live in, so its recipe is here; seed runs it too.
+make_imgtool() {
     say "containers: etk-imgtool (no recipe existed anywhere until now)"
     NRUN "$IMGTOOL_PKGS" <<'REMOTE'
 set -euo pipefail
@@ -170,6 +174,19 @@ docker exec etk-imgtool bash -lc "
     printf '   %-10s %s\n' e2fsprogs \"\$(mke2fs -V 2>&1 | head -1)\"
     printf '   %-10s %s\n' parted \"\$(parted --version | head -1)\""
 REMOTE
+}
+
+phase_containers() {
+    say "containers: turnip-rocknix (fork provisioner, $TURNIP_IMAGE)"
+    # Run the fork's provisioner ON the node: driven from the Air it defaults to
+    # SSH_KEY=~/.ssh/etk_rig, which the Asahi boot does not authorize.
+    NSSH "cd ~/etk-turnip-gtk && IMAGE='$TURNIP_IMAGE' scripts/provision-build-container.sh"
+
+    say "containers: rocknix-gtk-kernel-sid (fork provisioner)"
+    # staging/ is gitignored, so a fresh clone lacks it and the provisioner dies.
+    NSSH "mkdir -p ~/rocknix-gtk/staging && cd ~/rocknix-gtk && scripts/provision-build-container.sh"
+
+    make_imgtool
 }
 
 # ---------------------------------------------------------------------------
@@ -357,6 +374,68 @@ REMOTE
 }
 
 # ---------------------------------------------------------------------------
+phase_seed() {
+    # A rebuild is not a copy. The kernel container rides debian:sid, so a fresh provision
+    # gets whatever gcc-15 sid holds that day, and every such combination is unvalidated
+    # (§A.1 toolchain law); the ABL-era kernel staging was built by hand on the node
+    # (`groundtruth` only knows the GRUB era). Moving the containers keeps the same compiler
+    # bytes on both nodes. Do NOT run `containers` over a seeded node: its apt-get install
+    # upgrades gcc-15 in place. The Mac relays every stream; the nodes never talk.
+    local src="${PROVISION_SEED_HOST:-etk-cloud}"
+    [ "$src" != "$HOST" ] || die "seed: source and target are both $HOST"
+    SSRC() { ssh -o BatchMode=yes -o ConnectTimeout=15 "$src" "$@"; }
+    SSRC true || die "seed: cannot reach '$src' (BatchMode)"
+    NSSH 'test -d ~/rocknix-gtk' || die "seed: run the checkouts phase on $HOST first"
+    SSRC 'for f in ~/forge-runs/active_*; do [ -f "$f" ] || continue
+              kill -0 "$(cut -d" " -f2 "$f")" 2>/dev/null && { echo "${f##*/}"; exit 1; }; done; true' \
+        || die "seed: $src has a build running — clone it when it is idle"
+
+    if [ -n "$(NSSH "docker images -q '$FORGE_RPCS3_IMAGE'")" ]; then
+        say "seed: $FORGE_RPCS3_IMAGE already here — kept"
+    else
+        say "seed: $FORGE_RPCS3_IMAGE from $src"
+        SSRC "docker save '$FORGE_RPCS3_IMAGE' | gzip -1" | NSSH "docker load"
+    fi
+    seed_container turnip-rocknix "-w /work"
+    NSSH "docker volume create rocknix-gtk-kernel-build >/dev/null"
+    seed_container rocknix-gtk-kernel-sid \
+        "-v rocknix-gtk-kernel-build:/kernel -v \$HOME/rocknix-gtk:/work -w /kernel"
+    if NSSH "docker exec rocknix-gtk-kernel-sid test -d /kernel/staging"; then
+        say "seed: /kernel inputs already here — kept"
+    else
+        say "seed: /kernel inputs (the volume does not travel with the container)"
+        SSRC "docker exec rocknix-gtk-kernel-sid sh -c 'cd /kernel && tar -cf - staging linux-*.tar.xz' | gzip -1" \
+            | NSSH "gunzip | docker exec -i rocknix-gtk-kernel-sid tar -C /kernel -xf -"
+    fi
+    say "seed: ~/gt72"
+    SSRC 'tar -C "$HOME" -czf - gt72' | NSSH 'tar -C "$HOME" -xzf -'
+    make_imgtool
+
+    seed_artifact "$FORGE_KERNEL_ARTDIR/$CERT_KNAME" "rocknix-gtk/artifacts/$CERT_KNAME" "$(_manifest kernel sha256)"
+    seed_artifact "emulators/$CERT_ANAME" "etk/emulators/$CERT_ANAME" "$(_manifest rpcs3 sha256)"
+    NSSH 'docker exec rocknix-gtk-kernel-sid gcc-15 -dumpfullversion' | sed 's/^/   kernel gcc-15 /'
+}
+seed_container() {  # <name> <docker run args>
+    local c="$1" img="etk-seed/$1:latest"
+    if NSSH "docker ps -a --format '{{.Names}}'" | grep -qx "$c"; then
+        say "seed: $c already here — kept"; return 0
+    fi
+    say "seed: $c from $src"
+    SSRC "docker commit --pause=false $c $img >/dev/null && docker save $img | gzip -1" | NSSH "docker load"
+    SSRC "docker rmi $img >/dev/null"
+    NSSH "docker run -d --name $c $2 $img sleep infinity >/dev/null"
+}
+seed_artifact() {  # <local path> <path under the source's home> <manifest sha>
+    [ -f "$1" ] && return 0
+    say "seed: fetching $(basename "$1")"
+    mkdir -p "$(dirname "$1")"
+    SSRC "cat ~/$2" > "$1.part"
+    [ "$(sha256sum "$1.part" | cut -d' ' -f1)" = "$3" ] \
+        || { rm -f "$1.part"; die "seed: $(basename "$1") from $src does not match the manifest sha"; }
+    mv "$1.part" "$1"
+}
+
+# ---------------------------------------------------------------------------
 phase_check() {
     local head; head=$(git rev-parse --short=9 HEAD)
     NSSH true 2>/dev/null || die "cannot reach '$HOST' (BatchMode). A REBUILT node has new host keys:
@@ -420,7 +499,8 @@ done
 up rocknix-gtk-kernel-sid; row kernel "container rocknix-gtk-kernel-sid Up" "$(ok $?)"
 docker exec rocknix-gtk-kernel-sid sh -c "gcc-15 -dumpfullversion" >/dev/null 2>&1
 row kernel "gcc-15 in container" "$( [ $? = 0 ] && echo "READY ($(docker exec rocknix-gtk-kernel-sid gcc-15 -dumpfullversion))" || echo MISSING)"
-docker exec rocknix-gtk-kernel-sid sh -c "test -d /kernel/staging/patches-72/01-mainline && test -f /kernel/staging/config-7.2-rig.txt && test -f /kernel/staging/initramfs-stock-$D.cpio && test -d /kernel/staging/external-firmware-$D && test -f /kernel/linux-7.2.tar.xz" 2>/dev/null
+S=""; [ "$D" = 20260901 ] || S="-$D"     # stage_72.sh's suffix rule
+docker exec rocknix-gtk-kernel-sid sh -c "test -d /kernel/staging/patches-72$S/01-mainline && test -f /kernel/staging/config-7.2-rig$S.txt && test -f /kernel/staging/initramfs-stock-$D.cpio && test -d /kernel/staging/external-firmware-$D && test -f /kernel/linux-7.2.tar.xz" 2>/dev/null
 row kernel "staging (stage_72.sh) assembled" "$(ok $? 'groundtruth phase')"
 gi=$(docker exec rocknix-gtk-kernel-sid sha256sum /kernel/staging/initramfs-stock-$D.cpio 2>/dev/null | cut -d' ' -f1)
 if [ -z "$WANTINIT" ]; then row kernel "staged initramfs == certified embed" "UNJUDGED — no certified kernel on the Air"
@@ -451,7 +531,7 @@ PHASES="${*:-check}"
 [ "$PHASES" = all ] && PHASES="checkouts containers inputs groundtruth trees toolchain check"
 for p in $PHASES; do
     case "$p" in
-        check|checkouts|containers|trees|inputs|groundtruth|toolchain) "phase_$p" ;;
-        *) die "unknown phase '$p' (check checkouts containers trees inputs groundtruth toolchain all)" ;;
+        check|checkouts|containers|trees|inputs|groundtruth|toolchain|seed) "phase_$p" ;;
+        *) die "unknown phase '$p' (check checkouts containers trees inputs groundtruth toolchain seed all)" ;;
     esac
 done

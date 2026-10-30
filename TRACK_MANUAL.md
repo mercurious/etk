@@ -28,6 +28,7 @@ person using it.
 | The operator is… | Surface they touch | What must be true |
 |---|---|---|
 | trying a new **Turnip** as Mesa ships it | Pitstop **DRIVER** tab | catalog is CUMULATIVE **and present on the device** — installed rig *and* flashed card; cold boot to load; `loaded` is boot-stamped ground truth, `selected` is only intent |
+| **minting without the cloud** — the local node (a VM on the daily-driver Mac, §A.1) | `FORGE_HOST=etk-local tools/forge/provision_node.sh check` (a lane is ready when its row reads READY) · `tools/forge/local_node.sh status` · `./forge.sh --local <lanes>` · `state/forge/status.tsv` | every row READY after `up` + `checkouts seed inputs`; a run's ssh reaches only `etk-local`; a pinned kernel, core or Turnip name is refused before any ssh (a local mint takes a NEW name); hunts stay on etk-cloud (`--hunt` refuses `--local`) |
 | **A/B-ing an emulator core** | **TUNING → CORE** | exactly two cores staged, never published; a per-title pin is never pruned |
 | **certifying / swapping the emulator core** | install.sh **NEXT-BOOT BIND** block (STEP 6.553) + the first post-boot ledger row's `core=` | the CERT pin resolves to a REAL source (local catalog copy or published asset — release_sanity gates it); a staging failure NEVER downgrades a staged rig; `loaded=stock` on a custom-expecting rig is a RED headline, not an OK |
 | **tuning a title** | **TUNING** | atomic write + read-back; `tune_tag` reaches the ledger, or the A/B is unattributable |
@@ -495,6 +496,25 @@ cloud node builds; the Mac stages and relays; the rig never faces the internet.
 |---|---|---|---|
 | **The Air** (M1 MacBook Air, 8 GB, fanless) | **Asahi Linux (Fedora aarch64) primary since 2026-08-31**; macOS boot retained (colima `--local` fallback lives there — untested under Asahi/podman) | staging, `install.sh` handoff, **all rig contact**, quick warm rebuilds; **native card work**: `dd` etches the card directly (runbook §6, no Etcher) and the card's own partitions (`ROCKNIX-GTK` vfat / `GTKSTOR` ext4) mount natively — direct ROM management, no Samba/ssh detour. Card out of the rig only; hand-manage `roms/` content, never `etk_telemetry/` or the RPCS3 config trees | local |
 | **etk-cloud** (Oracle Always-Free Ampere A1) | 4 cores / 23 GB / 145 GB, Ubuntu 24.04 aarch64, native docker | long/heavy builds — toolchain images, clean rebuilds, sanitizer builds | `ssh etk-cloud` (alias in `~/.ssh/config`; IP is **reserved/static** since 2026-08-30 — survives stop/start, no console re-read) |
+| **etk-local** (Lima VM on the daily-driver M1 Max, macOS; added 2026-10-30) | 8 cores / 32 GB / 150 GB sparse, Ubuntu 24.04 aarch64, 4K pages, docker on the VM's own ext4 | the same lanes, no cloud in the loop | `ssh etk-local` (loopback alias, port 60022); `tools/forge/local_node.sh up\|down\|status` |
+
+**The local node (2026-10-30).** `etk-local` is an etk-cloud twin on purpose: same OS, arch, user
+(`ubuntu`) and home, reached only through its ssh alias, so forge.sh, the lanes and
+provision_node.sh run unchanged (`./forge.sh --local`, or `FORGE_HOST=etk-local`; `etk.conf`'s
+`FORGE_HOST` stays etk-cloud, which hunts require). No host mounts: this Mac's APFS is
+case-insensitive and the colima-virtiofs trap class stays closed. It REPLACES the old `--local`
+(bash on the Mac + colima, unmaintained since the Air went Asahi). The template is
+`tools/forge/etk-local.lima.yaml`. **Fill it by cloning, not rebuilding:** `checkouts seed inputs`
+moves the rpcs3 image and the turnip/kernel containers from etk-cloud, so both nodes hold the same
+compiler bytes; a fresh `containers` rides sid's gcc-15 of the day (unvalidated, below), and
+`groundtruth` does not produce the ABL-era staging at all (that staging was built by hand on the
+node). Never run `containers` over a seeded node: its `apt-get install` upgrades gcc-15 in place.
+A local mint never takes a pinned name: the node has no fingerprint history to SKIP on, so
+`--local kernel` would otherwise replace the certified kernel with same-named, different bytes.
+Don't split an A/B's arms across the two nodes. **Not host-tuned:** the mint path passes
+`USE_NATIVE_INSTRUCTIONS=OFF` and an explicit `armv8.2-a+dotprod+fp16`, so an M1 cannot leak
+features the SM8250 lacks. By the letter of §1.1 a build here is still a mint: the operator runs
+it (bringing the empty VM up is not a build).
 
 **IP no longer drifts (2026-08-30).** etk-cloud's public address used to be an
 Oracle *ephemeral* IP: it was reassigned on every stop/start, so `ssh etk-cloud`
@@ -605,7 +625,7 @@ Use cases: middleware-only release (the common 0.8.x case) = `./forge.sh image` 
 A/B = set `FORGE_TURNIP_VERS`, `./forge.sh turnip` (the image lane reads `gtk_stack.json`,
 not this knob, so an experiment can't ship by accident) · after a failed lane just re-run
 (fresh lanes skip; a `WORK` row means reattach) · check state with `./forge.sh --status`
-(no ssh) · node down = `--local` colima fallback · **never re-run the kernel lane over a
+(no ssh) · node down = `--local` (etk-local, above) · **never re-run the kernel lane over a
 cold-boot-validated kernel** — it would replace it with a same-named, different-sha,
 unvalidated binary.
 

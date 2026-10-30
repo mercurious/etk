@@ -31,7 +31,7 @@ for V in $VERS; do
         log "       re-prepare: BASE_TAG=mesa-$V ./scripts/prepare-fork-branch.sh apply"
         exit 1
     }
-    docker exec turnip-rocknix bash -lc "MESA_VER=$V JOBS=4 /work/build_rocknix.sh"
+    docker exec turnip-rocknix bash -lc "MESA_VER=$V JOBS=$(nproc) /work/build_rocknix.sh"
 
     RAW="/work/out/libvulkan_freedreno-rocknix-$V.so"
     VSTR=$(docker exec turnip-rocknix sh -c "strings $RAW | grep -F 'ETK-GTK' | head -1" || true)
