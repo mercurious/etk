@@ -411,8 +411,8 @@ phase_seed() {
     SSRC 'tar -C "$HOME" -czf - gt72' | NSSH 'tar -C "$HOME" -xzf -'
     make_imgtool
 
-    seed_artifact "$FORGE_KERNEL_ARTDIR/$CERT_KNAME" "rocknix-gtk/artifacts/$CERT_KNAME" "$(_manifest kernel sha256)"
-    seed_artifact "emulators/$CERT_ANAME" "etk/emulators/$CERT_ANAME" "$(_manifest rpcs3 sha256)"
+    seed_artifact "$FORGE_KERNEL_ARTDIR/$CERT_KNAME" "rocknix-gtk/artifacts" "$(_manifest kernel sha256)"
+    seed_artifact "emulators/$CERT_ANAME" "etk/emulators" "$(_manifest rpcs3 sha256)"
     NSSH 'docker exec rocknix-gtk-kernel-sid gcc-15 -dumpfullversion' | sed 's/^/   kernel gcc-15 /'
 }
 seed_container() {  # <name> <docker run args>
@@ -425,13 +425,19 @@ seed_container() {  # <name> <docker run args>
     SSRC "docker rmi $img >/dev/null"
     NSSH "docker run -d --name $c $2 $img sleep infinity >/dev/null"
 }
-seed_artifact() {  # <local path> <path under the source's home> <manifest sha>
+seed_artifact() {  # <local path> <dir under the source's home> <manifest sha>
+    # Found by sha, stored under the pinned name. The pin is the bytes: 2026-10-27 re-minted
+    # 0.10.1 over its own name on etk-cloud, and the certified core survives there only as the
+    # EXP-gt6mirror-0.10.1 mint it was certified from.
     [ -f "$1" ] && return 0
-    say "seed: fetching $(basename "$1")"
+    local from
+    from=$(SSRC "cd ~/$2 && { sha256sum * 2>/dev/null || true; }" | awk -v s="$3" '$1 == s {print $2; exit}')
+    [ -n "$from" ] || die "seed: nothing in $src:~/$2 has the manifest sha of $(basename "$1")"
+    say "seed: fetching $(basename "$1") (on $src as $from)"
     mkdir -p "$(dirname "$1")"
-    SSRC "cat ~/$2" > "$1.part"
+    SSRC "cat ~/$2/$from" > "$1.part"
     [ "$(sha256sum "$1.part" | cut -d' ' -f1)" = "$3" ] \
-        || { rm -f "$1.part"; die "seed: $(basename "$1") from $src does not match the manifest sha"; }
+        || { rm -f "$1.part"; die "seed: $from from $src does not match the manifest sha"; }
     mv "$1.part" "$1"
 }
 
