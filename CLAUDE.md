@@ -30,6 +30,9 @@ pointer; git history is its archive.) Don't re-derive documented facts live: fro
   yes = hand it over; when unsure, it crosses — ask. **Hunt grants (§1.1, `docs/AUTONOMY_SPEC.md`):**
   only while `tools/hunt/hunt.py status` says VALID may the Engineer mint/inject, and only through
   `hunt.py`; the guard hook (`tools/hunt/guard.py`) denies the raw controls either way.
+- **CAR8 STATUS (§1.1, operator 2026-10-31): unavailable until further notice.** Plan nothing
+  on it; car12 is the only live car. The lift rule below applies again only when the operator
+  brings car8 back.
 - **CAR8 LIFT ACCESS (§1.1, operator 2026-10-24) — the standing exception.** car8 is the
   headless test car (dead panel/touch, nothing to protect): on car8 the Engineer has blanket
   access, with no grant and no handoff. It runs install/uninstall/forge for car8, reboots it,

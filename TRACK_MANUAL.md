@@ -135,6 +135,11 @@ only while `etk.conf` says `CAR="car8"` (install.sh's own car check refuses any 
 unit). **Not lifted:** publish (other humans' machines), and anything aimed at car12, this
 host or another machine. The one thing car8 can't do for itself is power-cycle a hard wedge.
 
+**CAR8 STATUS (operator, 2026-10-31): unavailable until further notice.** This goes past the
+dead panel above: car8 can't be used at all. Don't reach for it, and don't plan a test, hunt,
+mint or first boot on it; car12 is the only live car. The lift rule stands for when the
+operator brings car8 back, and only the operator lifts this status.
+
 **HUNT GRANTS (operator, 2026-10-10; `docs/AUTONOMY_SPEC.md`).** Because etk-cloud is sized
 inside the always-free tier (a mint costs no money) and the garage holds a reserve car (losing
 the hunt car is survivable), the operator may, for an autonomous crash hunt, sign one grant
