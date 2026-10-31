@@ -12,7 +12,12 @@
 #      refuses a dir holding a file tar cannot carry (> 8 GiB);
 #   3. tools/tui.sh's header still reads TIER for install/uninstall and LINK
 #      for TOW, at the same visible width;
-#   4. (--rig HOST) the rig bodies under BusyBox: SCOUT on a /tmp fixture, then a
+#   4. ES settings ride the tow (2026-10-27: towed games came up with MangoHud
+#      off): the donor's ps3["NAME"]. lines for the towed launchers only, a key
+#      the recipient has stays, a launcher with no MangoHud key gets it on,
+#      names with [ ] " ' ( ) & and UTF-8 match literally, a dry run writes
+#      nothing, and a second carry changes nothing;
+#   5. (--rig HOST) the rig bodies under BusyBox: SCOUT on a /tmp fixture, then a
 #      loopback tow (RX + TX over 127.0.0.1) -> PASS with files in place, and the
 #      broken streams -> FAIL: no listener, a truncated image, an empty stream.
 #      Writes only /tmp/towtest on the rig.
@@ -125,8 +130,44 @@ case "$h1" in *"TIER: FULL"*"v14.1.0"*) ok "install header unchanged" ;; *) no "
 case "$h2" in *"LINK: USB"*"tools/tow.sh"*) ok "TOW header reads LINK" ;; *) no "TOW header -- [$h2]" ;; esac
 check "same visible width" "$(printf '%s' "$h1" | wc -m)" "$(printf '%s' "$h2" | wc -m)"
 
+# ES settings fixture: two cars' system.cfg. $1 = dir
+cfgs() {
+    printf '%s\n' 'rocknix.mangohud.enabled=0' \
+      'ps3["Gran Turismo 5 (BCUS98114).m3u"].rocknix.mangohud.enabled=1' \
+      'ps3["Gran Turismo 5 (BCUS98114).m3u"].ratio=4/3' \
+      'ps3["SSX™.psn"].rocknix.mangohud.enabled=0' \
+      'ps3["Decoy.psn"].rocknix.mangohud.enabled=1' \
+      'ps3["Gran Turismo 5 (BCUS98114).m3u.bak"].ratio=16/9' > "$1/donor.cfg"
+    # the recipient: its own ratio for GT5 (the operator's), no trailing newline
+    printf '%s\n%s' 'ps3.cpugovernor=performance' 'ps3["Gran Turismo 5 (BCUS98114).m3u"].ratio=16/9' > "$1/recip.cfg"
+}
+NAMES=("Gran Turismo 5 (BCUS98114).m3u" "SSX™.psn" "Demon's [BLUS-30443] \"Q\".psn")
+carry() {   # $1 = dir, $2 = dry; a run of the two bodies, donor -> recipient; prints the verdict line
+    TOW_CFG=$1/donor.cfg sh -c "$ESCFG_OUT_SH" _ "${NAMES[@]}" \
+        | TOW_CFG=$1/recip.cfg TOW_DRY=$2 sh -c "$ESCFG_IN_SH" _ "${NAMES[@]}"
+}
+echo "4. ES settings (host shell)"
+if [ -z "${ESCFG_IN_SH:-}" ]; then
+    no "tow.sh has no ES settings carry"
+else
+    mkdir -p "$T/es"; cfgs "$T/es"
+    check "launchers: only ES-listed ps3 names" "$(launchers 'ps3/A.psn' 'ps3/B (X).m3u' 'ps3/C.iso' 'ps3/D.ps3' 'ps3/D.ps3/PS3_GAME' 'bios/rpcs3/x.psn' | tr '\n' '|')" "A.psn|B (X).m3u|D.ps3|"
+    before=$(cat "$T/es/recip.cfg")
+    check "dry run counts" "$(carry "$T/es" 1)" "CARRIED 2 SEEDED 1"
+    check "dry run writes nothing" "$(cat "$T/es/recip.cfg")" "$before"
+    check "carry" "$(carry "$T/es" 0)" "CARRIED 2 SEEDED 1"
+    check "recipient after the carry" "$(cat "$T/es/recip.cfg")" 'ps3.cpugovernor=performance
+ps3["Gran Turismo 5 (BCUS98114).m3u"].ratio=16/9
+ps3["Gran Turismo 5 (BCUS98114).m3u"].rocknix.mangohud.enabled=1
+ps3["SSX™.psn"].rocknix.mangohud.enabled=0
+ps3["Demon'"'"'s [BLUS-30443] "Q".psn"].rocknix.mangohud.enabled=1'
+    check "a second carry changes nothing" "$(carry "$T/es" 0)" "CARRIED 0 SEEDED 0"
+    check "no temp file left" "$(ls "$T/es")" "donor.cfg
+recip.cfg"
+fi
+
 if [ -n "$RIG" ]; then
-    echo "4. rig leg on $RIG (BusyBox, /tmp/towtest only)"
+    echo "5. rig leg on $RIG (BusyBox, /tmp/towtest only)"
     R=/tmp/towtest
     rq() { ssh -o BatchMode=yes -o ConnectTimeout=8 "$RIG" "$@"; }
     rq "rm -rf $R; mkdir -p $R/bin" || { no "reach $RIG"; RIG=""; }
@@ -170,6 +211,15 @@ if [ -n "$RIG" ]; then
     tow_loop run4 47960 "nc 127.0.0.1 47961 < /dev/null"
     case "$(tow_verdict "$(md $R/run4/rx.1.md5)" "$(md $R/run4/rx.1.md5)" 0)" in
         "FAIL:empty stream") ok "empty stream -> FAIL" ;; *) no "empty stream not caught" ;; esac
+    # the ES settings bodies under BusyBox sh/awk, same fixture, same answers
+    declare -f cfgs | rq "cat > $R/bin/cfgs.sh; echo 'cfgs \"\$1\"' >> $R/bin/cfgs.sh"
+    for v in ESCFG_OUT_SH ESCFG_IN_SH; do printf '%s\n' "${!v}" | rq "cat > $R/bin/$v"; done
+    rq "mkdir -p $R/es && sh $R/bin/cfgs.sh $R/es"
+    rcarry() { rq "cd $R && TOW_CFG=es/donor.cfg sh bin/ESCFG_OUT_SH $(printf "%q " "${NAMES[@]}") | TOW_CFG=es/recip.cfg TOW_DRY=$1 sh bin/ESCFG_IN_SH $(printf "%q " "${NAMES[@]}")"; }
+    check "BusyBox dry run" "$(rcarry 1)" "CARRIED 2 SEEDED 1"
+    check "BusyBox carry" "$(rcarry 0)" "CARRIED 2 SEEDED 1"
+    check "BusyBox recipient == host recipient" "$(rq "cat $R/es/recip.cfg")" "$(cat "$T/es/recip.cfg")"
+    check "BusyBox second carry" "$(rcarry 0)" "CARRIED 0 SEEDED 0"
     rq "rm -rf $R"
 fi
 

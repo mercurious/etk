@@ -12,6 +12,7 @@
 #   tools/tow.sh --from flip2-12g --to etk-rig BCUS98114        # tow GT5
 #   tools/tow.sh --from flip2-12g --to etk-rig --plan BCUS98114 # scout only
 #   tools/tow.sh --from A --to B NPEA00050 /storage/roms/psp/X.iso ...
+#   tools/tow.sh --from A --to B --settings NPEA00050          # ES settings only
 #
 # An ITEM is a PS3 title ID or a path under /storage/roms. A title ID tows
 # everything the game is: ps3/ files with "(ID)" in the name, a .psn stub
@@ -30,6 +31,11 @@
 # trial filled it with a 3 GB stream copy.
 # Collisions: refuses if anything already exists on the recipient (never
 # overwrites the operator's files) unless --replace.
+# ES settings ride along: the donor's per-game ES settings for each towed
+# launcher (ps3["Name.psn"].* in system.cfg -- MangoHud on/off lives there),
+# never over a key the recipient already has; a launcher with no MangoHud key
+# on either car gets MangoHud on, as a PKG install or ISO onboarding does.
+# --settings carries only that, for a game already towed (no data moves).
 #
 # Surface: the TUI (pit wall console, tools/tui.sh), then the recipient's
 # EmulationStation list (ES API /reloadgames + /systems/ps3/games) must show
@@ -195,6 +201,44 @@ done
 [ -f rx.state ] && echo "rx done"
 EOF
 
+# ES settings: a game's per-game ES settings live in system.cfg, keyed on its
+# launcher's file name (ps3["Name.psn"].rocknix.mangohud.enabled=1), not in
+# its files: a towed game arrived with none, so MangoHud stayed off until the
+# operator set it in ES's advanced game settings (2026-10-27). PKG install and
+# ISO onboarding write that key; the tow has to as well.
+# out (donor): $@ = launcher names -> that car's ps3["NAME"]. lines.
+read -r -d '' ESCFG_OUT_SH <<'EOF'
+CFG=${TOW_CFG:-/storage/.config/system/configs/system.cfg}
+[ -f "$CFG" ] || exit 0
+for n in "$@"; do P="ps3[\"$n\"]." awk 'index($0, ENVIRON["P"]) == 1' "$CFG"; done
+EOF
+# in (recipient): $@ = launcher names, stdin = the donor's lines. A key the
+# recipient already has is the operator's and stays; a launcher with no
+# MangoHud key on either car gets the kit's default (on). Literal key compare:
+# the key's [ ] " are regex metacharacters (_enable_mangohud in etk_pitstop.py
+# has the story). TOW_DRY=1 counts without writing. -> "CARRIED n SEEDED m"
+read -r -d '' ESCFG_IN_SH <<'EOF'
+CFG=${TOW_CFG:-/storage/.config/system/configs/system.cfg}
+if [ "${TOW_DRY:-0}" = 1 ]; then T=/tmp/tow-escfg.$$
+else T=$CFG.tow.tmp; mkdir -p "${CFG%/*}" && touch "$CFG" || { echo "E cannot write $CFG"; exit 1; }; fi
+cat "$CFG" > "$T" 2>/dev/null || : > "$T"
+[ -s "$T" ] && [ -n "$(tail -c1 "$T")" ] && echo >> "$T"
+has() { K="$1=" awk 'index($0, ENVIRON["K"]) == 1 { f = 1; exit } END { exit !f }' "$T"; }
+c=0; s=0
+while IFS= read -r l; do
+  k=${l%%=*}; [ -n "$k" ] && [ "$k" != "$l" ] || continue
+  has "$k" || { echo "$l" >> "$T"; c=$((c + 1)); }
+done
+for n in "$@"; do
+  k="ps3[\"$n\"].rocknix.mangohud.enabled"
+  has "$k" || { echo "$k=1" >> "$T"; s=$((s + 1)); }
+done
+if [ "${TOW_DRY:-0}" = 1 ] || [ $((c + s)) = 0 ]; then rm -f "$T"; else mv "$T" "$CFG" || exit 1; fi
+echo "CARRIED $c SEEDED $s"
+EOF
+# launcher names among towed paths: what ES lists (ps3 extensions .ps3 .psn .m3u)
+launchers() { local r; for r in "$@"; do case "$r" in ps3/*/*) ;; ps3/*.psn|ps3/*.m3u|ps3/*.ps3) printf '%s\n' "${r#ps3/}" ;; esac; done; }
+
 # ---------------------------------------------------------------- helpers
 q() { local s=${1//\'/\'\\\'\'}; printf "'%s'" "$s"; }     # POSIX single-quote
 human() { awk -v b="$1" 'BEGIN{ if (b >= 1073741824) printf "%.1f GB", b/1073741824;
@@ -214,8 +258,8 @@ tow_verdict() {
 
 [ "${TOW_LIB:-0}" = 1 ] && return 0 2>/dev/null   # test_tow.sh sources the helpers
 
-usage() { sed -n '9,13p' "$0" | sed 's/^# //'; exit 2; }
-FROM=""; TO=""; PLAN=0; WIFI=0; REPLACE=0; ITEMS=()
+usage() { sed -n '12,15p' "$0" | sed 's/^# //'; exit 2; }
+FROM=""; TO=""; PLAN=0; WIFI=0; REPLACE=0; SETTINGS=0; ITEMS=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --from) FROM=${2:?}; shift 2 ;;
@@ -223,6 +267,7 @@ while [ $# -gt 0 ]; do
         --plan) PLAN=1; shift ;;
         --wifi) WIFI=1; shift ;;
         --replace) REPLACE=1; shift ;;
+        --settings) SETTINGS=1; shift ;;
         --verbose) ETK_VERBOSE=1; shift ;;
         -h|--help) usage ;;
         -*) usage ;;
@@ -237,6 +282,23 @@ CTL=$(mktemp -d)   # ssh control sockets + list staging; removed at every exit b
 SSHO=(-o BatchMode=yes -o ConnectTimeout=8 -o ControlMaster=auto -o "ControlPath=$CTL/%r@%h:%p" -o ControlPersist=120)
 on() { local h=$1; shift; ssh "${SSHO[@]}" "$h" "$@"; }
 log() { printf '%s %s\n' "$(date +%T)" "$*" >> "$LOG"; }
+# carry_settings DRY -> one line for the operator: the ES settings of the towed
+# launchers ($ALL), donor -> recipient (ESCFG_OUT_SH / ESCFG_IN_SH); DRY=1 counts only.
+carry_settings() {
+    local DRY=$1 n a="" out got
+    while IFS= read -r n; do a+=" $(q "$n")"; done < <(launchers "${ALL[@]}")
+    [ -n "$a" ] || { echo "no ES launcher in the tow"; return 0; }
+    out=$(on "$FROM" "sh -c $(q "$ESCFG_OUT_SH") _$a") || { echo "could not read $DCAR's settings"; return 1; }
+    log "es settings on $DCAR:"$'\n'"$out"
+    got=$(on "$TO" "TOW_DRY=$DRY sh -c $(q "$ESCFG_IN_SH") _$a" <<<"$out")
+    log "es settings on $RCAR: $got"
+    case "$got" in
+        "CARRIED "*" SEEDED "*) set -- $got
+            if [ "$DRY" = 1 ]; then echo "$2 to carry from $DCAR, MangoHud to turn on for $4 launcher(s)"
+            else echo "$2 carried from $DCAR, MangoHud turned on for $4 launcher(s)"; fi ;;
+        *) echo "NOT written on $RCAR (${got:-no answer})"; return 1 ;;
+    esac
+}
 
 ETK_VERBOSE=${ETK_VERBOSE:-0}
 source ./tools/tui.sh
@@ -288,16 +350,22 @@ DCAR=$(pv "$DPROBE" CAR); RCAR=$(pv "$RPROBE" CAR)
 [ "$DCAR" != "$RCAR" ] || fail "--from and --to are the same car ($DCAR)"
 RIG_SSH="$DCAR -> $RCAR"
 FREE=$(pv "$RPROBE" FREE)
-[ "${FREE:-0}" -gt $((TOTAL + 1073741824)) ] || fail "$RCAR has $(human "${FREE:-0}") free, the tow needs $(human "$TOTAL") + 1 GB"
+[ "$SETTINGS" = 1 ] || [ "${FREE:-0}" -gt $((TOTAL + 1073741824)) ] || fail "$RCAR has $(human "${FREE:-0}") free, the tow needs $(human "$TOTAL") + 1 GB"
 ALL=("${TARL[@]}" "${BIGL[@]}")
 chk=""; for r in "${ALL[@]}"; do chk+="[ -e $(q "$ROOT/$r") ] && echo $(q "$r");"$'\n'; done
 COLL=$(on "$TO" "$chk")
-if [ -n "$COLL" ] && [ "$REPLACE" = 0 ] && [ "$PLAN" = 0 ]; then
+if [ -n "$COLL" ] && [ "$REPLACE" = 0 ] && [ "$PLAN" = 0 ] && [ "$SETTINGS" = 0 ]; then
     log "collisions:"$'\n'"$COLL"
     fail "$RCAR already has $(wc -l <<<"$COLL") of these (first: $(head -1 <<<"$COLL")); --replace to overwrite"
 fi
 say "$DCAR -> $RCAR: ${#TARL[@]} data item(s) $(human "$TAR_BYTES") + ${#BIGL[@]} image(s) $(human "$BIG_BYTES")"
 tui_step_done 0
+
+if [ "$SETTINGS" = 1 ]; then     # ES settings only: the game is already on the recipient (--plan: count)
+    v=$(carry_settings "$PLAN"); rc=$?
+    tui_cleanup; echo; echo "TOW --settings  $DCAR -> $RCAR  ES settings: $v"; echo "  log: $LOG"
+    rm -rf "$CTL"; exit $rc
+fi
 
 # ---------------------------------------------------------------- 2 TOW LINE
 tui_step_start 1
@@ -344,6 +412,7 @@ if [ "$PLAN" = 1 ]; then
         esac
     done <<<"$SCOUT"
     echo "  $RCAR free: $(human "$FREE")    collisions: $([ -n "$COLL" ] && wc -l <<<"$COLL" || echo none)"
+    echo "  ES settings: $(carry_settings 1)"
     echo "  log: $LOG"
     rm -rf "$CTL"; exit 0
 fi
@@ -434,6 +503,8 @@ tui_step_done 4
 
 # ---------------------------------------------------------------- 6 ES LIST
 tui_step_start 5
+ESSET=$(carry_settings 0)    # before the reload, so the first launch already has them
+log "es settings: $ESSET"; say "ES settings: $ESSET"
 ES="not checked"
 shown=(); for r in "${ALL[@]}"; do case "$r" in ps3/*) shown+=("$ROOT/$r") ;; esac; done
 if [ ${#shown[@]} -gt 0 ]; then
@@ -456,7 +527,7 @@ tui_step_done 5
 
 TUI_FINISH_BANNER="━━━ TOWED ━━━  $DCAR -> $RCAR  ·  $(human "$TOTAL") in $((el / 60))m$(printf %02d $((el % 60)))s over $LINK"
 TUI_FINISH_LINE1="every stream md5-matched on both ends; images renamed from .part"
-TUI_FINISH_LINE2="ES on $RCAR: $ES"
+TUI_FINISH_LINE2="ES on $RCAR: $ES; settings: $ESSET"
 TUI_FINISH_LINE3="log: $LOG"
 TUI_FINISH_VERBOSE_BODY="    $TUI_FINISH_BANNER\n    $TUI_FINISH_LINE2\n    $TUI_FINISH_LINE3"
 tui_finish

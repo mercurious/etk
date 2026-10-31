@@ -4,6 +4,15 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ## [Unreleased]
 
+### Fixed
+
+- **A towed game keeps its ES settings** (`tools/tow.sh`): a game moved car to car came up with
+  the MangoHud overlay off until it was turned on in ES's advanced game settings. ES keeps
+  per-game settings under the launcher's name in `system.cfg`, outside the game's files; TOW now
+  carries them, never over a setting the recipient already has, and turns MangoHud on where
+  neither car has set it. `--settings` fixes a game that was already towed.
+
+
 ## [0.10.1] - 2026-10-31 — 120Hz Edition
 
 Certified stack: RPCS3 **GTK Edition 0.10.1** (ARMSX3 1.0.4, `8290349e5`) ·
