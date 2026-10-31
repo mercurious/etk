@@ -117,6 +117,10 @@ fi
 # deliberate, cold-boot-gated override (rocknix-gtk UPSTREAM_20261101.md §5). It is part of the
 # kernel fingerprint, so changing it rebuilds, and lane_kernel.sh logs it loud.
 FORGE_KCC="${FORGE_KCC:-}"
+# FORGE_KERNEL_BLS=1: rehearse the BLS lane on a NIGHTLY staging dated before the tag (the recipe
+# picks BLS by BASEDATE >= 20261101; a nightly-20261030 set is BLS-format but older). Empty = the
+# recipe's date rule. Never needed at the tag.
+FORGE_KERNEL_BLS="${FORGE_KERNEL_BLS:-}"
 FORGE_IMAGE_BASEDATE="${FORGE_IMAGE_BASEDATE:-20261001}"
 FORGE_STALL_WARN_S="${FORGE_STALL_WARN_S:-1200}"
 ETK_VERBOSE="${ETK_VERBOSE:-0}"
@@ -544,8 +548,8 @@ fp_compute() {  # <lane> -> fingerprint string on stdout
                     "$(sha256_of "$FORGE_RPCS3_FORK/scripts/verify-markers.sh")" \
                     "$(probe_section IMAGEID | head -1)" ;;
         turnip) printf 'vers=%s gtk=%s tip=%s' "$FORGE_TURNIP_VERS" "$FORGE_TURNIP_GTKVER" "$TURNIP_TIP" ;;
-        kernel) printf 'tip=%s name=%s kcc=%s%s forensics=%s%s' "$KERNEL_TIP" "$KNAME" "${FORGE_KCC:-stock-parity}" \
-                    "${FORGE_KERNEL_SFX:+ basedate=$FORGE_KERNEL_BASEDATE}" "${ETK_FORENSICS:-0}" \
+        kernel) printf 'tip=%s name=%s kcc=%s%s%s forensics=%s%s' "$KERNEL_TIP" "$KNAME" "${FORGE_KCC:-stock-parity}" \
+                    "${FORGE_KERNEL_SFX:+ basedate=$FORGE_KERNEL_BASEDATE}" "${FORGE_KERNEL_BLS:+ bls=$FORGE_KERNEL_BLS}" "${ETK_FORENSICS:-0}" \
                     "$([ "${ETK_SD_POLL:-0}" = 1 ] && echo ' sdpoll=1')" ;;
         # kit=%s IS LOAD-BEARING. The image bakes the ETK middleware straight
         # out of the build node's checkout, but this fingerprint only ever
@@ -642,8 +646,8 @@ lane_env() {  # <lane> -> env assignments for the node-side recipe
         # On the BLS lane (BASEDATE >= 20261101) the three kit knobs are deploy-time knobs and
         # the recipe FAILS a mint that sets one off-default; ETK_GPIO_SBU_BUILTIN is moot (stock
         # =y). FORGE_KCC: empty = stock's compiler major (the law); anything else is a logged override.
-        kernel) printf 'KNAME=%s FORGE_KERNEL_BUILD=%s FORGE_KERNEL_BASEDATE=%s FORGE_KCC=%s ETK_KIT_DTB=%s ETK_INTERNAL_MIC=%s ETK_GPIO_SBU_BUILTIN=%s ETK_FORENSICS=%s ETK_SD_POLL=%s' \
-                    "$KNAME" "$FORGE_KERNEL_BUILD" "$FORGE_KERNEL_BASEDATE" "$FORGE_KCC" "${ETK_KIT_DTB:-1}" "${ETK_INTERNAL_MIC:-1}" "${ETK_GPIO_SBU_BUILTIN:-1}" "${ETK_FORENSICS:-0}" "${ETK_SD_POLL:-0}" ;;
+        kernel) printf 'KNAME=%s FORGE_KERNEL_BUILD=%s FORGE_KERNEL_BASEDATE=%s FORGE_KERNEL_BLS=%s FORGE_KCC=%s ETK_KIT_DTB=%s ETK_INTERNAL_MIC=%s ETK_GPIO_SBU_BUILTIN=%s ETK_FORENSICS=%s ETK_SD_POLL=%s' \
+                    "$KNAME" "$FORGE_KERNEL_BUILD" "$FORGE_KERNEL_BASEDATE" "$FORGE_KERNEL_BLS" "$FORGE_KCC" "${ETK_KIT_DTB:-1}" "${ETK_INTERNAL_MIC:-1}" "${ETK_GPIO_SBU_BUILTIN:-1}" "${ETK_FORENSICS:-0}" "${ETK_SD_POLL:-0}" ;;
         # The three baked names come from the MANIFEST (see the preflight
         # note above), never from the build knobs — an image is a shipped
         # asset and must carry exactly the certified stack.

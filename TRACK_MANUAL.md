@@ -28,7 +28,7 @@ person using it.
 | The operator is… | Surface they touch | What must be true |
 |---|---|---|
 | trying a new **Turnip** as Mesa ships it | Pitstop **DRIVER** tab | catalog is CUMULATIVE **and present on the device** — installed rig *and* flashed card; cold boot to load; `loaded` is boot-stamped ground truth, `selected` is only intent |
-| **minting without the cloud** — the local node (a VM on the daily-driver Mac, §A.1) | `FORGE_HOST=etk-local tools/forge/provision_node.sh check` (a lane is ready when its row reads READY) · `tools/forge/local_node.sh status` · `./forge.sh --local <lanes>` · `state/forge/status.tsv` | every row READY after `up` + `checkouts seed inputs`; a run's ssh reaches only `etk-local`; a pinned kernel, core or Turnip name is refused before any ssh (a local mint takes a NEW name); hunts stay on etk-cloud (`--hunt` refuses `--local`) |
+| **minting without the cloud** — the local node (`etk-local`: a Lima VM under macOS, or the M1 Max itself under Asahi with rootless podman behind a `docker` shim, §A.1) | `FORGE_HOST=etk-local tools/forge/provision_node.sh check` (a lane is ready when its row reads READY) · `tools/forge/local_node.sh status` · `./forge.sh --local <lanes>` · `state/forge/status.tsv` | every row READY after `up` + `checkouts seed inputs`; a run's ssh reaches only `etk-local`; a pinned kernel, core or Turnip name is refused before any ssh (a local mint takes a NEW name); hunts stay on etk-cloud (`--hunt` refuses `--local`) |
 | **A/B-ing an emulator core** | **TUNING → CORE** | exactly two cores staged, never published; a per-title pin is never pruned |
 | **certifying / swapping the emulator core** | install.sh **NEXT-BOOT BIND** block (STEP 6.553) + the first post-boot ledger row's `core=` | the CERT pin resolves to a REAL source (local catalog copy or published asset — release_sanity gates it); a staging failure NEVER downgrades a staged rig; `loaded=stock` on a custom-expecting rig is a RED headline, not an OK |
 | **tuning a title** | **TUNING** | atomic write + read-back; `tune_tag` reaches the ledger, or the A/B is unattributable |
@@ -507,6 +507,21 @@ cloud node builds; the Mac stages and relays; the rig never faces the internet.
 | **The Air** (M1 MacBook Air, 8 GB, fanless) | **Asahi Linux (Fedora aarch64) primary since 2026-08-31**; macOS boot retained (colima `--local` fallback lives there — untested under Asahi/podman) | staging, `install.sh` handoff, **all rig contact**, quick warm rebuilds; **native card work**: `dd` etches the card directly (runbook §6, no Etcher) and the card's own partitions (`ROCKNIX-GTK` vfat / `GTKSTOR` ext4) mount natively — direct ROM management, no Samba/ssh detour. Card out of the rig only; hand-manage `roms/` content, never `etk_telemetry/` or the RPCS3 config trees | local |
 | **etk-cloud** (Oracle Always-Free Ampere A1) | 4 cores / 23 GB / 145 GB, Ubuntu 24.04 aarch64, native docker | long/heavy builds — toolchain images, clean rebuilds, sanitizer builds | `ssh etk-cloud` (alias in `~/.ssh/config`; IP is **reserved/static** since 2026-08-30 — survives stop/start, no console re-read) |
 | **etk-local** (Lima VM on the daily-driver M1 Max, macOS; added 2026-10-30) | 8 cores / 32 GB / 150 GB sparse, Ubuntu 24.04 aarch64, 4K pages, docker on the VM's own ext4 | the same lanes, no cloud in the loop | `ssh etk-local` (loopback alias, port 60022); `tools/forge/local_node.sh up\|down\|status` |
+| **etk-local, Linux shape** (the same M1 Max booted into Asahi Fedora; added 2026-10-31) | the host itself: 10 cores / 62 GB / btrfs (case-sensitive), **16K pages**, SELinux enforcing, rootless podman 5.x behind `~/.local/bin/docker` (a shim that execs podman) | the kernel lane first (`rocknix-gtk-kernel-sid` in this user's podman storage, gcc-15 + gcc-16); the rpcs3/turnip images only by `seed` from etk-cloud | `ssh etk-local` (loopback alias to 127.0.0.1 as this user, port 22, own key in own `authorized_keys`, `loginctl enable-linger`); the same `tools/forge/local_node.sh up\|down\|status` picks the shape by `uname` |
+
+**The local node, Linux shape (2026-10-31).** Under Asahi there is no Virtualization.framework and
+no docker, so `etk-local` is this host: the forge only ever sees an ssh alias and docker verbs, and
+both are satisfied by a loopback alias (`Host etk-local` → 127.0.0.1, this user, this user's own key
+in its `authorized_keys`) and a two-line `docker` shim over rootless podman. `local_node.sh up`
+writes all of it and enables lingering so containers outlive the ssh session; `status` reports the
+shape, the shim, the alias, the kernel container and its compilers. Differences a lane can feel: the
+host runs **16K pages** (fine for gcc and a kernel build; an rpcs3/LLVM image built here would be
+untested on it), SELinux is enforcing (the container recipe labels its `/work` bind mount `:z`), and
+the paths are `$HOME`, not `/home/ubuntu` (`provision_node.sh` spells the node's GT as `$HOME/gt72`).
+Fill the kernel container with `rocknix-gtk scripts/provision-build-container.sh` run locally (no
+`ETK_BUILD_HOST`), place the ground truth in `~/gt72`, stage with `stage_72.sh`, and mint with
+`./forge.sh --local kernel` — a mint, the operator's, as everywhere. The macOS shape below is
+unchanged and still the one `seed` was proven on.
 
 **The local node (2026-10-30).** `etk-local` is an etk-cloud twin on purpose: same OS, arch, user
 (`ubuntu`) and home, reached only through its ssh alias, so forge.sh, the lanes and

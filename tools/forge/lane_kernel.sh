@@ -105,10 +105,16 @@ else
     log "TOOLCHAIN OVERRIDE: FORGE_KCC=$KCC -- the recipe's parity check is skipped. A clean build and a clean gate prove nothing here; the failure mode is a silent pre-userspace black screen. Deliberate choice, cold-boot gated."
     KCC_ENV="KCC=$KCC "
 fi
-log "build_${KLANE}.sh BASEDATE=$BASEDATE (KCC=${KCC:-stock-parity}; kit DTB=$ETK_KIT_DTB; gpio-sbu-mux built-in=$ETK_GPIO_SBU_BUILTIN; forensics=$ETK_FORENSICS; sd-poll=$ETK_SD_POLL)"
-docker exec rocknix-gtk-kernel-sid bash -lc "${KCC_ENV}BASEDATE=$BASEDATE ETK_KIT_DTB=$ETK_KIT_DTB ETK_INTERNAL_MIC=$ETK_INTERNAL_MIC ETK_GPIO_SBU_BUILTIN=$ETK_GPIO_SBU_BUILTIN ETK_FORENSICS=$ETK_FORENSICS ETK_SD_POLL=$ETK_SD_POLL bash /work/scripts/build_${KLANE}.sh"
+# BLS by date, or by the rehearsal knob (FORGE_KERNEL_BLS=1: a nightly staging dated before the tag,
+# e.g. nightly-20261030, is BLS-format; the recipe takes the same BLS=1 override).
+BLS_ENV=""
+if [ "$KLANE" = 72 ] && [ "$BASEDATE" -ge 20261101 ]; then IS_BLS=1
+elif [ "$KLANE" = 72 ] && [ "${FORGE_KERNEL_BLS:-}" = 1 ]; then IS_BLS=1; BLS_ENV="BLS=1 "; log "BLS REHEARSAL: FORGE_KERNEL_BLS=1 on BASEDATE=$BASEDATE (dated before the 20261101 tag) -- the recipe runs its BLS branch on this nightly staging"
+else IS_BLS=0; fi
+log "build_${KLANE}.sh BASEDATE=$BASEDATE (KCC=${KCC:-stock-parity}; bls=$IS_BLS; kit DTB=$ETK_KIT_DTB; gpio-sbu-mux built-in=$ETK_GPIO_SBU_BUILTIN; forensics=$ETK_FORENSICS; sd-poll=$ETK_SD_POLL)"
+docker exec rocknix-gtk-kernel-sid bash -lc "${KCC_ENV}${BLS_ENV}BASEDATE=$BASEDATE ETK_KIT_DTB=$ETK_KIT_DTB ETK_INTERNAL_MIC=$ETK_INTERNAL_MIC ETK_GPIO_SBU_BUILTIN=$ETK_GPIO_SBU_BUILTIN ETK_FORENSICS=$ETK_FORENSICS ETK_SD_POLL=$ETK_SD_POLL bash /work/scripts/build_${KLANE}.sh"
 
-if [ "$KLANE" = 72 ] && [ "$BASEDATE" -ge 20261101 ]; then
+if [ "$IS_BLS" = 1 ]; then
     echo "=== config drift vs ground truth (BLS lane: expect INITRAMFS/FIRMWARE paths + toolchain-probe lines ONLY -- stock ships TYPEC_MUX_GPIO_SBU=y, that line must be GONE; bls_gate.sh already failed the build if it is not) ==="
 else
     echo "=== config drift vs rig ground truth (expect INITRAMFS/FIRMWARE paths + toolchain-probe lines; + ONE TYPEC_MUX_GPIO_SBU m->y line when the boot-logo fix is on) ==="
@@ -133,7 +139,7 @@ mkdir -p "$HOME/rocknix-gtk/artifacts"
 #                                 cmdline_extra record is the proof it ran). A boot.img in
 #                                 this slot would be a dark boot under OpenABL.
 ART="Image"
-if [ "$KLANE" = 72 ] && [ "$BASEDATE" -ge 20261101 ]; then
+if [ "$IS_BLS" = 1 ]; then
     docker exec rocknix-gtk-kernel-sid test -f "/kernel/cmdline_extra${SFX}.txt" \
         || { log "FATAL: BASEDATE=$BASEDATE is the BLS lane but the recipe left no cmdline_extra${SFX}.txt -- bls_gate.sh did not run (node's rocknix-gtk predates the BLS branch? pull it)"; exit 1; }
     docker exec rocknix-gtk-kernel-sid test -f "/kernel/out${KLANE}${SFX}/arch/arm64/boot/Image" \

@@ -70,7 +70,9 @@ TURNIP_IMAGE="${TURNIP_IMAGE:-ubuntu@sha256:561618e2c15bf2397621dd04f96926663a3b
 # plus every binary build_gtk_image_v2.sh / lane_image.sh call (grep'd 2026-10-04).
 # e2fsprogs >= 1.47 is load-bearing: the recipe passes `mke2fs -O ^orphan_file`.
 IMGTOOL_PKGS="parted mtools dosfstools e2fsprogs fdisk rsync gzip xz-utils python3 squashfs-tools"
-GT="/home/ubuntu/gt72"          # stage_72.sh's default GT, spelled for the node
+# stage_72.sh's default GT, spelled for the node: $HOME there, resolved on the node (etk-cloud and
+# the Lima VM are ubuntu; the Linux-shape etk-local is this user on this host, 2026-10-31).
+GT='$HOME/gt72'                 # single-quoted on purpose: expands on the NODE
 
 NSSH() { ssh -o BatchMode=yes -o ConnectTimeout=15 "$HOST" "$@"; }
 # Run a stdin script on the node WITH positional args. ssh joins its argv into
@@ -282,8 +284,8 @@ phase_groundtruth() {
     fi
     NRUN "$BASE_GZ" "$BASEDATE" "$GT" "$ksrc" <<'REMOTE'
 set -euo pipefail
-GZ="$1" D="$2" GT="$3" KSRC="$4"
-U="$(id -u):$(id -g)"      # extracted files stay owned by ubuntu on the host
+GZ="$1" D="$2" GT="${3/#\$HOME/$HOME}" KSRC="$4"   # GT arrives %q-quoted as the literal $HOME/gt72: expand it HERE, on the node
+U="$(id -u):$(id -g)"      # extracted files stay owned by the node user on the host
 rm -rf "$HOME/etk/os-install/.gt-tmp"; mkdir -p "$HOME/etk/os-install/.gt-tmp"
 docker exec -i -u "$U" -e GZ="$GZ" -e D="$D" -e KSRC="$KSRC" etk-imgtool bash -s <<'IN'
 set -euo pipefail
@@ -455,8 +457,8 @@ phase_check() {
         rm -f "$tmp"
     fi
     NRUN "$head" "$FORGE_RPCS3_BASE" "$FORGE_RPCS3_IMAGE" "$FORGE_TURNIP_VERS" \
-        "$BASE_GZ" "$PROVISION_BASE_SHA" "$CERT_KNAME" "$CERT_ANAME" "$drivers_csv" "$BASEDATE" "$wantinit" <<'REMOTE'
-HEAD="$1" BASE="$2" IMG="$3" VERS="$4" GZ="$5" GZSHA="$6" KN="$7" AN="$8" DRV="$9" D="${10}" WANTINIT="${11}"
+        "$BASE_GZ" "$PROVISION_BASE_SHA" "$CERT_KNAME" "$CERT_ANAME" "$drivers_csv" "$BASEDATE" "$wantinit" "$FORGE_KERNEL_BASEDATE" <<'REMOTE'
+HEAD="$1" BASE="$2" IMG="$3" VERS="$4" GZ="$5" GZSHA="$6" KN="$7" AN="$8" DRV="$9" D="${10}" WANTINIT="${11}" KD="${12:-$D}"
 row() { printf '  %-7s %-46s %s\n' "$1" "$2" "$3"; }
 ok()  { [ "$1" = 0 ] && echo READY || echo "MISSING${2:+ — $2}"; }
 up()  { docker ps --format '{{.Names}}' | grep -qx "$1"; }
@@ -503,13 +505,24 @@ for v in $VERS; do
 done
 # kernel
 up rocknix-gtk-kernel-sid; row kernel "container rocknix-gtk-kernel-sid Up" "$(ok $?)"
-docker exec rocknix-gtk-kernel-sid sh -c "gcc-15 -dumpfullversion" >/dev/null 2>&1
-row kernel "gcc-15 in container" "$( [ $? = 0 ] && echo "READY ($(docker exec rocknix-gtk-kernel-sid gcc-15 -dumpfullversion))" || echo MISSING)"
-S=""; [ "$D" = 20260901 ] || S="-$D"     # stage_72.sh's suffix rule
-docker exec rocknix-gtk-kernel-sid sh -c "test -d /kernel/staging/patches-72$S/01-mainline && test -f /kernel/staging/config-7.2-rig$S.txt && test -f /kernel/staging/initramfs-stock-$D.cpio && test -d /kernel/staging/external-firmware-$D && test -f /kernel/linux-7.2.tar.xz" 2>/dev/null
-row kernel "staging (stage_72.sh) assembled" "$(ok $? 'groundtruth phase')"
-gi=$(docker exec rocknix-gtk-kernel-sid sha256sum /kernel/staging/initramfs-stock-$D.cpio 2>/dev/null | cut -d' ' -f1)
-if [ -z "$WANTINIT" ]; then row kernel "staged initramfs == certified embed" "UNJUDGED — no certified kernel on the Air"
+# the kernel rows judge the KERNEL chassis (FORGE_KERNEL_BASEDATE), not the image's: the two
+# dates part at a release boundary (20261001 image lane, 20261101 kernel rehearsal, 2026-10-31)
+for cc in gcc-15 gcc-16; do
+    docker exec rocknix-gtk-kernel-sid sh -c "$cc -dumpfullversion" >/dev/null 2>&1
+    row kernel "$cc in container" "$( [ $? = 0 ] && echo "READY ($(docker exec rocknix-gtk-kernel-sid $cc -dumpfullversion))" || echo MISSING)"
+done
+S=""; [ "$KD" = 20260901 ] || S="-$KD"     # stage_72.sh's suffix rule
+docker exec rocknix-gtk-kernel-sid sh -c "test -d /kernel/staging/patches-72$S/01-mainline && test -f /kernel/staging/config-7.2-rig$S.txt && test -f /kernel/staging/initramfs-stock-$KD.cpio && test -d /kernel/staging/external-firmware-$KD && test -f /kernel/linux-7.2.tar.xz" 2>/dev/null
+row kernel "staging for chassis $KD (stage_72.sh) assembled" "$(ok $? 'stage_72.sh / groundtruth phase')"
+# the toolchain law: which compiler the staged config demands (rocknix-gtk scripts/stock_gcc.sh), and is it there
+want=$(docker exec rocknix-gtk-kernel-sid bash /work/scripts/stock_gcc.sh /kernel/staging/config-7.2-rig$S.txt 2>/dev/null || true)
+if [ -z "$want" ]; then row kernel "compiler = stock's major (parity law)" "UNJUDGED — no staged config / old rocknix-gtk"
+elif docker exec rocknix-gtk-kernel-sid sh -c "$want -dumpfullversion" >/dev/null 2>&1; then row kernel "compiler = stock's major (parity law)" "READY ($want)"
+else row kernel "compiler = stock's major (parity law)" "MISSING — stock $KD wants $want; re-run provision-build-container.sh"; fi
+# the certified kernel embeds the cpio of ITS chassis; judge only when the staged chassis is that one
+case "$KN" in KERNEL.rocknix-gtk-$KD-*) ;; *) WANTINIT="";; esac
+gi=$(docker exec rocknix-gtk-kernel-sid sha256sum /kernel/staging/initramfs-stock-$KD.cpio 2>/dev/null | cut -d' ' -f1)
+if [ -z "$WANTINIT" ]; then row kernel "staged initramfs == certified embed" "UNJUDGED — certified kernel $KN is not chassis $KD (or none on the Air)"
 elif [ "$gi" = "$WANTINIT" ]; then row kernel "staged initramfs == certified embed" "READY (${gi:0:12})"
 else row kernel "staged initramfs == certified embed" "MISMATCH ${gi:0:12} != ${WANTINIT:0:12} — re-run groundtruth"; fi
 # image
