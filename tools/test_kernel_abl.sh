@@ -24,6 +24,7 @@
 #   tools/test_kernel_abl.sh                     # working tree — must PASS
 #   tools/test_kernel_abl.sh --against 6615699   # pre-change — must FAIL
 #   tools/test_kernel_abl.sh --against c8f0133   # before the stock pin + GRUB-era re-park — the OTA/leftover cases FAIL
+#   tools/test_kernel_abl.sh --against fdd0a04fa  # before the 20261101 BLS guards — osguard silent, uninstall boots the unit dark
 
 set -u
 cd "$(dirname "$0")/.." || exit 1
@@ -272,6 +273,54 @@ reset_unit; stage "$TD/gtk.img" >/dev/null
 MOUNT_FAIL=1 expect "uninstall: remount failure -> FAILED, slot left as is" 1 "FAILED" restore
 unset MOUNT_FAIL
 [ "$(slot_sha)" = "$GTK_SHA" ] && ok "failed restore left the GTK slot intact" || bad "failed restore corrupted the slot"
+
+# ===== ROCKNIX 20261101 (OpenABL + BLS): the slot is a PE Image, loader/entries exists ===
+# P0 2026-10-30 (etk-dossiers/BuildPlan_0110_OpenABL_20261030.md §3). An ETK rig that takes the
+# update: /flash/KERNEL = raw PE kernel ("MZ"), /flash/loader/entries/rocknix.conf, /flash/dtbs/,
+# the ABL-era KERNEL.etk-stock still parked, heal bundle chain=abl with the GTK boot.img staged.
+# The release gate passes (both 7.2.0), so osguard must NAME it (toast) and touch nothing, and
+# uninstall must NOT copy the parked boot.img into the slot: OpenABL refuses a non-EFI image
+# ("not an EFI image") and the unit boots dark. Against fdd0a04fa both halves FAIL.
+mk_pe() { python3 -I - "$1" <<'PY'
+import sys
+img = bytearray(0x40) + b'\0' * 4096
+img[0:2] = b'MZ'; img[0x38:0x3c] = b'ARM\x64'
+img += b'Linux version 7.2.0 (@0b091aade48d) (aarch64-rocknix-linux-gnu-gcc-16.2.0 (GCC) 16.2.0) #1 SMP PREEMPT\n'
+open(sys.argv[1], 'wb').write(bytes(img))
+PY
+}
+bls_update() {   # what the 20261101 updater leaves on a unit: PE slot + loader/ + dtbs/, parked copy untouched
+    mk_pe "$U/flash/KERNEL"
+    mkdir -p "$U/flash/loader/entries" "$U/flash/dtbs"
+    printf 'title ROCKNIX\nversion 20261101\nlinux /KERNEL\noptions boot=LABEL=ROCKNIX disk=LABEL=STORAGE quiet rootwait console=tty0 video=efifb:off gpt\n' > "$U/flash/loader/entries/rocknix.conf"
+    : > "$U/mount.log"
+}
+reset_unit; stage "$TD/gtk.img" >/dev/null; bls_update
+PE_SHA=$(slot_sha)
+expect "osguard --check: BLS slot (MZ + loader/entries) -> named, rc 2, no plan to park" 2 "PE/BLS kernel" guard --check
+[ "$(slot_sha)" = "$PE_SHA" ] && ok "check mode left the PE kernel alone" || bad "check mode touched the slot"
+rm -f "$U/marker"
+expect "osguard heal: BLS slot -> stock stays, rc 0" 0 "PE/BLS kernel" guard
+[ "$(slot_sha)" = "$PE_SHA" ] && ok "heal left the PE kernel byte-exact" || bad "heal wrote the slot on a BLS unit"
+grep -q 'new bootloader' "$U/marker" 2>/dev/null && ok "operator TOLD: new bootloader, ETK kernel not active" || bad "no toast on a BLS unit (the silent branch)"
+[ -f "$U/flash/KERNEL.etk-stock" ] && ok "osguard left the parked copy alone" || bad "osguard removed KERNEL.etk-stock"
+rm -rf "$U/flash/loader"; rm -f "$U/marker"
+expect "osguard heal: MZ slot without loader/ -> still named BLS" 0 "PE/BLS kernel" guard
+grep -q 'new bootloader' "$U/marker" 2>/dev/null && ok "toast on the MZ-only variant" || bad "no toast on the MZ-only variant"
+printf 'garbage kernel' > "$U/flash/KERNEL"; rm -f "$U/marker"
+expect "osguard heal: unknown slot format -> named, not re-staged" 0 "unknown format" guard
+grep -q 'unknown kernel' "$U/marker" 2>/dev/null && ok "toast on an unknown slot" || bad "no toast on an unknown slot"
+# --- uninstall on a BLS unit: the parked boot.img must NOT go into the slot ---
+reset_unit; stage "$TD/gtk.img" >/dev/null; bls_update
+expect "uninstall: BLS unit with an ABL-era parked copy -> nothing restored, parked copy removed" 0 "nothing to restore" restore
+[ "$(slot_sha)" = "$PE_SHA" ] && ok "uninstall left the PE kernel byte-exact (no boot.img in a BLS slot)" || bad "uninstall put a boot.img into a BLS slot -> dark boot"
+[ -e "$U/flash/KERNEL.etk-stock" ] && bad "dead parked boot.img kept" || ok "dead parked boot.img removed"
+[ -e "$U/storage/heal/chain" ] && bad "heal chain marker survived (BLS)" || ok "heal chain marker cleared (BLS)"
+tail -n1 "$U/mount.log" | grep -q 'remount,ro' && ok "uninstall left flash ro (BLS)" || bad "uninstall left flash rw (BLS)"
+reset_unit; bls_update; : > "$U/mount.log"
+expect "uninstall: BLS unit, nothing parked -> no-op, rc 0" 0 "nothing to restore" restore
+[ -s "$U/mount.log" ] && bad "BLS no-op remounted flash" || ok "BLS no-op touched nothing"
+[ "$(slot_sha)" = "$PE_SHA" ] && ok "BLS no-op left the slot" || bad "BLS no-op touched the slot"
 
 # ===== install.sh — the GRUB deploy branch is chain-gated (0.10.0, RC audit) ==========
 # Static read: the raw-Image deploy (KERNEL.gtktest + grub entries) must only run

@@ -183,7 +183,19 @@ if [ "$(cat "$HEAL/chain" 2>/dev/null)" = "abl" ] || \
         [ "$MODE" = "heal" ] && finish 0 || finish 2
     fi
     if [ "$(head -c 8 "$FLASH/KERNEL" 2>/dev/null)" != "ANDROID!" ]; then
-        log "abl chain: NOT re-staging — $FLASH/KERNEL is not a boot.img; leaving it alone"
+        # 2026-10-30 (P0 for ROCKNIX 20261101): the OS moved SM8250 to OpenABL + Boot Loader
+        # Spec entries -- /flash/KERNEL is a raw PE Image ("MZ"), /flash/loader/entries/ exists,
+        # and a boot.img cannot boot there at all. The release gate above does not catch it
+        # (the kernel stays 7.2.0), so this branch is the ONLY place the operator can be told.
+        # It used to exit silently: an ETK rig that took the update ran stock with no toast.
+        # Never re-stage here -- the staged boot.img has no EFI stub.
+        if [ -d "$FLASH/loader/entries" ] || [ "$(head -c 2 "$FLASH/KERNEL" 2>/dev/null)" = "MZ" ]; then
+            log "abl chain: NOT re-staging — $FLASH/KERNEL is a PE/BLS kernel (ROCKNIX 20261101+, OpenABL); the staged boot.img cannot boot on this chain. The GTK kernel is NOT live; stock runs until an ETK release for this boot chain is installed. Slot left alone."
+            notify "ROCKNIX moved to a new bootloader. The ETK kernel is not active - stock kernel in use until ETK 0.11.0 ships. Nothing to fix by hand."
+        else
+            log "abl chain: NOT re-staging — $FLASH/KERNEL is not a boot.img (unknown format); leaving it alone"
+            notify "OS update left an unknown kernel in the boot slot; the ETK kernel is not active. Re-run the ETK installer from your computer."
+        fi
         [ "$MODE" = "heal" ] && finish 0 || finish 2
     fi
     log "abl chain: RE-STAGE — release $STAGED_REL matches this OS; parking the updater's boot.img as KERNEL.etk-stock and restoring the GTK boot.img"

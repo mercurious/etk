@@ -6,6 +6,17 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ### Fixed
 
+- **An ETK rig that takes ROCKNIX 20261101 is told, and the uninstaller cannot boot it dark.**
+  The November ROCKNIX moves the Flip 2 to a new bootloader (OpenABL + Boot Loader Spec entries):
+  `/flash/KERNEL` becomes a raw EFI kernel and a boot.img cannot boot there at all. The kit's
+  OS Guard caught the swap but exited silently (the kernel stays 7.2.0, so its release gate did
+  not fire): the rig ran stock with no message. It now shows a toast — the ETK kernel is not
+  active until ETK 0.11.0 ships, nothing to fix by hand — and leaves the slot alone. `uninstall.sh`
+  (and the Windows port, same body) used to copy the parked stock boot.img back into the slot on
+  any unit without a boot menu; on the new bootloader that boots the unit DARK. It now recognises
+  the new chain, restores nothing and removes the dead parked copy. Proven in `tools/test_kernel_abl.sh`
+  (10 cases that fail on the previous revision). Hold the ROCKNIX update until 0.11.0; the plan is
+  `etk-dossiers/BuildPlan_0110_OpenABL_20261030.md`.
 - **Gran Turismo 6's rear-view mirror renders** (RPCS3 GTK Edition **0.10.1-dev**, fork
   `etk-rpcs3-gtk` `d2fb2fd`). The HUD mirror had drawn black with the minimap bleeding into it on
   every GTK core. Upstream found the cause after our base was cut: GT6's mirror colour target shares

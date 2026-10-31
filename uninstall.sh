@@ -589,7 +589,23 @@ esac
 # everything below runs on the rig. Harness: tools/test_kernel_abl.sh.
 # ==========================================================
 ssh $RIG_SSH "FLASH='/flash' HEAL='/storage/rocknix-gtk/heal' sh -s" >> /tmp/etk_uninstall_clean.log 2>&1 << 'ABLRESTORE'
-if [ ! -d "$FLASH/EFI" ] && [ -f "$FLASH/KERNEL.etk-stock" ] && [ "$(head -c 8 "$FLASH/KERNEL.etk-stock" 2>/dev/null)" = "ANDROID!" ]; then
+if [ -d "$FLASH/loader/entries" ] || [ "$(head -c 2 "$FLASH/KERNEL" 2>/dev/null)" = "MZ" ]; then
+    # BLS boot chain (ROCKNIX 20261101+, OpenABL; P0 guard 2026-10-30): the slot already holds the
+    # OS's own PE kernel. A KERNEL.etk-stock left from the ABL era is a boot.img -- OpenABL refuses it
+    # ("not an EFI image"), so copying it into the slot, as the branch below would, boots the unit
+    # DARK (card in a PC to recover). Nothing to restore here; drop the dead parked copy.
+    if [ -f "$FLASH/KERNEL.etk-stock" ]; then
+        if mount -o remount,rw "$FLASH" 2>/dev/null; then
+            rm -f "$FLASH/KERNEL.etk-stock"; sync; mount -o remount,ro "$FLASH" 2>/dev/null
+            echo "    BLS boot chain (ROCKNIX 20261101+): slot is the OS kernel, nothing to restore; removed the ABL-era KERNEL.etk-stock (a boot.img cannot boot here)"
+        else
+            echo "    BLS boot chain (ROCKNIX 20261101+): slot is the OS kernel, nothing to restore; KERNEL.etk-stock kept (/flash not remountable)"
+        fi
+    else
+        echo "    BLS boot chain (ROCKNIX 20261101+): slot is the OS kernel, nothing to restore"
+    fi
+    rm -f "$HEAL/chain"
+elif [ ! -d "$FLASH/EFI" ] && [ -f "$FLASH/KERNEL.etk-stock" ] && [ "$(head -c 8 "$FLASH/KERNEL.etk-stock" 2>/dev/null)" = "ANDROID!" ]; then
     W=$(sha256sum "$FLASH/KERNEL.etk-stock" | cut -d' ' -f1)
     OSMD5=$(cut -d' ' -f1 "$FLASH/KERNEL.md5" 2>/dev/null)
     if [ "$(sha256sum "$FLASH/KERNEL" | cut -d' ' -f1)" = "$W" ]; then
