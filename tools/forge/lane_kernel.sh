@@ -10,17 +10,27 @@
 #           72 (7.2 / 20260901 rebase lane). Selects build_<sel>.sh,
 #           out<sel>/ and config<sel>.drift — the recipes coexist so the
 #           shipping kernel can always be reminted while the next one bakes.
-#   FORGE_KERNEL_BASEDATE  chassis date for the 72 lane (default 20260901). 20261001+
-#           is the qcom-abl era: the recipe builds a boot.img (gzip Image + DTBs,
-#           cmdline baked incl. msm.context_keepalive=1, parity-gated against the
-#           STOCK KERNEL) and THAT is the artifact — /flash/KERNEL is a boot.img now.
+#   FORGE_KERNEL_BASEDATE  chassis date for the 72 lane (default 20260901). THREE
+#           artifact formats, one recipe (rocknix-gtk UPSTREAM_20261101.md §1c):
+#             20260901         GRUB era:     the raw Image
+#             20261001         qcom-abl era: a boot.img (gzip Image + DTBs, cmdline baked
+#                              incl. msm.context_keepalive=1, parity-gated against the
+#                              STOCK KERNEL) — /flash/KERNEL is a boot.img
+#             20261101+        BLS era:      the raw PE Image again (OpenABL + Boot Loader
+#                              Spec entries; cmdline and DTB come from the entry the kit
+#                              renders at DEPLOY, scripts/bls_gate.sh is the parity proof).
+#                              The artifact is `Image`, required, never inferred.
+#   FORGE_KCC  the compiler passed to the recipe (default gcc-15 = THE GCC-15 LAW). Any
+#           other value is a DELIBERATE, cold-boot-gated toolchain choice (stock 20261101
+#           is built with gcc 16.2.0; the decision inputs: rocknix-gtk
+#           UPSTREAM_20261101.md §5). Logged loud; part of the lane fingerprint.
 #
 # Encoded traps (handoff §3.3):
 #   * repo is mounted at /work, build tree at /kernel — not interchangeable
 #   * the recipe is not executable in-container: invoke via `bash`
 #   * KCC=gcc-15 is enforced IN the recipe (8eaf37a); gcc-14 black-screens
 #     pre-userspace and sid's 16.x default is unvalidated — never override
-#     casually
+#     casually (FORGE_KCC exists for the deliberate case, not the casual one)
 #   * the recipe does NOT package: Image is left in the build tree; naming
 #     and staging is absorbed here (was a manual step during v0.8.4)
 #   * the config drift diff vs rig ground truth is SURFACED, never swallowed
@@ -64,6 +74,10 @@ fi
 if [ "$ETK_SD_POLL" = 1 ] && ! grep -q 'ETK_SD_POLL' "$HOME/rocknix-gtk/scripts/build_${KLANE}.sh" 2>/dev/null; then
     log "FATAL: ETK_SD_POLL=1 but the node's rocknix-gtk build_${KLANE}.sh does not know it (pull ~/rocknix-gtk)"; exit 1
 fi
+# BLS lane (20261101+): the splicer is staged for the GATE's dry-run on both Flip 2 trees
+# (early warning that it still fits the new DTS), not for a splice -- the kit DTB is derived
+# on the rig at deploy. The recipe FAILS a BLS mint that sets any kit knob to a non-default
+# value (ETK_KIT_DTB=0 / ETK_INTERNAL_MIC=0 / ETK_SD_POLL=1), with the deploy-time pointer.
 if [ "$KLANE" = 72 ] && [ "$BASEDATE" -ge 20261001 ] && [ "$ETK_KIT_DTB" = 1 ]; then
     SPL="$HOME/etk/bin/etk_dtb_mic.py"
     [ -f "$SPL" ] || { log "FATAL: $SPL missing on the node (pull ~/etk) -- or ETK_KIT_DTB=0 for a pure-parity mint"; exit 1; }
@@ -73,10 +87,24 @@ if [ "$KLANE" = 72 ] && [ "$BASEDATE" -ge 20261001 ] && [ "$ETK_KIT_DTB" = 1 ]; 
         log "FATAL: ETK_SD_POLL=1 but the node's splicer has no --sd-poll (pull ~/etk)"; exit 1
     fi
 fi
-log "build_${KLANE}.sh BASEDATE=$BASEDATE (KCC=gcc-15, enforced in-recipe; kit DTB=$ETK_KIT_DTB; gpio-sbu-mux built-in=$ETK_GPIO_SBU_BUILTIN; forensics=$ETK_FORENSICS; sd-poll=$ETK_SD_POLL)"
-docker exec rocknix-gtk-kernel-sid bash -lc "KCC=gcc-15 BASEDATE=$BASEDATE ETK_KIT_DTB=$ETK_KIT_DTB ETK_INTERNAL_MIC=$ETK_INTERNAL_MIC ETK_GPIO_SBU_BUILTIN=$ETK_GPIO_SBU_BUILTIN ETK_FORENSICS=$ETK_FORENSICS ETK_SD_POLL=$ETK_SD_POLL bash /work/scripts/build_${KLANE}.sh"
+# THE GCC-15 LAW, with one deliberate door: FORGE_KCC. gcc-15 built every kernel that ever
+# booted a car here; gcc-14 black-screened pre-userspace (2026-07-05); gcc-16 is what stock
+# 20261101 is built with and has never built a kernel that booted a car here. Whatever is
+# passed, only the operator's cold boot validates it -- the recipe's own 15.x guard is
+# bypassed by an explicit KCC, so the loud line below is the record.
+KCC="${FORGE_KCC:-gcc-15}"
+case "$KCC" in
+    gcc-15) ;;
+    *) log "TOOLCHAIN OVERRIDE: FORGE_KCC=$KCC -- NOT the validated gcc-15 (THE GCC-15 LAW, rocknix-gtk BUILDING.md). A clean build and a clean gate prove nothing here; the failure mode is a silent pre-userspace black screen. Deliberate choice, cold-boot gated." ;;
+esac
+log "build_${KLANE}.sh BASEDATE=$BASEDATE (KCC=$KCC; kit DTB=$ETK_KIT_DTB; gpio-sbu-mux built-in=$ETK_GPIO_SBU_BUILTIN; forensics=$ETK_FORENSICS; sd-poll=$ETK_SD_POLL)"
+docker exec rocknix-gtk-kernel-sid bash -lc "KCC=$KCC BASEDATE=$BASEDATE ETK_KIT_DTB=$ETK_KIT_DTB ETK_INTERNAL_MIC=$ETK_INTERNAL_MIC ETK_GPIO_SBU_BUILTIN=$ETK_GPIO_SBU_BUILTIN ETK_FORENSICS=$ETK_FORENSICS ETK_SD_POLL=$ETK_SD_POLL bash /work/scripts/build_${KLANE}.sh"
 
-echo "=== config drift vs rig ground truth (expect INITRAMFS/FIRMWARE paths + toolchain-probe lines; + ONE TYPEC_MUX_GPIO_SBU m->y line when the boot-logo fix is on) ==="
+if [ "$KLANE" = 72 ] && [ "$BASEDATE" -ge 20261101 ]; then
+    echo "=== config drift vs ground truth (BLS lane: expect INITRAMFS/FIRMWARE paths + toolchain-probe lines ONLY -- stock ships TYPEC_MUX_GPIO_SBU=y, that line must be GONE; bls_gate.sh already failed the build if it is not) ==="
+else
+    echo "=== config drift vs rig ground truth (expect INITRAMFS/FIRMWARE paths + toolchain-probe lines; + ONE TYPEC_MUX_GPIO_SBU m->y line when the boot-logo fix is on) ==="
+fi
 docker exec rocknix-gtk-kernel-sid cat "/kernel/config${KLANE}${SFX}.drift" || true
 echo "=== end drift ==="
 
@@ -88,11 +116,25 @@ MODCOUNT=$(docker exec rocknix-gtk-kernel-sid sh -c "wc -l < /kernel/out${KLANE}
 log "modules built: $MODCOUNT (modules.order)"
 
 mkdir -p "$HOME/rocknix-gtk/artifacts"
-# qcom-abl era: ship the parity-gated boot.img (the recipe dies before here if the
-# gate failed); GRUB era: the raw Image, as always.
+# The artifact is REQUIRED by lane, never inferred from a file that happens to exist:
+#   GRUB era (20260901):          the raw Image
+#   qcom-abl era (20261001 only): the parity-gated boot.img (the recipe dies before here
+#                                 if bootimg_parity.py failed)
+#   BLS era (20261101+):          the raw PE Image again, after scripts/bls_gate.sh (the
+#                                 recipe dies before here if the gate failed; the gate's
+#                                 cmdline_extra record is the proof it ran). A boot.img in
+#                                 this slot would be a dark boot under OpenABL.
 ART="Image"
-if [ "$KLANE" = 72 ] && [ "$BASEDATE" -ge 20261001 ]; then
-    ART="boot.img"   # required, never inferred from a file that happens to exist
+if [ "$KLANE" = 72 ] && [ "$BASEDATE" -ge 20261101 ]; then
+    docker exec rocknix-gtk-kernel-sid test -f "/kernel/cmdline_extra${SFX}.txt" \
+        || { log "FATAL: BASEDATE=$BASEDATE is the BLS lane but the recipe left no cmdline_extra${SFX}.txt -- bls_gate.sh did not run (node's rocknix-gtk predates the BLS branch? pull it)"; exit 1; }
+    docker exec rocknix-gtk-kernel-sid test -f "/kernel/out${KLANE}${SFX}/arch/arm64/boot/Image" \
+        || { log "FATAL: BASEDATE=$BASEDATE is the BLS lane but no Image was produced"; exit 1; }
+    MAGIC=$(docker exec rocknix-gtk-kernel-sid head -c 2 "/kernel/out${KLANE}${SFX}/arch/arm64/boot/Image")
+    [ "$MAGIC" = MZ ] || { log "FATAL: arch/arm64/boot/Image does not start with MZ (not a PE Image; got '$MAGIC')"; exit 1; }
+    log "BLS lane: cmdline_extra (rendered into the entry at DEPLOY, not baked): $(docker exec rocknix-gtk-kernel-sid cat "/kernel/cmdline_extra${SFX}.txt")"
+elif [ "$KLANE" = 72 ] && [ "$BASEDATE" -ge 20261001 ]; then
+    ART="boot.img"
     docker exec rocknix-gtk-kernel-sid test -f "/kernel/out${KLANE}${SFX}/arch/arm64/boot/boot.img" \
         || { log "FATAL: BASEDATE=$BASEDATE is the boot.img lane but no boot.img was produced"; exit 1; }
 fi
@@ -101,6 +143,6 @@ docker exec rocknix-gtk-kernel-sid cat "/kernel/out${KLANE}${SFX}/arch/arm64/boo
     > "$HOME/rocknix-gtk/artifacts/$KNAME"
 ( cd "$HOME/rocknix-gtk/artifacts" && sha256sum "$KNAME" > "$KNAME.sha256" )
 SZ=$(stat -c %s "$HOME/rocknix-gtk/artifacts/$KNAME")
-log "artifact: $KNAME ${SZ} B — $ART (Image ref: shipped -0.3.1 60,246,528 B; boot.img ref: stock 20261001 KERNEL 28,790,784 B)"
+log "artifact: $KNAME ${SZ} B — $ART (Image refs: shipped -0.3.1 60,246,528 B, stock 20261101 KERNEL 59,986,432 B; boot.img ref: stock 20261001 KERNEL 28,790,784 B)"
 log "sha256  : $(cut -d' ' -f1 "$HOME/rocknix-gtk/artifacts/$KNAME.sha256")"
 log "LANE OK — COLD-BOOT GATED: unvalidated until the operator boots it"

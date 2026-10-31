@@ -25,7 +25,9 @@
 # Lanes (SEQUENTIAL — the build node has 4 cores; parallel lanes would thrash):
 #   rpcs3     reset -> patch -> build -> hardened package -> marker gates ~25 min
 #   turnip    one build per MESA_VER; unstripped .so + ETK-GTK string gate ~5 min ea
-#   kernel    build_712.sh (gcc-15 enforced in-recipe); drift diff SURFACED ~15 min
+#   kernel    build_72.sh (gcc-15 enforced in-recipe; FORGE_KCC is the deliberate
+#             door); drift diff SURFACED; artifact by chassis: Image (20260901),
+#             boot.img (20261001), raw PE Image + bls_gate (20261101+)   ~15 min
 #   chiaki / wlmirror   delegate to the proven stagers in tools/rocknix-bin ~2 min
 #   image     LAST — bakes the three artifacts above into the SD card image ~40 min
 #
@@ -82,6 +84,10 @@ FORGE_TURNIP_GTKVER="${FORGE_TURNIP_GTKVER:-0.7}"
 # DATE/VER/BUILD trio moves TOGETHER: build selector 72 is the 7.2 recipe —
 # mixing an old selector with a new name would mint a 7.1.2 kernel under a
 # 7.2 label. Bumped 20260827->20260901 at the official-chassis remint.
+# (_FKD_SET: whether the operator named the date at all -- see the BASEDATE coupling below.
+#  The DATE line itself stays in this exact shape: release_sanity.sh reads the default out
+#  of it with a sed to assert a bare `./forge.sh kernel` mints the manifest's kernel.)
+_FKD_SET="${FORGE_KERNEL_DATE+set}"
 FORGE_KERNEL_DATE="${FORGE_KERNEL_DATE:-20261001}"
 FORGE_KERNEL_VER="${FORGE_KERNEL_VER:-0.6.4}"
 FORGE_KERNEL_ARTDIR="${FORGE_KERNEL_ARTDIR:-$HOME/rocknix-gtk/artifacts}"
@@ -90,9 +96,26 @@ FORGE_KERNEL_ARTDIR="${FORGE_KERNEL_ARTDIR:-$HOME/rocknix-gtk/artifacts}"
 # so a typo dies host-side.
 FORGE_KERNEL_BUILD="${FORGE_KERNEL_BUILD:-72}"
 # Chassis date for the 72 lane. 20260901 = the shipping GRUB-era lane (historic paths).
-# 20261001+ = qcom-abl era: the node recipe builds a parity-gated boot.img and the
+# 20261001 = qcom-abl era: the node recipe builds a parity-gated boot.img and the
 # lane ships THAT (rocknix-gtk UPSTREAM_20261001.md "K2 execution plan").
+# 20261101+ = BLS era (OpenABL + Boot Loader Spec): the recipe ships the raw PE Image
+# through scripts/bls_gate.sh; cmdline + DTB are rendered at deploy
+# (rocknix-gtk UPSTREAM_20261101.md §1c; etk-dossiers BuildPlan_0110_OpenABL_20261030.md).
 FORGE_KERNEL_BASEDATE="${FORGE_KERNEL_BASEDATE:-20261001}"
+# LAW #8 COUPLING (2026-10-31): the artifact's date is its CHASSIS date. A mint that names a
+# newer chassis by BASEDATE alone (FORGE_KERNEL_BASEDATE=20261101 FORGE_KERNEL_VER=0.7.0)
+# used to inherit the 20261001 DATE default and would have shipped a 20261101 kernel labelled
+# KERNEL.rocknix-gtk-20261001-0.7.0. When the operator did not name the date, it follows the
+# chassis; an explicit date is honoured (nightly rehearsals name their own day) but may not
+# be OLDER than the chassis -- the preflight refuses that.
+if [ -z "$_FKD_SET" ] && [ "$FORGE_KERNEL_BASEDATE" -gt "$FORGE_KERNEL_DATE" ] 2>/dev/null; then
+    FORGE_KERNEL_DATE="$FORGE_KERNEL_BASEDATE"
+fi
+# FORGE_KCC: the compiler the kernel recipe gets (default gcc-15 = THE GCC-15 LAW). Any other
+# value is a deliberate, cold-boot-gated toolchain choice (stock 20261101 = gcc 16.2.0;
+# rocknix-gtk UPSTREAM_20261101.md §5). It is part of the kernel fingerprint, so changing it
+# rebuilds, and lane_kernel.sh logs it loud.
+FORGE_KCC="${FORGE_KCC:-gcc-15}"
 FORGE_IMAGE_BASEDATE="${FORGE_IMAGE_BASEDATE:-20261001}"
 FORGE_STALL_WARN_S="${FORGE_STALL_WARN_S:-1200}"
 ETK_VERBOSE="${ETK_VERBOSE:-0}"
@@ -272,6 +295,11 @@ printf '%s' "$FORGE_KERNEL_BASEDATE" | grep -Eq '^[0-9]{8}$' \
     || tui_fail "FORGE_KERNEL_BASEDATE must be an 8-digit chassis date: got '$FORGE_KERNEL_BASEDATE'"
 if [ "$FORGE_KERNEL_BASEDATE" != 20260901 ] && [ "$FORGE_KERNEL_BUILD" != 72 ]; then
     tui_fail "FORGE_KERNEL_BASEDATE=$FORGE_KERNEL_BASEDATE needs FORGE_KERNEL_BUILD=72 (only the 7.2 recipe is date-parametrized)"
+fi
+# an EXPLICIT date older than the chassis is legal (the 20260827 nightly was named before its
+# 20260901 chassis) but is exactly the mislabel the coupling above exists to prevent -- say so.
+if [ "$FORGE_KERNEL_BUILD" = 72 ] && [ "$FORGE_KERNEL_DATE" -lt "$FORGE_KERNEL_BASEDATE" ]; then
+    printf '%b\n' "${Y}[forge] WARN law #8: $KNAME is dated BEFORE its chassis (FORGE_KERNEL_BASEDATE=$FORGE_KERNEL_BASEDATE) -- a $FORGE_KERNEL_BASEDATE kernel under an older label. Drop FORGE_KERNEL_DATE (it follows the chassis) unless the older name is deliberate.${N}" >&2
 fi
 # same suffix rule as build_72.sh / lane_kernel.sh
 FORGE_KERNEL_SFX=""; [ "$FORGE_KERNEL_BASEDATE" != 20260901 ] && FORGE_KERNEL_SFX="-$FORGE_KERNEL_BASEDATE"
@@ -515,7 +543,7 @@ fp_compute() {  # <lane> -> fingerprint string on stdout
                     "$(sha256_of "$FORGE_RPCS3_FORK/scripts/verify-markers.sh")" \
                     "$(probe_section IMAGEID | head -1)" ;;
         turnip) printf 'vers=%s gtk=%s tip=%s' "$FORGE_TURNIP_VERS" "$FORGE_TURNIP_GTKVER" "$TURNIP_TIP" ;;
-        kernel) printf 'tip=%s name=%s kcc=gcc-15%s forensics=%s%s' "$KERNEL_TIP" "$KNAME" \
+        kernel) printf 'tip=%s name=%s kcc=%s%s forensics=%s%s' "$KERNEL_TIP" "$KNAME" "$FORGE_KCC" \
                     "${FORGE_KERNEL_SFX:+ basedate=$FORGE_KERNEL_BASEDATE}" "${ETK_FORENSICS:-0}" \
                     "$([ "${ETK_SD_POLL:-0}" = 1 ] && echo ' sdpoll=1')" ;;
         # kit=%s IS LOAD-BEARING. The image bakes the ETK middleware straight
@@ -610,8 +638,11 @@ lane_env() {  # <lane> -> env assignments for the node-side recipe
         # pure-parity A/B arm that reproduces 20261001's missing splash.
         # ETK_SD_POLL: the opt-in sdpoll kit DTB delta (SD host polls; its card-detect pin is
         # ignored) -- car8's dead switch, 2026-10-24. Default OFF, never a release kernel.
-        kernel) printf 'KNAME=%s FORGE_KERNEL_BUILD=%s FORGE_KERNEL_BASEDATE=%s ETK_KIT_DTB=%s ETK_INTERNAL_MIC=%s ETK_GPIO_SBU_BUILTIN=%s ETK_FORENSICS=%s ETK_SD_POLL=%s' \
-                    "$KNAME" "$FORGE_KERNEL_BUILD" "$FORGE_KERNEL_BASEDATE" "${ETK_KIT_DTB:-1}" "${ETK_INTERNAL_MIC:-1}" "${ETK_GPIO_SBU_BUILTIN:-1}" "${ETK_FORENSICS:-0}" "${ETK_SD_POLL:-0}" ;;
+        # On the BLS lane (BASEDATE >= 20261101) the three kit knobs are deploy-time knobs and
+        # the recipe FAILS a mint that sets one off-default; ETK_GPIO_SBU_BUILTIN is moot (stock
+        # =y). FORGE_KCC: the compiler (gcc-15 = the law; anything else is a logged override).
+        kernel) printf 'KNAME=%s FORGE_KERNEL_BUILD=%s FORGE_KERNEL_BASEDATE=%s FORGE_KCC=%s ETK_KIT_DTB=%s ETK_INTERNAL_MIC=%s ETK_GPIO_SBU_BUILTIN=%s ETK_FORENSICS=%s ETK_SD_POLL=%s' \
+                    "$KNAME" "$FORGE_KERNEL_BUILD" "$FORGE_KERNEL_BASEDATE" "$FORGE_KCC" "${ETK_KIT_DTB:-1}" "${ETK_INTERNAL_MIC:-1}" "${ETK_GPIO_SBU_BUILTIN:-1}" "${ETK_FORENSICS:-0}" "${ETK_SD_POLL:-0}" ;;
         # The three baked names come from the MANIFEST (see the preflight
         # note above), never from the build knobs — an image is a shipped
         # asset and must carry exactly the certified stack.
