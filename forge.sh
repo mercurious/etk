@@ -25,8 +25,8 @@
 # Lanes (SEQUENTIAL — the build node has 4 cores; parallel lanes would thrash):
 #   rpcs3     reset -> patch -> build -> hardened package -> marker gates ~25 min
 #   turnip    one build per MESA_VER; unstripped .so + ETK-GTK string gate ~5 min ea
-#   kernel    build_72.sh (gcc-15 enforced in-recipe; FORGE_KCC is the deliberate
-#             door); drift diff SURFACED; artifact by chassis: Image (20260901),
+#   kernel    build_72.sh (compiler = stock's major, enforced in-recipe; FORGE_KCC is
+#             the deliberate door); drift SURFACED; artifact by chassis: Image (20260901),
 #             boot.img (20261001), raw PE Image + bls_gate (20261101+)   ~15 min
 #   chiaki / wlmirror   delegate to the proven stagers in tools/rocknix-bin ~2 min
 #   image     LAST — bakes the three artifacts above into the SD card image ~40 min
@@ -111,11 +111,12 @@ FORGE_KERNEL_BASEDATE="${FORGE_KERNEL_BASEDATE:-20261001}"
 if [ -z "$_FKD_SET" ] && [ "$FORGE_KERNEL_BASEDATE" -gt "$FORGE_KERNEL_DATE" ] 2>/dev/null; then
     FORGE_KERNEL_DATE="$FORGE_KERNEL_BASEDATE"
 fi
-# FORGE_KCC: the compiler the kernel recipe gets (default gcc-15 = THE GCC-15 LAW). Any other
-# value is a deliberate, cold-boot-gated toolchain choice (stock 20261101 = gcc 16.2.0;
-# rocknix-gtk UPSTREAM_20261101.md §5). It is part of the kernel fingerprint, so changing it
-# rebuilds, and lane_kernel.sh logs it loud.
-FORGE_KCC="${FORGE_KCC:-gcc-15}"
+# FORGE_KCC: the compiler the kernel recipe gets. Unset (default) = STOCK's compiler major,
+# resolved by the recipe from the ground-truth config (THE TOOLCHAIN LAW as a parity law,
+# operator 2026-10-31: gcc-15 through 20261001, gcc-16 from 20261101). Any explicit value is a
+# deliberate, cold-boot-gated override (rocknix-gtk UPSTREAM_20261101.md §5). It is part of the
+# kernel fingerprint, so changing it rebuilds, and lane_kernel.sh logs it loud.
+FORGE_KCC="${FORGE_KCC:-}"
 FORGE_IMAGE_BASEDATE="${FORGE_IMAGE_BASEDATE:-20261001}"
 FORGE_STALL_WARN_S="${FORGE_STALL_WARN_S:-1200}"
 ETK_VERBOSE="${ETK_VERBOSE:-0}"
@@ -543,7 +544,7 @@ fp_compute() {  # <lane> -> fingerprint string on stdout
                     "$(sha256_of "$FORGE_RPCS3_FORK/scripts/verify-markers.sh")" \
                     "$(probe_section IMAGEID | head -1)" ;;
         turnip) printf 'vers=%s gtk=%s tip=%s' "$FORGE_TURNIP_VERS" "$FORGE_TURNIP_GTKVER" "$TURNIP_TIP" ;;
-        kernel) printf 'tip=%s name=%s kcc=%s%s forensics=%s%s' "$KERNEL_TIP" "$KNAME" "$FORGE_KCC" \
+        kernel) printf 'tip=%s name=%s kcc=%s%s forensics=%s%s' "$KERNEL_TIP" "$KNAME" "${FORGE_KCC:-stock-parity}" \
                     "${FORGE_KERNEL_SFX:+ basedate=$FORGE_KERNEL_BASEDATE}" "${ETK_FORENSICS:-0}" \
                     "$([ "${ETK_SD_POLL:-0}" = 1 ] && echo ' sdpoll=1')" ;;
         # kit=%s IS LOAD-BEARING. The image bakes the ETK middleware straight
@@ -640,7 +641,7 @@ lane_env() {  # <lane> -> env assignments for the node-side recipe
         # ignored) -- car8's dead switch, 2026-10-24. Default OFF, never a release kernel.
         # On the BLS lane (BASEDATE >= 20261101) the three kit knobs are deploy-time knobs and
         # the recipe FAILS a mint that sets one off-default; ETK_GPIO_SBU_BUILTIN is moot (stock
-        # =y). FORGE_KCC: the compiler (gcc-15 = the law; anything else is a logged override).
+        # =y). FORGE_KCC: empty = stock's compiler major (the law); anything else is a logged override.
         kernel) printf 'KNAME=%s FORGE_KERNEL_BUILD=%s FORGE_KERNEL_BASEDATE=%s FORGE_KCC=%s ETK_KIT_DTB=%s ETK_INTERNAL_MIC=%s ETK_GPIO_SBU_BUILTIN=%s ETK_FORENSICS=%s ETK_SD_POLL=%s' \
                     "$KNAME" "$FORGE_KERNEL_BUILD" "$FORGE_KERNEL_BASEDATE" "$FORGE_KCC" "${ETK_KIT_DTB:-1}" "${ETK_INTERNAL_MIC:-1}" "${ETK_GPIO_SBU_BUILTIN:-1}" "${ETK_FORENSICS:-0}" "${ETK_SD_POLL:-0}" ;;
         # The three baked names come from the MANIFEST (see the preflight

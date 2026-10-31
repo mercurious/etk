@@ -20,17 +20,18 @@
 #                              Spec entries; cmdline and DTB come from the entry the kit
 #                              renders at DEPLOY, scripts/bls_gate.sh is the parity proof).
 #                              The artifact is `Image`, required, never inferred.
-#   FORGE_KCC  the compiler passed to the recipe (default gcc-15 = THE GCC-15 LAW). Any
-#           other value is a DELIBERATE, cold-boot-gated toolchain choice (stock 20261101
-#           is built with gcc 16.2.0; the decision inputs: rocknix-gtk
-#           UPSTREAM_20261101.md §5). Logged loud; part of the lane fingerprint.
+#   FORGE_KCC  unset (default) = the recipe builds with STOCK's compiler major, read from the
+#           ground-truth config (THE TOOLCHAIN LAW as a parity law, operator 2026-10-31:
+#           gcc-15 through 20261001, gcc-16 from 20261101 -- stock is 16.2.0 there). Any
+#           explicit value is a DELIBERATE, cold-boot-gated override, logged loud; part of
+#           the lane fingerprint. Decision record: rocknix-gtk UPSTREAM_20261101.md §5.
 #
 # Encoded traps (handoff §3.3):
 #   * repo is mounted at /work, build tree at /kernel — not interchangeable
 #   * the recipe is not executable in-container: invoke via `bash`
-#   * KCC=gcc-15 is enforced IN the recipe (8eaf37a); gcc-14 black-screens
-#     pre-userspace and sid's 16.x default is unvalidated — never override
-#     casually (FORGE_KCC exists for the deliberate case, not the casual one)
+#   * the compiler is enforced IN the recipe (stock_gcc.sh parity check); gcc-14
+#     black-screened pre-userspace after a clean verify — never override casually
+#     (FORGE_KCC exists for the deliberate case, not the casual one)
 #   * the recipe does NOT package: Image is left in the build tree; naming
 #     and staging is absorbed here (was a manual step during v0.8.4)
 #   * the config drift diff vs rig ground truth is SURFACED, never swallowed
@@ -87,18 +88,25 @@ if [ "$KLANE" = 72 ] && [ "$BASEDATE" -ge 20261001 ] && [ "$ETK_KIT_DTB" = 1 ]; 
         log "FATAL: ETK_SD_POLL=1 but the node's splicer has no --sd-poll (pull ~/etk)"; exit 1
     fi
 fi
-# THE GCC-15 LAW, with one deliberate door: FORGE_KCC. gcc-15 built every kernel that ever
-# booted a car here; gcc-14 black-screened pre-userspace (2026-07-05); gcc-16 is what stock
-# 20261101 is built with and has never built a kernel that booted a car here. Whatever is
-# passed, only the operator's cold boot validates it -- the recipe's own 15.x guard is
-# bypassed by an explicit KCC, so the loud line below is the record.
-KCC="${FORGE_KCC:-gcc-15}"
-case "$KCC" in
-    gcc-15) ;;
-    *) log "TOOLCHAIN OVERRIDE: FORGE_KCC=$KCC -- NOT the validated gcc-15 (THE GCC-15 LAW, rocknix-gtk BUILDING.md). A clean build and a clean gate prove nothing here; the failure mode is a silent pre-userspace black screen. Deliberate choice, cold-boot gated." ;;
-esac
-log "build_${KLANE}.sh BASEDATE=$BASEDATE (KCC=$KCC; kit DTB=$ETK_KIT_DTB; gpio-sbu-mux built-in=$ETK_GPIO_SBU_BUILTIN; forensics=$ETK_FORENSICS; sd-poll=$ETK_SD_POLL)"
-docker exec rocknix-gtk-kernel-sid bash -lc "KCC=$KCC BASEDATE=$BASEDATE ETK_KIT_DTB=$ETK_KIT_DTB ETK_INTERNAL_MIC=$ETK_INTERNAL_MIC ETK_GPIO_SBU_BUILTIN=$ETK_GPIO_SBU_BUILTIN ETK_FORENSICS=$ETK_FORENSICS ETK_SD_POLL=$ETK_SD_POLL bash /work/scripts/build_${KLANE}.sh"
+# THE TOOLCHAIN LAW (operator 2026-10-31: parity with STOCK's compiler major, was "gcc-15"):
+# with FORGE_KCC unset the recipe resolves the compiler itself from the ground-truth config's
+# CONFIG_GCC_VERSION (rocknix-gtk scripts/stock_gcc.sh: gcc-15 through 20261001, gcc-16 from
+# 20261101) and refuses a major mismatch before the build. gcc-14 black-screened pre-userspace
+# after a clean verify (2026-07-05); the first gcc-16 kernel is unvalidated until a car
+# cold-boots it. An explicit FORGE_KCC is a deliberate override: the recipe skips its parity
+# check, so the loud line below is the record. Only the operator's cold boot validates either.
+KCC="${FORGE_KCC:-}"
+if [ -z "$KCC" ]; then
+    grep -q 'stock_gcc.sh' "$HOME/rocknix-gtk/scripts/build_${KLANE}.sh" 2>/dev/null \
+        || { log "FATAL: the node's rocknix-gtk build_${KLANE}.sh predates the parity law (no stock_gcc.sh) -- pull ~/rocknix-gtk, or set FORGE_KCC deliberately"; exit 1; }
+    log "toolchain: FORGE_KCC unset -> the recipe builds with STOCK's compiler major (parity law, stock_gcc.sh)"
+    KCC_ENV=""
+else
+    log "TOOLCHAIN OVERRIDE: FORGE_KCC=$KCC -- the recipe's parity check is skipped. A clean build and a clean gate prove nothing here; the failure mode is a silent pre-userspace black screen. Deliberate choice, cold-boot gated."
+    KCC_ENV="KCC=$KCC "
+fi
+log "build_${KLANE}.sh BASEDATE=$BASEDATE (KCC=${KCC:-stock-parity}; kit DTB=$ETK_KIT_DTB; gpio-sbu-mux built-in=$ETK_GPIO_SBU_BUILTIN; forensics=$ETK_FORENSICS; sd-poll=$ETK_SD_POLL)"
+docker exec rocknix-gtk-kernel-sid bash -lc "${KCC_ENV}BASEDATE=$BASEDATE ETK_KIT_DTB=$ETK_KIT_DTB ETK_INTERNAL_MIC=$ETK_INTERNAL_MIC ETK_GPIO_SBU_BUILTIN=$ETK_GPIO_SBU_BUILTIN ETK_FORENSICS=$ETK_FORENSICS ETK_SD_POLL=$ETK_SD_POLL bash /work/scripts/build_${KLANE}.sh"
 
 if [ "$KLANE" = 72 ] && [ "$BASEDATE" -ge 20261101 ]; then
     echo "=== config drift vs ground truth (BLS lane: expect INITRAMFS/FIRMWARE paths + toolchain-probe lines ONLY -- stock ships TYPEC_MUX_GPIO_SBU=y, that line must be GONE; bls_gate.sh already failed the build if it is not) ==="
