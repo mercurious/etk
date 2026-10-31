@@ -1230,9 +1230,11 @@ tui_rsync 4 36 37 "Deploying per-title patch files (config/patches)" --exclude='
 ssh $RIG_SSH "[ -f '$ETK_ROOT/config/save_aliases.tsv' ]" 2>/dev/null \
     || tui_rsync 4 30 36 "Deploying save-folder aliases" --exclude='.DS_Store' ./config/save_aliases.tsv $RIG_SSH:$ETK_ROOT/config/
 # HUD punchbox masters (bin/hud_apply.sh reads these): the pristine ETK DDU
-# conf + the minimal "default" preset, both to $ETK_ROOT/config/.
+# conf, the minimal "default" preset and the compact dash (Pitstop TOOLS >
+# HUD dash), all to $ETK_ROOT/config/.
 tui_rsync 4 36 37 "Deploying HUD punchbox master" --exclude='.DS_Store' ./config/MangoHud.conf $RIG_SSH:$ETK_ROOT/config/
 tui_rsync 4 37 38 "Deploying HUD default preset" --exclude='.DS_Store' ./config/MangoHud.default.conf $RIG_SSH:$ETK_ROOT/config/
+tui_rsync 4 38 38 "Deploying HUD compact dash" --exclude='.DS_Store' ./config/MangoHud.compact.conf $RIG_SSH:$ETK_ROOT/config/
 # ETK default per-game RPCS3 config template (TOOLS-tab installer copies this
 # to custom_configs/config_<ID>.yml for each newly installed game).
 tui_rsync 4 36 48 "Deploying RPCS3 template (etk_template.yml)" --exclude='.DS_Store' ./config/etk_template.yml       $RIG_SSH:$ETK_ROOT/config/

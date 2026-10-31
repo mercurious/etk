@@ -6,7 +6,10 @@
 # 1. THREE-STAGE TIME-GATED HEADER is locked; the BODY is MODE-SWITCHED via
 #    $ETK_HUD_MODE (etk.conf). Stage 1 launch header is identical in all modes.
 #    BASIC body : TEMP|LOAD(loadavg)STAT|RAM%STAT|SHADERS    (original)
-#    LEAN body  : TEMP|SHADERS — BASIC minus LOAD+RAM (ANTI-LOCK rides in all modes)
+#    LEAN body  : TEMP|ANTI-LOCK|SHADERS|RAM%|LOAD — bare numbers, no gauge tails
+#                 (operator workshop 2026-10-27; ANTI-LOCK rides in all modes)
+#    FULL body  : TEMP|JITTER|SLIP|ANTI-LOCK|SHADERS|RAM%|LOAD — LEAN plus the two
+#                 GINSTR gauges, the whole bar edge to edge (workshop 2026-10-27)
 #    GINSTR body: TEMP|JITTER|SLIP|SHADERS — LOAD+RAM replaced by two live,
 #      fixed-width (5-slot) frame-pacing gauges, animated by a per-loop phase,
 #      read from the MangoHud autolog ($SHM_DIR/mangolog):
@@ -55,16 +58,20 @@ while true; do
     # 1. IDENTIFICATION
     source /storage/games-internal/roms/etk/scripts/env.sh
     V_DIR="$VAULT_DIR"
-    HUD_MODE="${ETK_HUD_MODE:-BASIC}"   # BASIC | LEAN | GINSTR (unknown -> BASIC body)
+    HUD_MODE="${ETK_HUD_MODE:-BASIC}"   # BASIC | LEAN | GINSTR | FULL (unknown -> BASIC body)
+    case "$HUD_MODE" in GINSTR|FULL) GAUGES=1 ;; *) GAUGES=0 ;; esac   # the animated gauges
     TICK=$(( (TICK + 1) % 100000 ))    # GINSTR animation phase (marquee + pulse)
     
     # 2. CONSUME THERMAL STATE (Produced by thermal_d.sh)
     T_STAT=$(cat "$SHM_DIR/thermal_stat" 2>/dev/null || echo "WAIT")
 
-    # 3. PERFORMANCE METRICS (BusyBox Safe) — BASIC body only; LEAN/GINSTR omit them
-    case "$HUD_MODE" in GINSTR|LEAN) ;; *)
+    # 3. PERFORMANCE METRICS (BusyBox Safe) — BASIC + LEAN bodies; GINSTR omits them
+    case "$HUD_MODE" in GINSTR) ;; *)
     LOAD_RAW=$(cat /proc/loadavg | awk '{print $1}')
     LOAD_INT=$(echo "$LOAD_RAW" | awk '{print int($1 * 100)}')
+    # LEAN/FULL show LOAD bare at two digits at most (7.86 -> 7.9, 10.83 -> 11):
+    # the bar is edge to edge in FULL, and the hundredths were noise.
+    LOAD_STR=$(awk -v l="$LOAD_RAW" 'BEGIN { if (l >= 9.95) printf "%d", l + 0.5; else printf "%.1f", l }')
     
     L_STAT="»--"
     if [ "$LOAD_INT" -gt 860 ]; then 
@@ -181,7 +188,7 @@ while true; do
     #   SLIP   = pacing-slip severity bar 0..5 from mean |Δframetime|, filled with +
     #            (·····/+····/++···/+++··/++++·/+++++); at MAX the bar pulses +++++ <-> =====.
     # All BEGIN thresholds + the gauge width are FEEL-TUNED ON THE RIG.
-    if [ "$HUD_MODE" = "GINSTR" ]; then
+    if [ "$GAUGES" = 1 ]; then
         G_CSV=$(ls -1t "$SHM_DIR/mangolog"/*.csv 2>/dev/null | head -1)
         if [ -n "$G_CSV" ] && [ -f "$G_CSV" ]; then
             G_OUT=$(awk -F, -v phase="$TICK" '
@@ -247,7 +254,7 @@ while true; do
     case "$CUR_SURV" in ''|*[!0-9]*) CUR_SURV=0 ;; esac
     if [ "$CUR_SURV" -gt "$SURV_SEEN" ]; then
         SURV_SEEN=$CUR_SURV
-        if [ "$HUD_MODE" = "GINSTR" ] && [ "$FRAC_SLEEP_OK" = "1" ]; then
+        if [ "$GAUGES" = 1 ] && [ "$FRAC_SLEEP_OK" = "1" ]; then
             RESCUE_TTL=16    # 0.5s ticks (~8s alert)
         else
             RESCUE_TTL=8     # 1s ticks
@@ -265,12 +272,14 @@ while true; do
         1) FINAL_STRING="${ETK_BUILD_TYPE}|${TARGET_ID}|SHDRS ${VAULT_STR}" ;;
         2) case "$HUD_MODE" in
                GINSTR) FINAL_STRING="${T_STAT}|JTTR${JIT}|SLIP${SLIP}|ANTI-LOCK${ALOCK_SEG}|" ;;
-               LEAN)   FINAL_STRING="TEMP ${T_STAT}|ANTI-LOCK ${ALOCK_SEG}|" ;;
+               LEAN)   FINAL_STRING="TEMP ${T_STAT}|ANTI-LOCK ${ALOCK_SEG}|RAM ${RAM_VAL}%|LOAD ${LOAD_STR}|" ;;
+               FULL)   FINAL_STRING="TEMP ${T_STAT}|JTTR${JIT}|SLIP${SLIP}|ANTI-LOCK${ALOCK_SEG}|RAM ${RAM_VAL}%|LOAD ${LOAD_STR}|" ;;
                *)      FINAL_STRING="TEMP ${T_STAT}|LOAD ${LOAD_RAW}${L_STAT}|RAM ${RAM_VAL}%${R_STAT}|ANTI-LOCK ${ALOCK_SEG}|" ;;
            esac ;;
         *) case "$HUD_MODE" in
                GINSTR) FINAL_STRING="${T_STAT}|${JIT}|${SLIP}|${ALOCK_SEG}|${VAULT_STR}" ;;
-               LEAN)   FINAL_STRING="${T_STAT}|${ALOCK_SEG}|${VAULT_STR}" ;;
+               LEAN)   FINAL_STRING="${T_STAT}|${ALOCK_SEG}|${VAULT_STR}|${RAM_VAL}%|${LOAD_STR}" ;;
+               FULL)   FINAL_STRING="${T_STAT}|${JIT}|${SLIP}|${ALOCK_SEG}|${VAULT_STR}|${RAM_VAL}%|${LOAD_STR}" ;;
                *)      FINAL_STRING="${T_STAT}|${LOAD_RAW}${L_STAT}|${RAM_VAL}%${R_STAT}|${ALOCK_SEG}|${VAULT_STR}" ;;
            esac ;;
     esac
@@ -281,7 +290,7 @@ while true; do
 
     # GINSTR animates at 0.5s for a live sweep/pulse (only if BusyBox sleep takes
     # fractional secs — FRAC_SLEEP_OK, tested at startup); BASIC/LEAN + fallback = 1s.
-    if [ "$HUD_MODE" = "GINSTR" ] && [ "$FRAC_SLEEP_OK" = "1" ]; then
+    if [ "$GAUGES" = 1 ] && [ "$FRAC_SLEEP_OK" = "1" ]; then
         sleep 0.5
     else
         sleep 1

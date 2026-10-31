@@ -12,6 +12,14 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
   carries them, never over a setting the recipient already has, and turns MangoHud on where
   neither car has set it. `--settings` fixes a game that was already towed.
 
+### Added
+
+- **HUD dash** (Pitstop TOOLS → HUD dash): pick the in-game HUD on the rig — G-INSTR, BASIC,
+  LEAN or the new **COMPACT** — with no etk.conf edit and no reinstall; it applies at the next
+  game launch, and `R1`+`L3` still moves or hides it. COMPACT is MangoHud's compact view with
+  more instruments: battery (icon, %, watts), GPU load and clock, RAM, beside the lean ETK
+  gauges. Every ETK HUD now shows the battery as an icon. `ETK_HUD_MODE` in etk.conf is the
+  default until a dash is picked.
 
 ## [0.10.1] - 2026-10-31 — 120Hz Edition
 

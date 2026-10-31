@@ -111,6 +111,7 @@ EXPECTED_LABELS = {
     "_TOOLS_BOG_IDX": "Bog Sampler",
     "_TOOLS_PITLINK_IDX": "Pitlink (Engineer link)",
     "_TOOLS_AUTONOMY_IDX": "Autonomy (Engineer hunts)",
+    "_TOOLS_HUDDASH_IDX": "HUD dash",
     "_TOOLS_FIRMWARE_IDX": "Install PS3 Firmware",
     "_TOOLS_UPDATE_IDX": "Check for ETK Updates",
 }

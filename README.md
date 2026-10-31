@@ -84,7 +84,7 @@ Set the update channel to stable (`START` → `UPDATES & DOWNLOADS`) and make su
 | VAULT + PADDOCK | Shader vault survives crashes and OS updates; optional private GitHub backup | overlay `2+ 34.5k 167MB` · PADDOCK tab |
 | Thermal Guard | PIT-mode cooldown when hot, back to racing when cool, no reboot | overlay `89°HOT»»»` |
 | ETK Pitstop App | On-device telemetry, tuning, driver, power, tools, paddock | ROCKNIX Tools carousel · [wiki](https://github.com/mercurious/etk/wiki/ETK-Pitstop-App) |
-| DDU Overlay | MangoHUD with ETK gauges; G-INSTR / BASIC / LEAN instrument sets | hold `R1`+`L3` to cycle · `ETK_HUD_MODE` |
+| DDU Overlay | MangoHUD with ETK gauges and a battery icon; G-INSTR / BASIC / LEAN / COMPACT dashes | TOOLS → HUD dash · hold `R1`+`L3` to move/hide |
 | Crash Recovery | Back to the ES frontend from a freeze | `L1`+`R3` |
 | ETK Screenshot | Shutter with the overlay included | `L1`+`L2`; modes in TOOLS |
 | On-Device Installs | Firmware and PKG install in the background from drop folders | `etk/firmware_drop`, `etk/pkg_install_drop` → TOOLS |

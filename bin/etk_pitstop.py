@@ -374,6 +374,17 @@ BOG_CHORD_FILE = os.environ.get(
     'BOG_CHORD_FILE', f"{TELEMETRY_DIR}/bog_chord.txt")
 BOG_CHORD_STATES = ("enabled", "disabled")
 BOG_CHORD_DEFAULT = "enabled"
+# TOOLS > HUD dash: the HUD instrument preset (2026-10-27), read live by
+# scripts/env.sh (so by mango_bridge.sh every tick, and by bin/hud_apply.sh).
+# Absent = etk.conf's ETK_HUD_MODE in the full view, so picking one here is
+# the only way the file appears, and a reinstall never undoes the pick.
+HUD_DASH_FILE = os.environ.get('HUD_DASH_FILE', f"{TELEMETRY_DIR}/hud_dash.txt")
+HUD_DASHES = ("ginstr", "basic", "lean", "full", "compact")
+HUD_DASH_LABELS = {"ginstr": "G-INSTR", "basic": "BASIC", "lean": "LEAN",
+                   "full": "FULL", "compact": "COMPACT"}
+RIG_MANGO_CONF = os.environ.get('RIG_MANGO_CONF',
+                                '/storage/.config/MangoHud/MangoHud.conf')
+HUD_APPLY = os.environ.get('ETK_HUD_APPLY', f"{ETK_ROOT}/bin/hud_apply.sh")
 # Crash-signature catalog (id -> summary/explanation/suggested_changes), shared
 # with the Sentry. Backs the TELEMETRY session-detail crash card.
 CRASH_SIG_FILE = os.environ.get("SIGNATURES_FILE", f"{ETK_ROOT}/config/crash_signatures.json")
@@ -2832,7 +2843,7 @@ def handle_telemetry_pad(state, etype, code, val):
 _TOOLS_MENU = ["Manage Shaders & Caches", "Install a staged PS3 Package",
                "Uninstall a Game", "Trigger Calibration", "Screenshot on L1+L2",
                "Bog Sampler", "Pitlink (Engineer link)", "Autonomy (Engineer hunts)",
-               "Install PS3 Firmware", "Check for ETK Updates"]
+               "HUD dash", "Install PS3 Firmware", "Check for ETK Updates"]
 _TOOLS_CACHE_IDX = 0        # Manage Shaders & Caches sub-screen entry
 _TOOLS_INSTALL_IDX = 1      # staged-PKG installer
 _TOOLS_UNINSTALL_IDX = 2    # game uninstaller
@@ -2846,8 +2857,9 @@ _TOOLS_SCREENSHOT_IDX = 4
 _TOOLS_BOG_IDX = 5          # R1+DPAD-Down bog-profiler chord on/off
 _TOOLS_PITLINK_IDX = 6      # Pitlink engineer link on/off (profile.d, next launch)
 _TOOLS_AUTONOMY_IDX = 7     # hunt kill switch on/off (live: daemon + wrapper read it)
-_TOOLS_FIRMWARE_IDX = 8     # headless PS3 firmware (PS3UPDAT.PUP) installer
-_TOOLS_UPDATE_IDX = 9       # hostless self-update (middleware layer)
+_TOOLS_HUDDASH_IDX = 8     # HUD instrument preset (cycles; next game launch)
+_TOOLS_FIRMWARE_IDX = 9     # headless PS3 firmware (PS3UPDAT.PUP) installer
+_TOOLS_UPDATE_IDX = 10      # hostless self-update (middleware layer)
 
 
 def _read_screenshot_mode():
@@ -2904,6 +2916,69 @@ def _toggle_bog_chord():
         return nxt
     except Exception:
         return cur
+
+
+def _read_hud_dash():
+    """The HUD dash in effect: the picked one, else etk.conf's ETK_HUD_MODE
+    (env.sh exports it, default GINSTR). A mode the bridge can't name draws
+    the BASIC body there, so it reads as basic here."""
+    try:
+        with open(HUD_DASH_FILE) as f:
+            d = f.read().strip().lower()
+        if d in HUD_DASHES:
+            return d
+    except Exception:
+        pass
+    d = os.environ.get("ETK_HUD_MODE", "GINSTR").strip().lower()
+    return d if d in HUD_DASHES else "basic"
+
+
+def _hud_live_stop():
+    """The punchbox stop the live MangoHud.conf is at, if hud_apply.sh built it
+    from an ETK dash (it carries the live_stat exec): top | bottom | off. None
+    for anything else (the stock 'default' stop, a missing conf): that is left
+    alone."""
+    try:
+        with open(RIG_MANGO_CONF) as f:
+            body = f.read()
+    except Exception:
+        return None
+    if "live_stat.txt" not in body:
+        return None
+    if re.search(r"^no_display=1", body, re.M):
+        return "off"
+    return "top" if re.search(r"^position=top", body, re.M) else "bottom"
+
+
+def _cycle_hud_dash():
+    """Advance the HUD dash and persist it atomically, then rebuild the live
+    conf at its current stop through bin/hud_apply.sh, so the next game opens
+    on the new dash from its first frame (no game runs while Pitstop is up;
+    the Sentry's per-game restore and R1+L3 build from it too). Returns the
+    dash in effect: the unchanged one if the write failed."""
+    cur = _read_hud_dash()
+    nxt = HUD_DASHES[(HUD_DASHES.index(cur) + 1) % len(HUD_DASHES)]
+    try:
+        os.makedirs(os.path.dirname(HUD_DASH_FILE), exist_ok=True)
+        tmp = HUD_DASH_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            f.write(nxt + "\n")
+            f.flush()
+            os.fsync(f.fileno())      # a car reset must not leave a 0-byte file
+        os.replace(tmp, HUD_DASH_FILE)
+    except Exception as e:
+        _log(f"hud dash: could not write {HUD_DASH_FILE}: {e}")
+        return cur
+    stop = _hud_live_stop()
+    if stop and os.path.exists(HUD_APPLY):
+        env = dict(os.environ, ETK_HUD_VIEW="compact" if nxt == "compact" else "full",
+                   RIG_MANGO_CONF=RIG_MANGO_CONF)
+        try:
+            subprocess.run(["bash", HUD_APPLY, stop], env=env, timeout=10,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception as e:
+            _log(f"hud dash: {HUD_APPLY} {stop}: {e}")
+    return nxt
 
 
 def _read_pitlink_state():
@@ -4330,7 +4405,7 @@ def _self_update_apply(info):
         cfg_set = ("pitstop_fields.json", "power_profiles.json",
                    "crash_signatures.json", "etk_template.yml",
                    "MangoHud.conf", "MangoHud.default.conf",
-                   "etk_pitstop.sh", "etk_pitstop.svg",
+                   "MangoHud.compact.conf", "etk_pitstop.sh", "etk_pitstop.svg",
                    "etk_chiaki.sh", "etk_chiaki.svg",
                    "paddock_repos.json.example", "unit_reconcile.json")
         os.makedirs(os.path.join(base, "config"), exist_ok=True)
@@ -6350,7 +6425,10 @@ def draw_tools(stdscr, state):
         if 5 + 3 + len(_TOOLS_MENU) + 2 <= h - 3:
             y += 1
         put(y, 2, "TOOLS", curses.A_BOLD); y += 1
-        put(y, 2, "-" * (w - 4), curses.A_DIM); y += 1
+        # Same trade, one row further: at eleven entries (HUD dash, 2026-10-27) the
+        # title's rule is that row on the 22-row panel, so it goes before the help.
+        if y + 1 + len(_TOOLS_MENU) + 2 <= h - 3:
+            put(y, 2, "-" * (w - 4), curses.A_DIM); y += 1
         # Live background-install line. The toasts are the primary surface,
         # but they expire — an operator who came back to the Pitstop after
         # queueing something needs to see it is still going without waiting
@@ -6397,6 +6475,8 @@ def draw_tools(stdscr, state):
                 label = f"{label}: {_read_pitlink_state()}"
             elif i == _TOOLS_AUTONOMY_IDX:
                 label = f"{label}: {_read_autonomy_state()}"
+            elif i == _TOOLS_HUDDASH_IDX:
+                label = f"{label}: {HUD_DASH_LABELS[_read_hud_dash()]}"
             sel = (i == cur)
             put(y, 4, "> " if sel else "  ",
                 curses.color_pair(1) if sel else curses.A_NORMAL)
@@ -6449,6 +6529,11 @@ def draw_tools(stdscr, state):
             put(ty, 4, "Lets a granted Engineer hunt swap cores here.",
                 curses.A_DIM)
             put(ty + 1, 4, "on / off  (CONFIRM toggles; off stops it now)",
+                curses.A_DIM)
+        elif cur == _TOOLS_HUDDASH_IDX:
+            put(ty, 4, "In-game HUD: G-INSTR/BASIC/LEAN/FULL/COMPACT.",
+                curses.A_DIM)
+            put(ty + 1, 4, "CONFIRM cycles; applies at the next game launch.",
                 curses.A_DIM)
         elif cur == _TOOLS_FIRMWARE_IDX:
             put(ty, 4, "Firmware drop folder (place PS3UPDAT.PUP):",
@@ -7139,6 +7224,12 @@ def _tools_select(state):
         elif state.get("tools_cursor", 0) == _TOOLS_AUTONOMY_IDX:  # Autonomy
             was = _read_autonomy_state()
             state["status"] = _autonomy_status(was, _toggle_autonomy())
+        elif state.get("tools_cursor", 0) == _TOOLS_HUDDASH_IDX:  # HUD dash
+            was = _read_hud_dash()
+            now = _cycle_hud_dash()
+            state["status"] = (f"HUD dash: {HUD_DASH_LABELS[now]} - next game launch"
+                               if now != was else
+                               f"HUD dash: still {HUD_DASH_LABELS[now]} - could not save")
         # Explicit, not a bare else: an unmatched index must do nothing rather
         # than silently cycle the screenshot chord.
         elif state.get("tools_cursor", 0) == _TOOLS_SCREENSHOT_IDX:  # Screenshot

@@ -179,6 +179,9 @@ HUD_HEADER_HOLD_S=15
 #          pacing-slip severity, top rung blinks). Feel-tuned on-rig.
 # BASIC  = the simple set: LOAD + RAM gauges (harvest / early-stage).
 # LEAN   = the bare set: TEMP | ANTI-LOCK | VAULT (BASIC minus LOAD + RAM).
+# This is the DEFAULT: Pitstop TOOLS > HUD dash picks the dash on the rig
+# (G-INSTR / BASIC / LEAN / COMPACT, next game launch, no reinstall), and a
+# picked dash outranks this line from then on.
 ETK_HUD_MODE="GINSTR"
 
 # --- Hostless self-update (Pitstop TOOLS > Check for ETK Updates) ---

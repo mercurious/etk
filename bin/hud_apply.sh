@@ -13,6 +13,10 @@
 #   off     — overlay hidden (no_display=1); MangoHud stays loaded for instant
 #             return on the next R1+L3 press
 #
+# The DASH (Pitstop TOOLS > HUD dash, scripts/env.sh ETK_HUD_VIEW) picks the
+# conf top/bottom/off are built from: full = the DDU master, compact = the
+# compact conf (falls back to the master if it's missing).
+#
 # FAIL-SILENT by construction: a bad/empty state, a missing master conf, or a
 # dead MangoHud socket must NEVER disturb the caller (input_d's R3 panic path,
 # the Sentry ignition). Every step is best-effort; we exit 0 regardless.
@@ -24,6 +28,9 @@ LIVE="${RIG_MANGO_CONF:-/storage/.config/MangoHud/MangoHud.conf}"
 ROOT="${ETK_ROOT:-/storage/games-internal/roms/etk}"
 MASTER="$ROOT/config/MangoHud.conf"            # the pristine ETK DDU conf
 DEFCONF="$ROOT/config/MangoHud.default.conf"   # the minimal readout
+COMPACT="$ROOT/config/MangoHud.compact.conf"   # the compact dash
+DASH="$MASTER"
+[ "${ETK_HUD_VIEW:-full}" = compact ] && [ -f "$COMPACT" ] && DASH="$COMPACT"
 TMP="$LIVE.etk.tmp"
 
 # No master to build from -> leave the live conf untouched (never blank the HUD).
@@ -31,23 +38,25 @@ TMP="$LIVE.etk.tmp"
 
 case "$STATE" in
     top)
-        cp "$MASTER" "$TMP" 2>/dev/null && \
+        cp "$DASH" "$TMP" 2>/dev/null && \
             sed -i 's|^position=.*|position=top-left|; s|^no_display=.*|no_display=0|' "$TMP" ;;
     bottom)
-        cp "$MASTER" "$TMP" 2>/dev/null && \
+        cp "$DASH" "$TMP" 2>/dev/null && \
             sed -i 's|^position=.*|position=bottom-left|; s|^no_display=.*|no_display=0|' "$TMP" ;;
     default)
         if [ -f "$DEFCONF" ]; then cp "$DEFCONF" "$TMP" 2>/dev/null
         else cp "$MASTER" "$TMP" 2>/dev/null; fi ;;
     off)
-        cp "$MASTER" "$TMP" 2>/dev/null && \
+        cp "$DASH" "$TMP" 2>/dev/null && \
             sed -i 's|^no_display=.*|no_display=1|' "$TMP" ;;
     *)
         exit 0 ;;
 esac
 
 # Atomic swap only if the tmp built cleanly.
-[ -s "$TMP" ] && mv "$TMP" "$LIVE" 2>/dev/null
+# The sync: a rename that isn't on disk when the car resets leaves a 0-byte
+# file (car12 2026-10-27: a SoC reset 7 s after a write zeroed the master).
+[ -s "$TMP" ] && sync "$TMP" 2>/dev/null; [ -s "$TMP" ] && mv "$TMP" "$LIVE" 2>/dev/null && sync 2>/dev/null
 rm -f "$TMP" 2>/dev/null
 
 # Best-effort live reload (BusyBox nc lacks reliable -U; use python, mirroring

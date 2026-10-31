@@ -521,6 +521,23 @@ export HUD_STATE_FILE="$TELEMETRY_DIR/hud_state.tsv"
 # Shared HUD-state applier (state -> live MangoHud.conf + reload). Absolute so
 # both the Sentry and input_d resolve it identically.
 export ETK_HUD_APPLY="$ETK_ROOT/bin/hud_apply.sh"
+# HUD dash: the instrument preset, picked on the rig in Pitstop's TOOLS tab
+# (ginstr | basic | lean | full | compact) and read live (the bridge re-sources this
+# file every tick, hence `read`, not a cat fork). A picked dash outranks
+# etk.conf's ETK_HUD_MODE, which stays the default until one is picked, so a
+# reinstall never undoes it. compact = the LEAN body in the compact MangoHud
+# view (config/MangoHud.compact.conf via bin/hud_apply.sh); the rest are the
+# full view. Absent / unreadable / unknown = etk.conf's mode, full view.
+export HUD_DASH_FILE="$TELEMETRY_DIR/hud_dash.txt"
+ETK_HUD_VIEW=full; _etk_dash=""
+[ -r "$HUD_DASH_FILE" ] && { read -r _etk_dash < "$HUD_DASH_FILE" || :; } 2>/dev/null   # set -e safe
+case "$_etk_dash" in
+    ginstr) ETK_HUD_MODE=GINSTR ;; basic) ETK_HUD_MODE=BASIC ;; lean) ETK_HUD_MODE=LEAN ;;
+    full) ETK_HUD_MODE=FULL ;;
+    compact) ETK_HUD_MODE=LEAN; ETK_HUD_VIEW=compact ;;
+esac
+unset _etk_dash
+export ETK_HUD_MODE ETK_HUD_VIEW
 
 # Screenshot-chord gating mode. One of: always | in-game | disabled.
 #  - always   : the chord fires whenever made (incl. frontend / Pitstop)
