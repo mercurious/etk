@@ -729,6 +729,16 @@ lane_poll() {  # <lane> <step_idx> [<extra probe cmd>] -> rc in LANE_RC
         line=$(printf '%s\n' "$tailtxt" | grep -vE '^\s*$' | tail -1)
         line="${line:0:70}"
         [ -n "$line" ] && tui_log "$L: $line"
+        # RAW MODE (-v / no TTY, e.g. the app's Run button): tui_log and the bars draw nothing, so a
+        # 20-minute kernel build used to sit silent between ">>> [4/7]" and the staged line
+        # (operator, 2026-10-31, first etk-local mint). One line a minute, when it changed.
+        if [ "${TUI_ACTIVE:-0}" != 1 ]; then
+            local rawnow; rawnow=$(date +%s)
+            if [ -n "$line" ] && [ "$line" != "${_raw_last_line:-}" ] && [ $(( rawnow - ${_raw_last_say:-0} )) -ge 60 ]; then
+                say "    $L: ${pct:+~$pct% · }$line"
+                _raw_last_say=$rawnow; _raw_last_line="$line"
+            fi
+        fi
         # stall watch (informational — the rc marker stays authoritative)
         local now; now=$(date +%s)
         if [ "$size" != "$last_size" ] && [ -n "$size" ]; then last_size="$size"; last_change=$now; fi
