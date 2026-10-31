@@ -1,9 +1,9 @@
 # The Emulation Tuning Kit - GTK Edition
 
 > [!IMPORTANT]
-> **ETK v0.10.0 — the 120Hz Edition — is out, built on ROCKNIX 20261001.** The October ROCKNIX moved the Retroid Pocket Flip 2 to a new bootloader (ROCKNIX-ABL: no more boot menu). The kit now lives inside it: our kernel sits in the one slot the bootloader loads, the stock kernel is parked beside it, and the ETK OS Guard puts ours back after every future ROCKNIX update. Safe to update again. The 12 GB Flip 2 (Visionox panel) is now a verified rig, at a measured 120 Hz.
+> **ETK v0.10.1 is out, built on ROCKNIX 20261001.** A point release: Gran Turismo 6's rear-view mirror renders (core 0.10.1), and the kit recognises the bootloader that ROCKNIX **20261101** brings. **Hold that November ROCKNIX update until ETK 0.11.0** — on 20261101 the ETK kernel is not active (the rig runs stock, with a message at boot), and if the screen stays dark after that update, hold **Volume Down** at power-on and set *Device model* to your Flip 2. The October ROCKNIX (20261001) moved the Retroid Pocket Flip 2 to a new bootloader (ROCKNIX-ABL: no more boot menu). The kit now lives inside it: our kernel sits in the one slot the bootloader loads, the stock kernel is parked beside it, and the ETK OS Guard puts ours back after every future ROCKNIX update. Safe to update again. The 12 GB Flip 2 (Visionox panel) is now a verified rig, at a measured 120 Hz.
 >
-> - **New rig?** Flash the [v0.10.0 card image](https://github.com/mercurious/etk/releases/latest). Windows users: this is your path — the Windows installer can't deliver the kernel.
+> - **New rig?** Flash the [card image](https://github.com/mercurious/etk/releases/latest) (the v0.10.0 build; after boot 2, Pitstop TOOLS → Check for ETK Updates brings it to 0.10.1). Windows users: this is your path — the Windows installer can't deliver the kernel.
 > - **On ETK v0.9.0 / ROCKNIX 20260901?** Three steps, in this order, with the charger on, ≥ 50 % battery and 2 GB free on `/storage`:
 >   1. Remove the old kit with the **current** `uninstall.sh` (`curl -fsSL https://raw.githubusercontent.com/mercurious/etk/main/uninstall.sh -o ~/etk/uninstall.sh && bash ~/etk/uninstall.sh`) and check the rig boots on its own. (Ran an older `uninstall.sh` and it doesn't? Pick *Retroid Pocket Flip2* in the boot menu, then run this one.)
 >   2. In ROCKNIX: `START` → `UPDATES & DOWNLOADS` → stable → take 20261001 (it flashes the new bootloader — don't interrupt it). The first boot stops at `DEVICE MODEL NOT SET`: hold **Vol−**, *Set device model* → **Retroid Pocket Flip2** (*Flip2 Visionox* only on 12 GB units).
@@ -61,7 +61,7 @@ It's easy to try the kit with a spare SD card and a USB card reader, and to go b
 5. **Ready to play** — but beware of shader storms early on (the spinner in the lower-left corner). They are one-time compiles banked in your shader vault; let camera pans and demo replays run, visit the dealership, and performance arrives as the vault saturates. The HUD counts every shader you bank, so even a crashed run was productive.
 
 ### Already have ROCKNIX?
-Set the update channel to stable (`START` → `UPDATES & DOWNLOADS`) and make sure you are on **20261001**, then run the one-liner above. On 20260901 or older, follow the migration box at the top first. Prefer a manual checkout? `git clone https://github.com/mercurious/etk` then `./install.sh` (Windows: `powershell -ExecutionPolicy Bypass -File .\windows_installer\etk-install.ps1`) from the repo root.
+Set the update channel to stable (`START` → `UPDATES & DOWNLOADS`) and make sure you are on **20261001** (not 20261101 — hold that one until ETK 0.11.0), then run the one-liner above. On 20260901 or older, follow the migration box at the top first. Prefer a manual checkout? `git clone https://github.com/mercurious/etk` then `./install.sh` (Windows: `powershell -ExecutionPolicy Bypass -File .\windows_installer\etk-install.ps1`) from the repo root.
 
 ## Key Kit Features
 | Exclusive Feature or Fix | What it does for you | Where you see it |
@@ -108,13 +108,13 @@ Set the update channel to stable (`START` → `UPDATES & DOWNLOADS`) and make su
 | Retroid Pocket | 6 | SM8550 Adreno 740 | (needs new profile + vault) | Not yet supported |
 
 ## ETK System Requirements
-The GTK fork is built from **ROCKNIX official release `20261001`** (the **GTK 0.10.0** stack, ROCKNIX-ABL boot chain).
+The GTK fork is built from **ROCKNIX official release `20261001`** (the **GTK 0.10.1** stack, ROCKNIX-ABL boot chain).
 | Type | Detail |
 |---|---|
 | Host System | macOS or Linux native, WSL; Windows via the card image or the [PowerShell port](https://github.com/mercurious/etk/wiki/Windows-Host) (kit only — no kernel lane, no Pitlink) |
 | OS | ROCKNIX-GTK on ROCKNIX 20261001 |
 | Kernel | rocknix-gtk 7.2.0 `0.6.4` (`boot.img`: anti-lock + audio-fix + Flip 2 mic and USB-C power device trees + boot logo + USB-C charging) |
-| Emulator | RPCS3 **GTK Edition** 0.10.0 (ARMSX3 1.0.4 base) |
+| Emulator | RPCS3 **GTK Edition** 0.10.1 (ARMSX3 1.0.4 base) |
 | Driver | MESA Turnip 26.2.2 `gtk_0.7` (catalog of 9 in the DRIVER tab) |
 
 ## Notes on ROCKNIX OS Updates
