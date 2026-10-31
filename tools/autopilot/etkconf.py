@@ -5,12 +5,12 @@ WHY: every autopilot tool used to carry car8 baked in (`etk-rig` = `SM8250.local
 `root@169.254.170.2`, `169.254.170.2:47500`). 2026-10-22 car8 is out of service and car12 is
 the only rig (USB-net 169.254.170.6, mDNS sm8250-12gb.local): a tool run without its --host/
 --rig flag went looking for a car that is not on the bus. The kit already knows the car:
-etk.conf's CAR= / CAR<N>_SSH= / RIG_SSH= (install.sh's own gate reads them).
+etk.conf's CAR= / CARS= / RIG_SSH= (install.sh's own gate reads them).
 
 HOW: precedence, highest first --
   1. the tool's own flag (callers pass it straight through)
   2. env ETK_RIG (ssh target) / PITLINK_ADDR (Pitlink TCP, the client's own knob)
-  3. etk.conf CAR<N>_SSH when CAR=car<N> is set, else RIG_SSH
+  3. the ssh of etk.conf's CAR= in CARS= (or its CAR<N>_SSH=, the original scheme), else RIG_SSH
   4. the old hard-coded value, documented at each call site as the FALLBACK
 The Pitlink TCP fallback is derived from the ssh host (`<host>:47500`, GTK_PITLINK_TCP=gadget:47500
 on the car); there is no PITLINK_ADDR key in etk.conf.example today, but one is honoured if set.
@@ -25,10 +25,10 @@ ETK = os.path.abspath(os.path.join(HERE, "..", ".."))
 CONF = os.path.join(ETK, "etk.conf")
 PITLINK_PORT = 47500
 
-FALLBACK_SSH = "etk-rig"                       # pre-2026-10-22: ~/.ssh/config alias for car8
-FALLBACK_RIG = "root@SM8250.local"             # car8's mDNS name
-FALLBACK_RIG_IP = "root@169.254.170.2"         # car8's USB-net address
-FALLBACK_PITLINK_TCP = "169.254.170.2:47500"   # car8's gadget
+FALLBACK_SSH = "etk-rig"                       # the ~/.ssh/config alias scripts/etk_pair.sh writes
+FALLBACK_RIG = "root@SM8250.local"             # ROCKNIX's default mDNS name on this SoC
+FALLBACK_RIG_IP = "root@169.254.170.2"         # the first USB-net address etk_pair.sh expects
+FALLBACK_PITLINK_TCP = "169.254.170.2:47500"   # the same gadget
 
 
 def read_conf(path=CONF, text=None):
@@ -47,13 +47,27 @@ def read_conf(path=CONF, text=None):
     return out
 
 
+def cars(conf):
+    """{name: {"ssh", "ram_gb"}} in etk.conf order: CARS="name,ssh[,ramGB] ...", then any CAR<N>_SSH= (an N GB car<N>)."""
+    out = {}
+    for entry in (conf.get("CARS") or "").split():
+        name, ssh, ram = (entry.split(",") + ["", ""])[:3]
+        out[name] = {"ssh": ssh or None, "ram_gb": int(ram) if ram.isdigit() else None}
+    for key, ssh in conf.items():
+        m = re.fullmatch(r"CAR(\d+)_SSH", key)
+        if m:
+            out.setdefault(f"car{m.group(1)}", {"ssh": ssh.strip() or None, "ram_gb": int(m.group(1))})
+    return out
+
+
+def car_ssh(conf, car):
+    """The ssh target etk.conf names for a car, or None."""
+    return cars(conf).get(car, {}).get("ssh")
+
+
 def conf_ssh(conf):
-    """The ssh target etk.conf names for THIS checkout's car: CAR<N>_SSH for CAR=car<N>, else RIG_SSH."""
-    car = (conf.get("CAR") or "").strip().lower()
-    m = re.fullmatch(r"car(\d+)", car)
-    if m and conf.get(f"CAR{m.group(1)}_SSH"):
-        return conf[f"CAR{m.group(1)}_SSH"].strip()
-    return (conf.get("RIG_SSH") or "").strip() or None
+    """The ssh target etk.conf names for THIS checkout's car: CAR='s, else RIG_SSH."""
+    return car_ssh(conf, (conf.get("CAR") or "").strip()) or (conf.get("RIG_SSH") or "").strip() or None
 
 
 def rig_ssh(fallback=FALLBACK_RIG, conf=None, env=None):

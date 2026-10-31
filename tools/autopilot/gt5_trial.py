@@ -39,7 +39,7 @@ audited (`hunt.py panic --trial DIR`), which is what spends the budget. All car 
 
   gt5_trial.py --out DIR [--game BCUS98114] [--secs 1500] [--macro FILE] [--label TEXT] [--host H] [--attach]
 
---host defaults to env ETK_RIG, else etk.conf's CAR<N>_SSH / RIG_SSH (tools/autopilot/etkconf.py),
+--host defaults to env ETK_RIG, else etk.conf's CARS / RIG_SSH (tools/autopilot/etkconf.py),
 else the old `etk-rig` alias (car8). On car12 pass `--host flip2-12g-usb` (USB-net, read-only ssh).
 
 --attach watches a GT5 that is ALREADY running (driven by another Pitlink client that holds

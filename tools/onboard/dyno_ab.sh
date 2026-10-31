@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==========================================================
-# tools/onboard/dyno_ab.sh -- ONBOARD observer dyno A/B: one arm run on car8
+# tools/onboard/dyno_ab.sh -- ONBOARD observer dyno A/B: one arm run
 # ==========================================================
 # Runs ONE GT6 Apricot Hill session through gt5_trial.py (the same macro every
 # time) either alone (off) or with the ONBOARD window attached as a GAME
@@ -21,12 +21,13 @@
 set -u
 ARM="${1:?off|on}"; NAME="${2:?run name}"; ROOT="${3:-state/hunt/ab-onboard-$(date +%Y%m%d)}"
 cd "$(dirname "$0")/../.." || exit 1
+HOST="$(scripts/etk_car.sh target)"
 OUT="$ROOT/$NAME"; mkdir -p "$OUT"
 GAME="${DYNO_GAME:-BCUS98296}"
 MACRO="${DYNO_MACRO:-tools/autopilot/macros/gt6_apricot_ab.macro}"
 # DYNO_TRIAL_ARGS: extra gt5_trial flags, e.g. "--freeze-secs 25" to thread-dump a stall early
 # shellcheck disable=SC2086
-python3 tools/autopilot/gt5_trial.py --game "$GAME" --host etk-rig-usb --macro "$MACRO" \
+python3 tools/autopilot/gt5_trial.py --game "$GAME" --host "$HOST" --macro "$MACRO" \
     --out "$OUT" --secs 900 --label "$NAME" ${DYNO_TRIAL_ARGS:-} > "$OUT.log" 2>&1 &
 TRIAL=$!
 WIN=""
@@ -46,10 +47,10 @@ if [ "$RC" = 5 ]; then
     echo "$(date +%T) second thread dump: $(wc -c < "$OUT/dump2.txt" 2>/dev/null || echo 0) bytes" >> "$OUT.log"
 fi
 # the trial keeps only the log's last 400 lines; keep the whole session (a live car's log is the session's)
-ssh -o ConnectTimeout=5 etk-rig-usb cat /storage/.cache/rpcs3/RPCS3.log > "$OUT/RPCS3_full.log" 2>/dev/null
+ssh -o ConnectTimeout=5 "$HOST" cat /storage/.cache/rpcs3/RPCS3.log > "$OUT/RPCS3_full.log" 2>/dev/null
 # CRASH (3) / FREEZE (5) leave the car up with RPCS3 still holding the game (an anti-lock stop does
 # not exit the process): R3 it, or the next arm refuses with NO_GAME
 if [ "$RC" = 3 ] || [ "$RC" = 5 ]; then
-    echo "$(date +%T) recover: $(python3 tools/autopilot/gtpilot.py --host etk-rig-usb recover 2>&1 | tr '\n' ' ')" >> "$OUT.log"
+    echo "$(date +%T) recover: $(python3 tools/autopilot/gtpilot.py --host "$HOST" recover 2>&1 | tr '\n' ' ')" >> "$OUT.log"
 fi
 exit $RC

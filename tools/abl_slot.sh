@@ -27,7 +27,7 @@
 #                                    boot partition (the one thing no rig-side tool
 #                                    can do for a unit that is dark)
 #
-#   options: --car carN   refuse unless the unit reached IS that car (scripts/etk_car.sh)
+#   options: --car NAME   refuse unless the unit reached IS that car (scripts/etk_car.sh)
 #
 # status/verify never write anything on the unit. Nothing lives on the unit
 # (no push-list entry). install.sh banks the expected sha under
@@ -51,7 +51,7 @@ MODE="${1:-}"; [ -n "$MODE" ] || usage; shift
 CAR=""; CARD=""; STOR=""; TARGET=""; IMG=""
 while [ $# -gt 0 ]; do
     case "$1" in
-        --car)  CAR="${2:?--car needs carN}"; shift 2 ;;
+        --car)  CAR="${2:?--car needs a car name}"; shift 2 ;;
         --card) CARD="${2:?--card needs a mountpoint}"; shift 2 ;;
         --storage) STOR="${2:?--storage needs a mountpoint}"; shift 2 ;;
         -h|--help) usage ;;

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """route_rec — RECORD a human driving a route on the car, replay it as a macro.
 
-  route_rec.py OUT [--secs 300] [--rig root@SM8250.local] [--addr usb] [--nodes event5,event9]
+  route_rec.py OUT [--secs 300] [--rig TARGET] [--addr usb] [--nodes event5,event9]
 
 The operator drives the car by hand (watching ./onboard on a headless car). This tails the
 pad's evdev node(s) ON THE CAR over ssh (a small reader shipped on stdin: `llHHi` frames ->
@@ -26,6 +26,7 @@ import subprocess
 import sys
 import threading
 import time
+import etkconf
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "pitlink"))
@@ -199,7 +200,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("out")
     ap.add_argument("--secs", type=float, default=300.0)
-    ap.add_argument("--rig", default=os.environ.get("ETK_RIG", "root@SM8250.local"))
+    ap.add_argument("--rig", default=etkconf.rig_ssh())
     ap.add_argument("--addr", default=None, help="Pitlink address (default $PITLINK_ADDR else usb)")
     ap.add_argument("--nodes", default="", help="evdev nodes on the car (default: every pad-named node)")
     ap.add_argument("--no-frames", action="store_true", help="no Pitlink: flips 0, no snaps")

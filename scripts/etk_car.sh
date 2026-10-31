@@ -3,13 +3,17 @@
 # ETK CAR CHECK — which car is actually on the other end?  (etk_car.sh)
 # ==========================================================
 # The garage hosts more than one rig (2026-10-07: car8 = the founding 8GB Flip2,
-# car12 = the 12GB Visionox Flip2). Cars are named by RAM so the name announces
-# the spec: car<N> means an N GB unit. Before a host tool ACTS on a rig it
-# checks that the unit it reached is the car it meant:
-#   1. spec — the unit's own MemTotal, rounded up to whole GB, must equal N.
-#      This needs nothing on the unit, so it catches a never-assigned unit too.
+# car12 = the 12GB Visionox Flip2). Name a car anything: etk.conf's
+# CARS="name,ssh[,ramGB] ..." lists them (letters, digits, - and _). A name like
+# car8 with no CARS entry still means an 8 GB unit at CAR8_SSH (the original
+# scheme). Before a host tool ACTS on a rig it checks that the unit it reached
+# is the car it meant:
+#   1. spec — when the car's RAM is known, the unit's own MemTotal, rounded up to
+#      whole GB, must equal it. This needs nothing on the unit, so it catches a
+#      never-assigned unit too.
 #   2. name — /storage/.etk/car on the unit (written by `assign`), if present,
-#      must equal the expected car.
+#      must equal the expected car. With no RAM known, the name is the only
+#      proof, so an unassigned unit is refused.
 # Why: on day one car12 came up on the host's USB at 169.254.170.2 (car8's
 # address) and accepted car8's key; only ssh host-key checking stopped
 # car8-bound commands reaching it (dossiers/TwoRigGarage_20261007.md §2).
@@ -21,12 +25,19 @@
 #   scripts/etk_car.sh show   [target]          # what is on the other end
 #   scripts/etk_car.sh verify [target] [car]    # 0 ok · 1 refused · 2 usage · 3 unreachable
 #   scripts/etk_car.sh assign  target   car     # write /storage/.etk/car (OPERATOR-run)
+#   scripts/etk_car.sh target  [car]            # the ssh target (ETK_RIG, else the car's, else RIG_SSH)
 # Sourced (install.sh): `. scripts/etk_car.sh; etk_car_verify "$RIG_SSH" "${CAR:-}"`
-# Target resolution when omitted: CAR<N>_SSH for the expected car, else
-# RIG_SSH, else root@SM8250.local (etk.conf is read if present).
+# Target resolution when omitted: the expected car's CARS entry, else its
+# CAR<N>_SSH, else RIG_SSH, else root@SM8250.local (etk.conf is read if present).
 # ==========================================================
 
 ETK_CAR_FILE="/storage/.etk/car"
+
+# A tool that sources this without etk.conf (abl_slot.sh, bls_prestage.sh) still sees the garage.
+if [ -z "${CARS:-}" ]; then
+    _etk_conf="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." 2>/dev/null && pwd)/etk.conf"
+    [ -f "$_etk_conf" ] && CARS=$(sed -n 's/^[[:space:]]*CARS="\([^"]*\)".*/\1/p' "$_etk_conf" | tail -n 1)
+fi
 
 # Remote side is read-only and BusyBox-safe.
 etk_car_probe() {   # $1 target -> key=value lines on stdout; rc 3 if unreachable
@@ -55,6 +66,28 @@ etk_car_number() {  # car12 -> 12 ; anything else -> empty
     case "$1" in car[0-9]*) n="${1#car}"; case "$n" in *[!0-9]*) ;; *) echo "$n" ;; esac ;; esac
 }
 
+etk_car_valid() {  # a name that is safe in a filename and a quoted remote command
+    case "$1" in ""|*[!A-Za-z0-9_-]*|[-_]*) return 1 ;; esac
+    [ "${#1}" -le 32 ]
+}
+
+etk_car_entry() {  # $1 name -> its CARS entry (name,ssh[,ramGB]); rc 1 if listed nowhere
+    local e
+    for e in ${CARS:-}; do
+        case "$e" in "$1",*) printf '%s\n' "$e"; return 0 ;; esac
+    done
+    return 1
+}
+
+etk_car_ram() {  # $1 name -> the GB it should have; empty = unknown
+    local e
+    if e=$(etk_car_entry "$1"); then
+        printf '%s\n' "$e" | cut -d, -f3
+    else
+        etk_car_number "$1"
+    fi
+}
+
 etk_car_describe() {  # $1 probe output -> one-line description of the unit
     local p="$1"
     printf '%s, %s GB (MemTotal %s kB), panel %s, host %s, named %s' \
@@ -78,14 +111,18 @@ etk_car_verify() {  # $1 target  $2 expected car ("" = report only)
         echo "CAR CHECK (report only, no CAR set): $target is $(etk_car_describe "$p")"
         return 0
     fi
-    n=$(etk_car_number "$want")
-    if [ -z "$n" ]; then
-        echo "CAR CHECK: CAR='$want' is not a car name (expected car<GB>, e.g. car8)"
+    if ! etk_car_valid "$want"; then
+        echo "CAR CHECK: CAR='$want' is not a car name (letters, digits, - and _, up to 32)"
         return 2
     fi
+    n=$(etk_car_ram "$want")
+    case "$n" in *[!0-9]*)
+        echo "CAR CHECK: CARS gives $want a RAM of '$n' (expected whole GB)"
+        return 2 ;;
+    esac
     gb=$(etk_car_ram_gb "$(etk_car_field "$p" memkb)")
     have=$(etk_car_field "$p" car)
-    if [ "$gb" != "$n" ]; then
+    if [ -n "$n" ] && [ "$gb" != "$n" ]; then
         echo "CAR CHECK REFUSED: expected $want ($n GB) at $target, but reached a $gb GB unit — $(etk_car_describe "$p")"
         return 1
     fi
@@ -94,6 +131,10 @@ etk_car_verify() {  # $1 target  $2 expected car ("" = report only)
         return 1
     fi
     if [ -z "$have" ]; then
+        if [ -z "$n" ]; then
+            echo "CAR CHECK REFUSED: nothing proves $target is $want: no RAM in CARS and the unit is unassigned — run: scripts/etk_car.sh assign $target $want"
+            return 1
+        fi
         echo "CAR CHECK: $want spec matches at $target ($n GB) but the unit is unassigned — run: scripts/etk_car.sh assign $target $want"
         return 0
     fi
@@ -103,12 +144,12 @@ etk_car_verify() {  # $1 target  $2 expected car ("" = report only)
 
 etk_car_assign() {  # $1 target  $2 car — writes the name on the unit, read-back verified
     local target="$1" want="$2" p rc n gb have back
-    n=$(etk_car_number "$want")
-    [ -n "$n" ] || { echo "assign: '$want' is not a car name (car<GB>)"; return 2; }
+    etk_car_valid "$want" || { echo "assign: '$want' is not a car name (letters, digits, - and _, up to 32)"; return 2; }
+    n=$(etk_car_ram "$want")
     p=$(etk_car_probe "$target"); rc=$?
     [ $rc -eq 0 ] || { echo "assign: cannot read the unit at $target"; return 3; }
     gb=$(etk_car_ram_gb "$(etk_car_field "$p" memkb)")
-    [ "$gb" = "$n" ] || { echo "assign REFUSED: $want means $n GB but $target is a $gb GB unit — $(etk_car_describe "$p")"; return 1; }
+    [ -z "$n" ] || [ "$gb" = "$n" ] || { echo "assign REFUSED: $want means $n GB but $target is a $gb GB unit — $(etk_car_describe "$p")"; return 1; }
     have=$(etk_car_field "$p" car)
     if [ -n "$have" ] && [ "$have" != "$want" ]; then
         echo "assign REFUSED: $target already says it is $have (remove $ETK_CAR_FILE by hand to rename)"; return 1
@@ -120,7 +161,11 @@ etk_car_assign() {  # $1 target  $2 car — writes the name on the unit, read-ba
 }
 
 etk_car_resolve_target() {  # $1 car ("" ok) -> ssh target
-    local want="$1" n v
+    local want="$1" n v e
+    if e=$(etk_car_entry "$want"); then
+        printf '%s\n' "$e" | cut -d, -f2
+        return
+    fi
     n=$(etk_car_number "$want")
     if [ -n "$n" ]; then
         v="CAR${n}_SSH"
@@ -144,6 +189,8 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
             elif [ $# -eq 1 ]; then t="$1"; c="${CAR:-}"
             else c="${CAR:-}"; t="$(etk_car_resolve_target "$c")"; fi
             etk_car_verify "$t" "$c"; exit $? ;;
+        target)
+            echo "${ETK_RIG:-$(etk_car_resolve_target "${1:-${CAR:-}}")}" ;;
         assign)
             [ $# -eq 2 ] || { echo "usage: $0 assign <target> <car>"; exit 2; }
             etk_car_assign "$1" "$2"; exit $? ;;

@@ -762,6 +762,15 @@ Walk this list BEFORE handing the operator `./forge.sh rpcs3`:
 
 ### A.2 Deploying to the rig (`install.sh` and persistence)
 
+**Naming cars.** `etk.conf` `CARS="name,ssh[,ramGB] ..."` lists the rigs and `CAR=` picks this
+checkout's. Names are free (letters, digits, `-`, `_`). `install.sh`, the hunt and the host tools
+read both, and `scripts/etk_car.sh verify` is the check: the RAM must match when `CARS` gives one,
+and the name on the unit must match when it has been `assign`ed. With no RAM given, an unassigned
+unit is refused, because nothing proves which car it is. `CAR<N>_SSH=` still works. A host shell
+tool gets its target from `scripts/etk_car.sh target` (`ETK_RIG` overrides); a Python tool from
+`tools/autopilot/etkconf.py`. Never a literal host. The guard's `LIFT_HOSTS` stays pinned on
+purpose: it is a security scope.
+
 **Everything reaches the rig through `install.sh`** (idempotent repair/update/sync; ~2,200
 lines, 8 TUI steps). The operator runs it (§1.1); Claude stages artifacts, sets `etk.conf`
 knobs, writes the handoff, verifies afterward from read-only telemetry.

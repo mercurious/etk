@@ -26,7 +26,7 @@ BOOT = ("import sys;n=int(sys.stdin.buffer.readline());"
 
 
 def default_host():
-    """ETK_RIG, else etk.conf's CAR<N>_SSH / RIG_SSH, else `etk-rig` (the pre-10-22 alias: car8)."""
+    """ETK_RIG, else etk.conf's CARS / RIG_SSH, else `etk-rig` (the pre-10-22 alias: car8)."""
     import etkconf
     return etkconf.rig_ssh(fallback=etkconf.FALLBACK_SSH)
 

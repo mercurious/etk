@@ -10,10 +10,10 @@
 #   --bypass     before the launch: move USRDIR/data/common/fmv to fmv.aside (--restore puts it back)
 #   --arm        arm a hangrd capture on the car for this run (size-guarded at 1.5 GB; disarmed after)
 #   --watch S    after the last tap: S seconds of flips / movie fd position / dmesg / log, a frame per 20 s
-# Needs the held wheel (tools/pitlink/pitlink.py serve) or no other controller. RIG=root@SM8250.local (car8).
+# Needs the held wheel (tools/pitlink/pitlink.py serve) or no other controller. RIG= overrides etk.conf's car.
 cd "$(dirname "$0")/../.." || exit 1
 D="$1"; shift; [ -n "$D" ] || { echo "usage: $0 OUTDIR [...]"; exit 2; }
-mkdir -p "$D"; T=tools/pitlink/pitlink.py; RIG="${RIG:-root@SM8250.local}"
+mkdir -p "$D"; T=tools/pitlink/pitlink.py; RIG="${RIG:-$(scripts/etk_car.sh target)}"
 FMV=/storage/roms/bios/rpcs3/dev_hdd0/game/NPUB30892/USRDIR/data/common/fmv
 RELAUNCH=0; BYPASS=0; RESTORE=0; ARM=0; WATCH=0
 while [ $# -gt 0 ]; do case "$1" in

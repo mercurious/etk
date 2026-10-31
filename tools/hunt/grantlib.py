@@ -26,7 +26,7 @@ NEVER = ("publish", "tags", "garage remote", "rig reboot", "CERT pins",
          "kernel/DTB/firmware", "/flash", "install/uninstall", "kernel lane", "image lane")
 GAME_RE = re.compile(r"^[A-Z]{4}\d{5}$")
 ID_RE = re.compile(r"^hunt-\d{8}-[a-z0-9][a-z0-9-]{0,31}$")
-CAR_RE = re.compile(r"^car\d+$")
+CAR_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$")   # same rule as scripts/etk_car.sh
 SKEW = 300                               # seconds of clock skew tolerated on issued_at
 STATE = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "state", "hunt"))
 

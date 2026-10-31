@@ -140,6 +140,13 @@ class GrantTests(Tmp):
         self.write(grant(mode="supervised", reserve={"car": "car12", "verified": False}))
         self.assertEqual(self.problems(), [])
 
+    def test_a_car_can_have_any_name(self):
+        self.write(grant(rig={"car": "red-flip_2", "ssh": "root@x", "usb_serial": SERIAL}))
+        self.assertEqual(self.problems(), [])
+        for bad in ("a b", "../x", "-x", "a;b", "x" * 33):
+            self.write(grant(rig={"car": bad, "ssh": "root@x", "usb_serial": SERIAL}))
+            self.assertTrue(any("rig must name" in p for p in self.problems()), bad)
+
     def test_reserve_is_not_the_hunt_car(self):
         self.write(grant(reserve={"car": "car8", "verified": True}))
         self.assertTrue(any("reserve is the hunt car" in p for p in self.problems()))
@@ -319,6 +326,9 @@ class IssueTests(Tmp):
         self.assertEqual(grantctl.hunt_cars(dict(c, CAR="car8")), ("car8", "car12"))
         self.assertEqual(grantctl.hunt_cars(c, "car8"), ("car8", "car12"))
         self.assertEqual(grantctl.hunt_cars(c, "car8", "car9"), ("car8", "car9"))
+        free = {"CAR": "red", "CARS": "red,root@a,8 blue,root@b,8"}
+        self.assertEqual(grantctl.hunt_cars(free), ("red", "blue"))
+        self.assertEqual(grantctl.etkconf.car_ssh(free, "blue"), "root@b")
         for bad, why in (({"CAR8_SSH": "a"}, "no CAR="), ({"CAR": "car12", "CAR12_SSH": "b"}, "--reserve")):
             with self.assertRaises(grantctl.Refused) as cm:
                 grantctl.hunt_cars(bad)

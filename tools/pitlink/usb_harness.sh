@@ -12,7 +12,7 @@
 #                     python3 tools/pitlink/pitlink.py status       (PLNK over USB; default addr)
 set -u
 cd "$(dirname "$0")/../.." || exit 1
-RIG="${RIG:-root@169.254.170.2}"
+RIG="${RIG:-$(scripts/etk_car.sh target)}"
 D=/tmp/pitlink-usb
 SSH="ssh -o BatchMode=yes -o ConnectTimeout=5"
 

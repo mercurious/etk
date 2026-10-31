@@ -27,6 +27,9 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
   GTK kernel, its entry and `dtbs/etk/` when given), reads the stock `options` line verbatim, names
   the running model's device tree, never touches `KERNEL` or `rocknix.conf`, and `--remove` undoes
   exactly what it wrote. Harness `tools/test_bls_prestage.sh`.
+- **Name your rigs anything.** `CARS="name,ssh[,ramGB] ..."` in `etk.conf` lists them, and two
+  rigs with the same RAM can now have their own names. The `car<GB>` scheme was the only one the
+  car check accepted. It still works, including `CAR<N>_SSH`, so no existing setup has to change.
 - **HUD dash** (Pitstop TOOLS → HUD dash): pick the in-game HUD on the rig — G-INSTR, BASIC,
   LEAN or the new **COMPACT** — with no etk.conf edit and no reinstall; it applies at the next
   game launch, and `R1`+`L3` still moves or hides it. COMPACT is MangoHud's compact view with

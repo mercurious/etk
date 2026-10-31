@@ -24,7 +24,7 @@ set -u
 ROOT="${1:?OUTROOT}"; shift
 [ $# -ge 1 ] || { echo "need at least one SERIAL:CORE:MACRO:N" >&2; exit 2; }
 cd "$(dirname "$0")/../.." || exit 1
-HOST=etk-rig-usb
+HOST="$(scripts/etk_car.sh target)"
 MAP=/storage/roms/etk/emulators/core_map.tsv
 COOL_C="${MATRIX_COOL_C:-50}"; COOL_MAX="${MATRIX_COOL_MAX:-900}"
 mkdir -p "$ROOT"

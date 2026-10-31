@@ -40,7 +40,7 @@ describes:
 
 **Status (operator, 2026-10-31): one car in service.** car8 is out of commission until further
 notice, so the second fact does not hold today. The hunt car follows `etk.conf` `CAR=` (car12) and
-the reserve is the other `CAR<N>_SSH=` car (car8), which can't verify, so `./hunt start` comes out
+the reserve is the next other car in `CARS=` (car8), which can't verify, so `./hunt start` comes out
 supervised on its own. Losing car12 is **not** survivable while this stands. When car8 verifies
 again, overnight grants return with no edit.
 
@@ -59,7 +59,7 @@ themself (not under `sudo`; the script refuses root):
 ```
 
 `./hunt` (repo root) is the operator's front door: `start GAME [HOURS]` composes and prints the
-full `grant.sh issue` line (defaults: 12 h, `etk.conf` `CAR=` hunts, the other `CAR<N>_SSH=` car is the reserve, `--auto-mode` = supervised when that reserve can't verify, rpcs3 lane, 2 panics; any
+full `grant.sh issue` line (defaults: 12 h, `etk.conf` `CAR=` hunts, the next other car in `CARS=` is the reserve, `--auto-mode` = supervised when that reserve can't verify, rpcs3 lane, 2 panics; any
 grant.sh flag after the hours wins), `status`, `stop` (= `hunt.py end` + `grant.sh revoke`),
 `games`. GAME is a short name, a serial or a unique piece of a title in `config/game_status.tsv`.
 The underlying line still works by hand:
@@ -82,7 +82,7 @@ other grant is valid. Fields:
 | `game` | `BCUS98296` | the only title that may be pinned or overridden |
 | `rig` | `etk.conf` `CAR=`, car12 today (the USB serial its gadget reports) | the only car the hunt may touch; the other car is the reserve |
 | `mode` | `overnight` / `supervised` | overnight only with a verified reserve; otherwise `issue` refuses unless `--supervised` or `--auto-mode` (the front door's default) |
-| `reserve` | the other `CAR<N>_SSH=` car, car8 today (unverified while it is out of commission) | **verified** = passes `etk_car.sh verify` with its name assigned, reports its boot time, and carries Pitstop (`roms/etk/bin/etk_pitstop.py`). Required for an overnight grant (§1.1) |
+| `reserve` | the next other car in `CARS=`, car8 today (unverified while it is out of commission) | **verified** = passes `etk_car.sh verify` with its name assigned, reports its boot time, and carries Pitstop (`roms/etk/bin/etk_pitstop.py`). Required for an overnight grant (§1.1) |
 | `node` | etk-cloud shape fingerprint at issue | `mint` refuses if the node changed (always-free sizing, §1.1) |
 | `mint` | lanes `rpcs3` (default) + `turnip` when `--lanes` names it | core-oriented, Turnip-capable. No mint-count or node-hour budget, since compute is free (§1.1); one mint at a time. `kernel` and `image` lanes are **never** grantable (brick risk) |
 | `inject` | `emulators/hunt/`, `drivers/hunt/`, `debug_env` | the only rig paths a hunt may write |

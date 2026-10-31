@@ -21,7 +21,7 @@ issue checks, before it asks for the signature:
            grant can only be --supervised (spec §1.1: with one car in service, no overnight);
            --auto-mode takes supervised then, instead of refusing
 
-The cars come from etk.conf: --rig defaults to CAR=, --reserve to the other CAR<N>_SSH= car.
+The cars come from etk.conf: --rig defaults to CAR=, --reserve to the next other car in CARS=.
 """
 import argparse
 import datetime as dt
@@ -37,7 +37,8 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ETK = os.path.abspath(os.path.join(HERE, "..", ".."))
-sys.path.insert(0, HERE)
+sys.path[:0] = [HERE, os.path.join(ETK, "tools", "autopilot")]
+import etkconf  # noqa: E402
 import grantlib as gl  # noqa: E402
 
 RIG_GRANT = "/storage/.config/etk-hunt.grant"
@@ -48,20 +49,15 @@ class Refused(Exception):
     pass
 
 
-def car_ssh(conf, car):
-    """etk.conf's CAR<N>_SSH for car<N>, or None."""
-    return conf.get(f"CAR{car[3:]}_SSH") if car and car.startswith("car") else None
-
-
 def hunt_cars(conf, rig=None, reserve=None):
-    """-> (hunt car, reserve). Flags win; else etk.conf: CAR= hunts, the other CAR<N>_SSH= car stands by."""
+    """-> (hunt car, reserve). Flags win; else etk.conf: CAR= hunts, the next car listed stands by."""
     rig = rig or conf.get("CAR")
     if not rig:
         raise Refused("etk.conf has no CAR=: name the hunt car with --rig")
     if not reserve:
-        others = sorted(f"car{k[3:-4]}" for k in conf if re.fullmatch(r"CAR\d+_SSH", k) and f"car{k[3:-4]}" != rig)
+        others = [c for c in etkconf.cars(conf) if c != rig]
         if not others:
-            raise Refused(f"etk.conf has no CAR<N>_SSH for a car other than {rig}: name the reserve with --reserve")
+            raise Refused(f"etk.conf lists no car other than {rig} in CARS=: name the reserve with --reserve")
         reserve = others[0]
     return rig, reserve
 
@@ -286,9 +282,9 @@ def issue(a, probes, confirm, signer, out=print, now=None, grant_path=gl.GRANT_P
         raise Refused(f"etk-cloud is outside the always-free allowance, so a mint may cost money: {'; '.join(nf)}")
 
     def target(car):
-        t = car_ssh(conf, car)
+        t = etkconf.car_ssh(conf, car)
         if not t:
-            raise Refused(f"etk.conf has no CAR{car[3:]}_SSH for {car}")
+            raise Refused(f"etk.conf has no ssh target for {car}: add it to CARS=")
         return t
     rig, reserve = target(a.rig), target(a.reserve)
     rp = probes["car"](rig, a.rig)
@@ -361,7 +357,7 @@ def revoke(conf, signer, out=print, grant_path=gl.GRANT_PATH, owner_uid=0, tty=N
         if sys.stdin.isatty() if tty is None else tty:
             out("tidy-up: sudo removes the root-owned file" if signer["remove"]() else
                 "sudo did not remove the root-owned file: it stays, revoked, until the next issue replaces it")
-    rig = (g or {}).get("rig", {}).get("ssh") or car_ssh(conf, conf.get("CAR"))
+    rig = (g or {}).get("rig", {}).get("ssh") or etkconf.car_ssh(conf, conf.get("CAR"))
     if rig:
         out(f"rig grant on {rig}: " + ("removed" if signer["rig_remove"](rig) else
                                        "NOT removed (unreachable?) -- Pitstop TOOLS -> Autonomy off stops it at the car"))
@@ -382,7 +378,7 @@ def main(argv=None):
     i.add_argument("--lanes", default="rpcs3", type=lambda s: [x for x in s.split(",") if x])
     i.add_argument("--name", default="")
     i.add_argument("--rig", help="default: etk.conf CAR=")
-    i.add_argument("--reserve", help="default: the other CAR<N>_SSH= car in etk.conf")
+    i.add_argument("--reserve", help="default: the next other car in etk.conf CARS=")
     i.add_argument("--supervised", action="store_true")
     i.add_argument("--auto-mode", action="store_true",
                    help="overnight when the reserve verifies, supervised when it does not (instead of refusing)")

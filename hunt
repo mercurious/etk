@@ -9,7 +9,7 @@
   ./hunt games [text]        the names start takes
 
 A game is a short name (rr7 gt5p gthd gt5 gt6), a serial (NPUB30457), or any unique piece of a title
-in config/game_status.tsv ("ridge racer"). start's defaults: etk.conf's CAR= hunts, the other CAR<N>_SSH= car
+in config/game_status.tsv ("ridge racer"). start's defaults: etk.conf's CAR= hunts, the next other car in CARS=
 is the reserve, --auto-mode (overnight when the reserve verifies, supervised when it does not: run
 that one awake), the rpcs3 lane, 2 panics, the short name as the grant's name. Any grant.sh flag after
 the hours overrides them (--panics 0, --lanes rpcs3,turnip, --supervised, --rig car12). start prints

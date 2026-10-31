@@ -22,6 +22,7 @@ import struct
 import subprocess
 import sys
 import time
+import etkconf
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
@@ -46,7 +47,7 @@ def hexlines(base, b):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("out")
-    ap.add_argument("--host", default="etk-rig-usb")
+    ap.add_argument("--host", default=etkconf.rig_ssh(fallback=etkconf.FALLBACK_SSH))
     ap.add_argument("--dma", type=lambda s: int(s, 0), default=0x70100000)
     ap.add_argument("--after", type=float, default=8)
     ap.add_argument("--reads", type=int, default=6)

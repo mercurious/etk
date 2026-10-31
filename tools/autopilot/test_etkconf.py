@@ -51,6 +51,19 @@ check("quoted, single-quoted and bare values parse; comments ignored",
       (C["RIG_SSH"], C["CAR12_SSH"], C["ETK_BUILD_TYPE"]), ("root@SM8250.local", "root@sm8250-12gb.local", "FULL"))
 check("CAR=car12 -> CAR12_SSH, not RIG_SSH", E.conf_ssh(C), "root@sm8250-12gb.local")
 check("CAR=car8 -> CAR8_SSH", E.conf_ssh(dict(C, CAR="car8")), "root@SM8250.local")
+G = E.read_conf(text='CAR="red"\nRIG_SSH="root@other"\nCARS="red,root@a,8 blue,root@b,8 plain,root@c"   # the garage\n')
+check("CARS: free name -> its ssh, not RIG_SSH", E.conf_ssh(G), "root@a")
+check("CARS: keeps etk.conf's order", list(E.cars(G)), ["red", "blue", "plain"])
+check("CARS: RAM optional", (E.cars(G)["blue"]["ram_gb"], E.cars(G)["plain"]["ram_gb"]), (8, None))
+check("CARS: an unlisted CAR falls to RIG_SSH", E.conf_ssh(dict(G, CAR="gone")), "root@other")
+check("CARS outranks CAR<N>_SSH", E.car_ssh({"CARS": "car8,root@new,8", "CAR8_SSH": "root@old"}, "car8"), "root@new")
+check("CAR<N>_SSH alone still names an N GB car", E.cars({"CAR12_SSH": "root@x"}), {"car12": {"ssh": "root@x", "ram_gb": 12}})
+ETK = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+for tool in ("autopilot/core_matrix.sh", "autopilot/ssx_drive.sh", "autopilot/route_rec.py", "autopilot/gt5_park_catch.py",
+             "onboard/dyno_ab.sh", "pitlink/usb_harness.sh"):
+    with open(os.path.join(ETK, "tools", tool)) as f:
+        src = f.read()
+    check(f"{tool} defaults to etk.conf's car", re.search(r"etk-rig-usb|SM8250\.local|169\.254\.170\.2", src), None)
 check("CAR set but its _SSH missing -> RIG_SSH", E.conf_ssh({"CAR": "car12", "RIG_SSH": "root@x"}), "root@x")
 check("nothing -> None", E.conf_ssh({}), None)
 check("missing file -> {}", E.read_conf(path="/nonexistent/etk.conf"), {})

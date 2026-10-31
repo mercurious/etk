@@ -21,7 +21,7 @@
 # ETK_USBNET_HEAL=0, removed by uninstall.sh). This tool keeps the instruments
 # (status, verify) and a disposable `stage` that writes install.sh's own bodies.
 #
-#   stage  <target> [--car carN] [--trace]
+#   stage  <target> [--car NAME] [--trace]
 #          write etk-usbnet-heal.service (+ script) under /storage/.config: after
 #          rocknix-autostart.service it checks the cdc gadget; healthy (bound + an
 #          inet address) = log + exit 0; half-configured = `usbgadget stop; usbgadget
@@ -46,7 +46,7 @@ MODE="${1:-}"; TARGET="${2:-}"; shift 2 2>/dev/null || usage
 CAR=""; TRACE=0
 while [ $# -gt 0 ]; do
     case "$1" in
-        --car)   CAR="${2:?--car needs carN}"; shift 2 ;;
+        --car)   CAR="${2:?--car needs a car name}"; shift 2 ;;
         --trace) TRACE=1; shift ;;
         *) die "unknown option $1" ;;
     esac

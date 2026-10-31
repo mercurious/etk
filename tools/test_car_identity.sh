@@ -5,8 +5,9 @@
 # WHY: 2026-10-07 the garage gained a second Flip2. car12 (12GB) came up on the
 # host's USB at 169.254.170.2 — car8's address — and accepted car8's key; only
 # ssh host-key checking kept car8-bound commands (install.sh included) off it.
-# Cars are named by RAM (car<N> = N GB) and the check proves the unit reached
-# is the car meant (dossiers/TwoRigGarage_20261007.md).
+# The check proves the unit reached is the car meant
+# (dossiers/TwoRigGarage_20261007.md). Names are free since 2026-10-31: etk.conf's
+# CARS= lists them, and car<N> / CAR<N>_SSH keep working.
 #
 # HOW: sandbox with a fake `ssh` on PATH that answers the probe from canned
 # unit files ($TD/units/<host>: car= model= memkb= panel= host=) and models the
@@ -81,7 +82,7 @@ expect "name mismatch (unit says car08) -> REFUSED"           1 "says it is car0
 expect "no CAR -> report only, rc 0"                          0 "report only"          LIB etk_car_verify root@car12host ""
 expect "no CAR + unreachable -> never blocks"                 0 "could not read"       LIB etk_car_verify root@nobody ""
 expect "CAR set + unreachable -> rc 3"                        3 "cannot read"          LIB etk_car_verify root@nobody car8
-expect "CAR not a car name -> rc 2"                           2 "not a car name"       LIB etk_car_verify root@car8host rig1
+expect "CAR not a car name -> rc 2"                           2 "not a car name"       LIB etk_car_verify root@car8host "rig 1"
 expect "assign car8 onto the 12GB unit -> REFUSED"            1 "assign REFUSED"       LIB etk_car_assign root@car12host car8
 expect "assign over a different existing name -> REFUSED"     1 "already says it is car08" LIB etk_car_assign root@oddname car8
 expect "assign car12 onto the 12GB unit"                      0 "is now car12"         LIB etk_car_assign root@car12host car12
@@ -90,6 +91,32 @@ for pair in "7735836 8" "11809768 12" "8388608 8" "8388609 9"; do
     set -- $pair
     expect "RAM rounding: $1 kB -> $2 GB" 0 "$2" LIB etk_car_ram_gb "$1"
 done
+
+# --- free names (CARS=) ---------------------------------------------------------
+reset_units
+unit twin "" "Retroid Pocket Flip2" 7735836 "ch13726a,rp5" SM8250
+G='red,root@car8host,8 blue,root@twin,8 plain,root@car12host broken,root@twin,lots big,root@car12host,12'
+LIBC() { ( export CARS="$G"; LIB "$@" ); }
+expect "free name + RAM: spec passes, unassigned hint"       0 "unassigned"           LIBC etk_car_verify root@car8host red
+expect "free name + RAM: wrong RAM -> REFUSED"               1 "reached a 12 GB unit" LIBC etk_car_verify root@car12host red
+expect "free name, no RAM, unassigned -> REFUSED"            1 "nothing proves"       LIBC etk_car_verify root@car12host plain
+expect "non-numeric RAM -> rc 2"                             2 "expected whole GB"    LIBC etk_car_verify root@twin broken
+expect "a name with shell in it -> rc 2"                     2 "not a car name"       LIBC etk_car_assign root@twin "x;rm"
+expect "a name over 32 characters -> rc 2"                   2 "not a car name"       LIBC etk_car_verify root@twin aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+expect "assign a free name, no RAM stated"                   0 "is now plain"         LIBC etk_car_assign root@car12host plain
+expect "after assign: free name verified, no RAM stated"     0 "plain verified"       LIBC etk_car_verify root@car12host plain
+expect "same RAM: assign red"                                0 "is now red"           LIBC etk_car_assign root@car8host red
+expect "same RAM: assign blue"                               0 "is now blue"          LIBC etk_car_assign root@twin blue
+expect "same RAM twins told apart by name"                   1 "says it is red"       LIBC etk_car_verify root@car8host blue
+expect "target comes from CARS"                              0 "root@twin"            LIBC etk_car_resolve_target blue
+expect "RAM comes from CARS, not the name's digits"          0 "12"                   LIBC etk_car_ram big
+LEGACY() { ( export CARS="" CAR12_SSH=root@car12host; LIB "$@" ); }
+expect "CAR<N>_SSH keeps working"                            0 "root@car12host"       LEGACY etk_car_resolve_target car12
+printf 'CAR="blue"\nCARS="%s"\n' "$G" > "$TD/etk.conf"
+expect "a sourced lib finds CARS in etk.conf by itself"      0 "root@twin"            LIB etk_car_resolve_target blue
+expect "CLI target: etk.conf's CAR"                          0 "root@twin"            env -u CARS bash "$TD/scripts/etk_car.sh" target
+expect "CLI target: ETK_RIG wins"                            0 "root@elsewhere"       env -u CARS ETK_RIG=root@elsewhere bash "$TD/scripts/etk_car.sh" target
+rm -f "$TD/etk.conf"
 
 # --- install.sh gate ------------------------------------------------------------
 reset_units
@@ -106,6 +133,9 @@ else
         && bad "gate: refused run must not continue" || ok "gate: refused run stops before the live-session guard"
     expect "gate: CAR=car8 at car8 -> continues"            0 "REACHED_LIVE_GUARD" gate root@car8host car8
     expect "gate: no CAR -> continues (single-rig install)" 0 "REACHED_LIVE_GUARD" gate root@car12host ""
+    gatec() { ( export CARS="$G"; gate "$1" "$2" ); }
+    expect "gate: free name at its car -> continues"        0 "REACHED_LIVE_GUARD" gatec root@car8host red
+    expect "gate: free name at the wrong car -> refused"    1 "Install refused"    gatec root@car12host red
 fi
 # order: after pairing, before the first ssh of the live-session guard
 L_PAIR=$(grep -n 'bash ./scripts/etk_pair.sh' "$TD/install.sh" | head -1 | cut -d: -f1)

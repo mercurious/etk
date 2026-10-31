@@ -32,7 +32,7 @@
 #   tools/bls_prestage.sh          [opts] [target]   write the set above
 #   tools/bls_prestage.sh --remove [opts] [target]   delete exactly that set (loader.conf only
 #                                                    when it is ours), rmdir loader/ if we made it
-#   opts: --car carN            refuse unless the unit reached IS that car (scripts/etk_car.sh)
+#   opts: --car NAME            refuse unless the unit reached IS that car (scripts/etk_car.sh)
 #         --gtk <KERNEL.gtk>    stage this GTK kernel too (raw PE Image; a boot.img is refused)
 #         --dtbs <dir>          the kit DTBs for dtbs/etk/ (must hold <model>.dtb)
 #         --default stock|gtk   which entry loader.conf names (default: stock = the stock
@@ -75,7 +75,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --plan)    MODE=plan; shift ;;
         --remove)  MODE=remove; shift ;;
-        --car)     CAR="${2:?--car needs carN}"; shift 2 ;;
+        --car)     CAR="${2:?--car needs a car name}"; shift 2 ;;
         --gtk)     GTK="${2:?--gtk needs a KERNEL.gtk file}"; shift 2 ;;
         --dtbs)    DTBS="${2:?--dtbs needs a directory}"; shift 2 ;;
         --default) DEFAULT="${2:?--default needs stock|gtk}"; shift 2 ;;

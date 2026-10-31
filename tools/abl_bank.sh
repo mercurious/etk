@@ -11,8 +11,8 @@
 # the source device, the unit and the date. Compare: the 2026-10-07 car12 bank in
 # state/flip2-12gb-abl-backup/ (taken from Android with Retroid's backup_abl.sh).
 #
-#   tools/abl_bank.sh [--car carN] [--dir <dir>] [target]
-#     --car carN   refuse unless the unit reached IS that car (scripts/etk_car.sh); also names
+#   tools/abl_bank.sh [--car NAME] [--dir <dir>] [target]
+#     --car NAME   refuse unless the unit reached IS that car (scripts/etk_car.sh); also names
 #                  the bank dir (default: CAR from etk.conf, else the unit's own /storage/.etk/car)
 #     --dir <dir>  bank here instead of state/abl/<car>/ (a dir that already holds an
 #                  abl_a.img is refused: a bank is never overwritten)
@@ -39,7 +39,7 @@ usage() { sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 CAR=""; DIR=""; TARGET=""
 while [ $# -gt 0 ]; do
     case "$1" in
-        --car) CAR="${2:?--car needs carN}"; shift 2 ;;
+        --car) CAR="${2:?--car needs a car name}"; shift 2 ;;
         --dir) DIR="${2:?--dir needs a directory}"; shift 2 ;;
         -h|--help) usage ;;
         -*) die "unknown option $1" ;;
