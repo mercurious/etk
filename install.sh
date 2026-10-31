@@ -1098,6 +1098,13 @@ tui_rsync 2 25 45 "Pushing /scripts (env, profiles, probes)" --delete --exclude=
 #                       "no boundary" (exit 127 on a missing script). uninstall.sh
 #                       does `rm -rf $ETK_ROOT/tools`, so a one-off scp does not
 #                       survive a reinstall — it has to live here.
+#   HOST-SIDE ONLY, deliberately NOT pushed (they ssh in from the Air, like abl_slot.sh):
+#   - bls_prestage.sh : OpenABL pre-stage (ROCKNIX 20261101 prep) — writes /flash/loader/
+#                       + KERNEL.gtk + dtbs/etk/ and nothing else; --plan/--remove.
+#   - abl_bank.sh     : read-only dd of abl_a/abl_b into state/abl/<car>/.
+#                       Both must work on a rig the kit is NOT installed on (a pre-stage
+#                       precedes the update, the bank precedes everything), so neither may
+#                       depend on $ETK_ROOT/tools. Harness: tools/test_bls_prestage.sh.
 tui_rsync 2 45 52 "Pushing tools/etk_drift.py (OS-drift detector)" --exclude='.DS_Store' ./tools/etk_drift.py $RIG_SSH:$ETK_ROOT/tools/etk_drift.py
 tui_rsync 2 52 56 "Pushing tools/vault_sweep.sh (Manage Shaders engine)" --exclude='.DS_Store' ./tools/vault_sweep.sh $RIG_SSH:$ETK_ROOT/tools/vault_sweep.sh
 # wl-mirror: aarch64/glibc screen-mirror binary used by bin/dpmirror_d.sh to

@@ -14,6 +14,14 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ### Added
 
+- **OpenABL pre-stage tools** (ROCKNIX 20261101 prep, host-side, operator-run): `tools/abl_bank.sh`
+  banks a Flip 2's `abl_a`/`abl_b` bootloader slots read-only into `state/abl/<car>/` with checksums
+  agreed on both ends, before the update overwrites both with no backup. `tools/bls_prestage.sh`
+  pre-stages the Boot Loader Spec entry that lets a unit whose Device model was never set boot with
+  the panel lit: it writes only `loader/loader.conf` and `loader/entries/etk-stock.conf` (plus the
+  GTK kernel, its entry and `dtbs/etk/` when given), reads the stock `options` line verbatim, names
+  the running model's device tree, never touches `KERNEL` or `rocknix.conf`, and `--remove` undoes
+  exactly what it wrote. Harness `tools/test_bls_prestage.sh`.
 - **HUD dash** (Pitstop TOOLS → HUD dash): pick the in-game HUD on the rig — G-INSTR, BASIC,
   LEAN or the new **COMPACT** — with no etk.conf edit and no reinstall; it applies at the next
   game launch, and `R1`+`L3` still moves or hides it. COMPACT is MangoHud's compact view with
