@@ -83,8 +83,11 @@ docs/video/
 # wizard. Tracks the rig SSH target, build tier, HUD preferences, etc.
 # The canonical template is `etk.conf.example` (committed).
 etk.conf
-# Hand-made backups of the operator config (e.g. etk.conf.bak-pre-perfstat)
-etk.conf.bak*
+# Hand-made backups of the operator config (etk.conf.bak-pre-perfstat,
+# etk.conf.pre-0646-car8, ...); the committed template etk.conf.example is the
+# one exception.
+etk.conf.*
+!etk.conf.example
 
 # 7. Claude Code machine-local settings — personal, not shared. The `.claude/`
 # dir stays at the project root (Claude Code requires it there); only the
