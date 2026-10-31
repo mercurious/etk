@@ -14,6 +14,11 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ### Added
 
+- **The Pitlink MCP server is registered with the repo** (`.mcp.json`, project scope): any MCP client
+  opened in this checkout gets the Engineer's eleven Pitlink tools (`frame`, `status`, `press`, `hold`,
+  `release`, `ram_read`, `watch`, `pause`, `resume`, `step`, `wait_for`) without a per-machine
+  `claude mcp add`. The server starts with the car down and dials it on the first call; the
+  Pitstop TOOLS → Pitlink switch on the car is still what opens the link.
 - **OpenABL pre-stage tools** (ROCKNIX 20261101 prep, host-side, operator-run): `tools/abl_bank.sh`
   banks a Flip 2's `abl_a`/`abl_b` bootloader slots read-only into `state/abl/<car>/` with checksums
   agreed on both ends, before the update overwrites both with no backup. `tools/bls_prestage.sh`
