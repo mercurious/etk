@@ -212,7 +212,7 @@ class AuditTests(Tmp):
 
 def args(**kw):
     a = dict(game="BCUS98296", hours=10.0, lanes=["rpcs3"], name="gt6", rig="car8", reserve="car12",
-             supervised=False, panics=0)
+             supervised=False, auto_mode=False, panics=0)
     a.update(kw)
     return argparse.Namespace(**a)
 
@@ -232,7 +232,7 @@ class IssueTests(Tmp):
         self.guard = "/home/dave/etk/.claude/settings.local.json"
 
     def probes(self):
-        return {"conf": {"CAR8_SSH": "root@SM8250.local", "CAR12_SSH": "root@192.168.1.5"},
+        return {"conf": {"CAR": "car12", "CAR8_SSH": "root@SM8250.local", "CAR12_SSH": "root@192.168.1.5"},
                 "node": lambda h: self.fp, "car": lambda t, c: self.car[c], "usb": lambda: self.usb,
                 "tools": lambda: {"tools_hunt": "abc1234", "clean": True}, "guard": lambda: self.guard}
 
@@ -295,6 +295,35 @@ class IssueTests(Tmp):
         self.assertEqual((g["mode"], g["reserve"]["verified"]), ("supervised", False))
         self.assertIn("SUPERVISED", text)
 
+    def front_door(self):
+        self.car["car12"] = dict(self.car["car12"], usb_serial=SERIAL)
+        return args(rig=None, reserve=None, auto_mode=True)
+
+    def test_front_door_one_car_in_service(self):
+        # car8 out of commission (operator 2026-10-31): etk.conf picks car12, the failed reserve check picks supervised
+        a = self.front_door()
+        self.car["car8"] = dict(self.car["car8"], ok=False, message="cannot read the unit", pitstop=None)
+        g, text = self.issue(a=a)
+        self.assertEqual((g["rig"]["car"], g["reserve"]["car"], g["mode"], g["reserve"]["verified"]),
+                         ("car12", "car8", "supervised", False))
+        self.assertIn("SUPERVISED", text)
+
+    def test_front_door_reserve_back(self):
+        # no code changes when car8 returns: a reserve that verifies is an overnight grant again
+        g, _ = self.issue(a=self.front_door())
+        self.assertEqual((g["mode"], g["reserve"]["verified"]), ("overnight", True))
+
+    def test_cars_come_from_etk_conf(self):
+        c = {"CAR": "car12", "CAR8_SSH": "a", "CAR12_SSH": "b"}
+        self.assertEqual(grantctl.hunt_cars(c), ("car12", "car8"))
+        self.assertEqual(grantctl.hunt_cars(dict(c, CAR="car8")), ("car8", "car12"))
+        self.assertEqual(grantctl.hunt_cars(c, "car8"), ("car8", "car12"))
+        self.assertEqual(grantctl.hunt_cars(c, "car8", "car9"), ("car8", "car9"))
+        for bad, why in (({"CAR8_SSH": "a"}, "no CAR="), ({"CAR": "car12", "CAR12_SSH": "b"}, "--reserve")):
+            with self.assertRaises(grantctl.Refused) as cm:
+                grantctl.hunt_cars(bad)
+            self.assertIn(why, str(cm.exception))
+
     def test_reserve_without_pitstop(self):
         self.car["car12"] = dict(self.car["car12"], pitstop=None)
         self.refused("no Pitstop")
@@ -325,6 +354,10 @@ class IssueTests(Tmp):
         self.issue()
         removed, _, _ = self.revoke(tty=True)
         self.assertEqual(removed, [1])
+
+    def test_revoke_without_a_grant_reaches_the_hunt_car(self):
+        _, rigs, _ = self.revoke(tty=False)
+        self.assertEqual(rigs, ["root@192.168.1.5"])
 
     def test_reissue_after_revoke(self):
         self.issue()
@@ -913,14 +946,18 @@ class FrontDoorTests(unittest.TestCase):
     def test_start_defaults(self):
         argv = self.started("rr7")
         self.assertEqual(argv[:8], [self.H.GRANT, "issue", "--game", "NPUB30457", "--hours", "12", "--name", "rr7"])
-        self.assertEqual(argv[8:], ["--lanes", "rpcs3", "--rig", "car8", "--reserve", "car12", "--panics", "2"])
+        self.assertEqual(argv[8:], ["--lanes", "rpcs3", "--panics", "2", "--auto-mode"])
+
+    def test_no_car_is_baked_in(self):
+        ns = grantctl_parse(["issue", "--game", "NPUB30457"])
+        self.assertEqual((ns.rig, ns.reserve), (None, None))
 
     def test_start_hours_and_overrides_win(self):
         argv = self.started("ridge racer", "8h", "--panics", "0", "--supervised")
         self.assertEqual(argv[5], "8")
         self.assertEqual(argv[-3:], ["--panics", "0", "--supervised"])   # after the defaults: argparse keeps the last
         ns = grantctl_parse(argv[1:])
-        self.assertEqual((ns.game, ns.hours, ns.panics, ns.supervised, ns.rig), ("NPUB30457", 8.0, 0, True, "car8"))
+        self.assertEqual((ns.game, ns.hours, ns.panics, ns.supervised, ns.rig), ("NPUB30457", 8.0, 0, True, None))
 
     def test_resolve(self):
         self.assertEqual(self.H.resolve("NPEA00050"), ("NPEA00050", "gt5p"))

@@ -9,10 +9,11 @@
   ./hunt games [text]        the names start takes
 
 A game is a short name (rr7 gt5p gthd gt5 gt6), a serial (NPUB30457), or any unique piece of a title
-in config/game_status.tsv ("ridge racer"). start's defaults: car8 hunts, car12 is the reserve, the
-rpcs3 lane, 2 panics, the short name as the grant's name. Any grant.sh flag after the hours
-overrides them (--panics 0, --lanes rpcs3,turnip, --supervised, --rig car12). start prints the whole
-grant.sh line before it runs it: nothing hidden, and the line still works by hand.
+in config/game_status.tsv ("ridge racer"). start's defaults: etk.conf's CAR= hunts, the other CAR<N>_SSH= car
+is the reserve, --auto-mode (overnight when the reserve verifies, supervised when it does not: run
+that one awake), the rpcs3 lane, 2 panics, the short name as the grant's name. Any grant.sh flag after
+the hours overrides them (--panics 0, --lanes rpcs3,turnip, --supervised, --rig car12). start prints
+the whole grant.sh line before it runs it: nothing hidden, and the line still works by hand.
 A hunt needs the car on the USB cable (the Pitlink garage); WiFi is not enough.
 """
 import os
@@ -26,7 +27,7 @@ HUNT = os.path.join(ETK, "tools", "hunt", "hunt.py")
 STATUS = os.path.join(ETK, "config", "game_status.tsv")
 SHORT = {"rr7": "NPUB30457", "gt5p": "NPEA00050", "gthd": "NPEA90002", "gt5": "BCUS98114", "gt6": "BCUS98296"}
 SERIAL = re.compile(r"^[A-Z]{4}\d{5}$")
-DEFAULTS = ["--lanes", "rpcs3", "--rig", "car8", "--reserve", "car12", "--panics", "2"]
+DEFAULTS = ["--lanes", "rpcs3", "--panics", "2", "--auto-mode"]   # grant.sh reads the cars from etk.conf
 
 
 def titles():

@@ -38,6 +38,12 @@ describes:
 | **etk-cloud costs nothing.** The account is past its trial and is pay-as-you-go, but the node is sized inside the always-free tier. | A mint no longer turns into money, so it stops being an atom on the cost axis. | The node stays always-free sized. `grant.sh issue` records the node's shape fingerprint (CPU count, memory, disk, image); `hunt.py mint` re-reads it at each preflight and **refuses** if it changed. A resize, or leaving the free tier, voids every mint grant until the operator re-issues. |
 | **The garage has a second car.** car12 can carry the project if car8 is taken out of commission by a serious model error or a track disaster. | Losing the hunt car is survivable, so the rig stops being an irreplaceable atom. | A grant names **exactly one** car (the hunt car). The other is the **reserve** and is never a hunt target. Overnight grants are issued only while the reserve is verified bootable (last cold boot plus Pitstop reachable, checked at issue). With one car in service, grants are supervised-only. |
 
+**Status (operator, 2026-10-31): one car in service.** car8 is out of commission until further
+notice, so the second fact does not hold today. The hunt car follows `etk.conf` `CAR=` (car12) and
+the reserve is the other `CAR<N>_SSH=` car (car8), which can't verify, so `./hunt start` comes out
+supervised on its own. Losing car12 is **not** survivable while this stands. When car8 verifies
+again, overnight grants return with no edit.
+
 What does **not** relax: **publish** (other humans' machines; no garage fact changes that),
 the kernel and image lanes (bricking the reserve-protected car is survivable, but there's no
 reason to take that risk), certified pins, and install/uninstall. The harness stays
@@ -53,7 +59,7 @@ themself (not under `sudo`; the script refuses root):
 ```
 
 `./hunt` (repo root) is the operator's front door: `start GAME [HOURS]` composes and prints the
-full `grant.sh issue` line (defaults: 12 h, car8 hunts, car12 reserve, rpcs3 lane, 2 panics; any
+full `grant.sh issue` line (defaults: 12 h, `etk.conf` `CAR=` hunts, the other `CAR<N>_SSH=` car is the reserve, `--auto-mode` = supervised when that reserve can't verify, rpcs3 lane, 2 panics; any
 grant.sh flag after the hours wins), `status`, `stop` (= `hunt.py end` + `grant.sh revoke`),
 `games`. GAME is a short name, a serial or a unique piece of a title in `config/game_status.tsv`.
 The underlying line still works by hand:
@@ -74,9 +80,9 @@ other grant is valid. Fields:
 | `id` | `hunt-20261011-gt6` | names the fork branch `hunt/<id>`, the audit log and the report (`--name gt6`; default the serial) |
 | `issued_at` / `expires_at` | +10 h (hard cap 12 h) | after expiry every layer refuses |
 | `game` | `BCUS98296` | the only title that may be pinned or overridden |
-| `rig` | car8 (USB serial `32906f627cfd…`) | the only car the hunt may touch; the other car is the reserve |
-| `mode` | `overnight` / `supervised` | overnight only with a verified reserve; otherwise `issue` refuses unless `--supervised` |
-| `reserve` | car12 (`flip2-12g`), last verified bootable | **verified** = passes `etk_car.sh verify` with its name assigned, reports its boot time, and carries Pitstop (`roms/etk/bin/etk_pitstop.py`). Required for an overnight grant (§1.1) |
+| `rig` | `etk.conf` `CAR=`, car12 today (the USB serial its gadget reports) | the only car the hunt may touch; the other car is the reserve |
+| `mode` | `overnight` / `supervised` | overnight only with a verified reserve; otherwise `issue` refuses unless `--supervised` or `--auto-mode` (the front door's default) |
+| `reserve` | the other `CAR<N>_SSH=` car, car8 today (unverified while it is out of commission) | **verified** = passes `etk_car.sh verify` with its name assigned, reports its boot time, and carries Pitstop (`roms/etk/bin/etk_pitstop.py`). Required for an overnight grant (§1.1) |
 | `node` | etk-cloud shape fingerprint at issue | `mint` refuses if the node changed (always-free sizing, §1.1) |
 | `mint` | lanes `rpcs3` (default) + `turnip` when `--lanes` names it | core-oriented, Turnip-capable. No mint-count or node-hour budget, since compute is free (§1.1); one mint at a time. `kernel` and `image` lanes are **never** grantable (brick risk) |
 | `inject` | `emulators/hunt/`, `drivers/hunt/`, `debug_env` | the only rig paths a hunt may write |
@@ -232,7 +238,8 @@ grant → hunt.py status → [ hypothesis → commit on fork branch hunt/<id> �
   ridden through (2026-10-11 17:12) read WARM -- a firmware warm reset 11.4 s after a healthy
   sample under `panic=30`, so Linux never panicked; a reboot reads SOC_RESET, or a boot that comes back without the kit (no Pitlink on USB).
   The hunt car's `/storage` should be internal storage (car8's UFS), not the SD card, so a
-  hard reset never lands mid-write on the card that holds the games.
+  hard reset never lands mid-write on the card that holds the games. car12's `/storage` is its
+  SD card (`mmcblk0p2`), so a hard reset on car12 can land there.
 - **Morning deliverable:** a dossier with the verdict table and the convicting commit or
   function, the fork branch `hunt/<id>` pushed (an ordinary dev push), a candidate fix
   **unminted for release**, and the rig rolled back to certified. Publishing stays a human
@@ -241,7 +248,7 @@ grant → hunt.py status → [ hypothesis → commit on fork branch hunt/<id> �
 ## 7. Defaults (settled 2026-10-10)
 
 Budget = hours (default 10, hard cap 12); no mint or node-hour budget (compute is free); 1 game,
-1 rig (car8; car12 the reserve), lane `rpcs3` (+ `turnip` per grant), one mint at a time,
+1 rig (`etk.conf` `CAR=`; the other car the reserve), lane `rpcs3` (+ `turnip` per grant), one mint at a time,
 trial timeout 10 min, N=1 for pass/fail verdicts (deterministic bugs) and N≥3 for anything
 timing-based.
 

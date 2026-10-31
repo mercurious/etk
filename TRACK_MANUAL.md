@@ -138,7 +138,9 @@ host or another machine. The one thing car8 can't do for itself is power-cycle a
 **CAR8 STATUS (operator, 2026-10-31): unavailable until further notice.** This goes past the
 dead panel above: car8 can't be used at all. Don't reach for it, and don't plan a test, hunt,
 mint or first boot on it; car12 is the only live car. The lift rule stands for when the
-operator brings car8 back, and only the operator lifts this status.
+operator brings car8 back, and only the operator lifts this status. `./hunt start` follows
+`etk.conf` `CAR=`, so it hunts car12, and comes out supervised because car8 can't verify as the
+reserve. The hunt grant rules below still apply there, and car12 has no lift access.
 
 **HUNT GRANTS (operator, 2026-10-10; `docs/AUTONOMY_SPEC.md`).** Because etk-cloud is sized
 inside the always-free tier (a mint costs no money) and the garage holds a reserve car (losing
