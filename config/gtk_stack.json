@@ -13,7 +13,7 @@
     "stock against it before parking KERNEL.etk-stock: the in-place updater",
     "never rewrites /flash/KERNEL.md5, so after an OTA that md5 is stale."
   ],
-  "gtk_stack": "0.10.0",
+  "gtk_stack": "0.10.1",
   "kernel": {
     "asset": "KERNEL.rocknix-gtk-20261001-0.6.4",
     "sha256": "4494a67e54f1662c162fb23355d01ff4250bdc9f9d383f683f4c4648984df4fe",

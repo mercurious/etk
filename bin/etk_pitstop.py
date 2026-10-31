@@ -119,7 +119,7 @@ CONFIG_CHANGES_HEADER = "epoch\tgame_id\tfield_label\told_value\tnew_value\n"
 # ALIGNED TO THE RELEASE TAG at every cut (load-bearing since 0.8.0: the
 # TOOLS self-update compares this against the latest GitHub release tag).
 # The DRIVER tab names the actually-bound stack builds.
-APP_VERSION = "0.10.0"
+APP_VERSION = "0.10.1"
 # The release's edition name (CHANGELOG heading, boot-identity line). Set at
 # the cut beside APP_VERSION; empty between releases = the boot line drops the
 # clause. Never hand-write it anywhere else (install.sh templates the unit).

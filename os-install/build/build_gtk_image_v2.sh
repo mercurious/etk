@@ -23,7 +23,7 @@ set -eu
 # file exists or is the shipping one; that check is now in the gate too.
 BASE_GZ="${BASE_GZ:-/work/ROCKNIX-SM8250.aarch64-20261001.img.gz}"
 KERNEL="${KERNEL:-/rocknix-gtk/artifacts/KERNEL.rocknix-gtk-20261001-0.6.4}"
-APPIMAGE="${APPIMAGE:-/etk/emulators/rpcs3-etk_gtk-edition-0.10.0_armsx3-8290349e5_linux_aarch64.AppImage}"
+APPIMAGE="${APPIMAGE:-/etk/emulators/rpcs3-etk_gtk-edition-0.10.1_armsx3-8290349e5_linux_aarch64.AppImage}"
 TURNIP_SO="${TURNIP_SO:-/etk/drivers/etk_turnip_rocknix_26.2.2_gtk_0.7.so}"
 REPO="${REPO:-/etk}"
 HOOK_SCRIPT="${HOOK_SCRIPT:-}"              # optional: bake /flash/mount-storage.sh (hostless hook)

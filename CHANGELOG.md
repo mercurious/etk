@@ -4,6 +4,30 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-31 — 120Hz Edition
+
+Certified stack: RPCS3 **GTK Edition 0.10.1** (ARMSX3 1.0.4, `8290349e5`) ·
+Mesa Turnip **26.2.2 gtk_0.7** · kernel **rocknix-gtk-20261001-0.6.4** (7.2.0,
+`boot.img`) · base **ROCKNIX official 20261001**.
+
+A point release ahead of ROCKNIX 20261101. Two things ship: the certified emulator core moves
+to **0.10.1** (Gran Turismo 6's rear-view mirror), and the kit learns to recognise November's
+new bootloader, so a rig that takes that OS update is told what happened and the uninstaller
+cannot leave it dark. The driver and the kernel are the ones v0.10.0 shipped; the shader vault
+is unaffected. The card image is v0.10.0's, re-attached byte for byte: a fresh card boots the
+0.10.0 kit and takes 0.10.1 from Pitstop's **Check for ETK Updates**.
+
+### Known behaviour
+
+- **Hold the ROCKNIX 20261101 update until ETK 0.11.0.** November's ROCKNIX replaces the
+  bootloader again (OpenABL + Boot Loader Spec entries) and the GTK kernel of this release
+  cannot boot on it. A rig that takes the update runs the stock kernel — WiFi, sound and games
+  work; the anti-lock settings, the built-in microphone and the boot logo do not — and the OS
+  Guard says so once at boot. Nothing to fix by hand; 0.11.0 brings the kit onto the new
+  bootloader. If the screen stays dark after that OS update, hold **Volume Down** at power-on
+  and set *Device model* to your Flip 2 in the bootloader menu (read from the bootloader's
+  source, not yet seen on a rig).
+
 ### Fixed
 
 - **An ETK rig that takes ROCKNIX 20261101 is told, and the uninstaller cannot boot it dark.**
