@@ -1101,6 +1101,8 @@ tui_rsync 2 25 45 "Pushing /scripts (env, profiles, probes)" --delete --exclude=
 #   HOST-SIDE ONLY, deliberately NOT pushed (they ssh in from the Air, like abl_slot.sh):
 #   - bls_prestage.sh : OpenABL pre-stage (ROCKNIX 20261101 prep) — writes /flash/loader/
 #                       + KERNEL.gtk + dtbs/etk/ and nothing else; --plan/--remove.
+#   - boot_slot.sh    : the OpenABL boot state (status/verify), read-only.
+#   - bls_trial.sh    : OpenABL fallback trials; writes /flash, operator-run.
 #   - abl_bank.sh     : read-only dd of abl_a/abl_b into state/abl/<car>/.
 #                       Both must work on a rig the kit is NOT installed on (a pre-stage
 #                       precedes the update, the bank precedes everything), so neither may

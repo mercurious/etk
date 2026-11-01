@@ -14,6 +14,13 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ### Added
 
+- **The GTK kernel on OpenABL** (ROCKNIX 20261101+): the kit now installs beside the OS instead of
+  over it. Stock stays in `/flash/KERNEL` with its own entry, the GTK kernel gets `KERNEL.gtk` and
+  an entry of its own, and the internal-mic device tree is derived on the rig from the OS's own
+  tree. A kernel that fails to load falls through to stock, and holding Volume Down at power-on
+  picks any entry. A ROCKNIX update no longer costs you the GTK kernel: osguard refreshes the entry
+  and asks for one reboot. `tools/boot_slot.sh` reads what booted. `./uninstall.sh` keeps the
+  stock-kernel entry unless given `--stock-entry-too`.
 - **The Pitlink MCP server is registered with the repo** (`.mcp.json`, project scope): any MCP client
   opened in this checkout gets the Engineer's eleven Pitlink tools (`frame`, `status`, `press`, `hold`,
   `release`, `ram_read`, `watch`, `pause`, `resume`, `step`, `wait_for`) without a per-machine
