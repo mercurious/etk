@@ -145,10 +145,37 @@ fi
 # Every OpenABL layout ends here. The GRUB phases below must never run on one: Phase B would
 # drop a KERNEL.gtktest nothing boots. chain=abl (a bundle from before the rig updated) goes
 # on to the ABL block, which names the move. Harness: tools/test_kernel_bls.sh.
+# THE BOOT IDENTITY LINE. install.sh and the image lane render it into a unit; a couch update
+# runs the OLD kit's Pitstop and re-renders nothing, so the line kept the previous version and
+# edition (car12, 0.10.1 -> 0.11.0, 2026-11-01). This script is replaced by that update and
+# runs every boot, so it keeps the rendered text true, from the kit's own version and the
+# bundle's kernel name. It takes effect on the next boot.
+sync_identity() {
+    ID_UNIT="${OSG_ID_UNIT:-/storage/.config/system.d/etk-gtk-version.service}"
+    ID_APP="$ETK_ROOT/bin/etk_pitstop.py"
+    ID_NAME=$(cat "$HEAL/KERNEL.staged.name" 2>/dev/null)
+    [ -f "$ID_UNIT" ] && [ -f "$ID_APP" ] && [ -n "$ID_NAME" ] || return 0
+    grep -q 'echo "ROCKNIX-GTK ' "$ID_UNIT" || return 0
+    ID_VER=$(sed -n 's/^APP_VERSION = "\([^"]*\)".*/\1/p' "$ID_APP" | head -n1)
+    ID_ED=$(sed -n 's/^APP_EDITION = "\([^"]*\)".*/\1/p' "$ID_APP" | head -n1)
+    ID_DATE=$(printf '%s' "$ID_NAME" | grep -oE '[0-9]{8}' | head -n1)
+    ID_KVER=$(printf '%s' "$ID_NAME" | sed -n 's/.*-[0-9]\{8\}-\([0-9.]*\)$/\1/p')
+    [ -n "$ID_VER" ] && [ -n "$ID_DATE" ] && [ -n "$ID_KVER" ] || return 0
+    ID_LINE="ROCKNIX-GTK $ID_VER-$ID_DATE${ID_ED:+ -- $ID_ED Edition} -- kernel $ID_KVER"
+    grep -qF "echo \"$ID_LINE\"" "$ID_UNIT" && return 0
+    if [ "$MODE" != "heal" ]; then log "PLAN: boot identity line -> $ID_LINE"; return 0; fi
+    if sed "s|echo \"ROCKNIX-GTK [^\"]*\"|echo \"$ID_LINE\"|" "$ID_UNIT" > "$ID_UNIT.tmp" \
+       && mv -f "$ID_UNIT.tmp" "$ID_UNIT"; then
+        log "DONE: boot identity line -> $ID_LINE (from the next boot)"
+    else
+        rm -f "$ID_UNIT.tmp"
+    fi
+}
 if [ -d "$FLASH/loader/entries" ] && [ "$(head -c 2 "$FLASH/KERNEL" 2>/dev/null)" = "MZ" ]; then
     case "$(cat "$HEAL/chain" 2>/dev/null)" in
     abl) ;;
     bls)
+        sync_identity
         STAGED_REL=$(cat "$HEAL/KERNEL.staged.release" 2>/dev/null)
         LC="$FLASH/loader/loader.conf"
         if [ -z "$STAGED_REL" ] || [ "$STAGED_REL" != "$SYS_REL" ]; then

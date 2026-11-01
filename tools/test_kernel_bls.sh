@@ -90,7 +90,7 @@ osfiles() { (cd "$F" && sha256sum KERNEL loader/entries/rocknix.conf dtbs/$V dtb
 run_guard() {   # <run_rel> [args] ; sets RC
     ETK_OS_GUARD=1 OSG_FLASH="$F" OSG_MOD_BASE="$U/modules" OSG_RUN_REL="$1" OSG_HEAL="$H" \
     OSG_DT="$U/dt" OSG_NO_REMOUNT=1 OSG_MARKER="$U/marker" OSG_BACKUP_DIR="$U" \
-    OSG_GRUBENV_LIST="" OSG_CMDLINE="$U/proc/cmdline" OSG_BLS_DEPLOY="$DEPLOY" \
+    OSG_GRUBENV_LIST="" OSG_CMDLINE="$U/proc/cmdline" OSG_BLS_DEPLOY="$DEPLOY" OSG_ID_UNIT="$U/id.service" \
     TRIPWIRE_LOG="$U/trip.log" sh "$GUARD" "${@:2}" > "$U/guard.out" 2>&1
     RC=$?
 }
@@ -389,6 +389,30 @@ run_guard 7.2.0
 inlog "new bootloader" "$U/marker" "chain=abl on this layout: the ABL block names the move"
 inlog "Re-run the ETK installer" "$U/marker" "chain=abl: the toast says what to do"
 same "$(snap)" "$S0" "chain=abl: /flash untouched"
+
+echo "== osguard: the boot identity line after a couch update =="
+mk_id() {   # the unit as install.sh left it, the kit as the update left it
+    printf 'ExecStart=/bin/sh -c '"'"'grep -qE "KERNEL[.]gtktest|msm[.]context_keepalive=1" /proc/cmdline && echo "%s" || true'"'"'\nDescription=ROCKNIX-GTK Edition\n' "$1" > "$U/id.service"
+    printf 'APP_VERSION = "%s"\nAPP_EDITION = "%s"   # note\n' "$2" "$3" > "$U/etk/bin/etk_pitstop.py"
+}
+OLD='ROCKNIX-GTK 0.10.1-20261101 -- 120Hz Edition -- kernel 0.7.0'; NEW='ROCKNIX-GTK 0.11.0-20261101 -- OpenABL Edition -- kernel 0.7.0'
+deployed; mk_id "$OLD" 0.11.0 OpenABL; run_guard 7.2.0 --check
+inlog "$OLD" "$U/id.service" "identity: --check writes nothing"
+inlog "PLAN: boot identity" "$U/guard.out" "identity: --check plans it"
+run_guard 7.2.0
+inlog "echo \"$NEW\" || true" "$U/id.service" "identity: the line follows the kit and the bundle"
+inlog 'grep -qE "KERNEL[.]gtktest' "$U/id.service" "identity: the rest of ExecStart is intact"
+inlog "Description=ROCKNIX-GTK Edition" "$U/id.service" "identity: other lines naming ROCKNIX-GTK are left alone"
+[ -e "$U/id.service.tmp" ] && bad "identity: no temp file left" || ok "identity: no temp file left"
+[ -f "$U/marker" ] && bad "identity: no toast for a label" || ok "identity: no toast for a label"
+S1=$(sha256sum "$U/id.service"); run_guard 7.2.0
+same "$(sha256sum "$U/id.service")" "$S1" "identity: a true line is left alone"
+deployed; mk_id "$OLD" 0.11.0 ""; run_guard 7.2.0
+inlog 'echo "ROCKNIX-GTK 0.11.0-20261101 -- kernel 0.7.0"' "$U/id.service" "identity: an empty edition drops its clause"
+deployed; mk_id "$OLD" 0.11.0 OpenABL; rm -f "$H/KERNEL.staged.name"; run_guard 7.2.0
+inlog "$OLD" "$U/id.service" "identity: no kernel name, no guess"
+deployed; rm -f "$U/id.service"; run_guard 7.2.0
+[ -e "$U/id.service" ] && bad "identity: never creates the unit" || ok "identity: never creates the unit"
 
 echo "== osguard: a couch update reached a rig still on the ABL chain =="
 mk_unit; rm -rf "$F/loader"; { printf 'ANDROID!'; head -c 64 /dev/zero; } > "$F/KERNEL"; S0=$(snap)
