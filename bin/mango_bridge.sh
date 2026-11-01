@@ -6,8 +6,11 @@
 # 1. THREE-STAGE TIME-GATED HEADER is locked; the BODY is MODE-SWITCHED via
 #    $ETK_HUD_MODE (etk.conf). Stage 1 launch header is identical in all modes.
 #    BASIC body : TEMP|LOAD(loadavg)STAT|RAM%STAT|SHADERS    (original)
-#    LEAN body  : TEMP|ANTI-LOCK|SHADERS|RAM%|LOAD — bare numbers, no gauge tails
-#                 (operator workshop 2026-10-27; ANTI-LOCK rides in all modes)
+#    LEAN body  : TEMP|ANTI-LOCK|SHADERS|RAM|LOAD — RAM and LOAD as 5-slot bars + value,
+#                 »»»··50%|»»»··5.7, the whole bar (operator polish 2026-11-01). THE
+#                 WIDTH LAW: at font 44 the panel holds 43 ETK-field chars; live test
+#                 on car12, the 44th clips. FPS+ms is constant width, so only the vault
+#                 count grows, and lean_vault/lean_ram hold the line at 43.
 #    FULL body  : TEMP|JITTER|SLIP|ANTI-LOCK|SHADERS|RAM%|LOAD — LEAN plus the two
 #                 GINSTR gauges, the whole bar edge to edge (workshop 2026-10-27)
 #    GINSTR body: TEMP|JITTER|SLIP|SHADERS — LOAD+RAM replaced by two live,
@@ -53,6 +56,36 @@ SURV_SEEN=$(dmesg 2>/dev/null | grep -c 'context_keepalive: surviving hang')
 case "$SURV_SEEN" in ''|*[!0-9]*) SURV_SEEN=0 ;; esac
 SURV_BASE=$SURV_SEEN
 RESCUE_TTL=0
+
+# >>> LEAN gauges (pure: tools/test_hud_dash.py runs these)
+# Fill <n> of 5 slots: » filled, · empty. Latin-1, the proven-rendering range.
+lean_bar() {
+    _n=$1; _b=""; _i=0
+    while [ "$_i" -lt 5 ]; do
+        if [ "$_i" -lt "$_n" ]; then _b="${_b}»"; else _b="${_b}·"; fi
+        _i=$((_i + 1))
+    done
+    printf '%s' "$_b"
+}
+# RAM: one slot per 20 %, any use lights the first. Two digits at most: 100 would clip.
+lean_ram() {
+    _v=${1:-0}; _f=$(( (_v + 19) / 20 )); [ "$_f" -gt 5 ] && _f=5
+    [ "$_v" -gt 99 ] && _v=99
+    printf '%s%s%%' "$(lean_bar "$_f")" "$_v"
+}
+# LOAD: one slot per 2.0 (<centiload> <shown>): 10 lights all five on these 8 cores.
+lean_load() {
+    _f=$(( (${1:-0} + 199) / 200 )); [ "$_f" -gt 5 ] && _f=5
+    printf '%s%s' "$(lean_bar "$_f")" "$2"
+}
+# <new> <bank> <size>: the vault's new-shader count, the one field that grows. 100+ gives up
+# its space and 1000+ abbreviates, so the longest vault is still 15 chars.
+lean_vault() {
+    if [ "${1:-0}" -ge 1000 ] 2>/dev/null; then printf '%sk+ %s %s' "$(($1 / 1000))" "$2" "$3"
+    elif [ "${1:-0}" -ge 100 ] 2>/dev/null; then printf '%s+%s %s' "$1" "$2" "$3"
+    else printf '%s+ %s %s' "$1" "$2" "$3"; fi
+}
+# <<< LEAN gauges
 
 while true; do
     # 1. IDENTIFICATION
@@ -130,6 +163,7 @@ while true; do
             V_SIZE_STR="${V_SIZE}MB"
         fi
         VAULT_STR="${NEW_SHADERS}+ ${BANK_STR} ${V_SIZE_STR}"
+        [ "$HUD_MODE" = LEAN ] && VAULT_STR=$(lean_vault "$NEW_SHADERS" "$BANK_STR" "$V_SIZE_STR")
     fi
 
     # 4.6 BOG-SAMPLE PROGRESS GAUGE (operator-approved 2026-07-10). While the
@@ -278,7 +312,7 @@ while true; do
            esac ;;
         *) case "$HUD_MODE" in
                GINSTR) FINAL_STRING="${T_STAT}|${JIT}|${SLIP}|${ALOCK_SEG}|${VAULT_STR}" ;;
-               LEAN)   FINAL_STRING="${T_STAT}|${ALOCK_SEG}|${VAULT_STR}|${RAM_VAL}%|${LOAD_STR}" ;;
+               LEAN)   FINAL_STRING="${T_STAT}|${ALOCK_SEG}|${VAULT_STR}|$(lean_ram "$RAM_VAL")|$(lean_load "$LOAD_INT" "$LOAD_STR")" ;;
                FULL)   FINAL_STRING="${T_STAT}|${JIT}|${SLIP}|${ALOCK_SEG}|${VAULT_STR}|${RAM_VAL}%|${LOAD_STR}" ;;
                *)      FINAL_STRING="${T_STAT}|${LOAD_RAW}${L_STAT}|${RAM_VAL}%${R_STAT}|${ALOCK_SEG}|${VAULT_STR}" ;;
            esac ;;

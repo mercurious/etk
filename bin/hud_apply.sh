@@ -53,6 +53,12 @@ case "$STATE" in
         exit 0 ;;
 esac
 
+# FULL's body is two characters wider than the bar holds with the ms readout beside the FPS,
+# which clips its last digit off the panel edge (car12, 2026-11-01). No other dash is.
+if [ "${ETK_HUD_MODE:-}" = FULL ] && [ "$STATE" != default ] && [ -s "$TMP" ]; then
+    sed -i 's|^frametime=.*|frametime=0|' "$TMP" 2>/dev/null
+fi
+
 # Atomic swap only if the tmp built cleanly.
 # The sync: a rename that isn't on disk when the car resets leaves a 0-byte
 # file (car12 2026-10-27: a SoC reset 7 s after a write zeroed the master).

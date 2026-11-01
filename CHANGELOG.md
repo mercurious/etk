@@ -14,6 +14,8 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ### Added
 
+- **The LEAN HUD fills the bar**: RAM and LOAD are now 5-slot gauges beside their values, and the
+  frame time in milliseconds sits next to the FPS on every dash except FULL.
 - **The GTK kernel on OpenABL** (ROCKNIX 20261101+): the kit now installs beside the OS instead of
   over it. Stock stays in `/flash/KERNEL` with its own entry, the GTK kernel gets `KERNEL.gtk` and
   an entry of its own, and the internal-mic device tree is derived on the rig from the OS's own

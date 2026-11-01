@@ -18,6 +18,9 @@ GPU load + clock, RAM) carrying the LEAN body. The battery icon (autogamer's) ri
             battery icon; COMPACT is compact; Latin-1 only
   [PITSTOP] the cycle order, the fallback to etk.conf, the live conf rebuilt at its own stop on a
             cycle (stock 'default' left alone), a write that can't land reports the unchanged dash
+  [LEAN]    the bars: fill by value, Latin-1 only, and THE WIDTH LAW: no value pushes the ETK
+            field past 43 characters, the most the panel holds at font 44 (shot live on car12).
+            The ms readout is on in the master conf and off for FULL, whose body is wider
   [SHIP]    install.sh STEP 4, the self-update set and the PS port (whole config/) all carry it
 
 DISCRIMINATION: against the pre-dash tree (--against HEAD before this landed) every suite fails.
@@ -35,7 +38,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.path.join(_HERE, os.pardir))
 REV = sys.argv[sys.argv.index("--against") + 1] if "--against" in sys.argv else None
 SRC = tempfile.mkdtemp(prefix="etk_hud_dash_src_")
-FILES = ("bin/etk_pitstop.py", "bin/hud_apply.sh", "scripts/env.sh", "install.sh",
+FILES = ("bin/etk_pitstop.py", "bin/hud_apply.sh", "bin/mango_bridge.sh", "scripts/env.sh", "install.sh",
          "config/MangoHud.conf", "config/MangoHud.default.conf", "config/MangoHud.compact.conf",
          "windows_installer/etk-install.ps1")
 for rel in FILES:
@@ -124,9 +127,9 @@ def _env():
     dash(None)
 
 
-def apply(state, view, cfg_root=None):
+def apply(state, view, cfg_root=None, mode="LEAN"):
     subprocess.run(["bash", os.path.join(SRC, "bin", "hud_apply.sh"), state],
-                   env=dict(os.environ, ETK_HUD_VIEW=view, ETK_ROOT=cfg_root or SRC),
+                   env=dict(os.environ, ETK_HUD_VIEW=view, ETK_ROOT=cfg_root or SRC, ETK_HUD_MODE=mode),
                    capture_output=True, timeout=20)
     return read(LIVE)
 
@@ -253,6 +256,42 @@ def _pitstop():
     check("60x22: both help lines", len([t for r, c, t in scr.writes if c == 4 and
                                          ("G-INSTR/BASIC" in t or "next game launch" in t)]), 2)
     dash(None)
+
+
+@suite("LEAN")
+def _lean():
+    src = open(os.path.join(SRC, "bin", "mango_bridge.sh"), encoding="utf-8").read()
+    fns = src.split("# >>> LEAN gauges", 1)[-1].split("# <<< LEAN gauges", 1)[0]
+
+    def sh(expr):
+        r = subprocess.run(["bash", "-c", fns + "\n" + expr], capture_output=True, timeout=20)
+        return r.stdout.decode("utf-8", "replace")
+
+    for pct, want in ((0, "·····0%"), (1, "»····1%"), (20, "»····20%"), (21, "»»···21%"),
+                      (50, "»»»··50%"), (81, "»»»»»81%"), (99, "»»»»»99%"), (100, "»»»»»99%")):
+        check(f"RAM {pct}", sh(f"lean_ram {pct}"), want)
+    for ci, show, want in ((0, "0.0", "·····0.0"), (570, "5.7", "»»»··5.7"), (610, "6.1", "»»»»·6.1"),
+                           (1000, "10", "»»»»»10"), (1083, "11", "»»»»»11")):
+        check(f"LOAD {show}", sh(f"lean_load {ci} {show}"), want)
+    check("vault: normal", sh("lean_vault 12 21.7k 193MB"), "12+ 21.7k 193MB")
+    check("vault: 100+ gives up its space", sh("lean_vault 123 21.7k 193MB"), "123+21.7k 193MB")
+    check("vault: 1000+ abbreviates", sh("lean_vault 1234 21.7k 193MB"), "1k+ 21.7k 193MB")
+    # THE WIDTH LAW, on the bridge's own format: the longest field values it can produce.
+    worst = 0
+    for new in (0, 9, 99, 999, 1000, 9999, 99999):
+        for bank in ("21.7k", "399k"):
+            for size in ("193MB", "1.1GB"):
+                vault = sh(f"lean_vault {new} {bank} {size}")
+                line = f"87°|·×12·|{vault}|{sh('lean_ram 100')}|{sh('lean_load 995 9.9')}"
+                worst = max(worst, len(line))
+                line.encode("latin-1")
+    check_true(f"no value passes 43 chars (worst {worst})", worst <= 43)
+    check_true("the bridge prints the LEAN body through the gauges",
+               '$(lean_ram "$RAM_VAL")|$(lean_load "$LOAD_INT" "$LOAD_STR")' in src)
+    check_true("the ms readout is on in the master", re.search(r"^frametime=1", read(os.path.join(SRC, "config", "MangoHud.conf")), re.M))
+    check_true("LEAN keeps it", re.search(r"^frametime=1", apply("bottom", "full", mode="LEAN"), re.M))
+    check_true("BASIC keeps it", re.search(r"^frametime=1", apply("bottom", "full", mode="BASIC"), re.M))
+    check_true("FULL drops it: its body is too wide", re.search(r"^frametime=0", apply("bottom", "full", mode="FULL"), re.M))
 
 
 @suite("SHIP")
