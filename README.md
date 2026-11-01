@@ -1,7 +1,7 @@
 # The Emulation Tuning Kit - GTK Edition
 
 > [!IMPORTANT]
-> **ETK v0.11.0 is out, built on ROCKNIX 20261101.** The Pit Lane Edition moves the kit onto ROCKNIX's new bootloader, OpenABL. The GTK kernel now sits **beside** the stock one in its own boot entry, so a ROCKNIX update is safe to take, a kernel that won't load falls back to stock by itself, and the kit follows the OS without you.
+> **ETK v0.11.0 is out, built on ROCKNIX 20261101.** The OpenABL Edition moves the kit onto ROCKNIX's new bootloader, OpenABL. The GTK kernel now sits **beside** the stock one in its own boot entry, so a ROCKNIX update is safe to take, a kernel that won't load falls back to stock by itself, and the kit follows the OS without you.
 >
 > - **New rig?** Flash the [card image](https://github.com/mercurious/etk/releases/latest). It sets itself up over the first boots and asks for one reboot. Windows users: this is your path — the Windows installer can't deliver the kernel.
 > - **On a GTK rig (ROCKNIX 20261001)?** With the charger on, ≥ 50 % battery and 2 GB free on `/storage`: in ROCKNIX, `START` → `UPDATES & DOWNLOADS` → stable → take 20261101 (it flashes the new bootloader — don't interrupt it). Then run the one-liner below and reboot once. Your device model, shaders, saves and tunes carry over.
