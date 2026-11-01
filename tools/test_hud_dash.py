@@ -275,7 +275,7 @@ def _lean():
         check(f"LOAD {show}", sh(f"lean_load {ci} {show}"), want)
     check("vault: normal", sh("lean_vault 12 21.7k 193MB"), "12+ 21.7k 193MB")
     check("vault: 100+ gives up its space", sh("lean_vault 123 21.7k 193MB"), "123+21.7k 193MB")
-    check("vault: 1000+ abbreviates", sh("lean_vault 1234 21.7k 193MB"), "1k+ 21.7k 193MB")
+    check("vault: 1000+ abbreviates", sh("lean_vault 1234 21.7k 193MB"), "1k+21.7k 193MB")
     # THE WIDTH LAW, on the bridge's own format: the longest field values it can produce.
     worst = 0
     for new in (0, 9, 99, 999, 1000, 9999, 99999):

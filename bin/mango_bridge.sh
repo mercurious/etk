@@ -81,7 +81,7 @@ lean_load() {
 # <new> <bank> <size>: the vault's new-shader count, the one field that grows. 100+ gives up
 # its space and 1000+ abbreviates, so the longest vault is still 15 chars.
 lean_vault() {
-    if [ "${1:-0}" -ge 1000 ] 2>/dev/null; then printf '%sk+ %s %s' "$(($1 / 1000))" "$2" "$3"
+    if [ "${1:-0}" -ge 1000 ] 2>/dev/null; then printf '%sk+%s %s' "$(($1 / 1000))" "$2" "$3"
     elif [ "${1:-0}" -ge 100 ] 2>/dev/null; then printf '%s+%s %s' "$1" "$2" "$3"
     else printf '%s+ %s %s' "$1" "$2" "$3"; fi
 }
