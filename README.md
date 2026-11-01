@@ -26,7 +26,7 @@ irm https://raw.githubusercontent.com/mercurious/etk/main/windows_installer/get-
 ```
 
 - [ETK Wiki](https://github.com/mercurious/etk/wiki) for full documentation, guides, advanced features
-- [Migrating from 20260901](https://github.com/mercurious/etk/wiki/Migrating-to-ROCKNIX-20261001) · [Tested Games](https://github.com/mercurious/etk/wiki/Tested-Games) · [Platforms](https://github.com/mercurious/etk/wiki/Platforms) (Android aPS3e/RPCSX forks, macOS, Windows, Asahi bench build)
+- [Migrating to ROCKNIX 20261101](https://github.com/mercurious/etk/wiki/Migrating-to-ROCKNIX-20261101) · [Tested Games](https://github.com/mercurious/etk/wiki/Tested-Games) · [Platforms](https://github.com/mercurious/etk/wiki/Platforms) (Android aPS3e/RPCSX forks, macOS, Windows, Asahi bench build)
 - [System Requirements](https://github.com/mercurious/etk/#etk-system-requirements) · [Device Support](https://github.com/mercurious/etk/#handheld-system-support) · [Kill-Switch Index](https://github.com/mercurious/etk/wiki/Kill-Switch-Index)
 
 ## Why Install ROCKNIX-GTK and the ETK?
