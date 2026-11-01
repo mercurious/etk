@@ -10,7 +10,7 @@
 # simulated. Host GNU tools stand in for BusyBox; `status` on a live rig checks the read body.
 #
 # DISCRIMINATION: `--against <rev>` takes the tool from that revision. Before the tool
-# existed the suite FAILS (37 of 64; the "wrote nothing" cases pass trivially).
+# existed the suite FAILS (39 of 66; the "wrote nothing" cases pass trivially).
 #
 #   tools/test_bls_trial.sh                  # working tree — must PASS
 #   tools/test_bls_trial.sh --against HEAD~  # pre-tool — must FAIL
@@ -122,7 +122,10 @@ same "$(snap)" "$S0" "restore: a repeat changes nothing"
 
 # ---- count ---------------------------------------------------------------------------------
 mk_unit; S0=$(snap); C0=$(core); E="$U/flash/loader/entries"
-expect "count: default is 3 tries"                        0 "BLS_TRIAL_OK count 3" "$TOOL" count --car car12 "$T"
+expect "count: default is 1 try"                          0 "BLS_TRIAL_OK count 1" "$TOOL" count --car car12 "$T"
+has loader/entries/etk-gtk+1.conf "count: the default reaches the file name"
+"$TOOL" restore "$T" >/dev/null 2>&1
+expect "count: takes 3 tries"                             0 "BLS_TRIAL_OK count 3" "$TOOL" count 3 --car car12 "$T"
 has loader/entries/etk-gtk+3.conf "count: the entry carries the counter"
 hasnt loader/entries/etk-gtk.conf "count: the plain name is gone"
 same "$(dflt)" "default etk-gtk.conf" "count: default keeps matching (OpenABL strips the counter from the id)"

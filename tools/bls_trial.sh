@@ -9,7 +9,7 @@
 #   tools/bls_trial.sh fallthrough       default etk-gtk + KERNEL.gtk moved aside, so the
 #                                        entry fails to LOAD and Start must try the next one
 #   tools/bls_trial.sh count [N]         default etk-gtk + etk-gtk.conf -> etk-gtk+N.conf
-#                                        (N 1-9, default 3): OpenABL renames it before each
+#                                        (N 1-9, default 1): OpenABL renames it before each
 #                                        boot; at +0-N the entry is bad and is skipped
 #   tools/bls_trial.sh restore           undo either trial; the default returns to stock
 #
@@ -18,7 +18,7 @@
 #
 # THE COUNT NEEDS NO POWER CUT: nothing on the rig blesses a boot (no systemd-bless-boot), so
 # every ordinary boot, good or bad, spends one try. N plain power-ons run it out, and boot
-# N+1 is the proof. The kit must bless a good boot before it can ship a counted entry.
+# N+1 is the proof, so one try proves the mechanism. The kit must bless a good boot before it can ship a counted entry.
 #
 # It writes ONLY: KERNEL.gtk <-> KERNEL.gtk.aside, etk-gtk.conf <-> etk-gtk+*.conf, and the
 # one loader.conf line. KERNEL, rocknix.conf and etk-stock.conf are hashed before and after,
@@ -36,7 +36,7 @@ R_FLASH="${BLS_FLASH:-/flash}"; R_PROC="${BLS_PROC:-/proc}"
 die()   { echo "BLS_TRIAL_FAIL: $*" >&2; exit 1; }
 usage() { sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 
-VERB=""; N=3; CAR=""; TARGET=""
+VERB=""; N=1; CAR=""; TARGET=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --car)   CAR="${2:?--car needs a name}"; shift 2 ;;
