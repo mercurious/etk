@@ -2036,6 +2036,42 @@ gtk_identity_line() {
     scp -q ./config/etk-gtk-version.service "$RIG_SSH:/storage/.config/system.d/etk-gtk-version.service" 2>/dev/null
     ssh $RIG_SSH "sed -i 's/@KDATE@/${GTK_KDATE:-dev}/; s/@GTKVER@/${GTK_VER:-dev}/; s/@EDITION@/${GTK_EDITION:+ -- $GTK_EDITION Edition}/; s/@KVER@/${GTK_KVER:-dev}/' /storage/.config/system.d/etk-gtk-version.service 2>/dev/null; mkdir -p /storage/.config/system.d/basic.target.wants; ln -sf /storage/.config/system.d/etk-gtk-version.service /storage/.config/system.d/basic.target.wants/etk-gtk-version.service" 2>/dev/null
 }
+# >>> release kernel
+# THE ONE-LINER'S KERNEL (0.11.0). get-etk.sh brings a checkout, not a kernel, and a default
+# etk.conf leaves KERNEL_IMAGE empty, so on every release until now a host install ended on
+# the stock kernel and only Pitstop's couch update reached the GTK one. On OpenABL the story
+# is "update ROCKNIX, run the one-liner": with no local kernel named, fetch the manifest's
+# from the release and hold it to the manifest's sha. Any failure names itself and the rig
+# stays on what it has. An explicit KERNEL_IMAGE always wins; ETK_KERNEL_FETCH=0 turns it off.
+K_DL_DIR=""
+if [ -z "${KERNEL_IMAGE:-}" ] && [ "${ETK_KERNEL_FETCH:-1}" != "0" ]; then
+    K_M_ASSET=$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["kernel"]["asset"])' ./config/gtk_stack.json 2>/dev/null)
+    K_M_SHA=$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["kernel"]["sha256"])' ./config/gtk_stack.json 2>/dev/null)
+    case "$K_CHAIN" in
+    bls)
+        K_DL_DIR=$(mktemp -d "${TMPDIR:-/tmp}/etk_kernel_XXXXXX")
+        tui_log "Fetching the GTK kernel $K_M_ASSET"
+        if [ -n "$K_M_ASSET" ] && curl -fsSL --retry 2 -o "$K_DL_DIR/$K_M_ASSET" "${ETK_KERNEL_BASE:-https://github.com/mercurious/etk/releases/latest/download}/$K_M_ASSET"; then
+            if command -v sha256sum >/dev/null 2>&1; then K_GOT=$(sha256sum "$K_DL_DIR/$K_M_ASSET" | awk '{print $1}')
+            else K_GOT=$(shasum -a 256 "$K_DL_DIR/$K_M_ASSET" | awk '{print $1}'); fi
+            if [ "$K_GOT" = "$K_M_SHA" ]; then
+                KERNEL_IMAGE="$K_DL_DIR/$K_M_ASSET"
+                # The release kernel is the certified stack, so it carries the manifest's
+                # cmdline_extra whole. etk.conf.example ships this knob at 0, which never
+                # mattered while the keepalive was baked into a boot.img; honoured here, it
+                # would drop anti-lock silently on every default install.
+                KERNEL_CONTEXT_KEEPALIVE=1
+            else
+                say "${Y}[ETK]${N} GTK kernel download failed its sha256 check -- not deployed; the rig keeps the kernel it has. Re-run to retry."
+            fi
+        else
+            say "${Y}[ETK]${N} Could not fetch the GTK kernel ${K_M_ASSET:-?} -- the rig keeps the kernel it has. Check the network and re-run."
+        fi ;;
+    abl)
+        say "${Y}[ETK]${N} This rig is on ROCKNIX 20261001. ETK's kernel for this release needs ROCKNIX 20261101: take the update, then re-run this installer." ;;
+    esac
+fi
+# <<< release kernel
 if [ -n "${KERNEL_IMAGE:-}" ] && [ -f "${KERNEL_IMAGE:-}" ] && [ "$K_CHAIN" = "bls" ]; then
     # ==========================================================
     # OPENABL KERNEL DEPLOY (ROCKNIX 20261101+) — an entry beside stock
@@ -2798,6 +2834,8 @@ KERNELCFGREMOTE
         say "${Y}[WARN] Boot-config convergence failed: $(echo "$KCFG_OUT" | tail -1)${N}"
     fi
 fi
+
+[ -z "${K_DL_DIR:-}" ] || rm -rf "$K_DL_DIR"
 
 # ==========================================================
 # STEP 6.45: OS-UPDATE COHERENCE GUARD (osguard) — GTK 0.8.0
