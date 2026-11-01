@@ -17,8 +17,8 @@ safe to take, puts the fallback back, and lets the kit follow the OS on its own.
 ### Moving to this release
 
 - **On a GTK rig (ROCKNIX 20261001):** take the ROCKNIX 20261101 update with the charger on,
-  50 % battery or more and 2 GB free on `/storage`, then run the one-liner or Pitstop's
-  **Check for ETK Updates**, and reboot when asked. Your device model carries over.
+  50 % battery or more and 2 GB free on `/storage`, then run the one-liner, which now brings
+  the GTK kernel with it, and cold boot. Your device model carries over.
 - **New rig:** flash the card image. It boots on the Device model the bootloader already
   holds, sets itself up over the first boots, and asks for one reboot.
 - 20261001 is no longer supported: on it, the installer asks you to update ROCKNIX first.

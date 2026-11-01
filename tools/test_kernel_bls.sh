@@ -276,6 +276,31 @@ same "$(sh -c "$PROBE")" "abl" "probe: a 20261001 rig still reads abl"
 mk_unit; { printf 'ANDROID!'; head -c 64 /dev/zero; } > "$F/KERNEL"
 same "$(sh -c "$PROBE")" "abl" "probe: a pre-staged 20261001 rig is not bls"
 
+echo "== install.sh: the one-liner's kernel =="
+BLK="$TD/fetch.sh"; { sed -n '/^# >>> release kernel$/,/^# <<< release kernel$/p' "$TD/src/install.sh"; } > "$BLK"
+RK="$TD/rk"; mkdir -p "$RK/config"; mk_pe "$RK/KERNEL.rel" 7.2.0 rocknix-gtk; RSHA=$(sha256sum "$RK/KERNEL.rel" | cut -d' ' -f1)
+printf '{"kernel":{"asset":"KERNEL.rocknix-gtk-20261101-0.7.0","sha256":"%s"}}\n' "$RSHA" > "$RK/config/gtk_stack.json"
+fetch() {   # <chain> <KERNEL_IMAGE> <curl: ok|bad|fail>; prints what the block leaves
+    ( cd "$RK"; K_CHAIN="$1"; KERNEL_IMAGE="$2"; KERNEL_CONTEXT_KEEPALIVE="${KA:-}"; [ -n "${KA:-}" ] || unset KERNEL_CONTEXT_KEEPALIVE
+      CURL_MODE="$3"; say() { printf 'SAY %s\n' "$*"; }; tui_log() { :; }; Y=; N=
+      curl() { echo CURL >> "$U/curl.log"; [ "$CURL_MODE" = fail ] && return 22
+          while [ $# -gt 0 ]; do case "$1" in -o) o="$2"; shift 2 ;; *) shift ;; esac; done
+          if [ "$CURL_MODE" = ok ]; then cp "$RK/KERNEL.rel" "$o"; else echo junk > "$o"; fi; }
+      . "$BLK"; printf 'IMG=%s\nKA=%s\n' "$(basename "${KERNEL_IMAGE:-none}")" "${KERNEL_CONTEXT_KEEPALIVE:-}"; [ -z "${K_DL_DIR:-}" ] || rm -rf "$K_DL_DIR" )
+}
+: > "$U/curl.log"; OUT=$(fetch bls "" ok)
+printf '%s' "$OUT" | grep -q 'IMG=KERNEL.rocknix-gtk-20261101-0.7.0' && ok "one-liner: an OpenABL rig gets the manifest's kernel, under its own name" || bad "one-liner: an OpenABL rig gets the manifest's kernel ($OUT)"
+printf '%s' "$OUT" | grep -q 'KA=1' && ok "one-liner: the keepalive is on by default" || bad "one-liner: the keepalive is on by default"
+OUT=$(KA=0 fetch bls "" ok); printf '%s' "$OUT" | grep -q 'KA=1' && ok "one-liner: etk.conf.example's KERNEL_CONTEXT_KEEPALIVE=0 cannot drop anti-lock" || bad "one-liner: the example's 0 cannot drop anti-lock ($OUT)"
+OUT=$(fetch bls "" bad); printf '%s' "$OUT" | grep -q 'IMG=none' && printf '%s' "$OUT" | grep -q 'sha256' && ok "one-liner: a bad download is refused and named" || bad "one-liner: a bad download is refused ($OUT)"
+OUT=$(fetch bls "" fail); printf '%s' "$OUT" | grep -q 'IMG=none' && printf '%s' "$OUT" | grep -q 'Could not fetch' && ok "one-liner: no network is named, the rig stays as it is" || bad "one-liner: no network is named ($OUT)"
+: > "$U/curl.log"; OUT=$(fetch bls "/x/KERNEL.mine" ok); printf '%s' "$OUT" | grep -q 'IMG=KERNEL.mine' && ok "one-liner: an explicit KERNEL_IMAGE wins" || bad "one-liner: an explicit KERNEL_IMAGE wins"
+[ -s "$U/curl.log" ] && bad "one-liner: no fetch when one is named" || ok "one-liner: no fetch when one is named"
+: > "$U/curl.log"; OUT=$(fetch abl "" ok); printf '%s' "$OUT" | grep -q 'needs ROCKNIX 20261101' && ok "one-liner: a 20261001 rig is told to update ROCKNIX" || bad "one-liner: a 20261001 rig is told ($OUT)"
+[ -s "$U/curl.log" ] && bad "one-liner: nothing fetched on the ABL chain" || ok "one-liner: nothing fetched on the ABL chain"
+: > "$U/curl.log"; OUT=$(ETK_KERNEL_FETCH=0 fetch bls "" ok); [ -s "$U/curl.log" ] && bad "one-liner: ETK_KERNEL_FETCH=0 turns it off" || ok "one-liner: ETK_KERNEL_FETCH=0 turns it off"
+rm -f "$U/curl.log"
+
 echo "== install.sh: KERNELBLSREMOTE =="
 stage() { HOST_SHA="$1" K_RELEASE=7.2.0 K_MODE="${2:-default}" K_NAME=KERNEL.rocknix-gtk-20261101-0.7.0 K_EXTRA='msm.context_keepalive=1 panic=30' \
           HEAL="$H" STAGING="$U/staging" ETK_ROOT="$TD/src" sh "$TD/stage.sh" 2>&1; }
