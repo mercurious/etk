@@ -334,7 +334,6 @@ MC -o /tmp/etk-gtk.conf ::/loader/entries/etk-gtk.conf || die "could not write e
 MC -o /tmp/loader.conf ::/loader/loader.conf || die "could not write loader.conf"
 echo "   ::/KERNEL.gtk = $GTK_SHA"
 echo "   options: $CARD_OPT $KEXTRA"
-[ -z "$HOOK_SCRIPT" ] || { [ -f "$HOOK_SCRIPT" ] || die "HOOK_SCRIPT set but missing: $HOOK_SCRIPT"; MC -o "$HOOK_SCRIPT" ::/mount-storage.sh || die "could not write mount-storage.sh"; echo "   baked ::/mount-storage.sh"; }
 elif [ "$CHAIN" = abl ]; then
 say "4. boot FAT (qcom-abl): relabel $BOOT_LABEL + GTK boot.img in the slot (card labels baked) + stock parked"
 mlabel -i "$WORK@@$BOOT_OFF" "::$BOOT_LABEL" 2>/dev/null || die "mlabel failed"
@@ -435,7 +434,20 @@ if [ -n "$HOOK_SCRIPT" ]; then
   echo "   -- /flash/mount-storage.sh (hostless P0 hook) --"; MI ::/ | grep -i 'mount' | sed 's/^/   /'
   MC ::/mount-storage.sh /tmp/vh.sh 2>/dev/null && { grep -q 'mount_part "\$disk"' /tmp/vh.sh && echo "   hook mounts \$disk FIRST ✅" || die "hook missing the mount line"; sh -n /tmp/vh.sh && echo "   hook syntax OK ✅"; }
 fi
-if [ "$CHAIN" = abl ]; then
+if [ "$CHAIN" = bls ]; then
+  echo "   -- OpenABL set (read back from the FAT) --"
+  MC ::/KERNEL.gtk /tmp/vk2.img || die "cannot read ::/KERNEL.gtk back"
+  [ "$(sha256sum /tmp/vk2.img | cut -d' ' -f1)" = "$GTK_SHA" ] && echo "   ::/KERNEL.gtk sha == the artifact ✅" || die "::/KERNEL.gtk is not the artifact"
+  MC ::/loader/entries/etk-gtk.conf /tmp/ve2.conf || die "cannot read etk-gtk.conf back"
+  grep -q "^options.*boot=LABEL=$BOOT_LABEL disk=LABEL=$STOR_LABEL" /tmp/ve2.conf && echo "   etk-gtk.conf carries the card labels ✅" || die "etk-gtk.conf lacks the card labels"
+  grep -q '^options.*msm.context_keepalive=1' /tmp/ve2.conf && echo "   etk-gtk.conf carries the keepalive ✅" || die "etk-gtk.conf lacks the keepalive"
+  grep -q '^devicetree' /tmp/ve2.conf && die "etk-gtk.conf names a devicetree: one card boots both Flip 2 panels" || echo "   no devicetree: the unit's Device model picks the tree ✅"
+  MC ::/loader/loader.conf /tmp/vl2.conf || die "cannot read loader.conf back"
+  [ "$(cat /tmp/vl2.conf)" = "default etk-gtk.conf" ] && echo "   default = etk-gtk.conf ✅" || die "loader.conf reads '$(cat /tmp/vl2.conf)'"
+  MI ::/EFI >/dev/null 2>&1 && die "::/EFI present on an OpenABL card" || echo "   no grub on the card ✅"
+  echo "   -- heal bundle on STORAGE --"; debugfs -R "ls /rocknix-gtk/heal" /tmp/vs2.ext4 2>/dev/null | tr -s ' ' | sed 's/^/   /'
+  rm -f /tmp/vk2.img /tmp/ve2.conf /tmp/vl2.conf
+elif [ "$CHAIN" = abl ]; then
   echo "   -- ABL slot (read back from the FAT) --"
   MC ::/KERNEL /tmp/vk2.img || die "cannot read ::/KERNEL back"
   [ "$(sha256sum /tmp/vk2.img | cut -d' ' -f1)" = "$GTK_CARD_SHA" ] && echo "   ::/KERNEL sha == relabelled GTK boot.img ✅" || die "::/KERNEL sha mismatch"
