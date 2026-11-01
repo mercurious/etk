@@ -12,6 +12,12 @@
 #                                        (N 1-9, default 1): OpenABL renames it before each
 #                                        boot; at +0-N the entry is bad and is skipped
 #   tools/bls_trial.sh restore           undo either trial; the default returns to stock
+#   tools/bls_trial.sh drift             what an OS update leaves behind: etk-gtk.conf on old
+#                                        options + the stock tree in the kit DTB's place.
+#                                        osguard heals both at the next boot; nothing to undo
+#   tools/bls_trial.sh mismatch          the release gate, live and with no boot: a staged
+#                                        kernel for another module tree, osguard run by hand,
+#                                        then the bundle and the default are put back
 #
 #   --car <name>   refuse unless the unit is this car (default: etk.conf CAR=)
 #   [target]       ssh target (default: RIG_SSH, then etk.conf RIG_SSH=)
@@ -32,9 +38,11 @@ ETK_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SSH_OPTS="-o BatchMode=yes -o ConnectTimeout=8"
 # Test-only overrides (the harness points these at a sandbox):
 R_FLASH="${BLS_FLASH:-/flash}"; R_PROC="${BLS_PROC:-/proc}"
+R_HEAL="${BLS_HEAL:-/storage/rocknix-gtk/heal}"; R_KIT="${BLS_KIT:-/storage/games-internal/roms/etk}"
+R_MARKER="${OSG_MARKER:-/storage/.etk-osguard-last}"
 
 die()   { echo "BLS_TRIAL_FAIL: $*" >&2; exit 1; }
-usage() { sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '2,34p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 
 VERB=""; N=1; CAR=""; TARGET=""
 while [ $# -gt 0 ]; do
@@ -42,7 +50,7 @@ while [ $# -gt 0 ]; do
         --car)   CAR="${2:?--car needs a name}"; shift 2 ;;
         -h|--help) usage ;;
         -*)      die "unknown option: $1" ;;
-        status|fallthrough|restore) [ -z "$VERB" ] || die "one verb at a time"; VERB="$1"; shift ;;
+        status|fallthrough|restore|drift|mismatch) [ -z "$VERB" ] || die "one verb at a time"; VERB="$1"; shift ;;
         count)   [ -z "$VERB" ] || die "one verb at a time"; VERB=count; shift
                  case "${1:-}" in [0-9]*) N="$1"; shift ;; esac ;;
         *)       [ -z "$TARGET" ] || die "too many arguments"; TARGET="$1"; shift ;;
@@ -99,6 +107,33 @@ if [ "$VERB" = status ]; then
     exit 0
 fi
 
+# ---- the release gate, live: nothing here needs a boot -------------------------------------
+if [ "$VERB" = mismatch ]; then
+    REMOTE_MISMATCH='
+LC="$FLASH/loader/loader.conf"; R="$HEAL/KERNEL.staged.release"
+[ "$(cat "$HEAL/chain" 2>/dev/null)" = bls ] || { echo "refused: the bundle is not chain=bls"; exit 3; }
+[ "$(cat "$LC" 2>/dev/null)" = "default etk-gtk.conf" ] || { echo "refused: the default is not etk-gtk, so the gate has nothing to flip"; exit 3; }
+[ -f "$KIT/bin/osguard.sh" ] || { echo "refused: no osguard.sh on the rig"; exit 3; }
+REAL=$(cat "$R"); rm -f "$MARKER"
+printf "9.9.9\n" > "$R"
+sh "$KIT/bin/osguard.sh" 2>&1 | tail -n2
+echo "gate_default=$(cat "$LC")"
+echo "gate_toast=$(cut -f2 "$MARKER" 2>/dev/null)"
+printf "%s\n" "$REAL" > "$R"
+rm -f "$MARKER"
+sh "$KIT/bin/bls_deploy.sh" | tail -n1
+echo "restored_default=$(cat "$LC")"
+echo BLS_GATE_DONE'
+    OUT=$(rssh "$(remote_env) HEAL='$R_HEAL' KIT='$R_KIT' MARKER='$R_MARKER'; $REMOTE_MISMATCH" 2>&1); RC=$?
+    printf '%s\n' "$OUT" | sed 's/^/  /'
+    [ $RC -eq 0 ] || die "mismatch did not complete"
+    printf '%s\n' "$OUT" | grep -q '^gate_default=default etk-stock.conf$' || die "the gate did not flip the default"
+    printf '%s\n' "$OUT" | grep -q '^gate_toast=OS updated to a new kernel' || die "the gate did not toast"
+    printf '%s\n' "$OUT" | grep -q '^restored_default=default etk-gtk.conf$' || die "the default was not put back"
+    echo "BLS_TRIAL_OK mismatch. The gate flipped the default and toasted, and the bundle and default are back."
+    exit 0
+fi
+
 # ---- the write ---------------------------------------------------------------------------
 REMOTE_WRITE='
 E="$FLASH/loader/entries"; LC="$FLASH/loader/loader.conf"
@@ -116,7 +151,7 @@ COUNTED=""
 for f in "$E"/etk-gtk+*.conf; do [ -f "$f" ] && COUNTED="$COUNTED $f"; done
 ASIDE=no; [ -f "$FLASH/KERNEL.gtk.aside" ] && ASIDE=yes
 case "$VERB" in
-  fallthrough|count)
+  fallthrough|count|drift)
     [ -z "$COUNTED" ] && [ "$ASIDE" = no ] || refuse "a trial is already in place: run restore first"
     [ -f "$FLASH/KERNEL.gtk" ] || refuse "no KERNEL.gtk on the rig"
     [ -f "$E/etk-gtk.conf" ] || refuse "no etk-gtk.conf on the rig"
@@ -140,6 +175,10 @@ case "$VERB" in
                set_default etk-gtk.conf || exit 1 ;;
   count)       mv "$E/etk-gtk.conf" "$E/etk-gtk+$N.conf" || exit 1
                set_default etk-gtk.conf || exit 1 ;;
+  drift)       sed "s/^options .*/& etk.sim=old-os/" "$E/etk-gtk.conf" > "$E/etk-gtk.conf.new" && mv -f "$E/etk-gtk.conf.new" "$E/etk-gtk.conf" || exit 1
+               D=$(sed -n "s/^devicetree[[:space:]]*\/dtbs\/etk\///p" "$E/etk-gtk.conf" | head -n1)
+               [ -f "$FLASH/dtbs/$D" ] || { echo "no stock dtbs/$D"; exit 1; }
+               cp "$FLASH/dtbs/$D" "$FLASH/dtbs/etk/$D" || exit 1 ;;
   restore)     [ -z "$COUNTED" ] || mv $COUNTED "$E/etk-gtk.conf" || exit 1
                [ "$ASIDE" = no ] || mv "$FLASH/KERNEL.gtk.aside" "$FLASH/KERNEL.gtk" || exit 1
                set_default etk-stock.conf || exit 1 ;;
@@ -166,6 +205,13 @@ EOF
 
 BLS_TRIAL_OK count $N. Each plain power-on spends a try: $N boot GTK, boot $((N + 1)) boots stock.
 Check with tools/bls_trial.sh status after each. tools/bls_trial.sh restore ends it.
+EOF
+        ;;
+    drift) cat <<EOF
+
+BLS_TRIAL_OK drift. Shut down, then a plain power-on.
+PASS: it boots, a toast says the entry was refreshed and asks for one reboot, and the boot after
+that is silent, with the mic back. FAIL: no toast, or the etk.sim token survives the second boot.
 EOF
         ;;
     restore) cat <<EOF

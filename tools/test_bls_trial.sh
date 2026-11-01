@@ -10,7 +10,7 @@
 # simulated. Host GNU tools stand in for BusyBox; `status` on a live rig checks the read body.
 #
 # DISCRIMINATION: `--against <rev>` takes the tool from that revision. Before the tool
-# existed the suite FAILS (39 of 66; the "wrote nothing" cases pass trivially).
+# existed the suite FAILS (most of it; the "wrote nothing" cases pass trivially).
 #
 #   tools/test_bls_trial.sh                  # working tree — must PASS
 #   tools/test_bls_trial.sh --against HEAD~  # pre-tool — must FAIL
@@ -20,7 +20,7 @@ cd "$(dirname "$0")/.." || exit 1
 REV=""
 [ "${1:-}" = "--against" ] && REV="${2:?--against needs a revision}"
 
-TD=$(mktemp -d); trap 'rm -rf "$TD"' EXIT
+TD=$(mktemp -d); [ -n "${KEEP:-}" ] || trap 'rm -rf "$TD"' EXIT
 mkdir -p "$TD/bin" "$TD/stubs" "$TD/units" "$TD/tools" "$TD/scripts"
 if [ -n "$REV" ]; then
     git show "$REV:tools/bls_trial.sh" > "$TD/tools/bls_trial.sh" 2>/dev/null \
@@ -145,6 +145,46 @@ mk_unit; S0=$(snap)
 expect "count: refuses 0 tries"                           1 "takes 1-9"          "$TOOL" count 0 "$T"
 expect "count: refuses a non-digit"                       1 "takes 1-9"          "$TOOL" count 12 "$T"
 same "$(snap)" "$S0" "count: a refused N wrote nothing"
+
+# ---- drift: what an OS update leaves behind ----------------------------------------------
+mk_unit; D=sm8250-retroidpocket-flip2-visionox.dtb
+printf 'devicetree /dtbs/etk/%s\n' "$D" >> "$U/flash/loader/entries/etk-gtk.conf"
+printf 'stock dtb\n' > "$U/flash/dtbs/$D"; printf 'kit dtb\n' > "$U/flash/dtbs/etk/$D"; C0=$(core)
+expect "drift: rc 0"                                      0 "BLS_TRIAL_OK drift" "$TOOL" drift --car car12 "$T"
+grep -q 'msm.context_keepalive=1 etk.sim=old-os$' "$U/flash/loader/entries/etk-gtk.conf" && ok "drift: the entry's options moved" || bad "drift: the entry's options moved"
+same "$(cat "$U/flash/dtbs/etk/$D")" "stock dtb" "drift: the kit DTB holds the stock tree, so it still boots"
+same "$(dflt)" "default etk-stock.conf" "drift: the default is not its business"
+same "$(core)" "$C0" "drift: stock's files untouched"
+same "$(ls "$U/flash/loader/entries" | grep -c '\.new')" "0" "drift: no temp entry left for OpenABL to read"
+same "$(tail -n1 "$U/mount.log" | cut -d' ' -f2)" "remount,ro" "drift: ro again"
+
+# ---- mismatch: the release gate, against the real osguard ----------------------------------
+mk_gate() {
+    mk_unit; K="$U/kit"; mkdir -p "$K/bin" "$U/heal" "$U/modules/7.2.0"
+    cp bin/osguard.sh bin/bls_deploy.sh "$K/bin/" 2>/dev/null
+    D=sm8250-retroidpocket-flip2-visionox.dtb
+    printf 'Retroid Pocket Flip2 Visionox\0' > "$U/proc/device-tree-model"; mkdir -p "$U/proc/device-tree"; mv "$U/proc/device-tree-model" "$U/proc/device-tree/model"
+    printf 'stock dtb\n' > "$U/flash/dtbs/$D"
+    cp "$U/flash/KERNEL.gtk" "$U/heal/KERNEL.staged"; sha256sum "$U/heal/KERNEL.staged" | cut -d' ' -f1 > "$U/heal/KERNEL.staged.sha256"
+    echo 7.2.0 > "$U/heal/KERNEL.staged.release"; echo bls > "$U/heal/chain"; echo default > "$U/heal/mode"
+    export BLS_HEAL="$U/heal" BLS_KIT="$K" BLS_NO_REMOUNT=1 BLS_SPLICER="$U/none.py" ETK_ROOT="$K" OSG_MARKER="$U/marker" \
+        OSG_FLASH="$U/flash" OSG_HEAL="$U/heal" OSG_MOD_BASE="$U/modules" OSG_RUN_REL=7.2.0 OSG_NO_REMOUNT=1 \
+        OSG_CMDLINE="$U/proc/cmdline" OSG_BLS_DEPLOY="$K/bin/bls_deploy.sh" TRIPWIRE_LOG="$U/trip.log"
+    printf 'title GTK\nversion x\nlinux /KERNEL.gtk\ndevicetree /dtbs/etk/%s\noptions %s msm.context_keepalive=1 panic=30\n' "$D" "$OPT" > "$U/flash/loader/entries/etk-gtk.conf"
+    sh "$K/bin/bls_deploy.sh" >/dev/null 2>&1
+}
+mk_gate; C0=$(core)
+same "$(dflt)" "default etk-gtk.conf" "mismatch fixture: default is GTK"
+expect "mismatch: the gate flips, toasts, and is put back" 0 "BLS_TRIAL_OK mismatch" "$TOOL" mismatch --car car12 "$T"
+same "$(dflt)" "default etk-gtk.conf" "mismatch: the default is back"
+same "$(cat "$U/heal/KERNEL.staged.release")" "7.2.0" "mismatch: the bundle's release is back"
+[ -f "$U/marker" ] && bad "mismatch: no stale toast marker left" || ok "mismatch: no stale toast marker left"
+same "$(core)" "$C0" "mismatch: stock's files untouched"
+mk_gate; printf 'default etk-stock.conf\n' > "$U/flash/loader/loader.conf"
+expect "mismatch: refuses with nothing to flip"           1 "nothing to flip"    "$TOOL" mismatch "$T"
+mk_gate; echo abl > "$U/heal/chain"
+expect "mismatch: refuses a non-BLS bundle"               1 "not chain=bls"      "$TOOL" mismatch "$T"
+unset BLS_HEAL BLS_KIT BLS_NO_REMOUNT BLS_SPLICER ETK_ROOT OSG_MARKER OSG_FLASH OSG_HEAL OSG_MOD_BASE OSG_RUN_REL OSG_NO_REMOUNT OSG_CMDLINE OSG_BLS_DEPLOY TRIPWIRE_LOG
 
 # ---- refusals: nothing written, no remount -------------------------------------------------
 refused() {   # <label> <substring> <verb> ; the fixture is already bent
