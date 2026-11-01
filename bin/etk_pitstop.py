@@ -119,11 +119,11 @@ CONFIG_CHANGES_HEADER = "epoch\tgame_id\tfield_label\told_value\tnew_value\n"
 # ALIGNED TO THE RELEASE TAG at every cut (load-bearing since 0.8.0: the
 # TOOLS self-update compares this against the latest GitHub release tag).
 # The DRIVER tab names the actually-bound stack builds.
-APP_VERSION = "0.10.1"
+APP_VERSION = "0.11.0"
 # The release's edition name (CHANGELOG heading, boot-identity line). Set at
 # the cut beside APP_VERSION; empty between releases = the boot line drops the
 # clause. Never hand-write it anywhere else (install.sh templates the unit).
-APP_EDITION = "120Hz"
+APP_EDITION = "Pit Lane"
 
 # DRIVER tab (Turnip env-var dials). These are NOT RPCS3 config keys — they
 # inject through the proven profile.d path (same mechanism as 098-etk-stage3),

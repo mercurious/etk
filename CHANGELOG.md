@@ -4,6 +4,30 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-01 — Pit Lane Edition
+
+Certified stack: RPCS3 **GTK Edition 0.10.1** (ARMSX3 1.0.4, `8290349e5`) ·
+Mesa Turnip **26.2.2 gtk_0.7** · kernel **rocknix-gtk-20261101-0.7.0** (7.2.0,
+raw PE Image) · base **ROCKNIX official 20261101**.
+
+ETK moves onto ROCKNIX 20261101 and its new bootloader, OpenABL. The kit no longer replaces
+the stock kernel: it sits beside it, in a boot entry of its own. That makes a ROCKNIX update
+safe to take, puts the fallback back, and lets the kit follow the OS on its own.
+
+### Moving to this release
+
+- **On a GTK rig (ROCKNIX 20261001):** take the ROCKNIX 20261101 update with the charger on,
+  50 % battery or more and 2 GB free on `/storage`, then run the one-liner or Pitstop's
+  **Check for ETK Updates**, and reboot when asked. Your device model carries over.
+- **New rig:** flash the card image. It boots on the Device model the bootloader already
+  holds, sets itself up over the first boots, and asks for one reboot.
+- 20261001 is no longer supported: on it, the installer asks you to update ROCKNIX first.
+
+### Known behaviour
+
+- The bootloader menu (hold **Volume Down** at power-on) can draw upside-down on the 12 GB
+  Flip 2. It works normally, and its Rotation setting turns it around.
+
 ### Fixed
 
 - **A towed game keeps its ES settings** (`tools/tow.sh`): a game moved car to car came up with
