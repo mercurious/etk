@@ -215,6 +215,14 @@ if [ -d "$FLASH/loader/entries" ] && [ "$(head -c 2 "$FLASH/KERNEL" 2>/dev/null)
     esac
 fi
 
+# A couch update staged a PE kernel on a rig that has not taken the ROCKNIX update yet. It
+# cannot boot here and it does not have to: the block above deploys it on the first boot
+# after the update. The boot.img in the slot keeps running until then. Quiet on purpose.
+if [ "$(cat "$HEAL/chain" 2>/dev/null)" = "bls" ]; then
+    log "bls chain: a GTK kernel for OpenABL is staged; it deploys after the ROCKNIX update"
+    finish 0
+fi
+
 # ==========================================================
 # ABL-ERA UNIT (ROCKNIX 20261001+, ROCKNIX-ABL on SM8250) — 2026-10-08
 # ==========================================================

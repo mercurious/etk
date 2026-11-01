@@ -88,8 +88,8 @@ FORGE_TURNIP_GTKVER="${FORGE_TURNIP_GTKVER:-0.7}"
 #  The DATE line itself stays in this exact shape: release_sanity.sh reads the default out
 #  of it with a sed to assert a bare `./forge.sh kernel` mints the manifest's kernel.)
 _FKD_SET="${FORGE_KERNEL_DATE+set}"
-FORGE_KERNEL_DATE="${FORGE_KERNEL_DATE:-20261001}"
-FORGE_KERNEL_VER="${FORGE_KERNEL_VER:-0.6.4}"
+FORGE_KERNEL_DATE="${FORGE_KERNEL_DATE:-20261101}"
+FORGE_KERNEL_VER="${FORGE_KERNEL_VER:-0.7.0}"
 FORGE_KERNEL_ARTDIR="${FORGE_KERNEL_ARTDIR:-$HOME/rocknix-gtk/artifacts}"
 # Recipe selector for lane_kernel: 72 = 7.2/20260901-era (scripts/build_72.sh),
 # 712 = 7.1.2/20260801 (kept for remints of the old base). Allowlisted below
@@ -101,7 +101,7 @@ FORGE_KERNEL_BUILD="${FORGE_KERNEL_BUILD:-72}"
 # 20261101+ = BLS era (OpenABL + Boot Loader Spec): the recipe ships the raw PE Image
 # through scripts/bls_gate.sh; cmdline + DTB are rendered at deploy
 # (rocknix-gtk UPSTREAM_20261101.md §1c; etk-dossiers BuildPlan_0110_OpenABL_20261030.md).
-FORGE_KERNEL_BASEDATE="${FORGE_KERNEL_BASEDATE:-20261001}"
+FORGE_KERNEL_BASEDATE="${FORGE_KERNEL_BASEDATE:-20261101}"
 # LAW #8 COUPLING (2026-10-31): the artifact's date is its CHASSIS date. A mint that names a
 # newer chassis by BASEDATE alone (FORGE_KERNEL_BASEDATE=20261101 FORGE_KERNEL_VER=0.7.0)
 # used to inherit the 20261001 DATE default and would have shipped a 20261101 kernel labelled

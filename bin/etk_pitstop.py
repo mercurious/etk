@@ -4498,7 +4498,18 @@ def _self_update_apply(info):
                     if rc != 0:
                         raise RuntimeError("kernel_stage.sh refused the stage")
                     synced.append("kernel")
-                    if os.uname().release == kern.get("kernel_release"):
+                    # Judged on the OS release, not the kernel's: 20261001 and
+                    # 20261101 both run 7.2.0, and a PE Image cannot boot on the
+                    # older chain, so a rig there waits for the ROCKNIX update.
+                    osv = ""
+                    try:
+                        with open("/etc/os-release") as f:
+                            osv = next((ln.split("=", 1)[1].strip().strip('"')
+                                        for ln in f
+                                        if ln.startswith("OS_VERSION=")), "")
+                    except OSError:
+                        pass
+                    if osv and osv >= str(kern.get("requires_os", "")):
                         stack_lines.append("Kernel: GTK kernel staged and "
                                            "activated - REBOOT to load it.")
                     else:

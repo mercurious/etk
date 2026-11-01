@@ -344,6 +344,14 @@ inlog "new bootloader" "$U/marker" "chain=abl on this layout: the ABL block name
 inlog "Re-run the ETK installer" "$U/marker" "chain=abl: the toast says what to do"
 same "$(snap)" "$S0" "chain=abl: /flash untouched"
 
+echo "== osguard: a couch update reached a rig still on the ABL chain =="
+mk_unit; rm -rf "$F/loader"; { printf 'ANDROID!'; head -c 64 /dev/zero; } > "$F/KERNEL"; S0=$(snap)
+run_guard 7.2.0
+same "$RC" 0 "ABL rig + chain=bls: rc 0"
+inlog "deploys after the ROCKNIX update" "$U/guard.out" "ABL rig + chain=bls: logged"
+[ -f "$U/marker" ] && bad "ABL rig + chain=bls: no toast on every boot" || ok "ABL rig + chain=bls: no toast on every boot"
+same "$(snap)" "$S0" "ABL rig + chain=bls: the running slot untouched"
+
 echo "== kernel_stage: the couch path =="
 ks() { ETK_ROOT="$TD/src" KS_HEAL="$H" KS_CFG_LIST="" KS_NO_ACTIVATE=1 TRIPWIRE_LOG="$U/ks.log" sh "$STAGE" "$@"; }
 mkdir -p "$TD/src/config"
