@@ -123,7 +123,7 @@ APP_VERSION = "0.11.0"
 # The release's edition name (CHANGELOG heading, boot-identity line). Set at
 # the cut beside APP_VERSION; empty between releases = the boot line drops the
 # clause. Never hand-write it anywhere else (install.sh templates the unit).
-APP_EDITION = "Pit Lane"
+APP_EDITION = "OpenABL"
 
 # DRIVER tab (Turnip env-var dials). These are NOT RPCS3 config keys — they
 # inject through the proven profile.d path (same mechanism as 098-etk-stage3),

@@ -4,7 +4,7 @@ All notable changes to the ETK are documented here. This project adheres to [Sem
 
 ## [Unreleased]
 
-## [0.11.0] - 2026-11-01 — Pit Lane Edition
+## [0.11.0] - 2026-11-01 — OpenABL Edition
 
 Certified stack: RPCS3 **GTK Edition 0.10.1** (ARMSX3 1.0.4, `8290349e5`) ·
 Mesa Turnip **26.2.2 gtk_0.7** · kernel **rocknix-gtk-20261101-0.7.0** (7.2.0,
