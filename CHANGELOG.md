@@ -81,6 +81,32 @@ is unaffected. The card image is v0.10.0's, re-attached byte for byte: a fresh c
   the new chain, restores nothing and removes the dead parked copy. Proven in `tools/test_kernel_abl.sh`
   (10 cases that fail on the previous revision). Hold the ROCKNIX update until 0.11.0; the plan is
   `etk-dossiers/BuildPlan_0110_OpenABL_20261030.md`.
+- **The card image now carries the whole kit, not a stale snapshot.** A card boot never
+  runs `install.sh`; it copies a seed into `/storage/.config` on its second boot. That seed
+  had been a static copy of one handheld's config from July, so every kit service added since
+  — the built-in microphone, the USB-link heal, USB and thermal wake-off, the mDNS name heal,
+  the battery guard, the UFS clock pin, the Pitlink USB channel, the SD rebind — was missing
+  until the one-liner ran from a computer (v0.10.0 card walk, car12, 2026-10-23: mic dead,
+  USB link carrier-less, a `not-found` unit on every boot). The image lane now renders the
+  seed at build time from `install.sh` itself (`os-install/build/gen_seed.sh`: every unit
+  and boot script the installer writes, the files it ships from `config/`, the links it
+  enables, the battery guard's defaults, `.kit_commit` stamped), so a card and a host install
+  cannot drift apart; a unit the installer enables but does not write fails the build
+  instead of shipping a silent card. Pitlink still ships off. The 0.10.0 note "run the
+  one-liner once after the first boot" no longer applies to a 0.11.0 card.
+- **A card is safe under Pitstop's couch update.** The release kernel names the internal
+  partitions (`STORAGE`); a card boots a copy relabelled to its own (`GTKSTOR`). Taking a
+  kernel from *TOOLS → Check for ETK Updates* on a card would have banked the internal
+  kernel and ETK OS Guard would have restored it into the card's slot after the next OS
+  update — a card that boots into the internal install's partitions, or into nothing.
+  `kernel_stage.sh` now compares the asset's baked disk label with the one the handheld
+  booted from and refuses a mismatch by name (`card-labels`, exit 3); OS Guard applies the
+  same gate before any re-stage; Pitstop reads the same signature before it even fetches
+  the asset and says so: *this handheld boots from the GTK card image; its kernel ships with
+  the next card image — reflash that.* The kit update itself still lands. Harnesses:
+  `tools/test_kernel_stage.sh` S7, `tools/test_kernel_abl.sh` (OS Guard card cases),
+  `tools/test_seed_gen.sh`.
+
 - **Gran Turismo 6's rear-view mirror renders** (RPCS3 GTK Edition **0.10.1-dev**, fork
   `etk-rpcs3-gtk` `d2fb2fd`). The HUD mirror had drawn black with the minimap bleeding into it on
   every GTK core. Upstream found the cause after our base was cut: GT6's mirror colour target shares
@@ -98,6 +124,12 @@ is unaffected. The card image is v0.10.0's, re-attached byte for byte: a fresh c
 
 ### Added
 
+- **`os-install/build/gen_seed.sh`** — the card image's seed generator (see *Fixed*): the
+  image lane calls it by default (`SEED_GEN=1`; `SEED_CONFIG=<dir>` still stages a hand-made
+  seed), the forge no longer pushes a gitignored `seed_config` snapshot to the build node,
+  and the lane log names the seed's units and its kept-link count. `tools/test_seed_gen.sh`
+  pins the seed's unit set to the installer's, every link to a unit the seed carries, and
+  the rendered boot line; it discriminates against the pre-change tree.
 - **Card Transplant** (`tools/card_transplant.py`, host-side Garage Gear): turns one car's
   game card into another car's boot card in place, keeping the newer data from both — saves
   judged whole, the library's metadata kept, nothing deleted (the losing copies are parked on
@@ -412,7 +444,10 @@ you update: the OS update is a one-way move and the order of steps matters.
 
 ### Known behaviour
 - **The card image is the kernel, the core and the driver catalog — not yet the
-  whole kit.** A card boot never runs `install.sh`, so the kit's boot-time
+  whole kit.** *(Resolved for 0.11.0: the seed is rendered from `install.sh` at
+  build time, and the couch-update kernel path refuses a card by name — see
+  `[Unreleased]` Fixed. Both caveats below still hold for the 0.10.0 image.)*
+  A card boot never runs `install.sh`, so the kit's boot-time
   services — the Internal Microphone UCM bind, the USB-net heal, the battery
   guard, the USB-wake and mDNS fixes, Pitlink — are absent until the one-liner
   runs once from a computer (turn on SSH in ROCKNIX's settings first; a fresh

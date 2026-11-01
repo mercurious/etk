@@ -3510,6 +3510,27 @@ _RPCS3_PATTERNS = ("rpcs3-sa", "AppRun.wrapped")
 _INSTALLER_FLAGS = ("--installpkg", "--installfw")
 
 
+class _CardLabels(Exception):
+    """kernel_stage.sh exit 3: the kernel asset names other partition labels
+    than this unit boots from (a GTK card). Named, not a failure."""
+
+
+def _live_disk_label(procfs="/proc"):
+    """The disk=LABEL= token of the live kernel cmdline ('' when unreadable or
+    absent). Under ABL the cmdline is the boot slot's own, so this is the
+    unit's signature: STORAGE = an internal ROCKNIX install, GTKSTOR = the GTK
+    card image (its kernel is relabelled to the card's partitions). The same
+    read install.sh STEP 6.4 and bin/kernel_stage.sh make (card-labels guard)."""
+    try:
+        with open(os.path.join(procfs, "cmdline")) as f:
+            for tok in f.read().split():
+                if tok.startswith("disk=LABEL="):
+                    return tok[len("disk=LABEL="):]
+    except OSError:
+        pass
+    return ""
+
+
 def _rpcs3_pids(installer=None, procfs="/proc"):
     """PIDs of live RPCS3 processes.
 
@@ -4470,8 +4491,25 @@ def _self_update_apply(info):
                         cur = f.read().strip()
                 except OSError:
                     pass
+                # A GTK CARD boots a kernel relabelled to the card's partitions
+                # (disk=LABEL=GTKSTOR); the release asset names STORAGE, so on a
+                # card the couch update never fetches it: kernel_stage.sh would
+                # refuse (exit 3, card-labels), and a card's kernel comes with the
+                # next card image. Read the same signature kernel_stage.sh reads.
+                live_disk = _live_disk_label()
+                card_msg = ("Kernel: this handheld boots from the GTK card "
+                            f"image (disk {live_disk or '?'}); its kernel "
+                            "ships with the next card image - reflash that. "
+                            "The kit update itself is in.")
                 if cur == kern["sha256"]:
                     stack_lines.append("Kernel: already staged (up to date).")
+                elif (live_disk and live_disk != "STORAGE"
+                      and kern.get("format") != "image"):
+                    # (OpenABL: the labels live in the entry, so a card takes
+                    # the same kernel as an internal install.)
+                    _log(f"self-update: kernel stage skipped (card-labels: "
+                         f"live disk {live_disk})")
+                    stack_lines.append(card_msg)
                 else:
                     kpath = os.path.join(tmp, kern["asset"])
                     kurl = (f"https://github.com/{_UPDATE_REPO}/releases/"
@@ -4495,6 +4533,11 @@ def _self_update_apply(info):
                                    f"sh '{base}/bin/kernel_stage.sh' "
                                    f"'{kpath}' '{kern['sha256']}' "
                                    f">/dev/null 2>&1")
+                    if (rc >> 8) == 3:
+                        # card-labels from the script itself (second lock)
+                        _log("self-update: kernel_stage.sh refused: card-labels")
+                        stack_lines.append(card_msg)
+                        raise _CardLabels()
                     if rc != 0:
                         raise RuntimeError("kernel_stage.sh refused the stage")
                     synced.append("kernel")
@@ -4517,6 +4560,8 @@ def _self_update_apply(info):
                             f"Kernel: staged for ROCKNIX "
                             f"{kern.get('requires_os', '?')} - it activates "
                             f"itself after you update the OS.")
+        except _CardLabels:
+            pass        # named above; nothing staged, the middleware is in
         except Exception as e:
             _log(f"self-update: kernel stage failed: "
                  f"{e.__class__.__name__}: {e}")

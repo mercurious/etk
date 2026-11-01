@@ -21,13 +21,23 @@ set -eu
 # check below, and KERNEL still named -0.3 after the forge moved to etk-cloud.
 # release_sanity.sh only validated the FILENAME FORMAT of these, never that the
 # file exists or is the shipping one; that check is now in the gate too.
-BASE_GZ="${BASE_GZ:-/work/ROCKNIX-SM8250.aarch64-20261001.img.gz}"
+BASE_GZ="${BASE_GZ:-/work/ROCKNIX-SM8250.aarch64-20261101.img.gz}"
 KERNEL="${KERNEL:-/rocknix-gtk/artifacts/KERNEL.rocknix-gtk-20261101-0.7.0}"
 APPIMAGE="${APPIMAGE:-/etk/emulators/rpcs3-etk_gtk-edition-0.10.1_armsx3-8290349e5_linux_aarch64.AppImage}"
 TURNIP_SO="${TURNIP_SO:-/etk/drivers/etk_turnip_rocknix_26.2.2_gtk_0.7.so}"
 REPO="${REPO:-/etk}"
 HOOK_SCRIPT="${HOOK_SCRIPT:-}"              # optional: bake /flash/mount-storage.sh (hostless hook)
-SEED_CONFIG="${SEED_CONFIG:-}"             # optional: stage $ETK_ROOT/.seed_config (hook installs it on boot 2)
+# THE SEED IS RENDERED FROM THE KIT (0.11.0): gen_seed.sh extracts every unit and boot
+# script install.sh writes (+ the config/ files it ships, + the wants-links it enables)
+# into $ETK_ROOT/.seed_config, so a card boot carries the WHOLE kit the one-liner would
+# install — the mic UCM bind, the USB-net heal, wake-off, mDNS heal, battery guard, UFS
+# pin, Pitlink USB (off), SD rebind. Until 0.11.0 the seed was a static snapshot of one
+# rig's .config (SEED_CONFIG=<dir>, gitignored, sole copies) and every unit added after
+# the snapshot was missing on a card (v0.10.0 card walk, car12 2026-10-23). SEED_GEN=0
+# builds a non-hostless test card; SEED_CONFIG=<dir> still stages a hand-made seed.
+SEED_GEN="${SEED_GEN:-1}"
+SEED_CONFIG="${SEED_CONFIG:-}"             # legacy: a pre-rendered seed dir instead of gen_seed.sh
+KIT_COMMIT="${KIT_COMMIT:-}"               # stamped as $ETK_ROOT/.kit_commit (install.sh STEP 3 parity); derived from $REPO when unset
 # NAMING (TRACK_MANUAL §C.4, law #8): pass OUT_IMG with a VERSION number (…-v3.img), never a
 # feature name (…-p0hook.img) — feature names are cruft the end user must clean up at release.
 OUT_IMG="${OUT_IMG:-/work/ROCKNIX-GTK-SM8250.aarch64-20260801.img}"
@@ -41,8 +51,8 @@ STORAGE_MIB="${STORAGE_MIB:-256}"          # small; fs-resize grows to full card
 # wrong for at least two releases — the same stale line TRACK_MANUAL §A.2 flags
 # with "do not trust this line; recover the labels by decompressing the image".
 # The shipped invocation is in FLASH_AND_TEST.md and overrides all four:
-#   HOOK_SCRIPT=/work/build/mount-storage.sh SEED_CONFIG=/work/build/seed_config \
-#   BOOT_LABEL=ROCKNIX-GTK STOR_LABEL=GTKSTOR OUT_IMG=...
+#   HOOK_SCRIPT=/work/build/mount-storage.sh (SEED_GEN=1 is the default: gen_seed.sh) \
+#   BOOT_LABEL=ROCKNIX-GTK STOR_LABEL=GTKSTOR KIT_COMMIT=<node HEAD> OUT_IMG=...
 # Defaults stay STANDARD because they are the safe choice for a test card built
 # to sit beside an internal ROCKNIX — but never cut a release from them.
 BOOT_LABEL="${BOOT_LABEL:-ROCKNIX}"        # <=11 chars for FAT
@@ -72,10 +82,27 @@ echo "   boot FAT @ ${BOOT_OFF}B  STORAGE @ ${STOR_START}B"
 # KERNEL.etk-stock (relabelled too, or a stock fallback would mount the internal
 # ROCKNIX), and the osguard heal bundle seeded on STORAGE so an OS update's silent
 # revert self-heals on a card-born install exactly as on a host install.
+#
+# OpenABL (ROCKNIX 20261101+): the kernel goes in BESIDE stock. The labels live in the
+# entries' text, so nothing needs relabelling inside a kernel. A single card has to boot both
+# Flip 2 panels and a wrong tree is a black panel, so etk-gtk.conf names NO devicetree here:
+# OpenABL boots it on the Device model it already holds. osguard's first boot then runs
+# bin/bls_deploy.sh, the same render a host install uses, which names the running model's
+# tree, derives the kit DTB and writes etk-stock.conf. The card seeds only the bundle.
 RELABEL="$REPO/os-install/build/relabel_bootimg.py"
 STOCK_BOOT_LABEL="${STOCK_BOOT_LABEL:-ROCKNIX}"; STOCK_STOR_LABEL="${STOCK_STOR_LABEL:-STORAGE}"
 KREL="${KREL:-}"                                   # kernel release the boot.img carries (manifest kernel_release) — ABL only
-if MC ::/boot/grub/grub.cfg /tmp/chain_grub.cfg; then
+if MC ::/loader/entries/rocknix.conf /tmp/chain_bls.conf; then
+  CHAIN=bls
+  MC ::/KERNEL /tmp/stockK.img || die "base has no ::/KERNEL"
+  [ "$(head -c 2 /tmp/stockK.img)" = "MZ" ] || die "base has BLS entries but ::/KERNEL is not a PE image — unknown boot chain"
+  [ "$(head -c 2 "$KERNEL")" = "MZ" ] || die "base is OpenABL but KERNEL is not a raw PE Image (mint with FORGE_KERNEL_BASEDATE>=20261101)"
+  [ -n "$KREL" ] || die "KREL (the kernel release, e.g. 7.2.0) is required on an OpenABL base — the osguard heal bundle keys on it"
+  GTK_SHA=$(sha256sum "$KERNEL" | cut -d' ' -f1)
+  KEXTRA=$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["kernel"]["cmdline_extra"])' "$REPO/config/gtk_stack.json") \
+    || die "config/gtk_stack.json has no kernel.cmdline_extra"
+  [ -n "$KEXTRA" ] || die "kernel.cmdline_extra is empty"
+elif MC ::/boot/grub/grub.cfg /tmp/chain_grub.cfg; then
   CHAIN=grub
   [ "$(head -c 8 "$KERNEL")" != "ANDROID!" ] || die "base is GRUB-era but KERNEL is a boot.img — a grub entry cannot boot it"
 else
@@ -105,18 +132,34 @@ cp "$REPO/tools/etk_drift.py" "$ER/tools/" 2>/dev/null || true
 cp "$REPO/tools/vault_sweep.sh" "$ER/tools/" 2>/dev/null || true
 # chmod +x every daemon/script (v1's 203/EXEC fix — git ships some non-+x)
 find "$ER/bin" "$ER/scripts" -type f \( -name '*.sh' -o -name '*.py' \) -exec chmod 0755 {} +
+# .kit_commit: the card says which kit it carries, as install.sh STEP 3 stamps a rig
+# ("unknown" on a zip checkout, "-dirty" with uncommitted changes). The v0.10.0 card
+# walk read it UNSTAMPED. lane_image.sh hands the node checkout's HEAD in as KIT_COMMIT
+# (the container may have no git); here it is only derived when nothing was passed.
+if [ -z "$KIT_COMMIT" ]; then
+  KIT_COMMIT=$(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo unknown)
+  [ "$KIT_COMMIT" != "unknown" ] && [ -n "$(git -C "$REPO" status --porcelain 2>/dev/null)" ] && KIT_COMMIT="${KIT_COMMIT}-dirty"
+fi
+printf '%s\n' "$KIT_COMMIT" > "$ER/.kit_commit"
+echo "   kit commit stamped: $KIT_COMMIT"
 # hostless activation payload: the .config the /flash hook installs on boot 2 (lives
 # under $ETK_ROOT so it never trips fs-resize's /storage/.config guard)
+SEED_ON=0
 if [ -n "$SEED_CONFIG" ]; then
   [ -d "$SEED_CONFIG" ] || die "SEED_CONFIG set but missing: $SEED_CONFIG"
-  cp -a "$SEED_CONFIG" "$ER/.seed_config"
-  # The seed is a RENDERED snapshot of a past install, so any unit in it that
-  # install.sh normally templates is frozen at whatever the snapshot captured.
-  # etk-gtk-version.service was found baked at "0.7.0-20260706" — a hostless
-  # first boot would announce a version and a kernel date that are both years of
-  # releases stale, because the /flash hook installs the seed directly and never
-  # runs install.sh's sed. Re-render it here from the repo template using this
-  # image's OWN inputs, so the flashed card and the host install agree.
+  cp -a "$SEED_CONFIG" "$ER/.seed_config"; SEED_ON=1
+  echo "   staged a PRE-RENDERED seed from $SEED_CONFIG (legacy path; the kit's units are whatever that snapshot holds)"
+elif [ "$SEED_GEN" = 1 ]; then
+  [ -f "$REPO/os-install/build/gen_seed.sh" ] || die "missing $REPO/os-install/build/gen_seed.sh (the seed generator)"
+  bash "$REPO/os-install/build/gen_seed.sh" --repo "$REPO" --out "$ER/.seed_config" || die "gen_seed.sh failed -- no seed, no card"
+  SEED_ON=1
+fi
+if [ "$SEED_ON" = 1 ]; then
+  # The seed's etk-gtk-version.service is the repo TEMPLATE (gen_seed.sh copies it
+  # as install.sh scp's it, placeholders intact; the old snapshot had it frozen at
+  # "0.7.0-20260706"). The /flash hook installs the seed directly and never runs
+  # install.sh's sed, so render it here from this image's OWN inputs, so the
+  # flashed card and the host install agree.
   # 0.10.0 added two more placeholders (@EDITION@ = the whole " -- X Edition" clause,
   # @KVER@ = the kernel generation off the Image name) and this lane kept rendering
   # only the first two: the v0.10.0 card walk (2026-10-23, car12) booted a console line
@@ -138,9 +181,10 @@ if [ -n "$SEED_CONFIG" ]; then
     [ -z "$_left" ] || die "seed boot-identity still carries placeholder(s): $_left"
     echo "   re-rendered seed boot-identity: ROCKNIX-GTK ${_GV:-dev}-${_GD:-dev}${_GE:+ -- $_GE Edition} -- kernel ${_GK:-dev}"
   done
-  # The seed is a snapshot: a unit later dropped from it can leave its *.wants link
-  # behind (etk-sd-rebind.service -> "not-found" on every card boot, 2026-10-23).
-  # Prune links whose target is gone, loudly; the seed source is never edited here.
+  # A unit dropped from the seed can leave its *.wants link behind (the snapshot era's
+  # etk-sd-rebind.service -> "not-found" on every card boot, 2026-10-23; gen_seed.sh
+  # links only units it carries, so on a generated seed this prunes nothing and the
+  # kept-count below is the surface). Prune links whose target is gone, loudly.
   # Targets are resolved as the RIG sees them: the seed lands at /storage/.config, so an
   # absolute /storage/.config/... target maps INTO the copied seed, a relative one
   # resolves against the link's directory, and /usr/lib/systemd/system/... is the OS's
@@ -197,6 +241,7 @@ if [ -n "$SEED_CONFIG" ]; then
     echo "   seeded Turnip dial: $(cat "$ER/etk_telemetry/active_tune.txt")"
   fi
   echo "   staged .seed_config: $(find "$ER/.seed_config" -type f | wc -l | tr -d ' ') files + $(find "$ER/.seed_config" -type l | wc -l | tr -d ' ') symlinks (hook installs on boot 2)"
+  echo "   seed units: $(ls "$ER"/.seed_config/system.d/*.service "$ER"/.seed_config/system.d/*.timer 2>/dev/null | xargs -n1 basename | sed 's/\.service$//' | tr '\n' ' ')"
 fi
 # GTK forks staged where install.sh binds them (outside .config → don't block resize)
 mkdir -p "$SEED/rpcs3" "$SEED/turnip/drivers"
@@ -234,6 +279,18 @@ if [ "$CHAIN" = abl ]; then
   printf 'abl\n'                > "$SEED/rocknix-gtk/heal/chain"
   echo "   seeded osguard heal bundle (ABL): KERNEL.staged $(stat -c %s /tmp/gtkK.card.img) B, release $KREL"
 fi
+if [ "$CHAIN" = bls ]; then
+  # The bundle bin/bls_deploy.sh renders from. The kernel is the artifact, byte for byte.
+  mkdir -p "$SEED/rocknix-gtk/heal"
+  cp "$KERNEL" "$SEED/rocknix-gtk/heal/KERNEL.staged"
+  printf '%s\n' "$GTK_SHA"              > "$SEED/rocknix-gtk/heal/KERNEL.staged.sha256"
+  printf '%s\n' "$KREL"                 > "$SEED/rocknix-gtk/heal/KERNEL.staged.release"
+  printf '%s\n' "$(basename "$KERNEL")" > "$SEED/rocknix-gtk/heal/KERNEL.staged.name"
+  printf '%s\n' "$KEXTRA"               > "$SEED/rocknix-gtk/heal/cmdline_extra"
+  printf 'default\n'                    > "$SEED/rocknix-gtk/heal/mode"
+  printf 'bls\n'                        > "$SEED/rocknix-gtk/heal/chain"
+  echo "   seeded osguard heal bundle (OpenABL): KERNEL.staged $(stat -c %s "$KERNEL") B, release $KREL"
+fi
 echo "   seed: $(du -sh "$SEED" | cut -f1)  (NO /storage/.config)"
 
 # SIZE THE FILESYSTEM FROM THE SEED, NOT FROM A CONSTANT (2026-09-03). The
@@ -259,7 +316,26 @@ dumpe2fs -h "$STOR" 2>/dev/null | grep -iE 'Filesystem features' | grep -q resiz
   && echo "   resize_inode present (fs-resize-compatible)" || echo "   WARN: no resize_inode"
 e2fsck -fn "$STOR" >/dev/null 2>&1 && echo "   e2fsck clean"
 
-if [ "$CHAIN" = abl ]; then
+if [ "$CHAIN" = bls ]; then
+say "4. boot FAT (OpenABL): relabel $BOOT_LABEL + KERNEL.gtk + the entries carry the card's labels"
+mlabel -i "$WORK@@$BOOT_OFF" "::$BOOT_LABEL" 2>/dev/null || die "mlabel failed"
+echo "   FAT volume: $(MI ::/ | awk '/Volume in drive/{print $NF}')"
+FREE=$(MI ::/ | awk '/bytes free/{gsub(/[^0-9]/,"");print}'); KSZ=$(stat -c %s "$KERNEL")
+[ "${FREE:-0}" -gt "$KSZ" ] || die "boot FAT too full for KERNEL.gtk (free=$FREE need=$KSZ)"
+sed -E "s/boot=LABEL=[^ ]+/boot=LABEL=$BOOT_LABEL/; s/disk=LABEL=[^ ]+/disk=LABEL=$STOR_LABEL/" /tmp/chain_bls.conf > /tmp/rocknix.card.conf
+CARD_OPT=$(sed -n 's/^options[[:space:]]*//p' /tmp/rocknix.card.conf | head -n1)
+printf '%s' "$CARD_OPT" | grep -q "boot=LABEL=$BOOT_LABEL disk=LABEL=$STOR_LABEL" || die "the stock entry's options did not take the card's labels: $CARD_OPT"
+printf 'title      ROCKNIX-GTK\nversion    %s\nlinux      /KERNEL.gtk\noptions    %s %s\n' \
+    "$(basename "$KERNEL")" "$CARD_OPT" "$KEXTRA" > /tmp/etk-gtk.conf
+printf 'default etk-gtk.conf\n' > /tmp/loader.conf
+MC -o "$KERNEL" ::/KERNEL.gtk || die "could not write KERNEL.gtk"
+MC -o /tmp/rocknix.card.conf ::/loader/entries/rocknix.conf || die "could not write rocknix.conf"
+MC -o /tmp/etk-gtk.conf ::/loader/entries/etk-gtk.conf || die "could not write etk-gtk.conf"
+MC -o /tmp/loader.conf ::/loader/loader.conf || die "could not write loader.conf"
+echo "   ::/KERNEL.gtk = $GTK_SHA"
+echo "   options: $CARD_OPT $KEXTRA"
+[ -z "$HOOK_SCRIPT" ] || { [ -f "$HOOK_SCRIPT" ] || die "HOOK_SCRIPT set but missing: $HOOK_SCRIPT"; MC -o "$HOOK_SCRIPT" ::/mount-storage.sh || die "could not write mount-storage.sh"; echo "   baked ::/mount-storage.sh"; }
+elif [ "$CHAIN" = abl ]; then
 say "4. boot FAT (qcom-abl): relabel $BOOT_LABEL + GTK boot.img in the slot (card labels baked) + stock parked"
 mlabel -i "$WORK@@$BOOT_OFF" "::$BOOT_LABEL" 2>/dev/null || die "mlabel failed"
 echo "   FAT volume: $(MI ::/ | awk '/Volume in drive/{print $NF}')"
@@ -354,7 +430,7 @@ parted -m "$WORK" unit B print 2>/dev/null | sed 's/^/   /'
 echo "   -- labels --"; blkid_fake=$(MI ::/ | awk '/Volume in drive/{print}'); echo "   FAT: $blkid_fake"
 dd if="$WORK" of=/tmp/vs2.ext4 bs=1M skip=$(( STOR_START / 1048576 )) count="$STORAGE_MIB" status=none
 echo "   ext4 label: $(dumpe2fs -h /tmp/vs2.ext4 2>/dev/null | awk -F: '/volume name/{gsub(/ /,"",$2);print $2}')"
-echo "   -- boot FAT (KERNEL + $([ "$CHAIN" = abl ] && echo KERNEL.etk-stock || echo KERNEL.gtktest) + SYSTEM) --"; MI ::/ | grep -iE 'KERNEL|SYSTEM' | sed 's/^/   /'
+echo "   -- boot FAT (KERNEL + $(case "$CHAIN" in abl) echo KERNEL.etk-stock ;; bls) echo KERNEL.gtk ;; *) echo KERNEL.gtktest ;; esac) + SYSTEM) --"; MI ::/ | grep -iE 'KERNEL|SYSTEM' | sed 's/^/   /'
 if [ -n "$HOOK_SCRIPT" ]; then
   echo "   -- /flash/mount-storage.sh (hostless P0 hook) --"; MI ::/ | grep -i 'mount' | sed 's/^/   /'
   MC ::/mount-storage.sh /tmp/vh.sh 2>/dev/null && { grep -q 'mount_part "\$disk"' /tmp/vh.sh && echo "   hook mounts \$disk FIRST ✅" || die "hook missing the mount line"; sh -n /tmp/vh.sh && echo "   hook syntax OK ✅"; }

@@ -129,6 +129,61 @@ SHA=$(sha256sum "$D/art" | cut -d' ' -f1)
 run_stage "$D" "$D/art" "$SHA"
 check "ETK_ROOT/config/gtk_stack.json is the second source" [ "$(cat "$D/heal/KERNEL.staged.release" 2>/dev/null)" = "7.2.0" ]
 
+echo "== S7: card-labels guard — a boot.img for other partition labels than this unit boots is refused (exit 3) =="
+# The GTK card image boots a kernel RELABELLED to the card (disk=LABEL=GTKSTOR); the release
+# asset names STORAGE. A couch update on a card must not bank that asset (osguard would
+# restore it into the card's slot: split-brain with an internal ROCKNIX, or no root). The
+# live cmdline is the signature (KS_PROC seam); the artifact's label is read from its
+# header (bytes 64..575, the boot.img v0-v2 cmdline field). Exit 3 lets Pitstop say
+# "reflash the next card image".
+mk_bootimg() { # <path> <cmdline> — a boot.img header with the cmdline in its field (no kernel: never booted)
+    { printf 'ANDROID!'; head -c 56 /dev/zero; printf '%s' "$2"; head -c $(( 512 - ${#2} )) /dev/zero; head -c 1056 /dev/zero; } > "$1"
+}
+mk_proc() { mkdir -p "$1/proc"; printf '%s\n' "$2" > "$1/proc/cmdline"; }
+CMD_STOCK='boot=LABEL=ROCKNIX disk=LABEL=STORAGE quiet rootwait console=tty0 gpt msm.context_keepalive=1 panic=30'
+CMD_CARD='boot=LABEL=ROCKNIX-GTK disk=LABEL=GTKSTOR quiet rootwait console=tty0 gpt msm.context_keepalive=1 panic=30'
+D="$T/s7a"; mkdir -p "$D"; mk_cfg "$D/grub.cfg"; mk_proc "$D" "$CMD_CARD"; mk_bootimg "$D/art" "$CMD_STOCK"
+SHA=$(sha256sum "$D/art" | cut -d' ' -f1)
+KS_PROC="$D/proc" KS_RELEASE=7.2.0 KS_HEAL="$D/heal" KS_CFG_LIST="$D/grub.cfg" KS_NO_ACTIVATE=1 TRIPWIRE_LOG="$D/trip.log" ETK_ROOT="$D/etk" \
+    sh "$STAGE" "$D/art" "$SHA" >/dev/null 2>&1; echo $? > "$D/rc"
+check "card boot (GTKSTOR) + STORAGE-labelled asset -> exit 3" [ "$(cat "$D/rc")" = "3" ]
+check "nothing staged on a card" [ ! -d "$D/heal" ]
+check "the artifact is left for the caller to clean up (not consumed)" [ -f "$D/art" ]
+check "the refusal is named: reason=card-labels" grep -q "reason=card-labels" "$D/trip.log"
+check "the refusal names the two labels" grep -q "disk=LABEL=GTKSTOR, the boot.img names disk=LABEL=STORAGE" "$D/trip.log"
+check "the refusal says what to do on a card (reflash)" grep -q "next card image (reflash)" "$D/trip.log"
+D="$T/s7b"; mkdir -p "$D"; mk_cfg "$D/grub.cfg"; mk_proc "$D" "$CMD_CARD"; mk_bootimg "$D/art" "$CMD_CARD"
+SHA=$(sha256sum "$D/art" | cut -d' ' -f1)
+KS_PROC="$D/proc" KS_RELEASE=7.2.0 KS_HEAL="$D/heal" KS_CFG_LIST="$D/grub.cfg" KS_NO_ACTIVATE=1 TRIPWIRE_LOG="$D/trip.log" ETK_ROOT="$D/etk" \
+    sh "$STAGE" "$D/art" "$SHA" >/dev/null 2>&1; echo $? > "$D/rc"
+check "card boot + an asset RELABELLED for the card -> stages (exit 0; the relabel-on-rig follow-up's path)" [ "$(cat "$D/rc")" = "0" ]
+check "relabelled asset banked with ITS sha" [ "$(cat "$D/heal/KERNEL.staged.sha256" 2>/dev/null)" = "$SHA" ]
+D="$T/s7c"; mkdir -p "$D"; mk_cfg "$D/grub.cfg"; mk_proc "$D" "$CMD_STOCK"; mk_bootimg "$D/art" "$CMD_STOCK"
+SHA=$(sha256sum "$D/art" | cut -d' ' -f1)
+KS_PROC="$D/proc" KS_RELEASE=7.2.0 KS_HEAL="$D/heal" KS_CFG_LIST="$D/grub.cfg" KS_NO_ACTIVATE=1 TRIPWIRE_LOG="$D/trip.log" ETK_ROOT="$D/etk" \
+    sh "$STAGE" "$D/art" "$SHA" >/dev/null 2>&1; echo $? > "$D/rc"
+check "internal unit (STORAGE) + the release asset -> stages as before" [ "$(cat "$D/rc")" = "0" ]
+D="$T/s7d"; mkdir -p "$D"; mk_cfg "$D/grub.cfg"; mk_proc "$D" "$CMD_STOCK"; mk_bootimg "$D/art" "$CMD_CARD"
+SHA=$(sha256sum "$D/art" | cut -d' ' -f1)
+KS_PROC="$D/proc" KS_RELEASE=7.2.0 KS_HEAL="$D/heal" KS_CFG_LIST="$D/grub.cfg" KS_NO_ACTIVATE=1 TRIPWIRE_LOG="$D/trip.log" ETK_ROOT="$D/etk" \
+    sh "$STAGE" "$D/art" "$SHA" >/dev/null 2>&1; echo $? > "$D/rc"
+check "internal unit + a CARD-relabelled image -> refused too (exit 3; the symmetric mistake)" [ "$(cat "$D/rc")" = "3" ]
+D="$T/s7e"; mkdir -p "$D"; mk_cfg "$D/grub.cfg"; mk_proc "$D" "$CMD_STOCK"; mk_bootimg "$D/art" "console=ttyMSM0 quiet"
+SHA=$(sha256sum "$D/art" | cut -d' ' -f1)
+KS_PROC="$D/proc" KS_RELEASE=7.2.0 KS_HEAL="$D/heal" KS_CFG_LIST="$D/grub.cfg" KS_NO_ACTIVATE=1 TRIPWIRE_LOG="$D/trip.log" ETK_ROOT="$D/etk" \
+    sh "$STAGE" "$D/art" "$SHA" >/dev/null 2>&1; echo $? > "$D/rc"
+check "internal unit + an asset with no disk= token -> accepted (no judgement)" [ "$(cat "$D/rc")" = "0" ]
+D="$T/s7f"; mkdir -p "$D"; mk_cfg "$D/grub.cfg"; mk_proc "$D" "$CMD_CARD"; mk_bootimg "$D/art" "console=ttyMSM0 quiet"
+SHA=$(sha256sum "$D/art" | cut -d' ' -f1)
+KS_PROC="$D/proc" KS_RELEASE=7.2.0 KS_HEAL="$D/heal" KS_CFG_LIST="$D/grub.cfg" KS_NO_ACTIVATE=1 TRIPWIRE_LOG="$D/trip.log" ETK_ROOT="$D/etk" \
+    sh "$STAGE" "$D/art" "$SHA" >/dev/null 2>&1; echo $? > "$D/rc"
+check "card boot + an asset with no disk= token -> refused (a card takes only a proven match)" [ "$(cat "$D/rc")" = "3" ]
+D="$T/s7g"; mkdir -p "$D/proc"; mk_cfg "$D/grub.cfg"; mk_bootimg "$D/art" "$CMD_STOCK"     # no cmdline readable at all
+SHA=$(sha256sum "$D/art" | cut -d' ' -f1)
+KS_PROC="$D/proc" KS_RELEASE=7.2.0 KS_HEAL="$D/heal" KS_CFG_LIST="$D/grub.cfg" KS_NO_ACTIVATE=1 TRIPWIRE_LOG="$D/trip.log" ETK_ROOT="$D/etk" \
+    sh "$STAGE" "$D/art" "$SHA" >/dev/null 2>&1; echo $? > "$D/rc"
+check "unreadable live cmdline -> no judgement, stages (install.sh STEP 6.4 parity)" [ "$(cat "$D/rc")" = "0" ]
+
 echo "== S6: a raw Image still banks chain=grub =="
 D="$T/s6"; mkdir -p "$D"; mk_artifact "$D/art"; mk_cfg "$D/grub.cfg"
 SHA=$(sha256sum "$D/art" | cut -d' ' -f1)

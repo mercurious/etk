@@ -98,6 +98,13 @@ esac
 
 OPTIONS=$(sed -n 's/^options[[:space:]]*//p' "$E/rocknix.conf" | head -n1)
 [ -n "$OPTIONS" ] || fail "rocknix.conf has no options line"
+# The labels this unit booted with win. A GTK card boots its own labels, and an OS update
+# copies a stock rocknix.conf naming ROCKNIX/STORAGE over the card's: rendered as it stands,
+# that entry mounts an internal install's partitions, or no root at all.
+L_BOOT=$(tr ' ' '\n' < "$PROC/cmdline" 2>/dev/null | sed -n 's/^boot=LABEL=//p' | head -n1)
+L_DISK=$(tr ' ' '\n' < "$PROC/cmdline" 2>/dev/null | sed -n 's/^disk=LABEL=//p' | head -n1)
+[ -z "$L_BOOT" ] || OPTIONS=$(printf '%s' "$OPTIONS" | sed "s/boot=LABEL=[^ ]*/boot=LABEL=$L_BOOT/")
+[ -z "$L_DISK" ] || OPTIONS=$(printf '%s' "$OPTIONS" | sed "s/disk=LABEL=[^ ]*/disk=LABEL=$L_DISK/")
 VERSION=$(sed -n 's/^version[[:space:]]*//p' "$E/rocknix.conf" | head -n1)
 EXTRA=$(cat "$HEAL/cmdline_extra" 2>/dev/null); [ -n "$EXTRA" ] || EXTRA="$EXTRA_DEFAULT"
 NAME=$(cat "$HEAL/KERNEL.staged.name" 2>/dev/null); [ -n "$NAME" ] || NAME=etk-gtk

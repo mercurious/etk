@@ -22,10 +22,14 @@ on-device Pitstop self-fetch via the `/flash/mount-storage.sh` init hook.
 The payoff: the `/flash/mount-storage.sh` hook now **installs ETK on boot 2** — no host, no
 install.sh. Unique labels (`ROCKNIX-GTK`/`GTKSTOR`) isolate it on the UFS rig; **do NOT run
 install.sh on it.**
-Build: `HOOK_SCRIPT=/work/build/mount-storage.sh SEED_CONFIG=/work/build/seed_config BOOT_LABEL=ROCKNIX-GTK STOR_LABEL=GTKSTOR OUT_IMG=/work/ROCKNIX-GTK-SM8250.aarch64-20260707-v4.img docker exec … build_gtk_image_v2.sh`.
+Build: `HOOK_SCRIPT=/work/build/mount-storage.sh BOOT_LABEL=ROCKNIX-GTK STOR_LABEL=GTKSTOR OUT_IMG=/work/ROCKNIX-GTK-SM8250.aarch64-<date>.img docker exec … build_gtk_image_v2.sh`
+(`tools/forge/lane_image.sh` is the shipped invocation; `SEED_CONFIG=<dir>` was the pre-0.11.0 static snapshot).
 
-How it works: `$ETK_ROOT/.seed_config` (the ETK `.config` — services + `.wants` + Sentry +
-`02-etk-coredump.sh` + bind scripts + profile.d) lives *outside* `/storage/.config`, so fs-resize
+How it works: `$ETK_ROOT/.seed_config` (the ETK `.config` — every unit + boot script
+`install.sh` writes, the `config/` files it ships, the `.wants` links it enables; **rendered at
+build time by `os-install/build/gen_seed.sh` from `install.sh` itself** since 0.11.0, so a card
+carries the whole kit — mic UCM bind, USB-net heal, wake-off, mDNS heal, battery guard, UFS pin,
+Pitlink USB (off), SD rebind — not a stale snapshot; harness `tools/test_seed_gen.sh`) lives *outside* `/storage/.config`, so fs-resize
 still runs. On **boot 1** the hook stays out of the way → fs-resize grows STORAGE + reboots. On
 **boot 2** (marker gone, ETK not yet active) the hook `cp -a`s `.seed_config` → `/storage/.config`
 *before* systemd starts → the ETK services come up → Sentry injects Pitstop.

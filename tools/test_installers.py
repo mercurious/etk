@@ -912,6 +912,29 @@ with tempfile.TemporaryDirectory() as tmp:
           open(os.path.join(pit.RPCS3_CUSTOM_CONFIGS, "config_NPEA00050.yml")).read(), "Video:\n  Resolution Scale: 100\n")
     pit.NOTEBOOK_SEED_ENABLED = True
 
+# --- couch update on a GTK card (0.11.0): the kernel step names the card, never stages ---
+# A card boots a kernel relabelled to its own partitions (disk=LABEL=GTKSTOR); the release
+# asset names STORAGE. Pitstop reads the live cmdline before fetching the asset and, when
+# kernel_stage.sh refuses anyway (exit 3 = card-labels), says "reflash the next card image"
+# instead of "staging FAILED". The read is the one install.sh / kernel_stage.sh make.
+with tempfile.TemporaryDirectory() as _p:
+    open(os.path.join(_p, "cmdline"), "w").write(
+        "boot=LABEL=ROCKNIX-GTK disk=LABEL=GTKSTOR quiet rootwait console=tty0 gpt msm.context_keepalive=1 panic=30\n")
+    check("card-labels: live disk label read from the cmdline (GTK card)", pit._live_disk_label(procfs=_p), "GTKSTOR")
+    open(os.path.join(_p, "cmdline"), "w").write("boot=LABEL=ROCKNIX disk=LABEL=STORAGE quiet rootwait console=tty0 gpt\n")
+    check("card-labels: an internal unit reads STORAGE", pit._live_disk_label(procfs=_p), "STORAGE")
+    open(os.path.join(_p, "cmdline"), "w").write("console=ttyMSM0 root=/dev/sda2\n")
+    check("card-labels: no disk= token reads empty (no judgement)", pit._live_disk_label(procfs=_p), "")
+    check("card-labels: unreadable /proc reads empty", pit._live_disk_label(procfs=os.path.join(_p, "nope")), "")
+_src = open(PITSTOP).read()
+_blk = _src[_src.index("def _self_update_apply("):_src.index("def _self_update_apply(") + 12000]
+check("self-update: the kernel step reads the live disk label before fetching the asset",
+      "_live_disk_label()" in _blk and _blk.index("_live_disk_label()") < _blk.index("sh '{base}/bin/kernel_stage.sh'"), True)
+check("self-update: a card is told to reflash the next card image (not 'staging FAILED')",
+      "ships with the next card image - reflash that" in _blk, True)
+check("self-update: kernel_stage.sh exit 3 (card-labels) maps to the same message",
+      "(rc >> 8) == 3" in _blk and "raise _CardLabels()" in _blk and "except _CardLabels:" in _blk, True)
+
 if FAILS:
     print(f"FAILED: {len(FAILS)} check(s) -> {FAILS}")
     sys.exit(1)

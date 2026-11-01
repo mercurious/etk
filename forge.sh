@@ -121,7 +121,7 @@ FORGE_KCC="${FORGE_KCC:-}"
 # picks BLS by BASEDATE >= 20261101; a nightly-20261030 set is BLS-format but older). Empty = the
 # recipe's date rule. Never needed at the tag.
 FORGE_KERNEL_BLS="${FORGE_KERNEL_BLS:-}"
-FORGE_IMAGE_BASEDATE="${FORGE_IMAGE_BASEDATE:-20261001}"
+FORGE_IMAGE_BASEDATE="${FORGE_IMAGE_BASEDATE:-20261101}"
 FORGE_STALL_WARN_S="${FORGE_STALL_WARN_S:-1200}"
 ETK_VERBOSE="${ETK_VERBOSE:-0}"
 
@@ -443,7 +443,7 @@ PROBE=$(FSSH "
   echo '@TURNIPTREES'; for v in ${FORGE_TURNIP_VERS}; do docker exec turnip-rocknix git -C /work/mesa-\$v rev-parse HEAD 2>/dev/null || echo unknown; done
   echo '@KERNELTIP';  git -C \$HOME/rocknix-gtk rev-parse --short=9 HEAD 2>/dev/null
   echo '@IMGINPUTS';  for f in \$HOME/etk/os-install/ROCKNIX-SM8250.aarch64-${FORGE_IMAGE_BASEDATE}.img.gz \
-                               \$HOME/etk/os-install/build/seed_config \
+                               \$HOME/etk/os-install/build/gen_seed.sh \
                                \$HOME/etk/os-install/build/mount-storage.sh \
                                \$HOME/etk/os-install/build/build_gtk_image_v2.sh; do
                         [ -e \"\$f\" ] && echo \"OK \$f\" || echo \"MISSING \$f\"; done
@@ -574,7 +574,7 @@ fp_compute() {  # <lane> -> fingerprint string on stdout
         image)  printf 'k=%s a=%s t=%s base=%s script=%s kit=%s@%s' \
                     "$CERT_KSHA" "$CERT_ASHA" "$CERT_TSHA" \
                     "$FORGE_IMAGE_BASEDATE" \
-                    "$(sha256_of os-install/build/build_gtk_image_v2.sh)" \
+                    "$(sha256_of os-install/build/build_gtk_image_v2.sh)/$(sha256_of os-install/build/gen_seed.sh)" \
                     "$CERT_VER" "$CERT_HEAD"
                 # cat= : the catalog is baked onto the card, so adding or
                 # dropping a driver MUST force a rebuild. Without this the

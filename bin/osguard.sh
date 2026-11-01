@@ -195,7 +195,7 @@ if [ -d "$FLASH/loader/entries" ] && [ "$(head -c 2 "$FLASH/KERNEL" 2>/dev/null)
             case "$OUT" in
             BLS_DEPLOY_OK*)
                 log "DONE: $OUT"
-                notify "ETK kernel entry refreshed after an update. REBOOT once to run it."
+                notify "ETK kernel entry refreshed. REBOOT once to run it."
                 ;;
             *)
                 log "FAIL: $OUT"
@@ -293,6 +293,20 @@ if [ "$(cat "$HEAL/chain" 2>/dev/null)" = "abl" ] || \
             log "abl chain: NOT re-staging — $FLASH/KERNEL is not a boot.img (unknown format); leaving it alone"
             notify "OS update left an unknown kernel in the boot slot; the ETK kernel is not active. Re-run the ETK installer from your computer."
         fi
+        [ "$MODE" = "heal" ] && finish 0 || finish 2
+    fi
+    # CARD-LABELS GATE (0.11.0). The staged boot.img's baked disk label must be the one
+    # this unit boots from: a GTK card (disk=LABEL=GTKSTOR) whose bundle somehow holds the
+    # ROCKNIX/STORAGE release asset (a pre-0.11.0 couch update staged it; a hand copy)
+    # would otherwise get a kernel restored into its slot that mounts an internal
+    # ROCKNIX's partitions or no root at all. kernel_stage.sh refuses such a stage now
+    # (exit 3); this is the second lock on the same door. A staged image with no disk=
+    # token is accepted only on a STORAGE unit. Seam: OSG_PROC.
+    LIVE_DISK=$(tr ' ' '\n' < "${OSG_PROC:-/proc}/cmdline" 2>/dev/null | sed -n 's/^disk=LABEL=//p' | head -n1)
+    STG_DISK=$(head -c 576 "$HEAL/KERNEL.staged" 2>/dev/null | tail -c 512 | tr -d '\0' | tr ' ' '\n' | sed -n 's/^disk=LABEL=//p' | head -n1)
+    if [ -n "$LIVE_DISK" ] && [ "$STG_DISK" != "$LIVE_DISK" ] && { [ "$LIVE_DISK" != "STORAGE" ] || [ -n "$STG_DISK" ]; }; then
+        log "abl chain: NOT re-staging — reason=card-labels: the staged GTK boot.img names disk=LABEL=${STG_DISK:-none}, this unit boots disk=LABEL=$LIVE_DISK (a kernel for another unit's partitions; it would boot into the wrong storage or none). Stock stays in the slot."
+        notify "OS update replaced the GTK kernel, and the staged copy is built for other partition labels. Reflash the next ETK card image to update the kernel."
         [ "$MODE" = "heal" ] && finish 0 || finish 2
     fi
     log "abl chain: RE-STAGE — release $STAGED_REL matches this OS; parking the updater's boot.img as KERNEL.etk-stock and restoring the GTK boot.img"

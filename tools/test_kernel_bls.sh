@@ -182,6 +182,27 @@ mk_unit; printf 'ETK_SD_POLL=1\nif [[ bash ]]; then $unset_thing; fi\n' > "$U/et
 expect "a bashism in etk.conf does not end the run" 0 "BLS_DEPLOY_OK" sh "$DEPLOY"
 inlog "--sd-poll" "$U/splice.log" "etk.conf ETK_SD_POLL=1 reaches the splicer"
 
+echo "== deploy: a GTK card keeps its own labels =="
+CARDOPT='boot=LABEL=ROCKNIX-GTK disk=LABEL=GTKSTOR quiet rootwait console=tty0 video=efifb:off gpt'
+mk_unit; sed -i "s/^options .*/options    $CARDOPT/" "$E/rocknix.conf"; printf '%s\n' "$CARDOPT" > "$U/proc/cmdline"
+sh "$DEPLOY" >/dev/null
+inlog "options    $CARDOPT msm.context_keepalive=1 panic=30" "$E/etk-gtk.conf" "card: the entry carries the card's labels"
+# the OS update writes a stock rocknix.conf naming ROCKNIX/STORAGE over the card's
+sed -i "s/^options .*/options    $OPT/" "$E/rocknix.conf"; O0=$(sha256sum "$E/rocknix.conf")
+expect "card, after an OS update: nothing of ours moved" 0 "wrote=none" sh "$DEPLOY"
+inlog "boot=LABEL=ROCKNIX-GTK disk=LABEL=GTKSTOR" "$E/etk-gtk.conf" "card: the labels it booted with win"
+inlog "boot=LABEL=ROCKNIX-GTK disk=LABEL=GTKSTOR" "$E/etk-stock.conf" "card: the stock entry stays on the card too"
+same "$(sha256sum "$E/rocknix.conf")" "$O0" "card: rocknix.conf is still the OS's"
+echo "== deploy: a card's first boot (entry with no devicetree, bundle seeded) =="
+mk_unit; sed -i "s/^options .*/options    $CARDOPT/" "$E/rocknix.conf"; printf '%s\n' "$CARDOPT" > "$U/proc/cmdline"
+mk_pe "$F/KERNEL.gtk" 7.2.0 rocknix-gtk; cmp -s "$F/KERNEL.gtk" "$H/KERNEL.staged" && ok "card fixture: KERNEL.gtk is the bundle" || bad "card fixture: KERNEL.gtk is the bundle"
+printf 'title      ROCKNIX-GTK\nversion    x\nlinux      /KERNEL.gtk\noptions    %s msm.context_keepalive=1 panic=30\n' "$CARDOPT" > "$E/etk-gtk.conf"
+printf 'default etk-gtk.conf\n' > "$F/loader/loader.conf"
+printf '%s msm.context_keepalive=1 panic=30\n' "$CARDOPT" > "$U/proc/cmdline"
+expect "first boot: the render takes over, kernel not rewritten" 0 "wrote=dtb,etk-stock.conf,etk-gtk.conf" sh "$DEPLOY"
+inlog "devicetree /dtbs/etk/$V" "$E/etk-gtk.conf" "first boot: the running model's tree is named"
+inlog "devicetree /dtbs/$V" "$E/etk-stock.conf" "first boot: the floor exists now"
+
 echo "== deploy: refusals write nothing =="
 refused() {   # <label> <substring> ; the fixture is already bent
     local s; s=$(snap); : > "$U/mount.log"

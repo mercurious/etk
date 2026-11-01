@@ -36,7 +36,7 @@ person using it.
 | **surviving a wedge** | `L1`+`R3` | fires INSTANTLY — no hold, no gate, no queue, ever |
 | **capturing what just happened** | in-game chords | the chord must not collide with a control the game itself binds |
 | **installing a game** | **TOOLS** | runs in the background; a game launch outranks an install |
-| **updating from the couch** | **TOOLS → Check for ETK Updates** | every `gtk_stack.json` asset is fetchable from `releases/latest` |
+| **updating from the couch** | **TOOLS → Check for ETK Updates** | every `gtk_stack.json` asset is fetchable from `releases/latest` · on a GTK CARD (`disk=LABEL=GTKSTOR` live) the kernel step says *reflash the next card image* and stages nothing (`kernel_stage.sh` exit 3 `card-labels`; osguard gates its re-stage the same way, 0.11.0) — a card must never bank the STORAGE-labelled asset |
 | **judging whether a change helped** | the ledger · `etk_dyno` · charts | the row is attributable and every claim carries its N |
 | **talking to the rig** (voice chat, the Flip 2's built-in mic or a headset) | PipeWire source `alsa_input…sound_card0…` ports **Internal Microphone** / **Headphone Microphone** · install lines `Flip 2 internal mic: …` (STEP 6.4 DTB, STEP 6.76 UCM) · `journalctl -u etk-ucm` at boot (the bind's verdict; the Sentry rewrites the tripwire log later in boot) | judged after a COLD boot, never at install: the booted DT carries `Internal Mic` (`/proc/device-tree/sound/widgets`), the UCM overlay is bound, capture runs S16 (`pactl list sources short`); a headset in the jack takes the port by priority; any gate failure = stock mic set + a named reason, never a silent half-state |
 | **putting the game on a TV / capture card** (USB-C → HDMI/DP adapter; the Anker's working face is logo-down) | the picture on the TV · the pad driving ES **on the TV** · install lines `USB-C video/power out: …` + `Flip 2 internal mic: …` (STEP 6.4 kit DTB) · `/dev/shm/etk_shm/dpmirror.log` (`pad-heal:` / `focus-guard:` lines) | judged after a COLD boot, adapter plugged at ES: regulator `usb_vbus` enabled (`/sys/class/regulator/*/num_users` = 1), partner `supports_usb_power_delivery=yes` with an `ff01` alt-mode, `DP-1 connected`, picture — then the pad moves ES on the TV. A pad that is "dead" while `gamepad_probe.py /dev/input/event10` shows presses = ES without sway focus, not InputPlumber. **Paid for 2026-09-30:** mainline 7.2 moved `vdd-vbus-supply` onto the connector (`b5817fa4026c`) and the 20260901 DT carried it nowhere — VBUS rode a DUMMY regulator for the whole 0.5.x cycle and nothing re-checked DP after the rebase |
@@ -593,10 +593,10 @@ gcc-15 **15.3.0-4** vs the certified **15.3.0-2** (sid moved; binutils 2.47 both
 toolchain law that combination is unvalidated: a kernel minted here is cold-boot gated;
 pin 15.3.0-2 from snapshot.debian.org for strict parity. Turnip minted green the same
 day (symbol-identical modulo toolchain padding — see the Mesa note above);
-(2) `seed_config` is a
-rendered rig snapshot, gitignored — the Air copy was recovered 2026-10-04 from
-the 0.9.0 card's GTKSTOR (`/games-internal/roms/etk/.seed_config`, debugfs
-rdump); back it up, it has no other source; (3) the baked binaries are pushed
+(2) the card's seed is
+no longer an input: since 0.11.0 the image lane renders it on the node from the
+checkout's install.sh (`gen_seed.sh`; the old gitignored `seed_config` snapshot is
+retired); (3) the baked binaries are pushed
 from the Air, never re-minted on the node (not byte-reproducible; the image lane
 refuses them). Running any phase but `check` is MINT (§1.1) — operator runs it.
 **After a rebuild, `./forge.sh --status` lies:** its fingerprints are Air-side and
@@ -971,7 +971,14 @@ knobs, writes the handoff, verifies afterward from read-only telemetry.
   the three artifacts into `ROCKNIX-GTK-SM8250.aarch64-<date>.img.gz`. Since 0.8.0 the
   shipped image is the **v4 hostless lane** — UNIQUE labels `ROCKNIX-GTK`/`GTKSTOR` (safe
   beside an internal ROCKNIX, NOT an install.sh target), hostless two-phase hook via
-  `/flash/mount-storage.sh`, `.seed_config` staged. Recover a previous image's labels by
+  `/flash/mount-storage.sh`, `.seed_config` staged. **Since 0.11.0 the seed is RENDERED
+  from install.sh at build time** (`os-install/build/gen_seed.sh`: every unit/boot script the
+  installer writes, the `config/` files it ships, the wants-links it enables, `.kit_commit`;
+  harness `tools/test_seed_gen.sh`) — the pre-0.11.0 static `seed_config` snapshot shipped
+  the v0.10.0 card without the mic UCM bind, the USB-net heal, the battery guard… (car12
+  2026-10-23). The lane log lines `seed units: …` and `seed wants-links kept: N` are the
+  surface; a `pruned dangling seed wants-link` line on a generated seed means gen_seed.sh
+  and the lane disagree — stop. Recover a previous image's labels by
   decompressing it before rebuilding — do not trust prose about which labels ship (a
   stale "standard labels" line stood for two releases after it stopped being true).
   **qcom-abl base (ROCKNIX 20261001+, built 2026-10-08, card walk PENDING):** the recipe

@@ -21,8 +21,11 @@
 #
 # NEVER touches /flash and NEVER reboots: staging writes only to /storage;
 # activation is osguard's job. Exit 0 = staged (activation pending/queued),
-# nonzero = nothing staged. BusyBox/POSIX only. Fail-soft.
-# Test seams: KS_HEAL, KS_CFG_LIST, KS_NO_ACTIVATE (skip the osguard poke).
+# nonzero = nothing staged (3 = card-labels: the boot.img names other partition
+# labels than this unit booted from — a GTK card; reflash the next card image).
+# BusyBox/POSIX only. Fail-soft.
+# Test seams: KS_HEAL, KS_CFG_LIST, KS_NO_ACTIVATE (skip the osguard poke),
+# KS_PROC (a fake /proc for the card-labels guard).
 # ============================================================
 set -u
 
@@ -79,6 +82,25 @@ elif [ "$(head -c 8 "$ART" 2>/dev/null)" = "ANDROID!" ]; then
         done
     fi
     [ -n "$REL" ] || die "boot.img artifact needs KS_RELEASE (the manifest's kernel_release) and no gtk_stack.json was found beside the script — nothing staged"
+    # CARD-LABELS GUARD (0.11.0; the v0.10.0 Known-behaviour caveat). Under ABL the
+    # boot.img's cmdline is baked in, and the GTK CARD IMAGE boots a kernel RELABELLED
+    # to the card's own partitions (boot=LABEL=ROCKNIX-GTK disk=LABEL=GTKSTOR) while the
+    # release asset names ROCKNIX/STORAGE. Staging that asset on a card would bank it in
+    # the heal bundle, and osguard's re-stage would put a kernel into the card's slot that
+    # mounts an internal ROCKNIX's partitions (split-brain) or no root at all. The live
+    # cmdline IS the slot's (the ABL appends nothing), so compare the artifact's baked
+    # disk label with the one this unit booted from: they must agree. An artifact with
+    # no disk= token is accepted only on a STORAGE unit. Exit 3 = card-labels, so Pitstop
+    # can say "reflash the next card image" instead of "staging failed". Same signature
+    # as install.sh STEP 6.4's card guard; the relabelled-on-rig path (relabel_bootimg.py
+    # in bin/) is the follow-up that would let a card take a couch-update kernel.
+    PROC="${KS_PROC:-/proc}"
+    LIVE_DISK=$(tr ' ' '\n' < "$PROC/cmdline" 2>/dev/null | sed -n 's/^disk=LABEL=//p' | head -n1)
+    ART_DISK=$(head -c 576 "$ART" 2>/dev/null | tail -c 512 | tr -d '\0' | tr ' ' '\n' | sed -n 's/^disk=LABEL=//p' | head -n1)
+    if [ -n "$LIVE_DISK" ] && [ "$ART_DISK" != "$LIVE_DISK" ] && { [ "$LIVE_DISK" != "STORAGE" ] || [ -n "$ART_DISK" ]; }; then
+        log "FAIL: reason=card-labels — this unit boots disk=LABEL=$LIVE_DISK, the boot.img names disk=LABEL=${ART_DISK:-none}; staging it would hand osguard a kernel for another unit's partitions. Nothing staged$([ "$LIVE_DISK" != STORAGE ] && echo ' -- a GTK card takes its kernel from the next card image (reflash)')."
+        exit 3
+    fi
 else
     REL=$(strings "$ART" 2>/dev/null | grep -m1 "Linux version " \
           | sed 's/.*Linux version \([^ ]*\).*/\1/')

@@ -18,7 +18,9 @@
 # images (fake Image + 9 tiny DTBs). Needs mkbootimg + dtc. No rig, no network.
 #
 # DISCRIMINATION: `--against <rev>` takes all three files from that revision;
-# against 68b91ea (pre card guard) the CARD GUARD cases FAIL (slot and heal bundle rewritten).
+# against 68b91ea (pre card guard) the CARD GUARD cases FAIL (slot and heal bundle rewritten);
+# against 68b14d3 (pre 0.11.0 osguard card-labels gate) the osguard card (b)/(c) cases FAIL
+# (the STORAGE-labelled asset is restored into the card's slot).
 # Against 6615699 (before the ABL path existed) every run case FAILS.
 #
 #   tools/test_kernel_abl.sh                     # working tree — must PASS
@@ -84,9 +86,10 @@ exit 0
 FAKE
 chmod +x "$TD/stubs/mount"
 export PATH="$TD/stubs:$PATH" UNIT="$U"
-reset_unit() {   # fresh stock ABL unit (no grub), slot = stock, nothing parked
-    rm -rf "$U"; mkdir -p "$U/flash" "$U/storage" "$U/modules/7.2.0"
+reset_unit() {   # fresh stock ABL unit (no grub), slot = stock, nothing parked, booted on STORAGE
+    rm -rf "$U"; mkdir -p "$U/flash" "$U/storage" "$U/modules/7.2.0" "$U/proc"
     cp "$TD/stock.img" "$U/flash/KERNEL"
+    printf '%s\n' "$STOCK_CMD" > "$U/proc/cmdline"
     printf '%s  target/KERNEL\n' "$STOCK_MD5" > "$U/flash/KERNEL.md5"
     : > "$U/mount.log"
 }
@@ -98,7 +101,7 @@ stage() {   # run install.sh's rig body: stage <image> [mode]
 restore() { FLASH="$U/flash" HEAL="$U/storage/heal" sh "$TD/restore.sh"; }
 guard() {   # run osguard with the unit's seams; $1 = mode flag or empty
     OSG_FLASH="$U/flash" OSG_HEAL="$U/storage/heal" OSG_MOD_BASE="$U/modules" OSG_RUN_REL=7.2.0 \
-    OSG_NO_REMOUNT=1 TRIPWIRE_LOG="$U/trip.log" OSG_MARKER="$U/marker" ETK_ROOT="$U/noetk" \
+    OSG_NO_REMOUNT=1 TRIPWIRE_LOG="$U/trip.log" OSG_MARKER="$U/marker" ETK_ROOT="$U/noetk" OSG_PROC="$U/proc" \
     sh "$GUARD" ${1:-}
 }
 slot_sha() { sha256sum "$U/flash/KERNEL" | cut -d' ' -f1; }
@@ -255,6 +258,26 @@ reset_unit; stage "$TD/gtk.img" >/dev/null; printf 'not a boot image' > "$U/flas
 expect "osguard: non-boot.img in the slot -> left alone" 0 "not a boot.img" guard
 reset_unit; stage "$TD/gtk.img" test >/dev/null
 expect "osguard: mode=test bundle -> nothing to guard" 0 "nothing to guard" guard --check
+
+# CARD-LABELS GATE (0.11.0): the staged boot.img's baked disk label must be the live one.
+# (a) a card whose bundle holds the RELABELLED image (what the lane seeds) re-stages after an
+#     OS update exactly like an internal unit; (b) a card whose bundle holds the un-relabelled
+#     release asset (a pre-0.11.0 couch update banked it) is REFUSED by name -- the asset would
+#     boot the card into an internal ROCKNIX's partitions or no root; (c) the symmetric case on
+#     an internal unit. kernel_stage.sh refuses such a stage now (exit 3, tools/test_kernel_stage.sh
+#     S7); this gate is the second lock on the same door.
+card_unit; os_update
+expect "osguard card (a): lane-seeded RELABELLED bundle, OS update reverted the slot -> re-staged" 0 "GTK boot.img restored" guard
+[ "$(slot_sha)" = "$CARD_SHA" ] && ok "card (a): slot holds the relabelled card kernel again" || bad "card (a): slot is $(slot_sha), not the relabelled card kernel"
+card_unit; cp "$TD/gtk.img" "$U/storage/heal/KERNEL.staged"; printf '%s\n' "$GTK_SHA" > "$U/storage/heal/KERNEL.staged.sha256"; os_update
+expect "osguard card (b) --check: bundle holds the STORAGE-labelled asset -> NOT re-staging, reason=card-labels, rc 2" 2 "reason=card-labels" guard --check
+expect "osguard card (b) heal: refused by name, rc 0" 0 "reason=card-labels" guard
+[ "$(slot_sha)" = "$(sha256sum "$TD/other.img" | cut -d' ' -f1)" ] && ok "card (b): slot left as the updater wrote it (the STORAGE kernel never reached the card)" || bad "card (b): slot REWRITTEN to $(slot_sha) -- a card booting another unit's partitions"
+grep -q 'Reflash the next ETK card image' "$U/marker" 2>/dev/null && ok "card (b): operator told to reflash the next card image" || bad "card (b): marker does not say reflash"
+grep -q 'disk=LABEL=STORAGE, this unit boots disk=LABEL=GTKSTOR' "$U/trip.log" && ok "card (b): log names both labels" || bad "card (b): log does not name the labels"
+reset_unit; stage "$TD/gtk.img" >/dev/null; cp "$TD/card.img" "$U/storage/heal/KERNEL.staged"; printf '%s\n' "$CARD_SHA" > "$U/storage/heal/KERNEL.staged.sha256"; os_update
+expect "osguard card (c): internal unit (STORAGE) with a card-relabelled bundle -> refused too" 0 "reason=card-labels" guard
+[ "$(slot_sha)" = "$(sha256sum "$TD/other.img" | cut -d' ' -f1)" ] && ok "card (c): slot untouched" || bad "card (c): slot rewritten"
 
 # ===== uninstall.sh — ABLRESTORE =======================================================
 reset_unit; stage "$TD/gtk.img" >/dev/null; : > "$U/mount.log"
