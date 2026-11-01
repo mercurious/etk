@@ -1,16 +1,12 @@
 # The Emulation Tuning Kit - GTK Edition
 
 > [!IMPORTANT]
-> **ETK v0.10.1 is out, built on ROCKNIX 20261001.** A point release: Gran Turismo 6's rear-view mirror renders (core 0.10.1), and the kit recognises the bootloader that ROCKNIX **20261101** brings. **Hold that November ROCKNIX update until ETK 0.11.0** — on 20261101 the ETK kernel is not active (the rig runs stock, with a message at boot), and if the screen stays dark after that update, hold **Volume Down** at power-on and set *Device model* to your Flip 2. The October ROCKNIX (20261001) moved the Retroid Pocket Flip 2 to a new bootloader (ROCKNIX-ABL: no more boot menu). The kit now lives inside it: our kernel sits in the one slot the bootloader loads, the stock kernel is parked beside it, and the ETK OS Guard puts ours back after every future ROCKNIX update. Safe to update again. The 12 GB Flip 2 (Visionox panel) is now a verified rig, at a measured 120 Hz.
+> **ETK v0.11.0 is out, built on ROCKNIX 20261101.** The Pit Lane Edition moves the kit onto ROCKNIX's new bootloader, OpenABL. The GTK kernel now sits **beside** the stock one in its own boot entry, so a ROCKNIX update is safe to take, a kernel that won't load falls back to stock by itself, and the kit follows the OS without you.
 >
-> - **New rig?** Flash the [card image](https://github.com/mercurious/etk/releases/latest) (the v0.10.0 build; after boot 2, Pitstop TOOLS → Check for ETK Updates brings it to 0.10.1). Windows users: this is your path — the Windows installer can't deliver the kernel.
-> - **On ETK v0.9.0 / ROCKNIX 20260901?** Three steps, in this order, with the charger on, ≥ 50 % battery and 2 GB free on `/storage`:
->   1. Remove the old kit with the **current** `uninstall.sh` (`curl -fsSL https://raw.githubusercontent.com/mercurious/etk/main/uninstall.sh -o ~/etk/uninstall.sh && bash ~/etk/uninstall.sh`) and check the rig boots on its own. (Ran an older `uninstall.sh` and it doesn't? Pick *Retroid Pocket Flip2* in the boot menu, then run this one.)
->   2. In ROCKNIX: `START` → `UPDATES & DOWNLOADS` → stable → take 20261001 (it flashes the new bootloader — don't interrupt it). The first boot stops at `DEVICE MODEL NOT SET`: hold **Vol−**, *Set device model* → **Retroid Pocket Flip2** (*Flip2 Visionox* only on 12 GB units).
->   3. Run the one-liner below. Reboot once when the Guard asks. Your shaders, saves and tunes come back.
-> - **Already took 20261001 on a GTK rig and it won't boot?** Card in a PC: in the `ROCKNIX-GTK` partition delete `KERNEL`, rename `KERNEL.gtktest` → `KERNEL`, boot, then do step 3. Internal install: [open an issue](https://github.com/mercurious/etk/issues) — we'll walk it with you.
->
-> Full guide: [Migrating to ROCKNIX 20261001](https://github.com/mercurious/etk/wiki/Migrating-to-ROCKNIX-20261001).
+> - **New rig?** Flash the [card image](https://github.com/mercurious/etk/releases/latest). It sets itself up over the first boots and asks for one reboot. Windows users: this is your path — the Windows installer can't deliver the kernel.
+> - **On a GTK rig (ROCKNIX 20261001)?** With the charger on, ≥ 50 % battery and 2 GB free on `/storage`: in ROCKNIX, `START` → `UPDATES & DOWNLOADS` → stable → take 20261101 (it flashes the new bootloader — don't interrupt it). Then run the one-liner below and reboot once. Your device model, shaders, saves and tunes carry over.
+> - **On ETK v0.9.0 or older?** Remove the old kit first with the **current** `uninstall.sh` (`curl -fsSL https://raw.githubusercontent.com/mercurious/etk/main/uninstall.sh -o ~/etk/uninstall.sh && bash ~/etk/uninstall.sh`), then follow the step above.
+> - **Screen dark after the update?** Hold **Vol−** at power-on and set *Device model* to **Retroid Pocket Flip2** (*Flip2 Visionox* only on 12 GB units).
 
 The **Gran Turismo Kit** (GTK) is a specialty installation for your **Retroid Pocket Flip2 SM8250** (or [sibling device](https://github.com/mercurious/etk/#handheld-system-support)) built on patched forks of [ROCKNIX](https://github.com/mercurious/rocknix-gtk) (OS/kernel), [RPCS3](https://github.com/mercurious/etk-rpcs3-gtk) (PS3 emulator) and [MESA Turnip](https://github.com/mercurious/etk-turnip-gtk) (Adreno Vulkan video driver), integrated with a custom middleware (the **ETK**), originally tuned for the **Gran Turismo series**. GT HD Concept, GT5 Prologue Spec II and Spec III, and GT6 are supported; GT5 reaches the track but still freezes the chip mid-race (tracked). Other game support is *emergent* and shows what the chassis can do.
 
@@ -61,7 +57,7 @@ It's easy to try the kit with a spare SD card and a USB card reader, and to go b
 5. **Ready to play** — but beware of shader storms early on (the spinner in the lower-left corner). They are one-time compiles banked in your shader vault; let camera pans and demo replays run, visit the dealership, and performance arrives as the vault saturates. The HUD counts every shader you bank, so even a crashed run was productive.
 
 ### Already have ROCKNIX?
-Set the update channel to stable (`START` → `UPDATES & DOWNLOADS`) and make sure you are on **20261001** (not 20261101 — hold that one until ETK 0.11.0), then run the one-liner above. On 20260901 or older, follow the migration box at the top first. Prefer a manual checkout? `git clone https://github.com/mercurious/etk` then `./install.sh` (Windows: `powershell -ExecutionPolicy Bypass -File .\windows_installer\etk-install.ps1`) from the repo root.
+Set the update channel to stable (`START` → `UPDATES & DOWNLOADS`) and make sure you are on **20261101**, then run the one-liner above. On anything older, follow the migration box at the top first. Prefer a manual checkout? `git clone https://github.com/mercurious/etk` then `./install.sh` (Windows: `powershell -ExecutionPolicy Bypass -File .\windows_installer\etk-install.ps1`) from the repo root.
 
 ## Key Kit Features
 | Exclusive Feature or Fix | What it does for you | Where you see it |
@@ -70,7 +66,7 @@ Set the update channel to stable (`START` → `UPDATES & DOWNLOADS`) and make su
 | GTK Turnip Traction Control | Limited-slip for the Adreno: the GTK driver's dials (Max Stability = `zlatez`) keep the GPU gripping longer | DRIVER tab · overlay `++···` `=====` |
 | GTK KERS | Reclaims the ≈38 % of CPU cycles stock burns in spins, polls and fault storms | dyno-proven (ledger + in-race profiler) |
 | **120 Hz on the 12 GB Flip 2** *(new)* | Both Flip 2 device trees ride in the kernel with the kit's mic and USB-C fixes applied to both; the Visionox panel's 120 Hz is measured, not assumed | pick *Flip2 Visionox* once at the first boot |
-| **OS Guard for ROCKNIX-ABL** *(new)* | A ROCKNIX update silently puts the stock kernel back; the Guard parks it, restores the GTK kernel and asks for one reboot — never a brick, nothing by hand | boot toast "reboot once" · `ETK_OSGUARD_ABL_RESTAGE=0` |
+| **OS Guard** | After a ROCKNIX update the Guard refreshes the GTK boot entry and asks for one reboot; if a new OS needs a new kernel it boots stock and tells you once — never a brick, nothing by hand | a boot toast, only when there is something to do |
 | **USB-C charging** *(new, kernel 0.6.4)* | The handheld now draws up to ~3 A (charging at ~1.9 A) from a USB-C PD source instead of 500 mA, so it charges on the same cable that carries the Engineer's link | direct C-to-C cable |
 | **Pitlink — Engineer link** *(new, core ≥ 0.10.0)* | Lets Claude Code on your computer see the game's frames and press the pad *inside* the emulator over the USB cable; off by default, cable-only | Pitstop TOOLS → Pitlink on/off · [wiki](https://github.com/mercurious/etk/wiki/Pitlink) |
 | **Engineer Autonomy** *(new)* | Kill switch at the car for an overnight crash hunt you sign for on your computer; off and inert by default | Pitstop TOOLS → Autonomy on/off · `./hunt start\|status\|stop` · [wiki](https://github.com/mercurious/etk/wiki/Engineer-Autonomy) |
@@ -84,7 +80,7 @@ Set the update channel to stable (`START` → `UPDATES & DOWNLOADS`) and make su
 | VAULT + PADDOCK | Shader vault survives crashes and OS updates; optional private GitHub backup | overlay `2+ 34.5k 167MB` · PADDOCK tab |
 | Thermal Guard | PIT-mode cooldown when hot, back to racing when cool, no reboot | overlay `89°HOT»»»` |
 | ETK Pitstop App | On-device telemetry, tuning, driver, power, tools, paddock | ROCKNIX Tools carousel · [wiki](https://github.com/mercurious/etk/wiki/ETK-Pitstop-App) |
-| DDU Overlay | MangoHUD with ETK gauges and a battery icon; G-INSTR / BASIC / LEAN / COMPACT dashes | TOOLS → HUD dash · hold `R1`+`L3` to move/hide |
+| DDU Overlay | MangoHUD with ETK gauges and a battery icon; G-INSTR / BASIC / LEAN / COMPACT dashes, with RAM and LOAD bars on LEAN | TOOLS → HUD dash · hold `R1`+`L3` to move/hide |
 | Crash Recovery | Back to the ES frontend from a freeze | `L1`+`R3` |
 | ETK Screenshot | Shutter with the overlay included | `L1`+`L2`; modes in TOOLS |
 | On-Device Installs | Firmware and PKG install in the background from drop folders | `etk/firmware_drop`, `etk/pkg_install_drop` → TOOLS |
@@ -108,24 +104,24 @@ Set the update channel to stable (`START` → `UPDATES & DOWNLOADS`) and make su
 | Retroid Pocket | 6 | SM8550 Adreno 740 | (needs new profile + vault) | Not yet supported |
 
 ## ETK System Requirements
-The GTK fork is built from **ROCKNIX official release `20261001`** (the **GTK 0.10.1** stack, ROCKNIX-ABL boot chain).
+The GTK fork is built from **ROCKNIX official release `20261101`** (the **GTK 0.11.0** stack, OpenABL boot chain).
 | Type | Detail |
 |---|---|
 | Host System | macOS or Linux native, WSL; Windows via the card image or the [PowerShell port](https://github.com/mercurious/etk/wiki/Windows-Host) (kit only — no kernel lane, no Pitlink) |
-| OS | ROCKNIX-GTK on ROCKNIX 20261001 |
-| Kernel | rocknix-gtk 7.2.0 `0.6.4` (`boot.img`: anti-lock + audio-fix + Flip 2 mic and USB-C power device trees + boot logo + USB-C charging) |
+| OS | ROCKNIX-GTK on ROCKNIX 20261101 |
+| Kernel | rocknix-gtk 7.2.0 `0.7.0` (raw PE Image in its own boot entry: anti-lock + audio-fix + Flip 2 mic and USB-C power device trees + boot logo + USB-C charging) |
 | Emulator | RPCS3 **GTK Edition** 0.10.1 (ARMSX3 1.0.4 base) |
 | Driver | MESA Turnip 26.2.2 `gtk_0.7` (catalog of 9 in the DRIVER tab) |
 
 ## Notes on ROCKNIX OS Updates
-ROCKNIX ships its kernel as one file the bootloader loads (`/flash/KERNEL`), and the kit puts its own kernel in that slot with the stock one parked beside it. The ROCKNIX updater doesn't know we exist: every OS update silently puts the stock kernel back. That is a quiet downgrade, never a brick — the rig boots stock, with WiFi and sound. On that boot the **ETK OS Guard** notices, parks the updater's kernel as the new stock fallback, puts the GTK kernel back and shows one message: **reboot once**. If the OS update moved to a kernel our build doesn't match yet, the Guard says so and leaves stock in place until the next ETK release — nothing to fix by hand.
+Since 20261101, ROCKNIX boots through OpenABL, a bootloader with a menu of entries. The stock kernel and its entry stay exactly as ROCKNIX left them, and the kit adds its own beside them: the GTK kernel, a device tree derived from the OS's own, and one line that picks the default. The updater replaces only its own files, so an OS update can't cost you the GTK kernel. On the next boot the **ETK OS Guard** refreshes our entry and asks for one reboot.
 
-- **Recommended order:** ETK first (Pitstop `TOOLS` → Check for ETK Updates), then ROCKNIX, then the one reboot. The updater needs 2 GB free on `/storage` and ≥ 50 % battery on the charger (it flashes the bootloader).
-- **Turning it off:** `ETK_OSGUARD_ABL_RESTAGE=0` in `etk.conf` makes the Guard report only.
-- **On ETK v0.9.0 or older?** Follow the migration box at the top first — those kits predate the new bootloader.
+- **Fallbacks:** a kernel that fails to load falls through to stock by itself. Hold **Vol−** at power-on to pick any entry.
+- **The updater needs** 2 GB free on `/storage` and ≥ 50 % battery on the charger (it can flash the bootloader).
+- **If a new ROCKNIX moves to a new kernel:** the Guard sets stock as the default and says so once, until an ETK kernel for it ships.
 
 ## Removing ETK
-- `uninstall.sh` removes the kit and puts the parked stock ROCKNIX kernel back in the boot slot (Windows: `windows_installer\etk-uninstall.ps1` runs the same block). Your vault is kept unless you ask otherwise.
+- `uninstall.sh` removes the kit and the GTK kernel and leaves ROCKNIX's own files alone (Windows: `windows_installer\etk-uninstall.ps1` runs the same block). It keeps a stock-kernel boot entry as a safe default; `--stock-entry-too` removes that as well. Your vault is kept unless you ask otherwise.
 
 # Credits
 Support the underlying projects: **[ROCKNIX](https://rocknix.org)** (OS and kernel) · **[RPCS3](https://rpcs3.net)** (emulator) · **[MESA Project](https://mesa3d.org)** (freedreno video driver). Every component of the kit is a public fork — companion repos and build notes are on the wiki: [Kit Map and Building](https://github.com/mercurious/etk/wiki/Kit-Map-and-Building).
