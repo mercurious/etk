@@ -91,6 +91,11 @@ if ($outG -match '^GRUBRESTORE_FAIL') { Write-Warn "Boot menu NOT restored; the 
 $abl = Get-Heredoc -Path $UninstallSh -Marker "ABLRESTORE"
 $outA = Invoke-RigBash -Script $abl -EnvVars @{ FLASH = "/flash"; HEAL = "/storage/rocknix-gtk/heal" }
 if ($outA) { $outA | ForEach-Object { Write-Note $_ } }
+# BLSRESTORE (OpenABL era: the GTK kernel and its entry off /flash; etk-stock.conf stays,
+# as the bash uninstaller keeps it without --stock-entry-too).
+$bls = Get-Heredoc -Path $UninstallSh -Marker "BLSRESTORE"
+$outB = Invoke-RigBash -Script $bls -EnvVars @{ FLASH = "/flash"; STOCK_ENTRY_TOO = "0" }
+if ($outB) { $outB | ForEach-Object { Write-Note $_ } }
 
 # ==========================================================
 # STEP 4: HOST-SIDE STATUS

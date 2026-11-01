@@ -42,7 +42,7 @@
 #          --dry-run = print planned actions, no writes
 # Kill-switch: ETK_OS_GUARD=0 in etk.conf.
 # Test seams (tools/test_osguard.sh): OSG_FLASH, OSG_MOD_BASE, OSG_RUN_REL,
-#   OSG_HEAL, OSG_DT, OSG_GRUBENV_LIST — every probe overridable so the
+#   OSG_HEAL, OSG_DT, OSG_GRUBENV_LIST, OSG_CMDLINE, OSG_BLS_DEPLOY — every probe overridable so the
 #   discrimination fixtures can replay the real incident end to end.
 # ============================================================
 
@@ -59,6 +59,8 @@ HEAL="${OSG_HEAL:-/storage/rocknix-gtk/heal}"
 DT="${OSG_DT:-/sys/firmware/devicetree/base/compatible}"
 TRIP="${TRIPWIRE_LOG:-/storage/etk_tripwire.log}"
 MARKER="${OSG_MARKER:-/storage/.etk-osguard-last}"
+CMDLINE="${OSG_CMDLINE:-/proc/cmdline}"
+BLS_DEPLOY="${OSG_BLS_DEPLOY:-$ETK_ROOT/bin/bls_deploy.sh}"
 BACKUP_DIR="${OSG_BACKUP_DIR:-/storage}"
 
 MODE="heal"
@@ -127,6 +129,93 @@ if [ -z "$SYS_REL" ]; then
 fi
 
 # ==========================================================
+# OPENABL UNIT (ROCKNIX 20261101+) — 2026-11-01
+# ==========================================================
+# OpenABL boots BLS entries. The OS owns KERNEL, rocknix.conf and dtbs/*.dtb; the kit lives
+# beside them (bin/bls_deploy.sh, the one writer) and an OS update removes nothing of ours
+# (updater copies only), so this guard has three jobs and never touches the OS's files:
+#   - RELEASE GATE: a staged kernel for another module tree must not stay the default. The
+#     default goes back to etk-stock, which is the only write this guard does itself: the
+#     one line it owns. Named once, by the toast at the flip.
+#   - COHERENCE: an OS update moves the stock options and DTB; a couch update stages a new
+#     kernel. bls_deploy.sh --check says what drifted, and bls_deploy.sh writes it.
+#   - JUDGE: all in place = silent. A stock boot with everything in place is a menu pick or
+#     a fallthrough, so it is logged and not toasted: a toast here is a claim the operator
+#     acts on, and the ABL branch's "not active" toast was false on a live GTK boot.
+# Every OpenABL layout ends here. The GRUB phases below must never run on one: Phase B would
+# drop a KERNEL.gtktest nothing boots. chain=abl (a bundle from before the rig updated) goes
+# on to the ABL block, which names the move. Harness: tools/test_kernel_bls.sh.
+if [ -d "$FLASH/loader/entries" ] && [ "$(head -c 2 "$FLASH/KERNEL" 2>/dev/null)" = "MZ" ]; then
+    case "$(cat "$HEAL/chain" 2>/dev/null)" in
+    abl) ;;
+    bls)
+        STAGED_REL=$(cat "$HEAL/KERNEL.staged.release" 2>/dev/null)
+        LC="$FLASH/loader/loader.conf"
+        if [ -z "$STAGED_REL" ] || [ "$STAGED_REL" != "$SYS_REL" ]; then
+            log "bls chain: staged GTK kernel is ${STAGED_REL:-unknown}, this OS ships modules for $SYS_REL"
+            if [ "$(cat "$LC" 2>/dev/null)" != "default etk-gtk.conf" ]; then
+                log "bls chain: default is not etk-gtk; nothing to flip"
+                finish 0
+            fi
+            if [ "$MODE" != "heal" ]; then
+                log "PLAN: loader.conf -> default etk-stock.conf"
+                finish 2
+            fi
+            flash_rw || { log "bls chain: cannot remount $FLASH rw — default left on etk-gtk"; notify "OS updated to a new kernel ($SYS_REL). Hold Volume Down at power-on and pick the stock entry, then re-run the ETK installer."; finish 0; }
+            if printf 'default etk-stock.conf\n' > "$LC.new" && mv -f "$LC.new" "$LC" && sync; then
+                log "DONE: default -> etk-stock.conf (a kernel with no module tree would boot to a module-less system)"
+                notify "OS updated to a new kernel ($SYS_REL). The ETK kernel for it is not installed yet, so the stock kernel boots next. Re-run the ETK installer when the new build ships."
+            else
+                rm -f "$LC.new"
+                log "FAIL: could not rewrite loader.conf"
+            fi
+            finish 0
+        fi
+        if [ ! -f "$BLS_DEPLOY" ]; then
+            log "bls chain: $BLS_DEPLOY is missing; nothing judged"
+            finish 0
+        fi
+        CHK=$(BLS_FLASH="$FLASH" BLS_HEAL="$HEAL" sh "$BLS_DEPLOY" --check 2>&1); RC=$?
+        CHK=$(printf '%s\n' "$CHK" | tail -n1)
+        case "$RC" in
+        0)
+            if grep -q 'msm.context_keepalive=1' "$CMDLINE" 2>/dev/null; then
+                log "bls chain: the GTK entry is in place and this boot runs it"
+            else
+                log "bls chain: the GTK set is in place; this boot ran the stock kernel (menu pick, fallthrough, or mode=test)"
+            fi
+            finish 0 ;;
+        2)
+            log "bls chain: $CHK"
+            if [ "$MODE" != "heal" ]; then
+                log "PLAN: bin/bls_deploy.sh"
+                finish 2
+            fi
+            OUT=$(BLS_FLASH="$FLASH" BLS_HEAL="$HEAL" sh "$BLS_DEPLOY" 2>&1 | tail -n1)
+            case "$OUT" in
+            BLS_DEPLOY_OK*)
+                log "DONE: $OUT"
+                notify "ETK kernel entry refreshed after an update. REBOOT once to run it."
+                ;;
+            *)
+                log "FAIL: $OUT"
+                notify "The ETK kernel entry could not be refreshed. Re-run the ETK installer from your computer."
+                ;;
+            esac
+            finish 0 ;;
+        *)
+            log "bls chain: $CHK"
+            notify "The ETK kernel entry needs attention: ${CHK#BLS_DEPLOY_FAIL }. Re-run the ETK installer from your computer."
+            [ "$MODE" = "heal" ] && finish 0 || finish 2 ;;
+        esac
+        ;;
+    *)
+        log "bls chain: no GTK kernel in the heal bundle — nothing to guard"
+        finish 0 ;;
+    esac
+fi
+
+# ==========================================================
 # ABL-ERA UNIT (ROCKNIX 20261001+, ROCKNIX-ABL on SM8250) — 2026-10-08
 # ==========================================================
 # No GRUB: the ABL boots the ONE file $FLASH/KERNEL (a boot.img, cmdline baked).
@@ -191,7 +280,7 @@ if [ "$(cat "$HEAL/chain" 2>/dev/null)" = "abl" ] || \
         # Never re-stage here -- the staged boot.img has no EFI stub.
         if [ -d "$FLASH/loader/entries" ] || [ "$(head -c 2 "$FLASH/KERNEL" 2>/dev/null)" = "MZ" ]; then
             log "abl chain: NOT re-staging — $FLASH/KERNEL is a PE/BLS kernel (ROCKNIX 20261101+, OpenABL); the staged boot.img cannot boot on this chain. The GTK kernel is NOT live; stock runs until an ETK release for this boot chain is installed. Slot left alone."
-            notify "ROCKNIX moved to a new bootloader. The ETK kernel is not active - stock kernel in use until ETK 0.11.0 ships. Nothing to fix by hand."
+            notify "ROCKNIX moved to a new bootloader. The ETK kernel is not active - stock kernel in use. Re-run the ETK installer from your computer."
         else
             log "abl chain: NOT re-staging — $FLASH/KERNEL is not a boot.img (unknown format); leaving it alone"
             notify "OS update left an unknown kernel in the boot slot; the ETK kernel is not active. Re-run the ETK installer from your computer."

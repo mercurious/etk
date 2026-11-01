@@ -27,9 +27,12 @@ C='\033[0;36m'; G='\033[0;32m'; Y='\033[1;33m'; R='\033[0;31m'; N='\033[0m'
 # (hours of harvest work — irreplaceable without re-harvest).
 # --verbose / -v: bypass the Pit Wall TUI; show raw remote output.
 ZAP_VAULT=0
+# --stock-entry-too: on an OpenABL rig also remove etk-stock.conf + loader.conf (see BLSRESTORE).
+STOCK_ENTRY_TOO=0
 for arg in "$@"; do
     case "$arg" in
         --zap-vault)  ZAP_VAULT=1 ;;
+        --stock-entry-too) STOCK_ENTRY_TOO=1 ;;
         --verbose|-v) ETK_VERBOSE=1 ;;
     esac
 done
@@ -633,6 +636,42 @@ elif [ ! -d "$FLASH/EFI" ] && [ -f "$FLASH/KERNEL.etk-stock" ] && [ "$(head -c 8
     rm -f "$HEAL/chain"
 fi
 ABLRESTORE
+# ==========================================================
+# OPENABL SET (ROCKNIX 20261101+): install.sh STEP 6.4 (bin/bls_deploy.sh) wrote the GTK
+# kernel and its entry BESIDE the OS's own files, so removing them leaves the OS whole;
+# KERNEL, rocknix.conf and dtbs/*.dtb are never touched. It also clears either
+# tools/bls_trial.sh trial. etk-stock.conf and the loader.conf line STAY unless
+# --stock-entry-too: rocknix.conf names no devicetree, so a unit whose Device model was
+# never set boots dark on it. A foreign loader.conf is left alone.
+# Harness: tools/test_kernel_bls.sh.
+# ==========================================================
+ssh $RIG_SSH "FLASH='/flash' STOCK_ENTRY_TOO='$STOCK_ENTRY_TOO' sh -s" >> /tmp/etk_uninstall_clean.log 2>&1 << 'BLSRESTORE'
+E="$FLASH/loader/entries"; LC="$FLASH/loader/loader.conf"
+[ -d "$E" ] && [ "$(head -c 2 "$FLASH/KERNEL" 2>/dev/null)" = "MZ" ] || exit 0
+HAVE=""
+for f in "$FLASH/KERNEL.gtk" "$FLASH/KERNEL.gtk.aside" "$FLASH/dtbs/etk" "$E/etk-gtk.conf" "$E"/etk-gtk+*.conf "$E/etk-stock.conf" "$LC"; do
+    [ -e "$f" ] && HAVE=1
+done
+[ -n "$HAVE" ] || exit 0
+mount -o remount,rw "$FLASH" 2>/dev/null || { echo "    FAILED: cannot remount $FLASH rw -- the GTK entry was left in place"; exit 0; }
+rm -f "$FLASH/KERNEL.gtk" "$FLASH/KERNEL.gtk.aside" "$FLASH/KERNEL.gtk.new" "$E/etk-gtk.conf" "$E"/etk-gtk+*.conf
+rm -rf "$FLASH/dtbs/etk"
+OURS=no
+case "$(cat "$LC" 2>/dev/null)" in "default etk-stock.conf"|"default etk-gtk.conf") OURS=yes ;; esac
+if [ "$STOCK_ENTRY_TOO" = 1 ]; then
+    rm -f "$E/etk-stock.conf"
+    [ "$OURS" = yes ] && rm -f "$LC"
+    echo "    Removed: the GTK kernel, its entry and the etk-stock entry; the rig boots rocknix.conf (needs its Device model set)"
+elif [ -f "$E/etk-stock.conf" ]; then
+    [ "$OURS" = yes ] && { printf 'default etk-stock.conf\n' > "$LC.new" && mv -f "$LC.new" "$LC"; }
+    echo "    Removed: the GTK kernel and its entry. Kept: etk-stock.conf, the stock kernel on a named DTB (./uninstall.sh --stock-entry-too removes it)"
+else
+    [ "$OURS" = yes ] && rm -f "$LC"
+    echo "    Removed: the GTK kernel and its entry; the rig boots rocknix.conf"
+fi
+sync
+mount -o remount,ro "$FLASH" 2>/dev/null
+BLSRESTORE
 [ "$TUI_ACTIVE" != "1" ] && cat /tmp/etk_uninstall_clean.log
 rm -f /tmp/etk_uninstall_clean.log
 if [ "$ZAP_VAULT" = "1" ]; then

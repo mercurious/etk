@@ -2016,9 +2016,113 @@ rig_toast 44 "Kernel + boot config" $ETK_TOAST_BULK_MS || true
 # /flash/EFI + /flash/boot are gone. Every grub mechanism below (entries, numeric
 # default, kit DTB slot, grubenv) has no object on such a unit. Probe once; the
 # two deploy branches and STEP 6.65 key on it. 'grub' = the 20260901- chain.
-K_CHAIN=$(ssh $RIG_SSH 'if [ -d /flash/EFI ] || [ -f /flash/boot/grub/grub.cfg ]; then echo grub; elif [ "$(head -c 8 /flash/KERNEL 2>/dev/null)" = "ANDROID!" ]; then echo abl; else echo unknown; fi' 2>/dev/null)
+# 'bls' (2026-11-01): ROCKNIX 20261101 moved it again, to OpenABL + Boot Loader Spec. Asked
+# first, because nothing there removes an old /flash/EFI or /flash/boot.
+K_CHAIN=$(ssh $RIG_SSH 'if [ -d /flash/loader/entries ] && [ "$(head -c 2 /flash/KERNEL 2>/dev/null)" = "MZ" ]; then echo bls; elif [ -d /flash/EFI ] || [ -f /flash/boot/grub/grub.cfg ]; then echo grub; elif [ "$(head -c 8 /flash/KERNEL 2>/dev/null)" = "ANDROID!" ]; then echo abl; else echo unknown; fi' 2>/dev/null)
 K_CHAIN="${K_CHAIN:-unknown}"
-if [ -n "${KERNEL_IMAGE:-}" ] && [ -f "${KERNEL_IMAGE:-}" ] && [ "$K_CHAIN" = "abl" ]; then
+# --- GTK boot-identity line (every branch; the unit gates on the live cmdline's keepalive) ---
+gtk_identity_line() {
+    GTK_KDATE=$(basename "$KERNEL_IMAGE" | grep -oE '[0-9]{8}' | head -1)
+    GTK_VER=$(grep -m1 '^APP_VERSION' ./bin/etk_pitstop.py | cut -d'"' -f2)
+    # Edition name + kernel generation (0.10.0): the boot line names the whole certified
+    # stack, not just the kit version. APP_EDITION is the single source (beside APP_VERSION);
+    # the kernel generation is read off the Image name after its date
+    # (KERNEL.rocknix-gtk-20261001-0.6.3 -> 0.6.3).
+    GTK_EDITION=$(grep -m1 '^APP_EDITION' ./bin/etk_pitstop.py | cut -d'"' -f2)
+    GTK_KVER=$(basename "$KERNEL_IMAGE" | sed -n 's/.*-[0-9]\{8\}-\([0-9.]*\)$/\1/p')
+    tui_log "Deploying GTK boot-identity line (${GTK_VER:-dev}-${GTK_KDATE:-dev}${GTK_EDITION:+ $GTK_EDITION Edition} kernel ${GTK_KVER:-dev})"
+    scp -q ./config/etk-gtk-version.service "$RIG_SSH:/storage/.config/system.d/etk-gtk-version.service" 2>/dev/null
+    ssh $RIG_SSH "sed -i 's/@KDATE@/${GTK_KDATE:-dev}/; s/@GTKVER@/${GTK_VER:-dev}/; s/@EDITION@/${GTK_EDITION:+ -- $GTK_EDITION Edition}/; s/@KVER@/${GTK_KVER:-dev}/' /storage/.config/system.d/etk-gtk-version.service 2>/dev/null; mkdir -p /storage/.config/system.d/basic.target.wants; ln -sf /storage/.config/system.d/etk-gtk-version.service /storage/.config/system.d/basic.target.wants/etk-gtk-version.service" 2>/dev/null
+}
+if [ -n "${KERNEL_IMAGE:-}" ] && [ -f "${KERNEL_IMAGE:-}" ] && [ "$K_CHAIN" = "bls" ]; then
+    # ==========================================================
+    # OPENABL KERNEL DEPLOY (ROCKNIX 20261101+) — an entry beside stock
+    # ==========================================================
+    # The OS keeps /flash/KERNEL, rocknix.conf and dtbs/*.dtb. The kit adds KERNEL.gtk, a kit
+    # DTB derived from the OS's own, etk-gtk.conf, etk-stock.conf and one loader.conf line.
+    # A raw PE Image is the artifact: the cmdline and the DTB are deploy-time files again,
+    # so the keepalive is rendered here, not baked. KERNELBLSREMOTE fills the heal bundle;
+    # bin/bls_deploy.sh is the one render, shared with osguard, which re-runs it after an OS
+    # update. KERNEL_DEPLOY_MODE=test staged everything and boots stock.
+    # Plan: etk-dossiers/BuildPlan_0110_OpenABL_20261030.md §2 row 5, §4. All of it was
+    # proven by hand on car12 first (P3 steps 0-2). Harness: tools/test_kernel_bls.sh.
+    if command -v sha256sum >/dev/null 2>&1; then
+        K_HOST_SHA=$(sha256sum "$KERNEL_IMAGE" | awk '{print $1}')
+    else
+        K_HOST_SHA=$(shasum -a 256 "$KERNEL_IMAGE" | awk '{print $1}')
+    fi
+    K_MAGIC=$(head -c 2 "$KERNEL_IMAGE" 2>/dev/null)
+    K_RELEASE=$(strings "$KERNEL_IMAGE" 2>/dev/null | grep -m1 "Linux version " | sed 's/.*Linux version \([^ ]*\).*/\1/')
+    K_MODE="${KERNEL_DEPLOY_MODE:-default}"
+    K_EXTRA=$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1])).get("kernel", {}).get("cmdline_extra", ""))' ./config/gtk_stack.json 2>/dev/null)
+    K_EXTRA="${K_EXTRA:-msm.context_keepalive=1 panic=30}"
+    # KERNEL_CONTEXT_KEEPALIVE=0 means what it meant on GRUB again: the token leaves the entry.
+    [ "${KERNEL_CONTEXT_KEEPALIVE:-0}" = "1" ] || K_EXTRA=$(printf '%s' "$K_EXTRA" | sed 's/msm\.context_keepalive=1 *//')
+    K_BLS_STOP=""
+    if [ "$K_MAGIC" != "MZ" ]; then
+        K_BLS_STOP="is not a raw PE Image: OpenABL does not boot a boot.img (mint with FORGE_KERNEL_BASEDATE=20261101)"
+    elif [ -z "$K_RELEASE" ]; then
+        K_BLS_STOP="has no 'Linux version' string"
+    fi
+    if [ -n "$K_BLS_STOP" ]; then
+        say "${Y}[ETK]${N} Custom kernel deploy REFUSED (OpenABL): $(basename "$KERNEL_IMAGE") $K_BLS_STOP. /flash untouched."
+    else
+        # The same two guards as the other chains. Here a withheld deploy still stages
+        # everything; only the default stays on stock.
+        if [ "$K_MODE" = "default" ]; then
+            if ! ssh $RIG_SSH "tr '\0' '\n' < /sys/firmware/devicetree/base/compatible 2>/dev/null | grep -q rpflip2" 2>/dev/null; then
+                echo "    [GUARD] default mode is Flip-2-only (the only verified device); this rig is not a Flip 2 -> staged, default stays stock."
+                K_MODE="test"
+            elif ! ssh $RIG_SSH "[ -d /usr/lib/modules/$K_RELEASE ]" 2>/dev/null; then
+                K_RIG_MODS=$(ssh $RIG_SSH "ls /usr/lib/modules 2>/dev/null | tr '\n' ' '" 2>/dev/null)
+                echo "    [GUARD] kernel release '$K_RELEASE' has NO matching module tree on the rig (installed: ${K_RIG_MODS:-none}) -> staged, default stays stock: it would boot to a module-less system."
+                K_MODE="test"
+            fi
+        fi
+        scp -q "$KERNEL_IMAGE" "$RIG_SSH:/storage/rocknix-gtk.KERNEL.staging" 2>/dev/null
+        K_OUT=$(ssh $RIG_SSH "HOST_SHA='$K_HOST_SHA' K_RELEASE='$K_RELEASE' K_MODE='$K_MODE' K_NAME='$(basename "$KERNEL_IMAGE")' K_EXTRA='$K_EXTRA' ETK_ROOT='$ETK_ROOT' sh -s" 2>&1 << 'KERNELBLSREMOTE'
+HEAL="${HEAL:-/storage/rocknix-gtk/heal}"
+STAGING="${STAGING:-/storage/rocknix-gtk.KERNEL.staging}"
+S=$(sha256sum "$STAGING" 2>/dev/null | cut -d' ' -f1)
+[ "$S" = "$HOST_SHA" ] || { rm -f "$STAGING"; echo "BLS_DEPLOY_FAIL staging sha mismatch ($S)"; exit 1; }
+[ "$(head -c 2 "$STAGING")" = MZ ] || { rm -f "$STAGING"; echo "BLS_DEPLOY_FAIL staged file is not a PE image"; exit 1; }
+# The bundle is what osguard replays, so it is written whole before /flash is touched.
+mkdir -p "$HEAL" || { echo "BLS_DEPLOY_FAIL cannot create $HEAL"; exit 1; }
+mv "$STAGING" "$HEAL/KERNEL.staged"
+printf '%s\n' "$HOST_SHA"  > "$HEAL/KERNEL.staged.sha256"
+printf '%s\n' "$K_RELEASE" > "$HEAL/KERNEL.staged.release"
+printf '%s\n' "$K_NAME"    > "$HEAL/KERNEL.staged.name"
+printf '%s\n' "$K_EXTRA"   > "$HEAL/cmdline_extra"
+printf '%s\n' "$K_MODE"    > "$HEAL/mode"
+printf 'bls\n'             > "$HEAL/chain"
+rm -f "$HEAL/grub.block" "$HEAL/grub.block.stockdtb" "$HEAL/DTB.staged" "$HEAL/DTB.staged.sha256" "$HEAL/DTB.base.sha256"
+sh "$ETK_ROOT/bin/bls_deploy.sh"
+KERNELBLSREMOTE
+)
+        K_LAST=$(printf '%s\n' "$K_OUT" | tail -n1)
+        case "$K_LAST" in
+        BLS_DEPLOY_OK*)
+            K_WROTE=$(printf '%s' "$K_LAST" | sed -n 's/.* wrote=\([^ ]*\).*/\1/p')
+            K_DFLT=$(printf '%s' "$K_LAST" | sed -n 's/.* default=\([^ ]*\).*/\1/p')
+            K_DTBV=$(printf '%s' "$K_LAST" | sed -n 's/.* dtb=\([^ ]*\).*/\1/p')
+            if [ "$K_WROTE" = "none" ]; then
+                say "${G}[ETK]${N} Custom kernel $(basename "$KERNEL_IMAGE") already in place on /flash; default entry ${K_DFLT}."
+            else
+                say "${G}[ETK]${N} Custom kernel $(basename "$KERNEL_IMAGE") -> /flash/KERNEL.gtk + etk-gtk.conf (sha-verified read-back, wrote ${K_WROTE}); default entry ${K_DFLT}. COLD boot on-device."
+            fi
+            case "$K_DFLT" in etk-stock.conf) say "${Y}[ETK]${N} Default stays on stock (mode=test or a [GUARD] above). The GTK entry can be picked from the Vol-Down menu. Set KERNEL_DEPLOY_MODE=default (and clear the guard) to boot it by default." ;; esac
+            say "${C}[INFO] OpenABL boot chain: stock stays in /flash/KERNEL and its own entry. A load failure falls through to it; Vol-Down at power-on picks any entry. A ROCKNIX update leaves the kit's files alone; osguard re-renders them.${N}"
+            case "$K_DTBV" in
+                mic)     say "${G}[ETK]${N} Flip 2 kit DTB derived from this OS's own tree (internal mic widget). Mic binds at STEP 6.76 after the cold boot." ;;
+                stock*)  say "${Y}[WARN] Flip 2 kit DTB: the GTK entry uses the stock tree, ${K_DTBV}: the internal mic stays off.${N}" ;;
+                *)       say "${C}[INFO] Flip 2 kit DTB: ${K_DTBV}.${N}" ;;
+            esac
+            gtk_identity_line ;;
+        *)
+            say "${Y}[ETK]${N} Custom kernel deploy FAILED (OpenABL): $(printf '%s\n' "$K_OUT" | grep -m1 BLS_DEPLOY_FAIL || printf '%s\n' "$K_OUT" | tail -1)" ;;
+        esac
+    fi
+elif [ -n "${KERNEL_IMAGE:-}" ] && [ -f "${KERNEL_IMAGE:-}" ] && [ "$K_CHAIN" = "abl" ]; then
     # ==========================================================
     # ABL-ERA KERNEL DEPLOY (ROCKNIX 20261001+) — the slot replaces the menu
     # ==========================================================
@@ -2102,7 +2206,9 @@ PY
     K_KITDTB=$(printf '%s\n' "$K_INFO" | sed -n 's/^kitdtb=//p')
     K_MODE="${KERNEL_DEPLOY_MODE:-default}"
     K_ABL_STOP=""
-    if [ "$K_MAGIC" != "ok" ]; then
+    if [ "$(head -c 2 "$KERNEL_IMAGE" 2>/dev/null)" = "MZ" ]; then
+        K_ABL_STOP="is a raw PE Image for ROCKNIX 20261101+ and this rig is still on the ROCKNIX-ABL chain: update ROCKNIX first, then re-run"
+    elif [ "$K_MAGIC" != "ok" ]; then
         K_ABL_STOP="is not an Android boot.img — the ABL boots nothing else (mint with FORGE_KERNEL_BASEDATE=20261001)"
     elif [ "${K_DTBS:-0}" != "9" ]; then
         K_ABL_STOP="carries ${K_DTBS:-0} DTBs; the SM8250 stock set is 9 (the ABL picks this unit's board DTB out of that set)"
@@ -2247,19 +2353,7 @@ KERNELABLREMOTE
                 *"=stock"*) say "${Y}[WARN] Flip 2 kit DTB NOT in this boot.img (${K_KITDTB}): the internal mic stays off on the ABL stack. Mint with ETK_KIT_DTB=1 (lane_kernel.sh stages the splicer).${N}" ;;
                 *) say "${C}[INFO] Flip 2 kit DTB: no verdict (${K_KITDTB:-no Flip 2 DTB found / splicer unreadable}).${N}" ;;
             esac
-            # --- GTK boot-identity line (same unit as the GRUB branch; it gates on the
-            #     live cmdline's keepalive, which only a GTK boot.img carries) ---
-            GTK_KDATE=$(basename "$KERNEL_IMAGE" | grep -oE '[0-9]{8}' | head -1)
-            GTK_VER=$(grep -m1 '^APP_VERSION' ./bin/etk_pitstop.py | cut -d'"' -f2)
-            # Edition name + kernel generation (0.10.0): the boot line names the whole
-            # certified stack, not just the kit version -- APP_EDITION is the single
-            # source (beside APP_VERSION); the kernel generation is read off the Image
-            # name after its date (KERNEL.rocknix-gtk-20261001-0.6.3 -> 0.6.3).
-            GTK_EDITION=$(grep -m1 '^APP_EDITION' ./bin/etk_pitstop.py | cut -d'"' -f2)
-            GTK_KVER=$(basename "$KERNEL_IMAGE" | sed -n 's/.*-[0-9]\{8\}-\([0-9.]*\)$/\1/p')
-            tui_log "Deploying GTK boot-identity line (${GTK_VER:-dev}-${GTK_KDATE:-dev}${GTK_EDITION:+ $GTK_EDITION Edition} kernel ${GTK_KVER:-dev})"
-            scp -q ./config/etk-gtk-version.service "$RIG_SSH:/storage/.config/system.d/etk-gtk-version.service" 2>/dev/null
-            ssh $RIG_SSH "sed -i 's/@KDATE@/${GTK_KDATE:-dev}/; s/@GTKVER@/${GTK_VER:-dev}/; s/@EDITION@/${GTK_EDITION:+ -- $GTK_EDITION Edition}/; s/@KVER@/${GTK_KVER:-dev}/' /storage/.config/system.d/etk-gtk-version.service 2>/dev/null; mkdir -p /storage/.config/system.d/basic.target.wants; ln -sf /storage/.config/system.d/etk-gtk-version.service /storage/.config/system.d/basic.target.wants/etk-gtk-version.service" 2>/dev/null
+            gtk_identity_line
         else
             say "${Y}[ETK]${N} Custom kernel deploy FAILED (ABL): $(echo "$K_OUT" | grep -m1 KERNEL_FAIL || echo "$K_OUT" | tail -1)"
         fi
@@ -2269,7 +2363,7 @@ elif [ -n "${KERNEL_IMAGE:-}" ] && [ -f "${KERNEL_IMAGE:-}" ] && [ "$K_CHAIN" !=
     # and grub entries. On a unit whose chain could not be read ('unknown': the probe
     # failed, or /flash holds neither a GRUB menu nor an ABL boot.img) that is a kernel
     # nothing boots and a grub.cfg loop over files that do not exist -- reported as
-    # "deployed". Refuse with the reason instead; the ABL case is the branch above.
+    # "deployed". Refuse with the reason instead; ABL and OpenABL are the branches above.
     say "${Y}[ETK]${N} Custom kernel deploy SKIPPED: boot chain read as '${K_CHAIN}' (no GRUB menu and no ABL boot.img at /flash/KERNEL) -- nothing written. Check the ssh link and /flash, then re-run."
 elif [ -n "${KERNEL_IMAGE:-}" ] && [ -f "${KERNEL_IMAGE:-}" ]; then
     # portable host sha256 (Linux sha256sum | macOS shasum)
@@ -2652,6 +2746,8 @@ else
     # the documented "empty = don't touch the kernel" contract stands.
     if [ "$K_CHAIN" = "abl" ]; then
         KCFG_OUT="KERNELCFG_SKIP abl-chain"
+    elif [ "$K_CHAIN" = "bls" ]; then
+        KCFG_OUT="KERNELCFG_SKIP bls-chain"
     else
     KCFG_OUT=$(ssh $RIG_SSH "sh -s" 2>&1 << 'KERNELCFGREMOTE'
 set -e
@@ -2684,7 +2780,9 @@ echo "KERNELCFG_OK base=system default_idx=$DEF"
 KERNELCFGREMOTE
 )
     fi
-    if echo "$KCFG_OUT" | grep -q abl-chain; then
+    if echo "$KCFG_OUT" | grep -q bls-chain; then
+        say "${C}[INFO] Boot config: OpenABL chain (no grub) -- the OS's entries and KERNEL are its own; nothing to converge.${N}"
+    elif echo "$KCFG_OUT" | grep -q abl-chain; then
         say "${C}[INFO] Boot config: ROCKNIX-ABL chain (no grub) — the slot /flash/KERNEL is the OS's own; nothing to converge.${N}"
     elif echo "$KCFG_OUT" | grep -q KERNELCFG_OK; then
         say "${G}[ETK]${N} Boot config converged to canonical stock ($(echo "$KCFG_OUT" | grep -o 'default_idx=[0-9]*') = Flip2 — hands-off boot, kit-owned)."
@@ -3599,6 +3697,9 @@ if grep -q BLACKBOX_UNARMED "$BB_OUT_FILE" && [ "${K_CHAIN:-}" = "abl" ]; then
     say "${Y}[ETK]${N} No panic auto-reboot token in the live cmdline: this boot ran a stock boot.img."
     say "${Y}[ETK]${N} Under ROCKNIX-ABL the token is baked at mint (the GTK boot.img carries panic=30);"
     say "${Y}[ETK]${N} arm_blackbox.sh (a grub editor) does not apply — deploy the GTK boot.img and cold boot."
+elif grep -q BLACKBOX_UNARMED "$BB_OUT_FILE" && [ "${K_CHAIN:-}" = "bls" ]; then
+    say "${Y}[ETK]${N} No panic auto-reboot token in the live cmdline: this boot ran a stock entry."
+    say "${Y}[ETK]${N} Under OpenABL the token is in etk-gtk.conf's options; cold boot that entry."
 elif grep -q BLACKBOX_UNARMED "$BB_OUT_FILE"; then
     say "${Y}[ETK]${N} No panic auto-reboot token in the live cmdline (stock-kernel boot, or a"
     say "${Y}[ETK]${N} ROCKNIX update reverted grub). The GTK kernel bakes panic=30; on a stock"

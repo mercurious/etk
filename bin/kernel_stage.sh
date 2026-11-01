@@ -49,8 +49,20 @@ GOT=$(sha256sum "$ART" | cut -d' ' -f1)
 # the bundle is marked chain=abl so bin/osguard.sh takes its ABL path: the
 # slot (/flash/KERNEL) gets the staged boot.img on the next boot whose module
 # tree matches the release — never a raw Image in the ABL's slot.
+#
+# OpenABL era (ROCKNIX 20261101+): the artifact is the raw PE Image OpenABL boots, so
+# `strings` finds the release again and the manifest cross-checks it. chain=bls: osguard
+# hands the bundle to bin/bls_deploy.sh on the next boot whose module tree matches. The
+# manifest's cmdline_extra and the artifact's own name go in the bundle for the entry.
 CHAIN=grub
-if [ "$(head -c 8 "$ART" 2>/dev/null)" = "ANDROID!" ]; then
+if [ "$(head -c 2 "$ART" 2>/dev/null)" = "MZ" ]; then
+    CHAIN=bls
+    REL=$(strings "$ART" 2>/dev/null | grep -m1 "Linux version " \
+          | sed 's/.*Linux version \([^ ]*\).*/\1/')
+    [ -n "$REL" ] || die "cannot read a kernel release string from the PE Image"
+    [ -z "${KS_RELEASE:-}" ] || [ "$KS_RELEASE" = "$REL" ] \
+        || die "the Image says release $REL, the manifest says $KS_RELEASE — nothing staged"
+elif [ "$(head -c 8 "$ART" 2>/dev/null)" = "ANDROID!" ]; then
     CHAIN=abl
     REL="${KS_RELEASE:-}"
     if [ -z "$REL" ]; then
@@ -87,11 +99,20 @@ elif [ ! -f "$HEAL/mode" ]; then
     printf 'default\n' > "$HEAL/mode"
 fi
 printf '%s\n' "$CHAIN" > "$HEAL/chain"
+if [ "$CHAIN" = bls ]; then
+    printf '%s\n' "${KS_NAME:-$(basename "$ART")}" > "$HEAL/KERNEL.staged.name"
+    for _mf in "$(dirname "$0")/../config/gtk_stack.json" "$ETK_ROOT/config/gtk_stack.json"; do
+        [ -f "$_mf" ] || continue
+        _extra=$(sed -n 's/.*"cmdline_extra": *"\([^"]*\)".*/\1/p' "$_mf" | head -1)
+        [ -n "$_extra" ] && { printf '%s\n' "$_extra" > "$HEAL/cmdline_extra"; break; }
+    done
+    rm -f "$HEAL/grub.block" "$HEAL/grub.block.stockdtb" "$HEAL/DTB.staged" "$HEAL/DTB.staged.sha256" "$HEAL/DTB.base.sha256"
+fi
 log "staged kernel $REL (sha ok, chain=$CHAIN) -> $HEAL/KERNEL.staged (mode=$(cat "$HEAL/mode"))"
 
 # Bank the live ETK grub block (read-only on /flash; freshest render wins).
-# No grub on an ABL unit: the bundle alone drives osguard's re-stage there.
-[ "$CHAIN" = abl ] && CFG_LIST=""
+# No grub on an ABL or OpenABL unit: the bundle alone drives osguard there.
+[ "$CHAIN" = grub ] || CFG_LIST=""
 for CFG in $CFG_LIST; do
     [ -f "$CFG" ] || continue
     grep -q "etk-gtk-test" "$CFG" || continue
@@ -108,7 +129,7 @@ for CFG in $CFG_LIST; do
     fi
     break
 done
-[ "$CHAIN" = abl ] || [ -f "$HEAL/grub.block" ] || log "NOTE: no ETK grub entries live and none banked — osguard will heal the kernel slot; entries return with the next install.sh"
+[ "$CHAIN" != grub ] || [ -f "$HEAL/grub.block" ] || log "NOTE: no ETK grub entries live and none banked — osguard will heal the kernel slot; entries return with the next install.sh"
 
 # Poke osguard: if the running OS already matches this kernel, activation
 # happens right now (Phase B) and the user just reboots; if not, the stage
