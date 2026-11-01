@@ -22,6 +22,7 @@
 #   checkouts    ~/etk at the Air's HEAD, the three forks at origin/main,
 #                ~/rpcs3 cloned from ARMSX3 (remote named `armsx3`) with BASE present
 #   containers   turnip-rocknix · rocknix-gtk-kernel-sid · etk-imgtool
+#   imgtool      etk-imgtool alone (a node that only bakes cards)
 #   trees        /work/mesa-<V> fork trees in turnip-rocknix, per FORGE_TURNIP_VERS
 #   inputs       base img (sha-pinned) + the manifest's pinned
 #                binaries, pushed from the Air (rebuilds are not byte-identical,
@@ -166,9 +167,9 @@ else
     # LONG-LIVED on purpose: lane_image.sh's artifact verify reads the spliced
     # /tmp/work2.img the recipe left behind in this same container.
     docker run -d --name etk-imgtool \
-        -v "$HOME/etk/os-install":/work \
-        -v "$HOME/etk":/etk:ro \
-        -v "$HOME/rocknix-gtk":/rocknix-gtk:ro \
+        -v "$HOME/etk/os-install":/work:z \
+        -v "$HOME/etk":/etk:ro,z \
+        -v "$HOME/rocknix-gtk":/rocknix-gtk:ro,z \
         -w /work debian:sid sleep infinity >/dev/null
 fi
 docker exec etk-imgtool bash -lc "
@@ -178,6 +179,9 @@ docker exec etk-imgtool bash -lc "
     printf '   %-10s %s\n' parted \"\$(parted --version | head -1)\""
 REMOTE
 }
+
+# The image lane's one container, alone: a node that only bakes cards needs no compilers.
+phase_imgtool() { make_imgtool; }
 
 phase_containers() {
     say "containers: turnip-rocknix (fork provisioner, $TURNIP_IMAGE)"
@@ -550,7 +554,7 @@ PHASES="${*:-check}"
 [ "$PHASES" = all ] && PHASES="checkouts containers inputs groundtruth trees toolchain check"
 for p in $PHASES; do
     case "$p" in
-        check|checkouts|containers|trees|inputs|groundtruth|toolchain|seed) "phase_$p" ;;
-        *) die "unknown phase '$p' (check checkouts containers trees inputs groundtruth toolchain seed all)" ;;
+        check|checkouts|containers|imgtool|trees|inputs|groundtruth|toolchain|seed) "phase_$p" ;;
+        *) die "unknown phase '$p' (check checkouts containers imgtool trees inputs groundtruth toolchain seed all)" ;;
     esac
 done
