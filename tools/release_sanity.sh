@@ -262,7 +262,7 @@ echo
 # already moved to the new pair while CERTIFIED_BUILDS, the manifest, the image
 # lane and the PowerShell port all still named the old one, and nothing
 # compared them.
-echo "-- catalogs: turnip cumulative, cores capped at 2 --"
+echo "-- catalogs: turnip cumulative, cores capped at 3 --"
 _CB=$(sed -n 's/^CERTIFIED_BUILDS="\(.*\)"$/\1/p' "$REPO_ROOT/install.sh" | head -1)
 _JT=$(sed -n '/"turnip": {/,/}/p' "$REPO_ROOT/config/gtk_stack.json" \
     | sed -n 's/.*"asset": "\([^"]*\)".*/\1/p' | head -1)
@@ -306,9 +306,12 @@ if [ "$_CORES_EXP" -gt 0 ]; then
     ls "$REPO_ROOT"/emulators/rpcs3-EXP-*.AppImage 2>/dev/null | while read -r _p; do printf '        %s\n' "$(basename "$_p")"; done
 fi
 _CERTAI=$(sed -n 's/^CERT_RPCS3="\(.*\)"$/\1/p' "$REPO_ROOT/install.sh" | head -1)
-if [ "$_CORES" = 2 ]; then ok "rpcs3 core catalog holds 2 shipping builds (A/B cap)"
-elif [ "$_CORES" = 0 ]; then skip "no cores staged locally"
-else bad "rpcs3 core catalog holds $_CORES shipping builds — the cap is 2 (A/B only, never published)"; fi
+# Cap 3 (operator 2026-11-03): the core catalog is a lineup -- e.g. the ARMSX3-lineage core beside
+# the upstream-lineage 0.11.0 -- not an A/B pair. "Certified" is on moratorium while the upstream
+# practice is reworked; the cert-pin checks below stay as plumbing, not as a ranking.
+if [ "$_CORES" = 0 ]; then skip "no cores staged locally"
+elif [ "$_CORES" -le 3 ]; then ok "rpcs3 core catalog holds $_CORES shipping build(s) (cap 3)"
+else bad "rpcs3 core catalog holds $_CORES shipping builds — the cap is 3 (never published)"; fi
 if [ -f "$REPO_ROOT/emulators/$_CERTAI" ]; then
     ok "certified core is in the catalog"
 elif [ "$_CORES" = 0 ]; then

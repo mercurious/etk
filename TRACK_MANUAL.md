@@ -29,7 +29,7 @@ person using it.
 |---|---|---|
 | trying a new **Turnip** as Mesa ships it | Pitstop **DRIVER** tab | catalog is CUMULATIVE **and present on the device** — installed rig *and* flashed card; cold boot to load; `loaded` is boot-stamped ground truth, `selected` is only intent |
 | **minting without the cloud** — the local node (`etk-local`: a Lima VM under macOS, or the M1 Max itself under Asahi with rootless podman behind a `docker` shim, §A.1) | `FORGE_HOST=etk-local tools/forge/provision_node.sh check` (a lane is ready when its row reads READY) · `tools/forge/local_node.sh status` · `./forge.sh --local <lanes>` · `state/forge/status.tsv` | every row READY after `up` + `checkouts seed inputs`; a run's ssh reaches only `etk-local`; a pinned kernel, core or Turnip name is refused before any ssh (a local mint takes a NEW name); hunts stay on etk-cloud (`--hunt` refuses `--local`) |
-| **A/B-ing an emulator core** | **TUNING → CORE** | exactly two cores staged, never published; a per-title pin is never pruned |
+| **A/B-ing an emulator core** | **TUNING → CORE** | up to three cores staged (operator 2026-11-03), never published; a per-title pin is never pruned |
 | **certifying / swapping the emulator core** | install.sh **NEXT-BOOT BIND** block (STEP 6.553) + the first post-boot ledger row's `core=` | the CERT pin resolves to a REAL source (local catalog copy or published asset — release_sanity gates it); a staging failure NEVER downgrades a staged rig; `loaded=stock` on a custom-expecting rig is a RED headline, not an OK |
 | **tuning a title** | **TUNING** | atomic write + read-back; `tune_tag` reaches the ledger, or the A/B is unattributable |
 | **racing at fixed clocks** (POWER `race` / any governor choice) | Pitstop **POWER** footer `… + games: <gov>` · `grep ps3.cpugovernor /storage/.config/system/configs/system.cfg` · DURING a game: `cat /sys/devices/system/cpu/cpufreq/policy*/scaling_governor` | the governor is judged IN THE GAME, never at boot: ROCKNIX's `runemu.sh` applies `cpugovernor` for the platform at EVERY launch (fallback `system.cpugovernor=ondemand`), after the kit. POWER hands its governor to ROCKNIX's own `ps3.cpugovernor` (Pitstop APPLY + the boot applier, via ROCKNIX's bash-only `set_setting`); uninstall `del_setting`s it. **Paid for 2026-10-11 (GT5 hunt):** every RACE game had silently run `ondemand` -- the silver cluster (CPU0's, which carries every device IRQ) DVFS'd with an RPMh bandwidth vote per step, and GT5's mid-race CPU0 hard lockup died on that path; pinned for real, GT5 raced 12.3 min (vs 4 and 8) |
@@ -722,8 +722,9 @@ Walk this list BEFORE handing the operator `./forge.sh rpcs3`:
    declaration, not semantics; **lld's undefined-symbol list is the only exhaustive
    check**, so a link failure names the complete remaining debt in one shot.
 5. **release_sanity enforces the CORE cap on the host catalog** — it counts
-   `emulators/*.AppImage` (non-recursive) and a fresh mint makes three. Retire the
-   outgoing core into `emulators/retired/` (invisible to the gate AND to install.sh's
+   `emulators/*.AppImage` (non-recursive); the cap is **3** (operator 2026-11-03: a lineup
+   across lineages, and "certified" is on moratorium while upstream practice is reworked), so
+   a fresh mint over a full catalog makes four. Retire the outgoing core into `emulators/retired/` (invisible to the gate AND to install.sh's
    staging loop; one `mv` reverses it) — **but NEVER retire the core the CERT pins
    name.** The certified default's auto-fetch exists only after a release publishes
    the asset; between a cert-pin bump and its release cut, the local catalog copy is
