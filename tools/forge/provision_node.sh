@@ -141,6 +141,11 @@ git -C "$HOME/rpcs3" remote get-url origin >/dev/null 2>&1 \
     || git -C "$HOME/rpcs3" remote add origin https://github.com/ARMSX2/ARMSX3.git
 # --recurse-submodules=no: containers re-own .git/modules as root (Leapfrog 2026-08-20)
 git -C "$HOME/rpcs3" fetch -q --recurse-submodules=no --tags armsx3
+# ...and upstream RPCS3 as `rpcs3`: GTK 0.11.0 moved the core back onto upstream (fork
+# PROVENANCE-0.11.0.md), and upstream commits after ARMSX3's last sync are not in armsx3's history.
+git -C "$HOME/rpcs3" remote get-url rpcs3 >/dev/null 2>&1 \
+    || git -C "$HOME/rpcs3" remote add rpcs3 https://github.com/RPCS3/rpcs3.git
+git -C "$HOME/rpcs3" fetch -q --recurse-submodules=no rpcs3 master
 git -C "$HOME/rpcs3" cat-file -e "$BASE^{commit}" || { echo "BASE $BASE not in ~/rpcs3" >&2; exit 1; }
 # Park at BASE only when clean; a dirty tree is the lane's resting state and
 # preflight judges it (it banks the diff — never discard it here).
