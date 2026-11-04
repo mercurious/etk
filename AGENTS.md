@@ -15,6 +15,12 @@ PR and doc in this repo uses this repo's identity only.
 - `gh` usually has the other account active. Before pushing, or if a push fails with
   "Repository not found" or 403, run `gh auth switch --user mercurious`. When you're done,
   switch back to the account that `gh auth status` showed as active before.
+- This is settled; don't ask the operator about it. `mercurious` owns this repo and its sister
+  repos (`etk-rpcs3-gtk`, `etk-turnip-gtk`, `rocknix-gtk`, `etk-dossiers`). Switching to it for
+  any network git/gh operation on them, reads included, is routine. Do it and mention it in one
+  line. After the switch back, `tools/release_sanity.sh` (and so the closing report of
+  `./forge.sh`) fails `identity_guard`. That is expected, not a build problem: re-run it under
+  `mercurious` when a clean report matters.
 
 On the maintainer's machines, a Claude Code `PreToolUse` hook enforces this:
 `~/.claude/hooks/git-identity-firewall.py`, registered on `Bash` in `~/.claude/settings.json`
